@@ -39,13 +39,20 @@ export interface DashboardProject {
   id: string
   code: string
   name: string
-  phase: PhaseKey
+  /** Internal PhaseKey (g0–g9) OR raw phase string from API (e.g. "engineering") */
+  phase: PhaseKey | string
   gate: number
   gateName: string
+  /** Budget in USD millions */
   budgetM: number
+  /** Raw budget in full dollars (optional — normalised to budgetM when provided) */
+  budget_amount?: number
+  currency?: string
   status: ProjectRowStatus
   client: string
   targetCod?: string
+  /** Raw ISO date string from API (normalised to targetCod display) */
+  target_cod?: string
 }
 
 export interface DashboardStats {
@@ -88,11 +95,11 @@ const MOCK_STATS: DashboardStats = {
 }
 
 const MOCK_PROJECTS: DashboardProject[] = [
-  { id: 'SOL-2026-001', code: 'SOL-2026-001', name: 'Al Dhafra Solar PV - Phase 1',    phase: 'g3', gate: 2, gateName: 'G2', budgetM: 1200, status: 'active',   client: 'EWEC',    targetCod: 'Jun 2028' },
-  { id: 'WND-2026-002', code: 'WND-2026-002', name: 'Dogger Bank Wind Farm - Phase A',  phase: 'g4', gate: 3, gateName: 'G3', budgetM: 850,  status: 'active',   client: 'Equinor', targetCod: 'Dec 2029' },
-  { id: 'HYD-2026-003', code: 'HYD-2026-003', name: 'Grand Inga Hydroelectric - Phase 1', phase: 'g1', gate: 0, gateName: 'G0', budgetM: 14000, status: 'active', client: 'AfDB',   targetCod: 'Jun 2032' },
-  { id: 'SOL-2026-004', code: 'SOL-2026-004', name: 'Noor Ouarzazate IV',               phase: 'g5', gate: 4, gateName: 'G4', budgetM: 500,  status: 'active',   client: 'MASEN',   targetCod: 'Mar 2027' },
-  { id: 'WND-2026-005', code: 'WND-2026-005', name: 'Hornsea Project Four',             phase: 'g2', gate: 1, gateName: 'G1', budgetM: 2100, status: 'on-hold',  client: 'Orsted',  targetCod: 'Sep 2030' },
+  { id: '1', code: 'SOL-2026-001', name: 'Al Dhafra Solar PV - Phase 1',        phase: 'engineering',  gate: 2, gateName: 'G2', budgetM: 1200,  budget_amount: 1_200_000_000, currency: 'USD', status: 'active',   client: 'EWEC',    targetCod: 'Jun 2028', target_cod: '2028-06-30' },
+  { id: '2', code: 'WND-2026-002', name: 'Dogger Bank Wind Farm - Phase A',     phase: 'procurement',  gate: 3, gateName: 'G3', budgetM: 850,   budget_amount:   850_000_000, currency: 'USD', status: 'active',   client: 'Equinor', targetCod: 'Dec 2029', target_cod: '2029-12-31' },
+  { id: '3', code: 'HYD-2026-003', name: 'Grand Inga Hydroelectric - Phase 1',  phase: 'intake',       gate: 0, gateName: 'G0', budgetM: 14000, budget_amount: 14_000_000_000, currency: 'USD', status: 'active',   client: 'AfDB',    targetCod: 'Jun 2032', target_cod: '2032-06-30' },
+  { id: '4', code: 'SOL-2026-004', name: 'Noor Ouarzazate IV',                  phase: 'construction', gate: 4, gateName: 'G4', budgetM: 500,   budget_amount:   500_000_000, currency: 'USD', status: 'active',   client: 'MASEN',   targetCod: 'Mar 2027', target_cod: '2027-03-15' },
+  { id: '5', code: 'WND-2026-005', name: 'Hornsea Project Four',                phase: 'commercial',   gate: 1, gateName: 'G1', budgetM: 2100,  budget_amount: 2_100_000_000, currency: 'USD', status: 'on-hold',  client: 'Orsted',  targetCod: 'Sep 2030', target_cod: '2030-09-30' },
 ]
 
 const MOCK_APPROVALS: ApprovalItem[] = [
@@ -107,30 +114,26 @@ const MOCK_APPROVALS: ApprovalItem[] = [
 // Phase / status maps
 // ─────────────────────────────────────────────────────────────
 
-const PHASE_VARIANT: Record<PhaseKey, string> = {
-  g0: 'intake',
-  g1: 'intake',
-  g2: 'commercial',
-  g3: 'engineering',
-  g4: 'procurement',
-  g5: 'construction',
-  g6: 'commissioning',
-  g7: 'om',
-  g8: 'finance',
-  g9: 'ai-analytics',
+const PHASE_VARIANT: Record<string, string> = {
+  // PhaseKey (g0–g9)
+  g0: 'intake', g1: 'intake', g2: 'commercial', g3: 'engineering',
+  g4: 'procurement', g5: 'construction', g6: 'commissioning',
+  g7: 'om', g8: 'finance', g9: 'ai-analytics',
+  // Raw API phase strings (spec)
+  intake: 'intake', commercial: 'commercial', engineering: 'engineering',
+  procurement: 'procurement', construction: 'construction',
+  commissioning: 'commissioning', om: 'om', finance: 'finance',
 }
 
-const PHASE_LABEL: Record<PhaseKey, string> = {
-  g0: 'Intake',
-  g1: 'Commercial',
-  g2: 'Engineering',
-  g3: 'Engineering',
-  g4: 'Procurement',
-  g5: 'Construction',
-  g6: 'Commissioning',
-  g7: 'O&M',
-  g8: 'Finance',
-  g9: 'AI & Analytics',
+const PHASE_LABEL: Record<string, string> = {
+  // PhaseKey (g0–g9)
+  g0: 'Intake', g1: 'Commercial', g2: 'Engineering', g3: 'Engineering',
+  g4: 'Procurement', g5: 'Construction', g6: 'Commissioning',
+  g7: 'O&M', g8: 'Finance', g9: 'AI & Analytics',
+  // Raw API phase strings (spec)
+  intake: 'Intake', commercial: 'Commercial', engineering: 'Engineering',
+  procurement: 'Procurement', construction: 'Construction',
+  commissioning: 'Commissioning', om: 'O&M', finance: 'Finance',
 }
 
 const STATUS_META: Record<ProjectRowStatus, { label: string; variant: string; dot?: boolean }> = {
