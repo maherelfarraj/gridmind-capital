@@ -474,20 +474,20 @@ export function ProjectsListPage({
           loading={loading}
           error={error}
           emptyMessage="No projects match your search."
-          actions={[
-            ...(onExport ? [{
-              label: 'Export',
-              icon: <Download className="size-3.5" aria-hidden="true" />,
-              onClick: onExport,
-              variant: 'outline' as const,
-            }] : []),
-            {
-              label: 'New Project',
-              icon: <Plus className="size-3.5" aria-hidden="true" />,
-              onClick: onNewProject ?? (() => {}),
-              variant: 'gate' as const,
-            },
-          ]}
+          actions={(
+            <>
+              {onExport && (
+                <Button variant="outline" size="sm" onClick={onExport} aria-label="Export">
+                  <Download className="size-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline ml-1">Export</span>
+                </Button>
+              )}
+              <Button size="sm" variant="gate" onClick={onNewProject ?? (() => {})} aria-label="New Project">
+                <Plus className="size-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline ml-1">New Project</span>
+              </Button>
+            </>
+          )}
         />
 
         {/* Custom empty state override when table is empty */}

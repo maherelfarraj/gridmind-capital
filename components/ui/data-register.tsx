@@ -85,45 +85,54 @@ export interface ActionDef {
 }
 
 export interface DataRegisterProps<T = Record<string, unknown>> {
-  /** Table title shown in the header */
-  title: string
-  /** Optional icon rendered next to the title */
-  titleIcon?: React.ReactNode
   /** Row data */
   data: T[]
   /** Column definitions */
   columns: ColumnDef<T>[]
-  /** Object keys to include in the global search filter */
-  searchFields?: (keyof T)[]
-  /** Search input placeholder */
-  searchPlaceholder?: string
-  /** Unique row identifier field */
-  rowKey: keyof T
+  /** Table title shown in the header */
+  title?: string
+  /** Optional icon rendered next to the title */
+  icon?: React.ReactNode
+  /** Fields to search (string keys) */
+  searchFields?: string[]
   /** Called when a data row is clicked */
   onRowClick?: (row: T) => void
-  /** Currently selected row key (controlled) */
-  selectedKey?: string
-  /** Action buttons rendered in the header */
-  actions?: ActionDef[]
-  /** Whether to show the built-in Export button */
-  showExport?: boolean
-  /** Whether to show the built-in Filter button */
-  showFilter?: boolean
-  /** Whether to show the built-in Create New button */
-  showCreate?: boolean
-  /** Label for the create button */
-  createLabel?: string
-  /** Called when Create New is clicked */
-  onCreateClick?: () => void
-  /** Called when Export is clicked */
-  onExportClick?: () => void
+  /** Unique row identifier field */
+  rowKey: keyof T
+  /** Action buttons rendered in the header (ReactNode) */
+  actions?: React.ReactNode
   /** Rows per page (default 10) */
   pageSize?: number
+  /** Page size options (default [10, 25, 50, 100]) */
+  pageSizeOptions?: number[]
+  /** Enable sorting globally */
+  sortable?: boolean
+  /** Enable column-level filtering globally */
+  filterable?: boolean
+  /** Enable search globally */
+  searchable?: boolean
+  /** Enable row selection checkboxes */
+  selectable?: boolean
+  /** Called with selected rows when selection changes */
+  onSelectionChange?: (selected: T[]) => void
   /** Loading skeleton state */
   loading?: boolean
+  /** Custom empty-state icon */
+  emptyIcon?: React.ReactNode
+  /** Custom empty-state title */
+  emptyTitle?: string
+  /** Custom empty-state subtitle */
+  emptySubtitle?: string
+  // ── Legacy / convenience props (kept for backward compat) ──
+  /** @deprecated Use icon instead */
+  titleIcon?: React.ReactNode
+  /** Search placeholder text */
+  searchPlaceholder?: string
+  /** Currently selected row key (controlled single-select) */
+  selectedKey?: string
   /** Error message to display */
   error?: string | null
-  /** Custom empty-state message */
+  /** Custom empty-state message (falls back to emptySubtitle) */
   emptyMessage?: string
   /** Additional className for the outer wrapper */
   className?: string
@@ -364,9 +373,10 @@ const PAGE_SIZES = [10, 25, 50, 100] as const
 interface PageSizeSelectorProps {
   value: number
   onChange: (n: number) => void
+  sizes?: number[]
 }
 
-function PageSizeSelector({ value, onChange }: PageSizeSelectorProps) {
+function PageSizeSelector({ value, onChange, sizes = PAGE_SIZES as unknown as number[] }: PageSizeSelectorProps) {
   return (
     <div className="flex items-center gap-1.5">
       <select
@@ -378,7 +388,7 @@ function PageSizeSelector({ value, onChange }: PageSizeSelectorProps) {
           'focus:outline-none focus:ring-2 focus:ring-ring/50',
         )}
       >
-        {PAGE_SIZES.map((n) => (
+        {sizes.map((n) => (
           <option key={n} value={n}>{n}</option>
         ))}
       </select>
@@ -399,6 +409,7 @@ interface PaginationProps {
   filteredRows: number
   pageSize: number
   onPageSizeChange: (n: number) => void
+  pageSizeOptions?: number[]
 }
 
 function Pagination({
@@ -409,6 +420,7 @@ function Pagination({
   filteredRows,
   pageSize,
   onPageSizeChange,
+  pageSizeOptions,
 }: PaginationProps) {
   const start = (page - 1) * pageSize + 1
   const end   = Math.min(page * pageSize, filteredRows)
@@ -449,7 +461,7 @@ function Pagination({
             </>
           )}
         </p>
-        <PageSizeSelector value={pageSize} onChange={onPageSizeChange} />
+        <PageSizeSelector value={pageSize} onChange={onPageSizeChange} sizes={pageSizeOptions} />
       </div>
 
       {/* Page buttons + prev/next */}
@@ -515,26 +527,31 @@ function Pagination({
 ───────────────────────────────────────────── */
 
 export function DataRegister<T = Record<string, unknown>>({
-  title,
-  titleIcon,
   data,
   columns,
+  title,
+  icon,
   searchFields = [],
-  searchPlaceholder = 'Search…',
   rowKey,
   onRowClick,
-  selectedKey,
-  actions = [],
-  showExport = false,
-  showFilter = false,
-  showCreate = false,
-  createLabel = 'Create New',
-  onCreateClick,
-  onExportClick,
+  actions,
   pageSize: initialPageSize = 10,
+  pageSizeOptions = [10, 25, 50, 100],
+  sortable: globalSortable,
+  filterable: globalFilterable,
+  searchable = true,
+  selectable = false,
+  onSelectionChange,
   loading = false,
+  emptyIcon,
+  emptyTitle,
+  emptySubtitle,
+  // legacy compat
+  titleIcon,
+  searchPlaceholder = 'Search…',
+  selectedKey,
   error = null,
-  emptyMessage = 'No records found.',
+  emptyMessage,
   className,
 }: DataRegisterProps<T>) {
   const [query,       setQuery]       = React.useState('')
@@ -543,15 +560,50 @@ export function DataRegister<T = Record<string, unknown>>({
   const [page,        setPage]        = React.useState(1)
   const [pageSize,    setPageSize]    = React.useState(initialPageSize)
   const [colFilters,  setColFilters]  = React.useState<Record<string, string>>({})
+  const [selected,    setSelected]    = React.useState<Set<string>>(new Set())
   const searchRef = React.useRef<HTMLInputElement>(null)
+
+  // Resolve icon (new prop takes precedence over legacy titleIcon)
+  const resolvedIcon = icon ?? titleIcon
+
+  // Resolve empty state props
+  const resolvedEmptySubtitle = emptySubtitle ?? emptyMessage ?? 'No records found.'
+  const resolvedEmptyTitle    = emptyTitle ?? 'No results'
+
+  // Apply global sortable/filterable to columns if not set per-column
+  const resolvedColumns = React.useMemo(() => columns.map((col) => ({
+    ...col,
+    sortable:   col.sortable   ?? (globalSortable   === true),
+    filterable: col.filterable ?? (globalFilterable === true),
+  })), [columns, globalSortable, globalFilterable])
+
+  // Selection helpers
+  const handleSelectAll = React.useCallback((checked: boolean) => {
+    const next = checked ? new Set(data.map((r) => String((r as Record<string, unknown>)[rowKey as string]))) : new Set<string>()
+    setSelected(next)
+    onSelectionChange?.(checked ? [...data] : [])
+  }, [data, rowKey, onSelectionChange])
+
+  const handleSelectRow = React.useCallback((row: T, checked: boolean) => {
+    const key = String((row as Record<string, unknown>)[rowKey as string])
+    setSelected((prev) => {
+      const next = new Set(prev)
+      checked ? next.add(key) : next.delete(key)
+      return next
+    })
+    onSelectionChange?.(data.filter((r) => {
+      const k = String((r as Record<string, unknown>)[rowKey as string])
+      return checked ? selected.has(k) || k === key : selected.has(k) && k !== key
+    }))
+  }, [data, rowKey, selected, onSelectionChange])
 
   // Reset page on filter change
   React.useEffect(() => { setPage(1) }, [query, colFilters])
 
   /* ── Derived rows ── */
   const filtered = React.useMemo(
-    () => filterRows(data, query, searchFields as (keyof T)[], colFilters, columns),
-    [data, query, searchFields, colFilters, columns],
+    () => filterRows(data, query, searchFields as (keyof T)[], colFilters, resolvedColumns),
+    [data, query, searchFields, colFilters, resolvedColumns],
   )
   const sorted = React.useMemo(
     () => (sortKey ? sortRows(filtered, sortKey, sortDir) : filtered),
@@ -561,8 +613,15 @@ export function DataRegister<T = Record<string, unknown>>({
   const safePage   = Math.min(page, totalPages)
   const pageRows   = sorted.slice((safePage - 1) * pageSize, safePage * pageSize)
 
-  const hasColFilters = columns.some((c) => c.filterable)
+  const hasColFilters = resolvedColumns.some((c) => c.filterable)
   const activeColFilters = Object.values(colFilters).filter(Boolean).length
+
+  const allSelected = data.length > 0 && data.every((r) =>
+    selected.has(String((r as Record<string, unknown>)[rowKey as string])),
+  )
+  const someSelected = !allSelected && data.some((r) =>
+    selected.has(String((r as Record<string, unknown>)[rowKey as string])),
+  )
 
   /* ── Sort toggle ── */
   function handleSort(key: string) {
@@ -605,18 +664,21 @@ export function DataRegister<T = Record<string, unknown>>({
       className={cn('rounded-xl border border-border bg-card overflow-hidden shadow-sm', className)}
     >
       {/* ── Header ─────────────────────────────────────────── */}
+      {(title || resolvedIcon || searchable || actions) && (
       <div className="flex flex-col gap-3 px-4 pt-4 pb-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
         {/* Title */}
-        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground font-sans shrink-0">
-          {titleIcon && (
-            <span className="text-muted-foreground" aria-hidden="true">{titleIcon}</span>
-          )}
-          {title}
-        </h2>
+        {(title || resolvedIcon) && (
+          <h2 className="flex items-center gap-2 text-base font-semibold text-foreground font-sans shrink-0">
+            {resolvedIcon && (
+              <span className="text-muted-foreground" aria-hidden="true">{resolvedIcon}</span>
+            )}
+            {title}
+          </h2>
+        )}
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* Global search */}
-          {searchFields.length > 0 && (
+          {searchable && searchFields.length > 0 && (
             <div className="relative">
               <Search
                 className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none"
@@ -649,57 +711,11 @@ export function DataRegister<T = Record<string, unknown>>({
             </div>
           )}
 
-          {/* Built-in filter button */}
-          {showFilter && (
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Filter"
-              className={cn(activeColFilters > 0 && 'border-primary text-primary')}
-            >
-              <SlidersHorizontal className="size-3.5" />
-              <span className="hidden sm:inline ml-1">Filter</span>
-              {activeColFilters > 0 && (
-                <span className="ml-1 inline-flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
-                  {activeColFilters}
-                </span>
-              )}
-            </Button>
-          )}
-
-          {/* Built-in export button */}
-          {showExport && (
-            <Button variant="outline" size="sm" onClick={onExportClick} aria-label="Export">
-              <Download className="size-3.5" />
-              <span className="hidden sm:inline ml-1">Export</span>
-            </Button>
-          )}
-
-          {/* Built-in create button */}
-          {showCreate && (
-            <Button size="sm" onClick={onCreateClick} aria-label={createLabel}>
-              <Plus className="size-3.5" />
-              <span className="hidden sm:inline ml-1">{createLabel}</span>
-            </Button>
-          )}
-
-          {/* Custom action buttons */}
-          {actions.map((action, i) => (
-            <Button
-              key={i}
-              variant={action.variant ?? 'outline'}
-              size="sm"
-              onClick={action.onClick}
-              aria-label={action.label}
-            >
-              {action.icon}
-              <span className={action.iconOnly ? 'sr-only sm:not-sr-only' : 'hidden sm:inline ml-1'}>
-                {action.label}
-              </span>
-            </Button>
-          ))}
+          {/* Actions — ReactNode (caller owns all buttons) */}
+          {actions}
         </div>
       </div>
+      )}
 
       {/* ── Error state ─────────────────────────────────────── */}
       {error && !loading && (
@@ -726,7 +742,20 @@ export function DataRegister<T = Record<string, unknown>>({
             <thead>
               {/* Column headers */}
               <tr className="border-b border-border bg-muted/40 dark:bg-muted/20">
-                {columns.map((col) => {
+                {/* Select-all checkbox */}
+                {selectable && (
+                  <th scope="col" className="w-10 px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all rows"
+                      checked={allSelected}
+                      ref={(el) => { if (el) el.indeterminate = someSelected }}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="size-3.5 accent-primary cursor-pointer"
+                    />
+                  </th>
+                )}
+                {resolvedColumns.map((col) => {
                   const isActive = sortKey === col.key
                   const dir: SortDir = isActive ? sortDir : null
                   return (
@@ -764,7 +793,8 @@ export function DataRegister<T = Record<string, unknown>>({
               {/* Column filter row */}
               {hasColFilters && (
                 <tr className="border-b border-border bg-muted/20">
-                  {columns.map((col) => (
+                  {selectable && <td className="w-10 px-3 py-1.5" />}
+                  {resolvedColumns.map((col) => (
                     <td key={col.key} className="px-2 py-1.5">
                       {col.filterable ? (
                         col.filterType === 'select' && col.filterOptions ? (
@@ -805,7 +835,7 @@ export function DataRegister<T = Record<string, unknown>>({
               {/* Active filters indicator row */}
               {(query || activeColFilters > 0) && (
                 <tr>
-                  <td colSpan={columns.length} className="px-4 py-1.5 bg-primary/5 border-b border-border">
+                  <td colSpan={resolvedColumns.length + (selectable ? 1 : 0)} className="px-4 py-1.5 bg-primary/5 border-b border-border">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-primary font-medium">
                         {sorted.length} result{sorted.length !== 1 ? 's' : ''} — filters active
@@ -826,14 +856,14 @@ export function DataRegister<T = Record<string, unknown>>({
             {/* ── Body ── */}
             <tbody>
               {loading ? (
-                <TableSkeleton cols={columns.length} rows={5} />
+                <TableSkeleton cols={resolvedColumns.length + (selectable ? 1 : 0)} rows={5} />
               ) : pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="px-4 py-14 text-center">
+                  <td colSpan={resolvedColumns.length + (selectable ? 1 : 0)} className="px-4 py-14 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <Inbox className="size-10 opacity-30" aria-hidden="true" />
-                      <p className="text-sm font-medium text-foreground/70">{emptyMessage}</p>
-                      <p className="text-xs">Try adjusting your search or filters</p>
+                      {emptyIcon ?? <Inbox className="size-10 opacity-30" aria-hidden="true" />}
+                      <p className="text-sm font-medium text-foreground/70">{resolvedEmptyTitle}</p>
+                      <p className="text-xs">{resolvedEmptySubtitle}</p>
                       {(query || activeColFilters > 0) && (
                         <button
                           type="button"
@@ -849,8 +879,10 @@ export function DataRegister<T = Record<string, unknown>>({
               ) : (
                 pageRows.map((row, ri) => {
                   const key = String((row as Record<string, unknown>)[rowKey as string])
-                  const isEven    = ri % 2 === 1
-                  const isSelected = selectedKey !== undefined && selectedKey === key
+                  const isEven     = ri % 2 === 1
+                  const isChecked  = selected.has(key)
+                  // Honour both legacy selectedKey (single-select) and new multi-select
+                  const isSelected = isChecked || (selectedKey !== undefined && selectedKey === key)
                   return (
                     <tr
                       key={key}
@@ -871,7 +903,19 @@ export function DataRegister<T = Record<string, unknown>>({
                         ],
                       )}
                     >
-                      {columns.map((col, ci) => (
+                      {/* Per-row selection checkbox */}
+                      {selectable && (
+                        <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select row ${key}`}
+                            checked={isChecked}
+                            onChange={(e) => handleSelectRow(row, e.target.checked)}
+                            className="size-3.5 accent-primary cursor-pointer"
+                          />
+                        </td>
+                      )}
+                      {resolvedColumns.map((col, ci) => (
                         <td
                           key={col.key}
                           className={cn(
@@ -902,6 +946,7 @@ export function DataRegister<T = Record<string, unknown>>({
           filteredRows={sorted.length}
           pageSize={pageSize}
           onPageSizeChange={(n) => { setPageSize(n); setPage(1) }}
+          pageSizeOptions={pageSizeOptions}
         />
       )}
     </section>

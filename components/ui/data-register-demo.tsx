@@ -198,20 +198,18 @@ export function DataRegisterDemo() {
         error={showError ? 'Failed to load project data. Please check your connection and try again.' : null}
         emptyMessage="No projects match your search."
         onRowClick={setSelected}
-        actions={[
-          {
-            label: 'Export',
-            icon: <Download className="size-3.5" />,
-            variant: 'outline',
-            onClick: () => alert('Exporting CSV…'),
-          },
-          {
-            label: 'New Project',
-            icon: <Plus className="size-3.5" />,
-            variant: 'default',
-            onClick: () => alert('Open create modal…'),
-          },
-        ]}
+        actions={(
+          <>
+            <Button variant="outline" size="sm" onClick={() => alert('Exporting CSV…')}>
+              <Download className="size-3.5" />
+              <span className="hidden sm:inline ml-1">Export</span>
+            </Button>
+            <Button size="sm" onClick={() => alert('Open create modal…')}>
+              <Plus className="size-3.5" />
+              <span className="hidden sm:inline ml-1">New Project</span>
+            </Button>
+          </>
+        )}
       />
     </div>
   )

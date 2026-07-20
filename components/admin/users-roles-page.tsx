@@ -670,18 +670,19 @@ export function UsersRolesPage({ initialUsers = MOCK_USERS }: UsersRolesPageProp
               ? `No ${ROLE_META[roleFilter as RoleKey].label} users found.`
               : 'No users found. Try adjusting your search.'
           }
-          actions={[
-            {
-              label: 'Export',
-              icon: (
-                <svg className="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3M8 2v8M5 9l3 3 3-3" />
-                </svg>
-              ),
-              onClick: () => toast({ variant: 'info', title: 'Export started', description: 'User list CSV download will begin shortly.', duration: 3000 }),
-              variant: 'outline',
-            },
-          ]}
+          actions={(
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => toast({ variant: 'info', title: 'Export started', description: 'User list CSV download will begin shortly.', duration: 3000 })}
+              aria-label="Export"
+            >
+              <svg className="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3M8 2v8M5 9l3 3 3-3" />
+              </svg>
+              <span className="hidden sm:inline ml-1">Export</span>
+            </Button>
+          )}
         />
       </div>
 
