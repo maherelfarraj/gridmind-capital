@@ -20,6 +20,7 @@ import {
   type NavChild,
   type UserRole,
 } from './nav-config'
+import { signOutAction } from '@/app/actions/auth'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -378,18 +379,20 @@ function SidebarContent({
           </div>
         )}
 
-        <button
-          type="button"
-          aria-label="Sign out"
-          title="Sign out"
-          className={cn(
-            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
-            'text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground',
-            'transition-colors duration-150',
-          )}
-        >
-          <LogOut size={14} />
-        </button>
+        <form action={signOutAction}>
+          <button
+            type="submit"
+            aria-label="Sign out"
+            title="Sign out"
+            className={cn(
+              'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+              'text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              'transition-colors duration-150',
+            )}
+          >
+            <LogOut size={14} />
+          </button>
+        </form>
       </div>
 
       {/* ── Expand toggle (collapsed state only, desktop) ── */}
