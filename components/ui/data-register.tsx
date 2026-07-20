@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Badge, PhaseBadge } from '@/components/ui/badge'
 
 /* ─────────────────────────────────────────────────────────────
    TYPES
@@ -307,6 +308,32 @@ function renderCell<T>(col: ColumnDef<T>, row: T): React.ReactNode {
         >
           {href}
         </a>
+      )
+    }
+
+    case 'badge': {
+      if (raw == null || raw === '') return <span className="text-muted-foreground">—</span>
+      const label = String(raw)
+      // badgeVariant: 'phase' → PhaseBadge; anything else → Badge with that variant
+      if (col.badgeVariant === 'phase') {
+        return <PhaseBadge phase={label as any} aria-label={`Phase: ${label}`} />
+      }
+      return (
+        <Badge variant={(col.badgeVariant ?? 'secondary') as any} dot={col.badgeVariant === 'status'}>
+          {label}
+        </Badge>
+      )
+    }
+
+    case 'action': {
+      // Renders a ChevronRight affordance; actual click is handled by onRowClick on the row
+      return (
+        <span
+          aria-hidden="true"
+          className="inline-flex items-center justify-center size-7 rounded-md text-muted-foreground"
+        >
+          <ChevronRight className="size-3.5" />
+        </span>
       )
     }
 
