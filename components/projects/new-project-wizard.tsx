@@ -1154,9 +1154,9 @@ export function NewProjectWizardPage() {
       <Card className="shadow-sm min-h-[600px] flex flex-col overflow-hidden">
         <NewProjectWizard
           users={[
-            { id: 'user-1', full_name: 'Ahmed Al-Rashid', role: 'Project Director',  avatar_url: null },
-            { id: 'user-2', full_name: 'Sarah Mitchell',  role: 'Senior PM',          avatar_url: null },
-            { id: 'user-3', full_name: 'James Chen',      role: 'Project Manager',    avatar_url: null },
+            { id: 'pm-001',  full_name: 'Project Manager', role: 'project_manager',      avatar_url: null },
+            { id: 'pm-002',  full_name: 'Sarah Chen',       role: 'project_manager',      avatar_url: null },
+            { id: 'eng-001', full_name: 'Mike Ross',         role: 'engineering_manager',  avatar_url: null },
           ]}
           onSubmit={async (_data) => {
             await new Promise(r => setTimeout(r, 1400))
