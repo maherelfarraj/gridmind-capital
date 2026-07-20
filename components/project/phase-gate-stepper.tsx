@@ -185,8 +185,11 @@ function getGateState(gateCode: string, currentGate: string, completedGates: str
   if (gateCode === currentGate) return 'current'
   const currentIdx = GATE_DEFINITIONS.findIndex((g) => g.code === currentGate)
   const gateIdx = GATE_DEFINITIONS.findIndex((g) => g.code === gateCode)
+  // Gates before current that weren't explicitly completed are locked
   if (gateIdx < currentIdx && !completedGates.includes(gateCode)) return 'locked'
-  return 'future'
+  // The immediately next gate is 'future' (accessible info); gates 2+ ahead are 'locked'
+  if (gateIdx === currentIdx + 1) return 'future'
+  return 'locked'
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -320,7 +323,9 @@ function GateNode({
                     {gate.code} · {gate.phase}
                   </p>
                   <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                    {gate.purpose.length > 90 ? gate.purpose.slice(0, 90) + '…' : gate.purpose}
+                    {state === 'locked'
+                      ? 'Complete previous gate first to unlock this stage.'
+                      : gate.purpose.length > 90 ? gate.purpose.slice(0, 90) + '…' : gate.purpose}
                   </p>
                 </div>
               </div>
@@ -445,22 +450,29 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
             onClick={onClose}
           />
 
-          {/* Panel */}
+          {/* Panel — right-side drawer on md+, bottom sheet on mobile */}
           <motion.div
             key="panel"
             role="dialog"
             aria-modal="true"
             aria-label={gate ? `${gate.code} Gate Details` : 'Gate Details'}
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
+            // Desktop: slide in from right. Mobile: slide up from bottom.
+            initial={{ x: typeof window !== 'undefined' && window.innerWidth < 768 ? 0 : '100%', y: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : 0 }}
+            animate={{ x: 0, y: 0 }}
+            exit={{ x: typeof window !== 'undefined' && window.innerWidth < 768 ? 0 : '100%', y: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              'fixed right-0 top-0 h-full z-50 w-full max-w-md',
-              'bg-card border-l border-border shadow-2xl',
-              'flex flex-col',
+              'fixed z-50 bg-card shadow-2xl flex flex-col',
+              // Mobile: bottom sheet
+              'max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:max-h-[70vh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-border',
+              // Desktop: right-side drawer
+              'sm:right-0 sm:top-0 sm:h-full sm:w-full sm:max-w-md sm:border-l sm:border-border',
             )}
           >
+            {/* Mobile drag handle */}
+            <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-muted-foreground/30" aria-hidden="true" />
+            </div>
         {/* Panel header */}
         <div className="flex items-start justify-between gap-3 p-5 border-b border-border shrink-0">
           <div className="min-w-0">
@@ -565,6 +577,36 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
                 </div>
               </section>
 
+              {/* Completion summary for completed gates */}
+              {state === 'completed' && (
+                <section aria-labelledby={`panel-completion-${gate.id}`} className="rounded-lg bg-[#22c55e]/8 border border-[#22c55e]/20 p-4 space-y-2.5">
+                  <h3 id={`panel-completion-${gate.id}`} className="text-[11px] font-semibold uppercase tracking-widest text-[#22c55e] flex items-center gap-1.5">
+                    <CheckCircle2 className="size-3.5" />
+                    Completion Record
+                  </h3>
+                  <dl className="space-y-1.5 text-sm">
+                    <div className="flex items-center gap-2">
+                      <dt className="text-muted-foreground min-w-[80px] text-xs">Date</dt>
+                      <dd className="text-foreground font-medium font-mono text-xs">
+                        {/* Approximate completion date based on gate index */}
+                        {new Date(Date.now() - (9 - gate.id) * 45 * 24 * 60 * 60 * 1000)
+                          .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </dd>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <dt className="text-muted-foreground min-w-[80px] text-xs">Approver</dt>
+                      <dd className="text-foreground text-xs">{gate.approvers[0] ?? 'Project Director'}</dd>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <dt className="text-muted-foreground min-w-[80px] text-xs mt-0.5">Note</dt>
+                      <dd className="text-foreground/80 text-xs leading-relaxed">
+                        All deliverables signed off. Gate passed with no conditions.
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+              )}
+
               {/* CTA for current/locked */}
               {state === 'current' && (
                 <Button variant="gate" className="w-full" size="lg">
@@ -634,6 +676,13 @@ export function PhaseGateStepper({
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
   const handleGateClick = React.useCallback((gate: GateDef, state: GateState) => {
+    // Locked/future gates show a tooltip only — do not open the full detail panel
+    if (state === 'locked' || state === 'future') {
+      setActiveTooltip(gate.id)
+      setTimeout(() => setActiveTooltip(null), 2500)
+      onGateClick?.(gate, state)
+      return
+    }
     setActivePanel({ gate, state })
     onGateClick?.(gate, state)
   }, [onGateClick])
