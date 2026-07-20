@@ -100,22 +100,20 @@ export const MOCK_PROJECTS: PipelineProject[] = [
   // ── Spec demo project ──────────────────────────────────────
   // Accessible at /projects/SOL-2026-001 (matched by code)
   {
-    id:         'SOL-2026-001',
-    name:       'Solar Atacama Expansion — Phase II',
-    code:       'SOL-2026-001',
-    client:     'Enel Green Power Chile',
-    gate:       3,
-    phase:      'g3',
-    status:     'active',
-    mw:         500,
-    budgetM:    1200,           // $1,200,000,000
-    progress:   47,
-    healthRag:  'amber',
-    location:   'Atacama Desert, Chile',
-    targetCod:  '2027-06-30',
-    // Extra fields used by the detail route
-    // startDate, commentCount, documentCount resolved in findProject
-  } as PipelineProject,
+    id:        'SOL-2026-001',
+    name:      'Al Dhafra Solar PV - Phase 1',
+    code:      'SOL-2026-001',
+    client:    'Emirates Water and Electricity Company',
+    gate:       2,
+    phase:     'g2',
+    status:    'active',
+    mw:         2100,
+    budgetM:    1200,
+    progress:   65,
+    healthRag: 'amber',
+    location:  'Al Dhafra, Abu Dhabi, UAE',
+    targetCod: '2028-06-30',
+  },
   // G0
   { id: 'p-lyra',    name: 'Lyra Grid Upgrade',       code: 'LYR-220', client: 'TransGrid AU',       gate: 0, phase: 'g0', status: 'planning',   mw: 220,  budgetM: 310,  progress: 8,   healthRag: 'green', location: 'New South Wales, AU', targetCod: 'Q3 2028' },
   // G1

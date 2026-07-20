@@ -17,6 +17,20 @@ import type { PhaseKey } from '@/components/app-shell/nav-config'
 // Replace with a real API/DB fetch when the backend is wired up.
 // ─────────────────────────────────────────────────────────────
 
+// Maps gate number or human-readable phase string → valid PhaseKey ('g0'–'g9')
+const GATE_TO_PHASE: Record<string | number, PhaseKey> = {
+  0: 'g0', g0: 'g0', intake: 'g0',
+  1: 'g1', g1: 'g1', commercial: 'g1',
+  2: 'g2', g2: 'g2', engineering: 'g2',
+  3: 'g3', g3: 'g3',
+  4: 'g4', g4: 'g4', procurement: 'g4',
+  5: 'g5', g5: 'g5', construction: 'g5',
+  6: 'g6', g6: 'g6', commissioning: 'g6',
+  7: 'g7', g7: 'g7', om: 'g7',
+  8: 'g8', g8: 'g8', finance: 'g8',
+  9: 'g9', g9: 'g9',
+}
+
 // Gate names aligned with the GREOS stage-gate model
 const GATE_NAMES: Record<number, string> = {
   0: 'Investment Intake',
@@ -52,7 +66,7 @@ function findProject(id: string): ProjectData | null {
     code: raw.code,
     client: raw.client,
     status: raw.status as ProjectData['status'],
-    phase: raw.phase as PhaseKey,
+    phase: GATE_TO_PHASE[raw.phase] ?? GATE_TO_PHASE[raw.gate] ?? 'engineering',
     gate: raw.gate,
     gateName: GATE_NAMES[raw.gate] ?? `Gate ${raw.gate}`,
     budgetUsd: raw.budgetM * 1_000_000,
@@ -60,7 +74,7 @@ function findProject(id: string): ProjectData | null {
     startDate: GATE_START_DATES[raw.gate] ?? '2024-01-01',
     targetCod: raw.targetCod,
     location: raw.location,
-    commentCount: raw.gate >= 3 ? 12 : 0,
+    commentCount: raw.gate >= 2 ? 12 : 0,
     documentCount: raw.gate >= 2 ? 8 : 0,
   }
 }
