@@ -1,19 +1,19 @@
 import { AppShell } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui/toast'
-import { DashboardPage } from '@/components/dashboard/dashboard-page'
+import { ProjectsListPage } from '@/components/projects/projects-list-page'
 import { HelpHubPanel } from '@/components/help/help-hub-panel'
 
 export default function Home() {
   return (
     <AppShell
-      title="Dashboard"
-      breadcrumbs={[{ label: 'Dashboard' }]}
+      title="Projects"
+      breadcrumbs={[{ label: 'Projects' }]}
       notificationCount={3}
       approvalCount={7}
     >
       <ToastProvider position="bottom-right">
-        <DashboardPage />
-        <HelpHubPanel context="Dashboard" userRole="ADMIN" />
+        <ProjectsListPage />
+        <HelpHubPanel context="Projects" userRole="ADMIN" />
       </ToastProvider>
     </AppShell>
   )
