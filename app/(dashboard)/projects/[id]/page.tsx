@@ -4,9 +4,12 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
 import { PhaseGateStepper } from '@/components/layout/PhaseGateStepper'
+import { WorkflowTimeline } from '@/components/layout/WorkflowTimeline'
+import { MOCK_WORKFLOW_LOGS } from '@/components/workflow/workflow-timeline'
 import { MOCK_PROJECTS } from '@/components/dashboard/dashboard-data'
 import type { ProjectData } from '@/components/project/project-command-center'
 import type { GateDef, GateState } from '@/components/project/phase-gate-stepper'
+import type { FilterOption } from '@/components/workflow/workflow-timeline'
 import type { PhaseKey } from '@/components/app-shell/nav-config'
 
 // ─────────────────────────────────────────────────────────────
@@ -78,7 +81,12 @@ export default function ProjectDetailRoute() {
   const id = params?.id ?? ''
 
   const [activePanel, setActivePanel] = React.useState<ActivePanel>(null)
+  const [timelineFilter, setTimelineFilter] = React.useState<FilterOption>('all')
   const project = React.useMemo(() => findProject(id), [id])
+
+  // In production: fetch real project logs by project id.
+  // For now use the shared mock set as project activity.
+  const projectLogs = MOCK_WORKFLOW_LOGS
 
   // Toggle panel — clicking the same action twice closes it
   const openPanel = React.useCallback((panel: ActivePanel) => {
@@ -145,6 +153,16 @@ export default function ProjectDetailRoute() {
           currentGate={currentGateCode}
           completedGates={completedGateCodes}
           onGateClick={handleGateClick}
+        />
+      </section>
+
+      {/* ── WorkflowTimeline — project activity log ── */}
+      <section className="mt-6" aria-label="Project activity timeline">
+        <WorkflowTimeline
+          logs={projectLogs}
+          showActor={true}
+          maxItems={50}
+          filter={timelineFilter}
         />
       </section>
 
