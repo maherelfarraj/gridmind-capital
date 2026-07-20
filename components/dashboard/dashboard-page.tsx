@@ -13,7 +13,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ApprovalQueue } from '@/components/dashboard/approval-queue'
+import { ApprovalInbox, type ApprovalRecord } from '@/components/approvals/approval-inbox'
 import type { PhaseKey } from '@/components/app-shell/nav-config'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
 
@@ -50,6 +50,7 @@ export interface DashboardPageProps {
   loading?: boolean
   onNewProject?: () => void
   onProjectClick?: (project: DashboardProject) => void
+  onApprovalClick?: (id: string) => void
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -323,6 +324,35 @@ function RecentProjects({ projects, onRowClick, loading = false }: RecentProject
 }
 
 // ─────────────────────────────────────────────────────────────
+// Adapter: ApprovalItem (dashboard shape) → ApprovalRecord (inbox shape)
+// ─────────────────────────────────────────────────────────────
+
+function toApprovalRecord(item: ApprovalItem): ApprovalRecord {
+  const PRIORITY_HOURS: Record<string, number> = {
+    critical: 4,
+    high: 24,
+    medium: 72,
+    low: 168,
+  }
+  const hoursUntilDue = PRIORITY_HOURS[item.priority] ?? 48
+  const dueDate = new Date(Date.now() + hoursUntilDue * 3_600_000).toISOString()
+  const createdAt = new Date(Date.now() - item.daysOpen * 86_400_000).toISOString()
+  return {
+    id: item.id,
+    object_type: item.type.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    object_code: item.projectCode,
+    status: item.isOverdue ? 'escalated' : 'pending',
+    level: item.priority === 'critical' ? 3 : item.priority === 'high' ? 2 : 1,
+    approver_role: 'Project Director',
+    requested_by_name: item.requestedBy,
+    due_date: dueDate,
+    created_at: createdAt,
+    decided_at: null,
+    decision_reason: null,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Dashboard Page
 // ─────────────────────────────────────────────────────────────
 
@@ -334,7 +364,14 @@ export function DashboardPage({
   loading = false,
   onNewProject,
   onProjectClick,
+  onApprovalClick,
 }: DashboardPageProps) {
+
+  // Convert ApprovalItems to ApprovalRecords for the inbox widget
+  const pendingApprovals = React.useMemo(
+    () => approvals.map(toApprovalRecord),
+    [approvals],
+  )
 
   // Greeting based on time of day
   const greeting = React.useMemo(() => {
@@ -434,12 +471,13 @@ export function DashboardPage({
           />
         </div>
 
-        {/* Right: Approval Inbox (1/3 width) */}
+        {/* Right: Approval Inbox compact widget (1/3 width) */}
         <div className="xl:col-span-1">
-          <ApprovalQueue
-            items={approvals}
-            loading={loading}
-            maxVisible={5}
+          <ApprovalInbox
+            approvals={pendingApprovals}
+            filter="pending"
+            onApprovalClick={onApprovalClick}
+            showFilters={false}
           />
         </div>
 

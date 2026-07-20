@@ -4,19 +4,25 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { ApprovalInbox, type FilterOption } from './approval-inbox'
 
+interface ApprovalInboxWrapperProps {
+  /** true = full page with all filter tabs; false = compact widget (default: true) */
+  showFilters?: boolean
+}
+
 /**
- * Thin client wrapper that owns filter state and wires navigation
- * for the ApprovalInbox spec preview on /approvals.
+ * Client wrapper that owns filter state + wires `router.push` navigation.
+ * Used on /approvals (showFilters=true) and dashboard widget (showFilters=false).
  */
-export function ApprovalInboxWrapper() {
+export function ApprovalInboxWrapper({ showFilters = true }: ApprovalInboxWrapperProps) {
   const router = useRouter()
-  const [filter, setFilter] = React.useState<FilterOption>('all')
+  const [filter, setFilter] = React.useState<FilterOption>(showFilters ? 'all' : 'pending')
 
   return (
     <ApprovalInbox
       filter={filter}
-      onFilterChange={setFilter}
+      onFilterChange={showFilters ? setFilter : undefined}
       onApprovalClick={(id) => router.push(`/approvals/${id}`)}
+      showFilters={showFilters}
     />
   )
 }
