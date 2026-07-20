@@ -140,8 +140,63 @@ export default function ProjectDetailRoute() {
     <>
       {/* ProjectCommandCenter header is rendered inside ProjectDetailPage */}
       <ProjectDetailPage
-        project={project}
+        project={{
+          id: project.id,
+          code: project.code,
+          name: project.name,
+          client: project.client,
+          status: project.status as 'active' | 'on-hold' | 'completed' | 'cancelled' | 'draft',
+          phase: project.phase,
+          gate: project.gate,
+          gateName: project.gateName,
+          budgetUsd: project.budgetUsd,
+          currency: project.currency ?? 'USD',
+          startDate: String(project.startDate ?? ''),
+          targetCod: String(project.targetCod ?? ''),
+          location: project.location ? String(project.location) : undefined,
+          commentCount: project.commentCount,
+          documentCount: project.documentCount,
+        }}
+        gateProgress={Object.fromEntries(
+          Array.from({ length: 15 }, (_, i) => [`G${i}`, i < project.gate]),
+        )}
+        deliverables={[
+          { name: 'IFC Drawings',             completed: true  },
+          { name: 'Technical Specifications', completed: true  },
+          { name: 'Bill of Materials',        completed: false },
+          { name: 'Design Calculations',      completed: false },
+        ]}
+        risks={[
+          { title: 'Permit delays',           probability: 'high',   impact: 'high',   status: 'open' },
+          { title: 'Supply chain disruption', probability: 'medium', impact: 'medium', status: 'open' },
+          { title: 'Weather delays',          probability: 'medium', impact: 'low',    status: 'open' },
+        ]}
+        timelineLogs={projectLogs.map((l) => ({
+          id: l.id,
+          action: l.action,
+          object_type: l.object_type,
+          object_id: l.object_id,
+          object_code: l.object_code,
+          actor_name: l.actor_name,
+          actor_role: l.actor_role,
+          before_state: l.before_state,
+          after_state: l.after_state,
+          decision_reason: l.decision_reason,
+          metadata: l.metadata,
+          created_at: l.created_at,
+        }))}
+        approvals={[]}
+        teamMembers={[]}
+        documents={[]}
+        comments={[]}
         onBack={handleBack}
+        onEdit={handleEdit}
+        onComments={handleComments}
+        onDocuments={handleDocuments}
+        onTeam={() => {}}
+        onSettings={() => {}}
+        onSubmitApproval={() => {}}
+        onRequestChanges={() => {}}
         hideStepper
         hideTimeline
       />

@@ -30,6 +30,14 @@ import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-g
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
+import type {
+  Project,
+  AuditLog,
+  Approval,
+  ProjectMember,
+  Document,
+  Comment,
+} from '@/lib/project-types'
 
 // ─────────────────────────────────────────────────────────────
 // Spec mock data
@@ -111,11 +119,19 @@ const SPEC_PROJECT_INFO = {
   pmInitials:     'MR',
 }
 
-function GateStatusCard({ gateProgress = { G0: true, G1: true, G2: false } }: {
+function GateStatusCard({
+  gateProgress = { G0: true, G1: true, G2: false },
+  deliverables = SPEC_DELIVERABLES,
+  onSubmitApproval,
+  onRequestChanges,
+}: {
   gateProgress?: Record<string, boolean>
+  deliverables?: { name: string; completed: boolean }[]
+  onSubmitApproval?: () => void
+  onRequestChanges?: () => void
 }) {
-  const completed = SPEC_DELIVERABLES.filter((d) => d.completed).length
-  const total     = SPEC_DELIVERABLES.length
+  const completed = deliverables.filter((d) => d.completed).length
+  const total     = deliverables.length
   const pct       = Math.round((completed / total) * 100)
 
   return (
@@ -170,7 +186,7 @@ function GateStatusCard({ gateProgress = { G0: true, G1: true, G2: false } }: {
             Required Deliverables
           </p>
           <ul className="flex flex-col gap-2" aria-label="Gate deliverables">
-            {SPEC_DELIVERABLES.map((d) => (
+            {deliverables.map((d) => (
               <li key={d.name} className="flex items-center gap-2">
                 {d.completed
                   ? <CheckCircle2 className="size-4 shrink-0 text-green-500" aria-label="Complete" />
@@ -199,6 +215,7 @@ function GateStatusCard({ gateProgress = { G0: true, G1: true, G2: false } }: {
             className="w-full bg-[#0a192f] hover:bg-slate-800 text-white dark:bg-[#64ffda] dark:text-[#0a192f] dark:hover:bg-[#64ffda]/90"
             size="sm"
             aria-label="Submit G2 package for approval"
+            onClick={onSubmitApproval}
           >
             <Send className="size-4 mr-2" aria-hidden />
             Submit for Approval
@@ -208,6 +225,7 @@ function GateStatusCard({ gateProgress = { G0: true, G1: true, G2: false } }: {
             className="w-full border-slate-200 hover:bg-slate-50 dark:border-border dark:hover:bg-muted"
             size="sm"
             aria-label="Request changes to G2 deliverables"
+            onClick={onRequestChanges}
           >
             <RefreshCw className="size-4 mr-2" aria-hidden />
             Request Changes
@@ -222,13 +240,25 @@ function GateStatusCard({ gateProgress = { G0: true, G1: true, G2: false } }: {
 // Project Info card
 // ─────────────────────────────────────────────────────────────
 
-function ProjectInfoCard() {
+function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { project?: Project }) {
+  const info = {
+    technology:     project.technology    ?? SPEC_PROJECT_INFO.technology,
+    capacity:       project.capacity      ?? SPEC_PROJECT_INFO.capacity,
+    epcContractor:  project.epcContractor ?? SPEC_PROJECT_INFO.epcContractor,
+    ownerEngineer:  project.ownerEngineer ?? SPEC_PROJECT_INFO.ownerEngineer,
+    projectManager: project.projectManager ?? SPEC_PROJECT_INFO.projectManager,
+    pmInitials:     project.pmInitials    ?? SPEC_PROJECT_INFO.pmInitials,
+    created:        project.startDate
+      ? new Date(project.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : SPEC_PROJECT_INFO.created,
+  }
+
   const rows: { label: string; value: React.ReactNode }[] = [
-    { label: 'Technology',    value: SPEC_PROJECT_INFO.technology    },
-    { label: 'Capacity',      value: SPEC_PROJECT_INFO.capacity      },
-    { label: 'EPC Contractor',value: SPEC_PROJECT_INFO.epcContractor },
-    { label: 'Owner Engineer',value: SPEC_PROJECT_INFO.ownerEngineer },
-    { label: 'Created',       value: SPEC_PROJECT_INFO.created       },
+    { label: 'Technology',    value: info.technology    },
+    { label: 'Capacity',      value: info.capacity      },
+    { label: 'EPC Contractor',value: info.epcContractor },
+    { label: 'Owner Engineer',value: info.ownerEngineer },
+    { label: 'Created',       value: info.created       },
     {
       label: 'Project Manager',
       value: (
@@ -237,10 +267,10 @@ function ProjectInfoCard() {
             className="inline-flex size-6 items-center justify-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
             aria-hidden
           >
-            {SPEC_PROJECT_INFO.pmInitials}
+            {info.pmInitials}
           </span>
           <span className="text-sm font-medium text-slate-900 dark:text-foreground">
-            {SPEC_PROJECT_INFO.projectManager}
+            {info.projectManager}
           </span>
         </span>
       ),
@@ -492,33 +522,112 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
 // ─────────────────────────────────────────────────────────────
 
 export interface ProjectDetailPageProps {
-  project?: ProjectData
-  logs?: WorkflowLogEntry[]
-  approvals?: ApprovalItem[]
-  risks?: Risk[]
-  loading?: boolean
-  onBack?: () => void
-  onAction?: (action: string) => void
+  project: Project
+  gateProgress: Record<string, boolean>
+  deliverables: { name: string; completed: boolean }[]
+  risks: { title: string; probability: string; impact: string; status: string }[]
+  timelineLogs: AuditLog[]
+  approvals: Approval[]
+  teamMembers: ProjectMember[]
+  documents: Document[]
+  comments: Comment[]
+  isLoading?: boolean
+  error?: string | null
+  onBack: () => void
+  onEdit: () => void
+  onComments: () => void
+  onDocuments: () => void
+  onTeam: () => void
+  onSettings: () => void
+  onSubmitApproval: () => void
+  onRequestChanges: () => void
   /** Suppress the built-in PhaseGateStepper when the parent renders one */
   hideStepper?: boolean
   /** Suppress the built-in ActivityTimeline when the parent renders one */
   hideTimeline?: boolean
 }
 
+/** Adapt spec Approval → internal ApprovalItem for ApprovalQueue */
+function toApprovalItem(a: Approval): ApprovalItem {
+  return {
+    id: a.id,
+    type: a.type as ApprovalItem['type'],
+    title: a.title,
+    projectCode: a.projectCode,
+    projectName: a.projectName,
+    requestedBy: a.requestedBy,
+    daysOpen: a.daysOpen,
+    isOverdue: a.isOverdue,
+    priority: a.priority,
+  }
+}
+
+/** Adapt spec AuditLog → WorkflowLogEntry for WorkflowTimeline */
+function toWorkflowEntry(l: AuditLog): WorkflowLogEntry {
+  return {
+    id: l.id,
+    action: l.action,
+    object_type: l.object_type,
+    object_id: l.object_id,
+    object_code: l.object_code,
+    actor_name: l.actor_name,
+    actor_role: l.actor_role,
+    before_state: l.before_state,
+    after_state: l.after_state,
+    decision_reason: l.decision_reason,
+    metadata: l.metadata,
+    created_at: l.created_at,
+  }
+}
+
+/** Adapt spec Project → ProjectData for ProjectCommandCenter */
+function toProjectData(p: Project): ProjectData {
+  return {
+    id: p.id,
+    name: p.name,
+    code: p.code,
+    client: p.client,
+    status: p.status as ProjectData['status'],
+    phase: p.phase as ProjectData['phase'],
+    gate: p.gate,
+    gateName: p.gateName,
+    budgetUsd: p.budgetUsd,
+    currency: p.currency ?? 'USD',
+    startDate: p.startDate,
+    targetCod: p.targetCod,
+    location: p.location ?? 'Location TBD',
+    commentCount: p.commentCount,
+    documentCount: p.documentCount,
+  }
+}
+
 export function ProjectDetailPage({
-  project    = SPEC_PROJECT,
-  logs       = SPEC_LOGS,
-  approvals  = SPEC_APPROVALS,
-  risks      = SPEC_RISKS,
-  loading    = false,
+  project,
+  gateProgress,
+  deliverables,
+  risks,
+  timelineLogs,
+  approvals,
+  isLoading    = false,
+  error        = null,
   onBack,
-  onAction,
+  onEdit,
+  onComments,
+  onDocuments,
+  onTeam,
+  onSettings,
+  onSubmitApproval,
+  onRequestChanges,
   hideStepper  = false,
   hideTimeline = false,
 }: ProjectDetailPageProps) {
-  const gateNumber       = project?.gate ?? 2
-  const currentGateCode  = `G${gateNumber}`
-  const completedGates   = Array.from({ length: gateNumber }, (_, i) => `G${i}`)
+  const gateNumber      = project.gate ?? 2
+  const currentGateCode = `G${gateNumber}`
+  const completedGates  = Array.from({ length: gateNumber }, (_, i) => `G${i}`)
+
+  const projectData   = toProjectData(project)
+  const workflowLogs  = timelineLogs.map(toWorkflowEntry)
+  const approvalItems = approvals.map(toApprovalItem)
 
   return (
     <div className="relative min-h-full space-y-6 p-6 bg-slate-50 dark:bg-background">
@@ -532,8 +641,15 @@ export function ProjectDetailPage({
         <span className="text-sm text-slate-500 dark:text-muted-foreground">{project.name}</span>
       </nav>
 
+      {/* Error state */}
+      {error && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
       {/* Project Command Center */}
-      <ProjectCommandCenter project={project} loading={loading} onBack={onBack} />
+      <ProjectCommandCenter project={projectData} loading={isLoading} onBack={onBack} />
 
       {/* Phase Gate Stepper */}
       {!hideStepper && (
@@ -551,17 +667,29 @@ export function ProjectDetailPage({
         {/* Left column */}
         <div className="flex flex-col gap-6 lg:col-span-2">
           {!hideTimeline && (
-            <ActivityTimelineCard logs={logs} loading={loading} />
+            <ActivityTimelineCard logs={workflowLogs} loading={isLoading} />
           )}
-          <QuickActionsCard onAction={onAction} />
+          <QuickActionsCard
+            onAction={(label) => {
+              if (label === 'Documents') onDocuments()
+              else if (label === 'Comments') onComments()
+              else if (label === 'Team') onTeam()
+              else if (label === 'Settings') onSettings()
+            }}
+          />
         </div>
 
         {/* Right column */}
         <div className="flex flex-col gap-6">
-          <ProjectApprovalsCard approvals={approvals} loading={loading} />
-          <GateStatusCard />
-          <ProjectInfoCard />
-          <RiskSummaryCard risks={risks} />
+          <ProjectApprovalsCard approvals={approvalItems} loading={isLoading} />
+          <GateStatusCard
+            gateProgress={gateProgress}
+            deliverables={deliverables}
+            onSubmitApproval={onSubmitApproval}
+            onRequestChanges={onRequestChanges}
+          />
+          <ProjectInfoCard project={project} />
+          <RiskSummaryCard risks={risks as Risk[]} />
         </div>
       </div>
     </div>
