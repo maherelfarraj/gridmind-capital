@@ -151,9 +151,28 @@ function FieldError({ message }: { message: string }) {
 }
 
 /* ─────────────────────────────────────────────
+   Public props interface (spec-exact)
+───────────────────────────────────────────── */
+export interface LoginPageProps {
+  /** Called when the user submits email + password. Omit to use the built-in mock. */
+  onLogin?: (email: string, password: string) => Promise<void>
+  /** Called when the user chooses an SSO provider. Omit to use the built-in mock. */
+  onSSOLogin?: (provider: 'microsoft' | 'google') => Promise<void>
+  /** External error message (e.g. from a server action). Displayed as a toast. */
+  error?: string | null
+  /** External loading flag. Merged with internal loading state. */
+  isLoading?: boolean
+}
+
+/* ─────────────────────────────────────────────
    Main LoginPage
 ───────────────────────────────────────────── */
-export function LoginPage() {
+export function LoginPage({
+  onLogin,
+  onSSOLogin,
+  error: externalError,
+  isLoading: externalLoading = false,
+}: LoginPageProps = {}) {
   /* form state */
   const [email, setEmail]         = React.useState('')
   const [password, setPassword]   = React.useState('')
@@ -165,9 +184,17 @@ export function LoginPage() {
   const [shake, setShake]         = React.useState(false)
   const [toasts, setToasts]       = React.useState<ToastItem[]>([])
 
+  const isLoading   = loading || externalLoading
+
   const emailErr    = touched.email    ? validateEmail(email)       : ''
   const passwordErr = touched.password ? validatePassword(password) : ''
   const isFormValid = !validateEmail(email) && !validatePassword(password)
+
+  /* Surface external errors as toasts */
+  React.useEffect(() => {
+    if (externalError) addToast('error', externalError)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalError])
 
   function addToast(type: ToastItem['type'], message: string) {
     const id = String(Date.now())
@@ -189,20 +216,44 @@ export function LoginPage() {
 
     setLoading(true)
     try {
-      const result = await mockLogin(email, password)
-      if (!result.success) {
-        addToast('error', result.error ?? 'Invalid email or password. Please try again.')
-        setLoading(false)
-        return
+      if (onLogin) {
+        /* Delegate to caller — caller is responsible for redirect */
+        await onLogin(email, password)
+        setSuccess(true)
+        addToast('success', 'Signed in successfully.')
+      } else {
+        /* Built-in mock for demo / standalone usage */
+        const result = await mockLogin(email, password)
+        if (!result.success) {
+          addToast('error', result.error ?? 'Invalid email or password. Please try again.')
+          setLoading(false)
+          return
+        }
+        setSuccess(true)
+        addToast('success', 'Redirecting to your dashboard…')
+        setTimeout(() => { window.location.href = '/dashboard' }, 1800)
       }
-      setSuccess(true)
-      addToast('success', 'Redirecting to your dashboard…')
-      // In production this would be: router.push('/dashboard')
-      setTimeout(() => {
-        window.location.href = '/dashboard'
-      }, 1800)
     } catch {
       addToast('error', 'Network error — please check your connection and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSSOLogin(provider: 'microsoft' | 'google') {
+    setLoading(true)
+    try {
+      if (onSSOLogin) {
+        await onSSOLogin(provider)
+        setSuccess(true)
+        addToast('success', `Signed in with ${provider === 'microsoft' ? 'Microsoft' : 'Google'}.`)
+      } else {
+        await new Promise((r) => setTimeout(r, 1200))
+        addToast('error', 'SSO is not configured in this environment.')
+      }
+    } catch {
+      addToast('error', `${provider === 'microsoft' ? 'Microsoft' : 'Google'} sign-in failed.`)
+    } finally {
       setLoading(false)
     }
   }
@@ -328,7 +379,7 @@ export function LoginPage() {
                       autoComplete="email"
                       placeholder="you@company.com"
                       required
-                      disabled={loading || success}
+                      disabled={isLoading || success}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       onBlur={() => setTouched((t) => ({ ...t, email: true }))}
@@ -365,7 +416,7 @@ export function LoginPage() {
                       autoComplete="current-password"
                       placeholder="••••••••"
                       required
-                      disabled={loading || success}
+                      disabled={isLoading || success}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       onBlur={() => setTouched((t) => ({ ...t, password: true }))}
@@ -409,7 +460,7 @@ export function LoginPage() {
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    disabled={loading || success}
+                    disabled={isLoading || success}
                     className="size-4 cursor-pointer rounded border-slate-300 accent-[#0a192f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a192f]"
                   />
                   <label
@@ -423,7 +474,7 @@ export function LoginPage() {
                 {/* Submit */}
                 <button
                   type="submit"
-                  disabled={loading || success}
+                  disabled={isLoading || success}
                   className={cn(
                     'flex w-full items-center justify-center gap-2 rounded-lg bg-[#0a192f] px-4 py-3',
                     'text-sm font-semibold text-white transition-colors',
@@ -432,7 +483,7 @@ export function LoginPage() {
                     'disabled:cursor-not-allowed disabled:opacity-50',
                   )}
                 >
-                  {loading ? (
+                  {isLoading ? (
                     <>
                       <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                       Signing in...
@@ -454,7 +505,8 @@ export function LoginPage() {
               <div className="flex flex-col gap-3">
                 <button
                   type="button"
-                  disabled={loading || success}
+                  onClick={() => handleSSOLogin('microsoft')}
+                  disabled={isLoading || success}
                   className={cn(
                     'flex w-full items-center justify-center gap-3 rounded-lg border border-slate-200',
                     'bg-white px-4 py-3 text-sm font-medium text-slate-700',
@@ -468,7 +520,8 @@ export function LoginPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={loading || success}
+                  onClick={() => handleSSOLogin('google')}
+                  disabled={isLoading || success}
                   className={cn(
                     'flex w-full items-center justify-center gap-3 rounded-lg border border-slate-200',
                     'bg-white px-4 py-3 text-sm font-medium text-slate-700',
