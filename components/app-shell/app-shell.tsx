@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './sidebar'
 import { TopBar, type Breadcrumb } from './topbar'
-import { MOCK_USER } from './nav-config'
+import { useSession } from '@/lib/session-context'
+import { getInitials, ROLE_LABELS, toNavRole } from '@/lib/session'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -62,8 +63,17 @@ export function AppShell({
   approvalCount,
 }: AppShellProps) {
   const pathname = usePathname()
+  const session = useSession()
   const [collapsed, setCollapsed] = useCollapsed()
   const [mobileOpen, setMobileOpen] = React.useState(false)
+
+  // Derive sidebar user from session
+  const sidebarUser = React.useMemo(() => ({
+    name: session.fullName,
+    role: toNavRole(session),
+    roleLabel: ROLE_LABELS[session.roles[0]] ?? 'User',
+    initials: getInitials(session.fullName),
+  }), [session])
 
   // Close mobile drawer on route change
   React.useEffect(() => {
@@ -91,7 +101,7 @@ export function AppShell({
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
         pathname={pathname}
-        user={MOCK_USER}
+        user={sidebarUser}
         approvalCount={approvalCount}
       />
 
