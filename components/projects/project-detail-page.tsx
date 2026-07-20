@@ -285,9 +285,9 @@ function QuickActionsCard() {
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────��──────────────────────────────────
 // Props + main page
-// ────────────────────────────────────────�������────────────────────
+// ────────────────────────────────────────���������────────────────────
 
 export interface ProjectDetailPageProps {
   project?: ProjectData
@@ -297,6 +297,8 @@ export interface ProjectDetailPageProps {
   onBack?: () => void
   /** Pass true when the parent renders its own PhaseGateStepper to avoid duplication */
   hideStepper?: boolean
+  /** Pass true when the parent renders its own WorkflowTimeline to avoid duplication */
+  hideTimeline?: boolean
 }
 
 export function ProjectDetailPage({
@@ -306,6 +308,7 @@ export function ProjectDetailPage({
   loading = false,
   onBack,
   hideStepper = false,
+  hideTimeline = false,
 }: ProjectDetailPageProps) {
   const gateNumber = project?.gate ?? 4
   const currentGateCode = `G${gateNumber}`
@@ -336,24 +339,26 @@ export function ProjectDetailPage({
         {/* ── Left column (2/3) ── */}
         <div className="flex flex-col gap-6 lg:col-span-2">
 
-          {/* Activity Timeline */}
-          <Card className="overflow-hidden">
-            <CardHeader className="pb-3 border-b border-border">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">Activity Timeline</CardTitle>
-                <Badge variant="secondary" className="text-[10px]">
-                  {logs.length} events
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4 max-h-[520px] overflow-y-auto pr-1">
-              <WorkflowTimeline
-                logs={logs}
-                showActor
-                loading={loading}
-              />
-            </CardContent>
-          </Card>
+          {/* Activity Timeline — suppressed when parent owns it */}
+          {!hideTimeline && (
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-3 border-b border-border">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold">Activity Timeline</CardTitle>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {logs.length} events
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 max-h-[520px] overflow-y-auto pr-1">
+                <WorkflowTimeline
+                  logs={logs}
+                  showActor
+                  loading={loading}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Quick Actions */}
           <QuickActionsCard />

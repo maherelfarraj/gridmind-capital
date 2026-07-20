@@ -145,6 +145,7 @@ export default function ProjectDetailRoute() {
         project={project}
         onBack={handleBack}
         hideStepper
+        hideTimeline
       />
 
       {/* ── PhaseGateStepper — owned by this route per spec ── */}
