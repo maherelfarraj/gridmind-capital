@@ -5,26 +5,103 @@ import {
   Building2,
   Globe,
   Bell,
-  Save,
-  CheckCircle2,
+  Shield,
+  CheckCircle,
+  AlertCircle,
   AlertTriangle,
   Info,
-  Clock,
+  Lock,
   Mail,
   Smartphone,
-  MonitorSmartphone,
-  ChevronRight,
+  Monitor,
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  Download,
+  Pause,
+  Trash2,
+  X,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 /* ─────────────────────────────────────────────
-   Data
+   Mock data (spec-exact)
 ───────────────────────────────────────────── */
+const mockTenantSettings = {
+  name: 'GridMind Capital Demo',
+  slug: 'gridmind-demo',
+  plan: 'enterprise',
+  status: 'active',
+  timezone: 'UTC',
+  date_format: 'YYYY-MM-DD',
+  language: 'en',
+  default_currency: 'USD',
+  approval_threshold_low: 50000,
+  approval_threshold_medium: 250000,
+  approval_threshold_high: 1000000,
+  auto_escalation_hours: 48,
+  escalation_target: 'executive_sponsor',
+  notifications_email: true,
+  notifications_push: true,
+  notifications_in_app: true,
+  notifications_sms: false,
+  sso_provider: 'none',
+  mfa_required: false,
+  session_timeout: '2 hours',
+  max_concurrent_sessions: 5,
+}
+
+/* ─────────────────────────────────────────────
+   Select option data
+───────────────────────────────────────────── */
+const TIMEZONES = [
+  { value: 'UTC', label: 'UTC — Coordinated Universal Time' },
+  { value: 'America/New_York', label: 'America/New_York (EST/EDT)' },
+  { value: 'America/Chicago', label: 'America/Chicago (CST/CDT)' },
+  { value: 'America/Denver', label: 'America/Denver (MST/MDT)' },
+  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
+  { value: 'America/Sao_Paulo', label: 'America/Sao_Paulo' },
+  { value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
+  { value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)' },
+  { value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)' },
+  { value: 'Europe/Moscow', label: 'Europe/Moscow (MSK)' },
+  { value: 'Europe/Istanbul', label: 'Europe/Istanbul (TRT)' },
+  { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
+  { value: 'Asia/Riyadh', label: 'Asia/Riyadh (AST)' },
+  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
+  { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
+  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
+  { value: 'Australia/Sydney', label: 'Australia/Sydney (AEST)' },
+  { value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST)' },
+  { value: 'Africa/Cairo', label: 'Africa/Cairo (EET)' },
+  { value: 'Africa/Nairobi', label: 'Africa/Nairobi (EAT)' },
+  { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (SAST)' },
+]
+
+const DATE_FORMATS = [
+  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2026-01-20)' },
+  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY (20/01/2026)' },
+  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY (01/20/2026)' },
+  { value: 'DD MMM YYYY', label: 'DD MMM YYYY (20 Jan 2026)' },
+]
+
+const LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'fr', label: 'French' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'de', label: 'German' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'hi', label: 'Hindi' },
+]
 
 const CURRENCIES = [
   { value: 'USD', label: 'USD — US Dollar', group: 'Major' },
@@ -32,6 +109,8 @@ const CURRENCIES = [
   { value: 'GBP', label: 'GBP — British Pound', group: 'Major' },
   { value: 'JPY', label: 'JPY — Japanese Yen', group: 'Major' },
   { value: 'CHF', label: 'CHF — Swiss Franc', group: 'Major' },
+  { value: 'AUD', label: 'AUD — Australian Dollar', group: 'Major' },
+  { value: 'CAD', label: 'CAD — Canadian Dollar', group: 'Major' },
   { value: 'SAR', label: 'SAR — Saudi Riyal', group: 'Middle East' },
   { value: 'AED', label: 'AED — UAE Dirham', group: 'Middle East' },
   { value: 'QAR', label: 'QAR — Qatari Riyal', group: 'Middle East' },
@@ -44,20 +123,6 @@ const CURRENCIES = [
   { value: 'NGN', label: 'NGN — Nigerian Naira', group: 'Africa' },
   { value: 'KES', label: 'KES — Kenyan Shilling', group: 'Africa' },
   { value: 'MAD', label: 'MAD — Moroccan Dirham', group: 'Africa' },
-  { value: 'CAD', label: 'CAD — Canadian Dollar', group: 'Americas' },
-  { value: 'AUD', label: 'AUD — Australian Dollar', group: 'Oceania' },
-  { value: 'NZD', label: 'NZD — New Zealand Dollar', group: 'Oceania' },
-  { value: 'SGD', label: 'SGD — Singapore Dollar', group: 'Asia Pacific' },
-  { value: 'HKD', label: 'HKD — Hong Kong Dollar', group: 'Asia Pacific' },
-  { value: 'CNY', label: 'CNY — Chinese Yuan', group: 'Asia Pacific' },
-  { value: 'INR', label: 'INR — Indian Rupee', group: 'Asia Pacific' },
-  { value: 'KRW', label: 'KRW — South Korean Won', group: 'Asia Pacific' },
-  { value: 'MYR', label: 'MYR — Malaysian Ringgit', group: 'Asia Pacific' },
-  { value: 'THB', label: 'THB — Thai Baht', group: 'Asia Pacific' },
-  { value: 'IDR', label: 'IDR — Indonesian Rupiah', group: 'Asia Pacific' },
-  { value: 'PHP', label: 'PHP — Philippine Peso', group: 'Asia Pacific' },
-  { value: 'VND', label: 'VND — Vietnamese Dong', group: 'Asia Pacific' },
-  { value: 'PKR', label: 'PKR — Pakistani Rupee', group: 'Asia Pacific' },
   { value: 'BRL', label: 'BRL — Brazilian Real', group: 'Americas' },
   { value: 'MXN', label: 'MXN — Mexican Peso', group: 'Americas' },
   { value: 'CLP', label: 'CLP — Chilean Peso', group: 'Americas' },
@@ -68,83 +133,145 @@ const CURRENCIES = [
   { value: 'NOK', label: 'NOK — Norwegian Krone', group: 'Europe' },
   { value: 'DKK', label: 'DKK — Danish Krone', group: 'Europe' },
   { value: 'PLN', label: 'PLN — Polish Zloty', group: 'Europe' },
-  { value: 'CZK', label: 'CZK — Czech Koruna', group: 'Europe' },
-  { value: 'HUF', label: 'HUF — Hungarian Forint', group: 'Europe' },
-  { value: 'RON', label: 'RON — Romanian Leu', group: 'Europe' },
   { value: 'TRY', label: 'TRY — Turkish Lira', group: 'Europe' },
   { value: 'RUB', label: 'RUB — Russian Ruble', group: 'Europe' },
-  { value: 'UAH', label: 'UAH — Ukrainian Hryvnia', group: 'Europe' },
-  { value: 'ILS', label: 'ILS — Israeli Shekel', group: 'Middle East' },
-  { value: 'IRR', label: 'IRR — Iranian Rial', group: 'Middle East' },
-  { value: 'XAF', label: 'XAF — CFA Franc BEAC', group: 'Africa' },
-  { value: 'XOF', label: 'XOF — CFA Franc BCEAO', group: 'Africa' },
+  { value: 'CNY', label: 'CNY — Chinese Yuan', group: 'Asia Pacific' },
+  { value: 'INR', label: 'INR — Indian Rupee', group: 'Asia Pacific' },
+  { value: 'KRW', label: 'KRW — South Korean Won', group: 'Asia Pacific' },
+  { value: 'SGD', label: 'SGD — Singapore Dollar', group: 'Asia Pacific' },
+  { value: 'HKD', label: 'HKD — Hong Kong Dollar', group: 'Asia Pacific' },
+  { value: 'MYR', label: 'MYR — Malaysian Ringgit', group: 'Asia Pacific' },
+  { value: 'THB', label: 'THB — Thai Baht', group: 'Asia Pacific' },
+  { value: 'IDR', label: 'IDR — Indonesian Rupiah', group: 'Asia Pacific' },
+  { value: 'PHP', label: 'PHP — Philippine Peso', group: 'Asia Pacific' },
+  { value: 'VND', label: 'VND — Vietnamese Dong', group: 'Asia Pacific' },
+  { value: 'NZD', label: 'NZD — New Zealand Dollar', group: 'Asia Pacific' },
+  { value: 'TWD', label: 'TWD — Taiwan Dollar', group: 'Asia Pacific' },
 ]
 
-const TIMEZONES = [
-  { value: 'UTC', label: 'UTC — Coordinated Universal Time', group: 'Universal' },
-  { value: 'America/New_York', label: 'America/New_York (EST/EDT)', group: 'Americas' },
-  { value: 'America/Chicago', label: 'America/Chicago (CST/CDT)', group: 'Americas' },
-  { value: 'America/Denver', label: 'America/Denver (MST/MDT)', group: 'Americas' },
-  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)', group: 'Americas' },
-  { value: 'America/Toronto', label: 'America/Toronto', group: 'Americas' },
-  { value: 'America/Vancouver', label: 'America/Vancouver', group: 'Americas' },
-  { value: 'America/Sao_Paulo', label: 'America/Sao_Paulo', group: 'Americas' },
-  { value: 'Europe/London', label: 'Europe/London (GMT/BST)', group: 'Europe' },
-  { value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)', group: 'Europe' },
-  { value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)', group: 'Europe' },
-  { value: 'Europe/Madrid', label: 'Europe/Madrid', group: 'Europe' },
-  { value: 'Europe/Rome', label: 'Europe/Rome', group: 'Europe' },
-  { value: 'Europe/Amsterdam', label: 'Europe/Amsterdam', group: 'Europe' },
-  { value: 'Europe/Warsaw', label: 'Europe/Warsaw', group: 'Europe' },
-  { value: 'Europe/Istanbul', label: 'Europe/Istanbul', group: 'Europe' },
-  { value: 'Europe/Moscow', label: 'Europe/Moscow', group: 'Europe' },
-  { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)', group: 'Middle East' },
-  { value: 'Asia/Riyadh', label: 'Asia/Riyadh (AST)', group: 'Middle East' },
-  { value: 'Asia/Kuwait', label: 'Asia/Kuwait', group: 'Middle East' },
-  { value: 'Asia/Qatar', label: 'Asia/Qatar', group: 'Middle East' },
-  { value: 'Asia/Karachi', label: 'Asia/Karachi (PKT)', group: 'Asia' },
-  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)', group: 'Asia' },
-  { value: 'Asia/Dhaka', label: 'Asia/Dhaka (BST)', group: 'Asia' },
-  { value: 'Asia/Bangkok', label: 'Asia/Bangkok (ICT)', group: 'Asia' },
-  { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)', group: 'Asia' },
-  { value: 'Asia/Hong_Kong', label: 'Asia/Hong_Kong (HKT)', group: 'Asia' },
-  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)', group: 'Asia' },
-  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)', group: 'Asia' },
-  { value: 'Asia/Seoul', label: 'Asia/Seoul (KST)', group: 'Asia' },
-  { value: 'Australia/Sydney', label: 'Australia/Sydney (AEST/AEDT)', group: 'Oceania' },
-  { value: 'Australia/Melbourne', label: 'Australia/Melbourne', group: 'Oceania' },
-  { value: 'Australia/Perth', label: 'Australia/Perth (AWST)', group: 'Oceania' },
-  { value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST)', group: 'Oceania' },
-  { value: 'Africa/Cairo', label: 'Africa/Cairo (EET)', group: 'Africa' },
-  { value: 'Africa/Lagos', label: 'Africa/Lagos (WAT)', group: 'Africa' },
-  { value: 'Africa/Nairobi', label: 'Africa/Nairobi (EAT)', group: 'Africa' },
-  { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (SAST)', group: 'Africa' },
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', CHF: 'Fr',
+  AUD: 'A$', CAD: 'C$', NZD: 'NZ$', SGD: 'S$', HKD: 'HK$',
+  INR: '₹', KRW: '₩', BRL: 'R$', MXN: '$', RUB: '₽', TRY: '₺',
+  SEK: 'kr', NOK: 'kr', DKK: 'kr', PLN: 'zł',
+  SAR: '﷼', AED: 'د.إ', KWD: 'KD', BHD: 'BD', OMR: 'OMR',
+  QAR: 'QR', JOD: 'JD', EGP: 'E£', ZAR: 'R',
+}
+
+const SESSION_TIMEOUTS = [
+  { value: '15 minutes', label: '15 minutes' },
+  { value: '30 minutes', label: '30 minutes' },
+  { value: '1 hour', label: '1 hour' },
+  { value: '2 hours', label: '2 hours' },
+  { value: '4 hours', label: '4 hours' },
+  { value: '8 hours', label: '8 hours' },
+  { value: '24 hours', label: '24 hours' },
 ]
+
+const SSO_PROVIDERS = [
+  { value: 'none', label: 'None (local auth only)' },
+  { value: 'microsoft_entra', label: 'Microsoft Entra ID' },
+  { value: 'google_workspace', label: 'Google Workspace' },
+  { value: 'okta', label: 'Okta' },
+  { value: 'auth0', label: 'Auth0' },
+]
+
+const ESCALATION_TARGETS = [
+  { value: 'executive_sponsor', label: 'Executive Sponsor' },
+  { value: 'pmo_director', label: 'PMO Director' },
+  { value: 'tenant_admin', label: 'Tenant Admin' },
+  { value: 'board', label: 'Board' },
+]
+
+const NOTIFICATION_PRIORITIES = [
+  { value: 'low', label: 'Low' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'high', label: 'High' },
+  { value: 'urgent', label: 'Urgent' },
+]
+
+/* ─────────────────────────────────────────────
+   Form state
+───────────────────────────────────────────── */
+interface FormState {
+  orgName: string
+  timezone: string
+  dateFormat: string
+  language: string
+  currency: string
+  thresholdLow: string
+  thresholdMedium: string
+  thresholdHigh: string
+  escalationHours: string
+  escalationTarget: string
+  notifyEmail: boolean
+  notifyPush: boolean
+  notifyInApp: boolean
+  notifySms: boolean
+  notifPriorities: Record<string, string>
+  ssoProvider: string
+  mfaRequired: boolean
+  sessionTimeout: string
+  maxSessions: string
+}
+
+const DEFAULT_FORM: FormState = {
+  orgName: mockTenantSettings.name,
+  timezone: mockTenantSettings.timezone,
+  dateFormat: mockTenantSettings.date_format,
+  language: mockTenantSettings.language,
+  currency: mockTenantSettings.default_currency,
+  thresholdLow: String(mockTenantSettings.approval_threshold_low),
+  thresholdMedium: String(mockTenantSettings.approval_threshold_medium),
+  thresholdHigh: String(mockTenantSettings.approval_threshold_high),
+  escalationHours: String(mockTenantSettings.auto_escalation_hours),
+  escalationTarget: mockTenantSettings.escalation_target,
+  notifyEmail: mockTenantSettings.notifications_email,
+  notifyPush: mockTenantSettings.notifications_push,
+  notifyInApp: mockTenantSettings.notifications_in_app,
+  notifySms: mockTenantSettings.notifications_sms,
+  notifPriorities: {
+    approval_requests: 'high',
+    approval_decisions: 'normal',
+    project_updates: 'normal',
+    sla_warnings: 'high',
+    escalations: 'urgent',
+    system_alerts: 'low',
+  },
+  ssoProvider: mockTenantSettings.sso_provider,
+  mfaRequired: mockTenantSettings.mfa_required,
+  sessionTimeout: '2 hours',
+  maxSessions: String(mockTenantSettings.max_concurrent_sessions),
+}
 
 /* ─────────────────────────────────────────────
    Toggle Switch
 ───────────────────────────────────────────── */
-interface ToggleProps {
+function Toggle({
+  checked,
+  onChange,
+  id,
+  disabled,
+}: {
   checked: boolean
   onChange: (v: boolean) => void
   id: string
   disabled?: boolean
-}
-
-function Toggle({ checked, onChange, id, disabled }: ToggleProps) {
+}) {
   return (
     <button
       role="switch"
       aria-checked={checked}
       id={id}
+      type="button"
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-transparent',
         'transition-colors duration-200 ease-in-out',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0a192f]',
         'disabled:pointer-events-none disabled:opacity-40',
-        checked ? 'bg-[#64ffda]' : 'bg-muted',
+        checked ? 'bg-[#0a192f]' : 'bg-slate-200',
       )}
     >
       <span
@@ -159,552 +286,824 @@ function Toggle({ checked, onChange, id, disabled }: ToggleProps) {
 }
 
 /* ─────────────────────────────────────────────
-   Section header atom
+   Sub-section header (inside a card)
 ───────────────────────────────────────────── */
-function SectionHeader({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: React.ElementType
-  title: string
-  description: string
-}) {
+function SubHeader({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-[#64ffda]">
-        <Icon className="size-4" aria-hidden="true" />
-      </div>
-      <div>
-        <h2 className="font-sans text-base font-semibold text-card-foreground">{title}</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-      </div>
+    <div className="mb-4">
+      <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+      {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
     </div>
   )
 }
 
 /* ─────────────────────────────────────────────
-   Field row: label + control side by side on md+
+   Section divider (with optional top-border spacing)
 ───────────────────────────────────────────── */
-function FieldRow({
+function SectionDivider({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="mt-8 border-t border-slate-100 pt-6">
+      <SubHeader title={title} description={description} />
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Field: label + input stacked
+───────────────────────────────────────────── */
+function Field({
   label,
-  description,
+  helper,
   htmlFor,
+  required,
   children,
+  error,
 }: {
   label: string
-  description?: string
+  helper?: React.ReactNode
   htmlFor?: string
+  required?: boolean
   children: React.ReactNode
+  error?: string
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 py-4 md:grid-cols-[1fr_1.5fr] md:items-start">
-      <div>
-        <label htmlFor={htmlFor} className="block text-sm font-medium text-foreground">
-          {label}
-        </label>
-        {description && (
-          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
-        )}
-      </div>
-      <div>{children}</div>
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={htmlFor} className="text-sm font-medium text-slate-700">
+        {label}
+        {required && <span className="ml-0.5 text-red-500" aria-hidden="true">*</span>}
+      </label>
+      {children}
+      {error ? (
+        <p className="text-xs text-red-500">{error}</p>
+      ) : helper ? (
+        <p className="text-xs text-slate-500">{helper}</p>
+      ) : null}
     </div>
   )
 }
 
 /* ─────────────────────────────────────────────
-   Divider
+   Delete Confirmation Modal
 ───────────────────────────────────────────── */
-function Divider() {
-  return <div className="border-t border-border" />
-}
+function DeleteModal({ onClose }: { onClose: () => void }) {
+  const [confirmText, setConfirmText] = React.useState('')
+  const [deleting, setDeleting] = React.useState(false)
 
-/* ─────────────────────────────────────────────
-   Toast-style inline feedback
-───────────────────────────────────────────── */
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+  async function handleDelete() {
+    if (confirmText !== 'DELETE') return
+    setDeleting(true)
+    await new Promise(r => setTimeout(r, 1500))
+    setDeleting(false)
+    onClose()
+  }
 
-function SaveFeedback({ state }: { state: SaveState }) {
-  if (state === 'idle') return null
   return (
     <div
-      role="status"
-      aria-live="polite"
-      className={cn(
-        'flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium',
-        'transition-all duration-300',
-        state === 'saving' && 'border-border bg-muted text-muted-foreground',
-        state === 'saved' && 'border-[#22c55e]/30 bg-[#22c55e]/10 text-[#22c55e]',
-        state === 'error' && 'border-[#ef4444]/30 bg-[#ef4444]/10 text-[#ef4444]',
-      )}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-modal-title"
     >
-      {state === 'saving' && (
-        <>
-          <svg className="size-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          Saving changes…
-        </>
-      )}
-      {state === 'saved' && (
-        <>
-          <CheckCircle2 className="size-4" aria-hidden="true" />
-          Settings saved successfully
-        </>
-      )}
-      {state === 'error' && (
-        <>
-          <AlertTriangle className="size-4" aria-hidden="true" />
-          Failed to save. Please try again.
-        </>
-      )}
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+              <Trash2 className="size-5 text-red-600" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 id="delete-modal-title" className="text-base font-semibold text-slate-900">
+                Delete Account
+              </h2>
+              <p className="text-xs text-slate-500">This action cannot be undone</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+            <p className="text-sm font-medium text-red-800">Warning: This will permanently delete:</p>
+            <ul className="mt-2 space-y-1 text-xs text-red-700 list-disc list-inside">
+              <li>All projects, documents, and workflows</li>
+              <li>All user accounts and permissions</li>
+              <li>All financial data and audit trails</li>
+              <li>All integrations and API keys</li>
+            </ul>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="delete-confirm" className="text-sm font-medium text-slate-700">
+              Type <span className="font-mono font-bold text-red-600">DELETE</span> to confirm
+            </label>
+            <input
+              id="delete-confirm"
+              type="text"
+              value={confirmText}
+              onChange={e => setConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={confirmText !== 'DELETE' || deleting}
+            className={cn(
+              'flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white',
+              'hover:bg-red-700 transition-colors',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+            )}
+          >
+            {deleting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+            Delete Permanently
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
 /* ─────────────────────────────────────────────
-   Form state
+   Tab definitions
 ───────────────────────────────────────────── */
-interface FormState {
-  orgName: string
-  currency: string
-  timezone: string
-  thresholdLow: string
-  thresholdMedium: string
-  thresholdHigh: string
-  notifyEmail: boolean
-  notifyPush: boolean
-  notifyInApp: boolean
-  escalationHours: string
-}
+type Tab = 'general' | 'currency' | 'notifications' | 'security'
 
-interface FormErrors {
-  orgName?: string
-  thresholdLow?: string
-  thresholdMedium?: string
-  thresholdHigh?: string
-  escalationHours?: string
-}
-
-const DEFAULT_FORM: FormState = {
-  orgName: 'GridMind Capital Ltd.',
-  currency: 'SAR',
-  timezone: 'Asia/Riyadh',
-  thresholdLow: '500000',
-  thresholdMedium: '5000000',
-  thresholdHigh: '25000000',
-  notifyEmail: true,
-  notifyPush: false,
-  notifyInApp: true,
-  escalationHours: '48',
-}
-
-function validate(form: FormState): FormErrors {
-  const errors: FormErrors = {}
-  if (!form.orgName.trim()) errors.orgName = 'Organization name is required'
-  else if (form.orgName.trim().length < 3) errors.orgName = 'Must be at least 3 characters'
-
-  const low = Number(form.thresholdLow)
-  const med = Number(form.thresholdMedium)
-  const high = Number(form.thresholdHigh)
-
-  if (!form.thresholdLow || isNaN(low) || low < 0) errors.thresholdLow = 'Enter a valid amount'
-  if (!form.thresholdMedium || isNaN(med) || med < 0) errors.thresholdMedium = 'Enter a valid amount'
-  if (!form.thresholdHigh || isNaN(high) || high < 0) errors.thresholdHigh = 'Enter a valid amount'
-  if (!errors.thresholdLow && !errors.thresholdMedium && low >= med) {
-    errors.thresholdMedium = 'Must be greater than Low threshold'
-  }
-  if (!errors.thresholdMedium && !errors.thresholdHigh && med >= high) {
-    errors.thresholdHigh = 'Must be greater than Medium threshold'
-  }
-
-  const esc = Number(form.escalationHours)
-  if (!form.escalationHours || isNaN(esc) || esc < 1 || esc > 8760) {
-    errors.escalationHours = 'Enter a value between 1 and 8760 hours'
-  }
-  return errors
-}
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: 'general', label: 'General', icon: Building2 },
+  { id: 'currency', label: 'Currency & Thresholds', icon: Globe },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'security', label: 'Security', icon: Shield },
+]
 
 /* ─────────────────────────────────────────────
    Main Page
 ───────────────────────────────────────────── */
 export function TenantSettingsPage() {
+  const [activeTab, setActiveTab] = React.useState<Tab>('general')
   const [form, setForm] = React.useState<FormState>(DEFAULT_FORM)
-  const [errors, setErrors] = React.useState<FormErrors>({})
-  const [saveState, setSaveState] = React.useState<SaveState>('idle')
-  const [touched, setTouched] = React.useState<Partial<Record<keyof FormState, boolean>>>({})
+  const [saving, setSaving] = React.useState(false)
+  const [showDeleteModal, setShowDeleteModal] = React.useState(false)
+  const [orgNameError, setOrgNameError] = React.useState('')
+
+  // Track unsaved changes
+  const isDirty = JSON.stringify(form) !== JSON.stringify(DEFAULT_FORM)
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm(prev => {
-      const next = { ...prev, [key]: value }
-      // Live-validate touched fields
-      if (touched[key]) {
-        const e = validate(next)
-        setErrors(prev => ({ ...prev, [key]: e[key as keyof FormErrors] }))
-      }
-      return next
-    })
-  }
-
-  function touch(key: keyof FormState) {
-    setTouched(prev => ({ ...prev, [key]: true }))
-    const e = validate(form)
-    setErrors(prev => ({ ...prev, [key]: e[key as keyof FormErrors] }))
-  }
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault()
-    // Mark all validatable fields as touched
-    setTouched({ orgName: true, thresholdLow: true, thresholdMedium: true, thresholdHigh: true, escalationHours: true })
-    const errs = validate(form)
-    setErrors(errs)
-    if (Object.keys(errs).length > 0) return
-
-    setSaveState('saving')
-    // Simulate API call
-    await new Promise(r => setTimeout(r, 1400))
-    // Mock: randomly fail 20% of the time to show error state
-    if (Math.random() < 0.2) {
-      setSaveState('error')
-      setTimeout(() => setSaveState('idle'), 4000)
-    } else {
-      setSaveState('saved')
-      setTimeout(() => setSaveState('idle'), 3500)
+    setForm(prev => ({ ...prev, [key]: value }))
+    if (key === 'orgName') {
+      const v = value as string
+      if (!v.trim()) setOrgNameError('Organization name is required')
+      else if (v.trim().length < 2) setOrgNameError('Must be at least 2 characters')
+      else setOrgNameError('')
     }
   }
 
-  const currencySymbol = { USD: '$', EUR: '€', GBP: '£', SAR: 'SAR', AED: 'AED' }[form.currency] ?? form.currency
+  function handleDiscard() {
+    setForm(DEFAULT_FORM)
+    setOrgNameError('')
+  }
+
+  async function handleSave() {
+    if (!form.orgName.trim()) {
+      setOrgNameError('Organization name is required')
+      setActiveTab('general')
+      return
+    }
+    setSaving(true)
+    await new Promise(r => setTimeout(r, 1200))
+    setSaving(false)
+  }
+
+  const currencySymbol = CURRENCY_SYMBOLS[form.currency] ?? form.currency
+
+  // Date format preview
+  const DATE_PREVIEWS: Record<string, string> = {
+    'YYYY-MM-DD': '2026-01-20',
+    'DD/MM/YYYY': '20/01/2026',
+    'MM/DD/YYYY': '01/20/2026',
+    'DD MMM YYYY': '20 Jan 2026',
+  }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6">
+    <>
+      <div className="min-h-screen bg-slate-50 p-6">
+        <div className="mx-auto max-w-4xl">
 
-      {/* Page header */}
-      <div>
-        <h1 className="font-sans text-2xl font-bold tracking-tight text-foreground">
-          Tenant Settings
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Manage your organization configuration and notification preferences.
-        </p>
-      </div>
+          {/* Page header */}
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Tenant Settings</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Manage your organization configuration and platform preferences
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {isDirty && (
+                <button
+                  type="button"
+                  onClick={handleDiscard}
+                  disabled={saving}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700',
+                    'hover:bg-slate-50 transition-colors',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                >
+                  <X className="size-4" aria-hidden="true" />
+                  Discard
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!isDirty || saving}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-lg bg-[#0a192f] px-3 py-2 text-sm font-medium text-white',
+                  'hover:bg-slate-800 transition-colors',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                )}
+              >
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <CheckCircle className="size-4" aria-hidden="true" />
+                )}
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
 
-      <form onSubmit={handleSave} noValidate aria-label="Tenant settings form">
-
-        {/* ── 1. General ── */}
-        <Card className="mb-6">
-          <CardHeader className="pb-2">
-            <SectionHeader
-              icon={Building2}
-              title="General"
-              description="Basic organization identity and subscription details."
-            />
-          </CardHeader>
-          <CardContent className="pt-2">
-            <FieldRow
-              label="Organization Name"
-              description="Displayed across the platform and in PDF exports."
-              htmlFor="org-name"
-            >
-              <Input
-                id="org-name"
-                value={form.orgName}
-                onChange={e => setField('orgName', e.target.value)}
-                onBlur={() => touch('orgName')}
-                error={errors.orgName}
-                placeholder="e.g. GridMind Capital Ltd."
-                fullWidth
-                required
-              />
-            </FieldRow>
-
-            <Divider />
-
-            <FieldRow label="Plan" description="Your current subscription tier.">
-              <div className="flex items-center gap-2 pt-1">
-                <Badge variant="gate">Enterprise</Badge>
-                <span className="text-xs text-muted-foreground">Renewable EPC Edition</span>
-              </div>
-            </FieldRow>
-
-            <Divider />
-
-            <FieldRow label="Status" description="Current tenant operational status.">
-              <div className="flex items-center gap-2 pt-1">
-                <span className="inline-flex size-2 rounded-full bg-[#22c55e] ring-2 ring-[#22c55e]/30" aria-hidden="true" />
-                <Badge variant="approved">Active</Badge>
-                <span className="text-xs text-muted-foreground">Since Jan 2024</span>
-              </div>
-            </FieldRow>
-          </CardContent>
-        </Card>
-
-        {/* ── 2. Currency & Thresholds ── */}
-        <Card className="mb-6">
-          <CardHeader className="pb-2">
-            <SectionHeader
-              icon={Globe}
-              title="Currency & Thresholds"
-              description="Set the default currency and approval trigger amounts."
-            />
-          </CardHeader>
-          <CardContent className="pt-2">
-
-            <FieldRow
-              label="Default Currency"
-              description="Used for all budget displays and export reports."
-            >
-              <Select
-                options={CURRENCIES}
-                value={form.currency}
-                onValueChange={v => setField('currency', v ?? 'USD')}
-                placeholder="Select currency"
-                fullWidth
-              />
-            </FieldRow>
-
-            <Divider />
-
-            <FieldRow
-              label="Timezone"
-              description="Controls schedule timestamps and notification delivery times."
-            >
-              <Select
-                options={TIMEZONES}
-                value={form.timezone}
-                onValueChange={v => setField('timezone', v ?? 'UTC')}
-                placeholder="Select timezone"
-                fullWidth
-              />
-            </FieldRow>
-
-            <Divider />
-
-            {/* Threshold row — 3 inline inputs */}
-            <div className="grid grid-cols-1 gap-3 py-4 md:grid-cols-[1fr_1.5fr]">
+          {/* Unsaved changes indicator */}
+          {isDirty && (
+            <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertCircle className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
               <div>
-                <p className="text-sm font-medium text-foreground">Approval Thresholds</p>
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  Transactions above each threshold trigger the corresponding approval workflow tier.
-                </p>
-                <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-2">
-                  <Info className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="text-xs text-muted-foreground">
-                    Currency: <span className="font-semibold text-foreground">{form.currency}</span>
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-3 gap-3">
-                  {(
-                    [
-                      { key: 'thresholdLow', tier: 'Low', color: 'text-[#22c55e]' },
-                      { key: 'thresholdMedium', tier: 'Medium', color: 'text-[#f59e0b]' },
-                      { key: 'thresholdHigh', tier: 'High', color: 'text-[#ef4444]' },
-                    ] as const
-                  ).map(({ key, tier, color }) => (
-                    <div key={key} className="flex flex-col gap-1">
-                      <span className={cn('text-xs font-semibold', color)}>{tier}</span>
-                      <div className="relative">
-                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                          {currencySymbol}
-                        </span>
-                        <input
-                          id={key}
-                          type="number"
-                          min={0}
-                          step={1000}
-                          value={form[key]}
-                          onChange={e => setField(key, e.target.value)}
-                          onBlur={() => touch(key)}
-                          aria-label={`${tier} threshold amount in ${form.currency}`}
-                          className={cn(
-                            'w-full rounded-lg border bg-input/30 py-2 pl-7 pr-2 font-mono text-sm text-foreground',
-                            'outline-none transition-colors',
-                            'focus:border-ring focus:ring-2 focus:ring-ring/30',
-                            errors[key]
-                              ? 'border-[#ef4444] focus:ring-[#ef4444]/20'
-                              : 'border-border hover:border-ring/50',
-                          )}
-                        />
-                      </div>
-                      {errors[key] && (
-                        <p className="text-[11px] text-[#ef4444]">{errors[key]}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Ordering: Low &lt; Medium &lt; High. All values in {form.currency}.
-                </p>
+                <p className="text-sm font-medium text-amber-800">You have unsaved changes</p>
+                <p className="text-xs text-amber-600">Save or discard before leaving</p>
               </div>
             </div>
+          )}
 
-          </CardContent>
-        </Card>
+          {/* Tab navigation */}
+          <div className="mb-6 border-b border-slate-200">
+            <nav className="flex gap-0" role="tablist" aria-label="Settings sections">
+              {TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`tabpanel-${tab.id}`}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 pb-3 text-sm transition-colors',
+                    activeTab === tab.id
+                      ? 'border-b-2 border-[#0a192f] font-medium text-[#0a192f]'
+                      : 'text-slate-500 hover:text-slate-700',
+                  )}
+                >
+                  <tab.icon className="size-4" aria-hidden="true" />
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
 
-        {/* ── 3. Notifications ── */}
-        <Card className="mb-8">
-          <CardHeader className="pb-2">
-            <SectionHeader
-              icon={Bell}
-              title="Notifications"
-              description="Control how and when the platform sends alerts to your team."
-            />
-          </CardHeader>
-          <CardContent className="pt-2">
-
-            {/* Toggle rows */}
-            {(
-              [
-                {
-                  key: 'notifyEmail' as const,
-                  icon: Mail,
-                  label: 'Email Notifications',
-                  description: 'Send approval requests, gate alerts, and digests to user email addresses.',
-                },
-                {
-                  key: 'notifyPush' as const,
-                  icon: Smartphone,
-                  label: 'Push Notifications',
-                  description: 'Deliver real-time alerts to mobile devices via the GridMind mobile app.',
-                },
-                {
-                  key: 'notifyInApp' as const,
-                  icon: MonitorSmartphone,
-                  label: 'In-App Notifications',
-                  description: 'Show notification bell alerts inside the platform for all active sessions.',
-                },
-              ]
-            ).map(({ key, icon: Icon, label, description }, i, arr) => (
-              <React.Fragment key={key}>
-                <div className="flex items-center justify-between gap-4 py-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                      <Icon className="size-4" aria-hidden="true" />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor={`toggle-${key}`}
-                        className="block text-sm font-medium text-foreground cursor-pointer"
-                      >
-                        {label}
-                      </label>
-                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
-                    </div>
-                  </div>
-                  <Toggle
-                    id={`toggle-${key}`}
-                    checked={form[key]}
-                    onChange={v => setField(key, v)}
-                  />
-                </div>
-                {i < arr.length - 1 && <Divider />}
-              </React.Fragment>
-            ))}
-
-            <Divider />
-
-            {/* Auto-escalation */}
-            <FieldRow
-              label="Auto-escalation Delay"
-              description="Unactioned approvals are automatically escalated after this many hours."
-              htmlFor="escalation-hours"
+          {/* ── TAB 1: General ── */}
+          {activeTab === 'general' && (
+            <div
+              id="tabpanel-general"
+              role="tabpanel"
+              aria-label="General settings"
             >
-              <div className="flex items-start gap-3">
-                <div className="relative flex-1">
-                  <Clock
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <input
-                    id="escalation-hours"
-                    type="number"
-                    min={1}
-                    max={8760}
-                    step={1}
-                    value={form.escalationHours}
-                    onChange={e => setField('escalationHours', e.target.value)}
-                    onBlur={() => touch('escalationHours')}
-                    aria-describedby="escalation-hint"
-                    placeholder="48"
-                    className={cn(
-                      'w-full rounded-lg border bg-input/30 py-2 pl-9 pr-16 font-mono text-sm text-foreground',
-                      'outline-none transition-colors',
-                      'focus:border-ring focus:ring-2 focus:ring-ring/30',
-                      errors.escalationHours
-                        ? 'border-[#ef4444] focus:ring-[#ef4444]/20'
-                        : 'border-border hover:border-ring/50',
-                    )}
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                    hours
-                  </span>
-                </div>
-                {/* Quick-set chips */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {[24, 48, 72, 168].map(h => (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={() => setField('escalationHours', String(h))}
+              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
+                <SubHeader
+                  title="Organization Information"
+                  description="Basic details about your organization"
+                />
+                <div className="flex flex-col gap-4">
+                  <Field
+                    label="Organization Name"
+                    htmlFor="org-name"
+                    required
+                    helper="This name appears across the platform"
+                    error={orgNameError}
+                  >
+                    <input
+                      id="org-name"
+                      type="text"
+                      value={form.orgName}
+                      onChange={e => setField('orgName', e.target.value)}
+                      placeholder="GridMind Capital Demo"
                       className={cn(
-                        'rounded-md border px-2 py-1 text-xs font-medium transition-colors',
-                        form.escalationHours === String(h)
-                          ? 'border-[#64ffda]/50 bg-[#64ffda]/10 text-[#64ffda]'
-                          : 'border-border bg-muted text-muted-foreground hover:text-foreground',
+                        'w-full rounded-lg border px-3 py-2 text-sm text-slate-900 outline-none transition-colors',
+                        'focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/10',
+                        orgNameError ? 'border-red-400' : 'border-slate-200 hover:border-slate-300',
                       )}
+                    />
+                  </Field>
+
+                  <Field
+                    label="Organization Slug"
+                    htmlFor="org-slug"
+                    helper="Used in URLs and API references"
+                  >
+                    <div className="relative">
+                      <input
+                        id="org-slug"
+                        type="text"
+                        value={form.orgName ? form.orgName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : mockTenantSettings.slug}
+                        disabled
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pr-9 text-sm text-slate-500 outline-none"
+                        aria-readonly="true"
+                      />
+                      <Lock className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                    </div>
+                  </Field>
+
+                  <Field label="Current Plan" helper="">
+                    <div className="flex items-center gap-2 py-1">
+                      <span className="inline-flex items-center rounded-full bg-[#0a192f] px-3 py-1 text-xs font-medium text-white">
+                        Enterprise
+                      </span>
+                      <span className="text-xs text-slate-500">Contact support to upgrade or downgrade</span>
+                      <a href="#" className="ml-1 text-xs text-sky-600 hover:underline">Upgrade</a>
+                    </div>
+                  </Field>
+
+                  <Field label="Account Status" helper="Your account is in good standing">
+                    <div className="flex items-center gap-2 py-1">
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                        Active
+                      </span>
+                    </div>
+                  </Field>
+                </div>
+
+                <SectionDivider
+                  title="Regional Settings"
+                />
+
+                <div className="flex flex-col gap-4">
+                  <Field
+                    label="Timezone"
+                    htmlFor="field-timezone"
+                    helper="All dates and times displayed in this timezone"
+                  >
+                    <Select
+                      id="field-timezone"
+                      options={TIMEZONES}
+                      value={form.timezone}
+                      onValueChange={v => setField('timezone', v ?? 'UTC')}
+                      placeholder="Select timezone"
+                      fullWidth
+                    />
+                  </Field>
+
+                  <Field
+                    label="Date Format"
+                    htmlFor="field-date-format"
+                    helper={`Preview: ${DATE_PREVIEWS[form.dateFormat] ?? '2026-01-20'}`}
+                  >
+                    <Select
+                      id="field-date-format"
+                      options={DATE_FORMATS}
+                      value={form.dateFormat}
+                      onValueChange={v => setField('dateFormat', v ?? 'YYYY-MM-DD')}
+                      placeholder="Select date format"
+                      fullWidth
+                    />
+                  </Field>
+
+                  <Field
+                    label="Language"
+                    htmlFor="field-language"
+                    helper="Interface language"
+                  >
+                    <Select
+                      id="field-language"
+                      options={LANGUAGES}
+                      value={form.language}
+                      onValueChange={v => setField('language', v ?? 'en')}
+                      placeholder="Select language"
+                      fullWidth
+                    />
+                  </Field>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 2: Currency & Thresholds ── */}
+          {activeTab === 'currency' && (
+            <div id="tabpanel-currency" role="tabpanel" aria-label="Currency and threshold settings">
+              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
+                <SubHeader
+                  title="Default Currency"
+                  description="Base currency for all financial calculations"
+                />
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <Field label="Base Currency" htmlFor="field-currency" helper="All financial reports will use this currency">
+                      <Select
+                        id="field-currency"
+                        options={CURRENCIES}
+                        value={form.currency}
+                        onValueChange={v => setField('currency', v ?? 'USD')}
+                        placeholder="Select currency"
+                        fullWidth
+                      />
+                    </Field>
+                  </div>
+                  <div className="mt-5 text-3xl font-light text-slate-300 select-none" aria-hidden="true">
+                    {currencySymbol}
+                  </div>
+                </div>
+
+                <SectionDivider
+                  title="Approval Thresholds"
+                  description="Define monetary thresholds for automatic approval routing"
+                />
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {/* Low */}
+                  <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700">Low</span>
+                      <ArrowDown className="size-4 text-green-500" aria-hidden="true" />
+                    </div>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                        {currencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.thresholdLow}
+                        onChange={e => setField('thresholdLow', e.target.value)}
+                        placeholder="50000"
+                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-7 pr-3 text-sm outline-none focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/10"
+                        aria-label="Low threshold amount"
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-500">Up to this amount</p>
+                    <p className="mt-1 text-xs text-slate-600">Approver: Project Manager</p>
+                  </div>
+
+                  {/* Medium */}
+                  <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700">Medium</span>
+                      <ArrowRight className="size-4 text-amber-500" aria-hidden="true" />
+                    </div>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                        {currencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.thresholdMedium}
+                        onChange={e => setField('thresholdMedium', e.target.value)}
+                        placeholder="250000"
+                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-7 pr-3 text-sm outline-none focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/10"
+                        aria-label="Medium threshold amount"
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-500">Between Low and High</p>
+                    <p className="mt-1 text-xs text-slate-600">Approver: PMO Director</p>
+                  </div>
+
+                  {/* High */}
+                  <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700">High</span>
+                      <ArrowUp className="size-4 text-red-500" aria-hidden="true" />
+                    </div>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                        {currencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.thresholdHigh}
+                        onChange={e => setField('thresholdHigh', e.target.value)}
+                        placeholder="1000000"
+                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-7 pr-3 text-sm outline-none focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/10"
+                        aria-label="High threshold amount"
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-500">Above this amount</p>
+                    <p className="mt-1 text-xs text-slate-600">Approver: Executive Sponsor</p>
+                  </div>
+                </div>
+
+                {/* Board approval note */}
+                <div className="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <Info className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+                  <p className="text-sm text-slate-600">
+                    Amounts above High threshold require Board approval.{' '}
+                    <a href="#" className="text-sky-600 hover:underline">Configure in Approval Rules</a>
+                  </p>
+                </div>
+
+                <SectionDivider title="Auto-Escalation" />
+
+                <div className="flex flex-col gap-4">
+                  <Field
+                    label="Auto-Escalation After"
+                    htmlFor="field-esc-hours"
+                    helper="Approvals pending longer than this will auto-escalate (1–168 hours)"
+                  >
+                    <div className="relative">
+                      <input
+                        id="field-esc-hours"
+                        type="number"
+                        min={1}
+                        max={168}
+                        value={form.escalationHours}
+                        onChange={e => setField('escalationHours', e.target.value)}
+                        placeholder="48"
+                        className="w-full rounded-lg border border-slate-200 py-2 pl-3 pr-14 text-sm outline-none focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/10"
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                        hours
+                      </span>
+                    </div>
+                  </Field>
+
+                  <Field
+                    label="Escalate To"
+                    htmlFor="field-esc-target"
+                    helper="Role that receives escalated approvals"
+                  >
+                    <Select
+                      id="field-esc-target"
+                      options={ESCALATION_TARGETS}
+                      value={form.escalationTarget}
+                      onValueChange={v => setField('escalationTarget', v ?? 'executive_sponsor')}
+                      placeholder="Select escalation target"
+                      fullWidth
+                    />
+                  </Field>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 3: Notifications ── */}
+          {activeTab === 'notifications' && (
+            <div id="tabpanel-notifications" role="tabpanel" aria-label="Notification settings">
+              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
+                <SubHeader title="Notification Channels" />
+
+                <div className="flex flex-col gap-0 divide-y divide-slate-100">
+                  {[
+                    {
+                      key: 'notifyEmail' as const,
+                      icon: Mail,
+                      label: 'Email Notifications',
+                      desc: 'Receive updates via email',
+                      enterprise: false,
+                    },
+                    {
+                      key: 'notifyPush' as const,
+                      icon: Bell,
+                      label: 'Push Notifications',
+                      desc: 'Browser push notifications',
+                      enterprise: false,
+                    },
+                    {
+                      key: 'notifyInApp' as const,
+                      icon: Monitor,
+                      label: 'In-App Notifications',
+                      desc: 'Notification center in platform',
+                      enterprise: false,
+                    },
+                    {
+                      key: 'notifySms' as const,
+                      icon: Smartphone,
+                      label: 'SMS Notifications',
+                      desc: 'Critical alerts via SMS',
+                      enterprise: true,
+                    },
+                  ].map(({ key, icon: Icon, label, desc, enterprise }) => (
+                    <div key={key} className="flex items-center justify-between gap-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                          <Icon className="size-4 text-slate-500" aria-hidden="true" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <label htmlFor={`toggle-${key}`} className="cursor-pointer text-sm font-medium text-slate-700">
+                              {label}
+                            </label>
+                            {enterprise && (
+                              <span className="inline-flex items-center rounded-full bg-[#0a192f] px-2 py-0.5 text-[10px] font-medium text-white">
+                                Enterprise
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500">{desc}</p>
+                        </div>
+                      </div>
+                      <Toggle
+                        id={`toggle-${key}`}
+                        checked={form[key]}
+                        onChange={v => setField(key, v)}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <SectionDivider title="Notification Preferences" />
+
+                <div className="flex flex-col gap-3">
+                  {[
+                    { id: 'approval_requests', label: 'Approval Requests', desc: 'When someone requests your approval' },
+                    { id: 'approval_decisions', label: 'Approval Decisions', desc: 'When your approval is decided' },
+                    { id: 'project_updates', label: 'Project Updates', desc: 'When project status changes' },
+                    { id: 'sla_warnings', label: 'SLA Warnings', desc: 'When approvals are nearing deadline' },
+                    { id: 'escalations', label: 'Escalations', desc: 'When approvals are escalated' },
+                    { id: 'system_alerts', label: 'System Alerts', desc: 'Platform maintenance and updates' },
+                  ].map(item => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 hover:bg-slate-50 transition-colors"
                     >
-                      {h === 168 ? '1w' : `${h}h`}
-                    </button>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">{item.label}</p>
+                        <p className="text-xs text-slate-500">{item.desc}</p>
+                      </div>
+                      <Select
+                        options={NOTIFICATION_PRIORITIES}
+                        value={form.notifPriorities[item.id]}
+                        onValueChange={v =>
+                          setField('notifPriorities', {
+                            ...form.notifPriorities,
+                            [item.id]: v ?? 'normal',
+                          })
+                        }
+                        placeholder="Priority"
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
-              {errors.escalationHours && (
-                <p className="mt-1.5 text-xs text-[#ef4444]">{errors.escalationHours}</p>
-              )}
-              {!errors.escalationHours && (
-                <p id="escalation-hint" className="mt-1.5 text-xs text-muted-foreground">
-                  Recommended: 48h for standard projects, 24h for critical gate reviews.
-                </p>
-              )}
-            </FieldRow>
+            </div>
+          )}
 
-          </CardContent>
-        </Card>
+          {/* ── TAB 4: Security ── */}
+          {activeTab === 'security' && (
+            <div id="tabpanel-security" role="tabpanel" aria-label="Security settings">
+              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
+                <SubHeader title="Authentication" />
 
-        {/* ── Sticky save footer ── */}
-        <div className="sticky bottom-0 -mx-4 flex items-center justify-between gap-4 border-t border-border bg-background/90 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6">
-          <SaveFeedback state={saveState} />
-          <div className="ml-auto flex items-center gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              size="default"
-              onClick={() => {
-                setForm(DEFAULT_FORM)
-                setErrors({})
-                setTouched({})
-                setSaveState('idle')
-              }}
-              disabled={saveState === 'saving'}
-            >
-              Reset
-            </Button>
-            <Button
-              type="submit"
-              variant="gate"
-              size="default"
-              loading={saveState === 'saving'}
-              disabled={saveState === 'saving'}
-            >
-              <Save className="size-4" aria-hidden="true" />
-              Save Changes
-            </Button>
-          </div>
+                <div className="flex flex-col gap-4">
+                  <Field label="Single Sign-On" htmlFor="field-sso" helper="External identity provider">
+                    <Select
+                      id="field-sso"
+                      options={SSO_PROVIDERS}
+                      value={form.ssoProvider}
+                      onValueChange={v => setField('ssoProvider', v ?? 'none')}
+                      placeholder="Select SSO provider"
+                      fullWidth
+                    />
+                  </Field>
+
+                  <div className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100">
+                        <Shield className="size-4 text-slate-500" aria-hidden="true" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <label htmlFor="toggle-mfa" className="cursor-pointer text-sm font-medium text-slate-700">
+                            Require MFA
+                          </label>
+                          <span className="inline-flex items-center rounded-full bg-[#0a192f] px-2 py-0.5 text-[10px] font-medium text-white">
+                            Enterprise
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500">Enforce multi-factor authentication</p>
+                      </div>
+                    </div>
+                    <Toggle
+                      id="toggle-mfa"
+                      checked={form.mfaRequired}
+                      onChange={v => setField('mfaRequired', v)}
+                    />
+                  </div>
+                </div>
+
+                <SectionDivider title="Session Management" />
+
+                <div className="flex flex-col gap-4">
+                  <Field
+                    label="Session Timeout"
+                    htmlFor="field-session-timeout"
+                    helper="Inactive users will be logged out after this period"
+                  >
+                    <Select
+                      id="field-session-timeout"
+                      options={SESSION_TIMEOUTS}
+                      value={form.sessionTimeout}
+                      onValueChange={v => setField('sessionTimeout', v ?? '2 hours')}
+                      placeholder="Select timeout"
+                      fullWidth
+                    />
+                  </Field>
+
+                  <Field
+                    label="Max Concurrent Sessions"
+                    htmlFor="field-max-sessions"
+                    helper="Maximum active sessions per user"
+                  >
+                    <input
+                      id="field-max-sessions"
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={form.maxSessions}
+                      onChange={e => setField('maxSessions', e.target.value)}
+                      placeholder="5"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/10 md:w-32"
+                    />
+                  </Field>
+                </div>
+
+                {/* Danger Zone */}
+                <div className="mt-8 border-t border-red-100 pt-6">
+                  <h3 className="mb-4 text-lg font-semibold text-red-600">Danger Zone</h3>
+                  <div className="mb-5 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+                    <AlertTriangle className="size-5 shrink-0 text-red-500" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-medium text-red-800">These actions are irreversible</p>
+                      <p className="text-xs text-red-600">Proceed with caution</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <Download className="size-4" aria-hidden="true" />
+                        Export All Data
+                      </button>
+                      <p className="mt-1 text-xs text-slate-500">Download all tenant data as JSON</p>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 transition-colors"
+                      >
+                        <Pause className="size-4" aria-hidden="true" />
+                        Suspend Account
+                      </button>
+                      <p className="mt-1 text-xs text-slate-500">Temporarily disable all access</p>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteModal(true)}
+                        className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                        Delete Account
+                      </button>
+                      <p className="mt-1 text-xs text-slate-500">Permanently delete all data</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
+      </div>
 
-      </form>
-    </div>
+      {/* Delete confirmation modal */}
+      {showDeleteModal && (
+        <DeleteModal onClose={() => setShowDeleteModal(false)} />
+      )}
+    </>
   )
 }
