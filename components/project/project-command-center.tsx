@@ -56,6 +56,8 @@ export interface ProjectData {
   location: string
   /** Unread comment count (shown on Comments button) */
   commentCount?: number
+  /** Document count (shown on Documents button) */
+  documentCount?: number
   /** ISO 4217 currency code, e.g. "USD" */
   currency?: string
 }
@@ -394,11 +396,19 @@ export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
               variant="ghost"
               size="sm"
               onClick={onDocuments}
-              aria-label="Documents"
+              aria-label={project.documentCount ? `Documents — ${project.documentCount} files` : 'Documents'}
               className="gap-1.5"
             >
               <FileText className="size-3.5" aria-hidden="true" />
               <span>Documents</span>
+              {!!project.documentCount && (
+                <span
+                  className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[9px] font-bold text-muted-foreground"
+                  aria-hidden="true"
+                >
+                  {project.documentCount > 99 ? '99+' : project.documentCount}
+                </span>
+              )}
             </Button>
 
             {/* Edit */}
@@ -450,7 +460,7 @@ export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
           <span>{project.client}</span>
         </p>
 
-        {/* ── Row 4: Stats bar ── */}
+        {/* ── Row 4: Stats bar ─��� */}
         <div
           role="list"
           aria-label="Project statistics"

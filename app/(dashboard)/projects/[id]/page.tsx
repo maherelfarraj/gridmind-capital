@@ -56,6 +56,7 @@ function findProject(id: string): ProjectData | null {
     targetCod: raw.targetCod,
     location: raw.location,
     commentCount: raw.gate >= 3 ? 12 : 0,
+    documentCount: raw.gate >= 2 ? 8 : 0,
   }
 }
 
