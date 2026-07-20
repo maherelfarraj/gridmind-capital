@@ -488,7 +488,9 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const pendingApprovals = React.useMemo(() => approvals.map(toApprovalRecord), [approvals])
   const firstName = userName.split(' ')[0]
-  const today = React.useMemo(() => formatDate(new Date()), [])
+  // Defer date to client-only to avoid SSR/client hydration mismatch
+  const [today, setToday] = React.useState<string>('')
+  React.useEffect(() => { setToday(formatDate(new Date())) }, [])
 
   return (
     <div className="space-y-6 p-6 max-w-7xl mx-auto">
@@ -508,10 +510,12 @@ export function DashboardPage({
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          <span className="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 dark:text-muted-foreground">
-            <Calendar className="size-4 shrink-0" aria-hidden="true" />
-            {today}
-          </span>
+          {today && (
+            <span className="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 dark:text-muted-foreground">
+              <Calendar className="size-4 shrink-0" aria-hidden="true" />
+              {today}
+            </span>
+          )}
           <Button
             onClick={onNewProject}
             className="bg-[#0a192f] hover:bg-slate-800 text-white text-sm"
