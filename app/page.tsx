@@ -1,6 +1,7 @@
 import { AppShell } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui/toast'
 import { Dashboard } from '@/components/dashboard/dashboard'
+import { WorkflowTimelineDemoSection } from '@/components/workflow/workflow-timeline-demo'
 
 export default function Home() {
   return (
@@ -11,7 +12,12 @@ export default function Home() {
       approvalCount={7}
     >
       <ToastProvider position="bottom-right">
-        <Dashboard />
+        <div className="space-y-10">
+          <Dashboard />
+          <div className="border-t border-border pt-8">
+            <WorkflowTimelineDemoSection />
+          </div>
+        </div>
       </ToastProvider>
     </AppShell>
   )
