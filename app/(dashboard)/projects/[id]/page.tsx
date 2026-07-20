@@ -3,13 +3,9 @@
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
-import { PhaseGateStepper } from '@/components/layout/PhaseGateStepper'
-import { WorkflowTimeline } from '@/components/layout/WorkflowTimeline'
 import { MOCK_WORKFLOW_LOGS } from '@/components/workflow/workflow-timeline'
 import { MOCK_PROJECTS } from '@/components/dashboard/dashboard-data'
 import type { ProjectData } from '@/components/project/project-command-center'
-import type { GateDef, GateState } from '@/components/project/phase-gate-stepper'
-import type { FilterOption } from '@/components/workflow/workflow-timeline'
 import type { PhaseKey } from '@/components/app-shell/nav-config'
 
 // ─────────────────────────────────────────────────────────────
@@ -95,8 +91,8 @@ export default function ProjectDetailRoute() {
   const id = params?.id ?? ''
 
   const [activePanel, setActivePanel] = React.useState<ActivePanel>(null)
-  const [timelineFilter, setTimelineFilter] = React.useState<FilterOption>('all')
-  const project = React.useMemo(() => findProject(id), [id])
+  const project     = React.useMemo(() => findProject(id), [id])
+  const rawProject  = React.useMemo(() => MOCK_PROJECTS.find((p) => p.id === id), [id])
 
   // In production: fetch real project logs by project id.
   // For now use the shared mock set as project activity.
@@ -123,10 +119,6 @@ export default function ProjectDetailRoute() {
     openPanel('documents')
   }, [openPanel])
 
-  const handleGateClick = React.useCallback((_gate: GateDef, _state: GateState) => {
-    // Gate detail panel is handled internally by PhaseGateStepper's own drawer.
-  }, [])
-
   // ── 404 state ──────────────────────────────────────────────
   if (!project) {
     return (
@@ -145,10 +137,6 @@ export default function ProjectDetailRoute() {
       </div>
     )
   }
-
-  // Convert numeric gate → string code for the stepper
-  const currentGateCode = `G${project.gate}`
-  const completedGateCodes = Array.from({ length: project.gate }, (_, i) => `G${i}`)
 
   return (
     <>
@@ -203,6 +191,7 @@ export default function ProjectDetailRoute() {
         teamMembers={[]}
         documents={[]}
         comments={[]}
+        overallProgress={rawProject?.progress}
         onBack={handleBack}
         onEdit={handleEdit}
         onComments={handleComments}
@@ -211,28 +200,7 @@ export default function ProjectDetailRoute() {
         onSettings={() => {}}
         onSubmitApproval={() => {}}
         onRequestChanges={() => {}}
-        hideStepper
-        hideTimeline
       />
-
-      {/* ── PhaseGateStepper — owned by this route per spec ── */}
-      <section className="mt-6" aria-label="Stage gate progress">
-        <PhaseGateStepper
-          currentGate={currentGateCode}
-          completedGates={completedGateCodes}
-          onGateClick={handleGateClick}
-        />
-      </section>
-
-      {/* ── WorkflowTimeline — project activity log ── */}
-      <section className="mt-6" aria-label="Project activity timeline">
-        <WorkflowTimeline
-          logs={projectLogs}
-          showActor={true}
-          maxItems={50}
-          filter={timelineFilter}
-        />
-      </section>
 
       {/* ── Side panels (wired, ready for real drawer components) ── */}
       {activePanel === 'comments' && (

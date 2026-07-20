@@ -122,17 +122,20 @@ const SPEC_PROJECT_INFO = {
 function GateStatusCard({
   gateProgress = { G0: true, G1: true, G2: false },
   deliverables = SPEC_DELIVERABLES,
+  overallProgress,
   onSubmitApproval,
   onRequestChanges,
 }: {
   gateProgress?: Record<string, boolean>
   deliverables?: { name: string; completed: boolean }[]
+  overallProgress?: number
   onSubmitApproval?: () => void
   onRequestChanges?: () => void
 }) {
-  const completed = deliverables.filter((d) => d.completed).length
-  const total     = deliverables.length
-  const pct       = Math.round((completed / total) * 100)
+  const completed    = deliverables.filter((d) => d.completed).length
+  const total        = deliverables.length
+  const deliverPct   = Math.round((completed / total) * 100)
+  const pct          = overallProgress ?? deliverPct
 
   return (
     <Card className="rounded-xl border border-slate-200 shadow-sm dark:border-border">
@@ -524,6 +527,8 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
 export interface ProjectDetailPageProps {
   project: Project
   gateProgress: Record<string, boolean>
+  /** Overall gate completion percentage (e.g. 65). Overrides deliverable-count-based pct in GateStatusCard. */
+  overallProgress?: number
   deliverables: { name: string; completed: boolean }[]
   risks: { title: string; probability: string; impact: string; status: string }[]
   timelineLogs: AuditLog[]
@@ -604,6 +609,7 @@ function toProjectData(p: Project): ProjectData {
 export function ProjectDetailPage({
   project,
   gateProgress,
+  overallProgress,
   deliverables,
   risks,
   timelineLogs,
@@ -684,6 +690,7 @@ export function ProjectDetailPage({
           <ProjectApprovalsCard approvals={approvalItems} loading={isLoading} />
           <GateStatusCard
             gateProgress={gateProgress}
+            overallProgress={overallProgress}
             deliverables={deliverables}
             onSubmitApproval={onSubmitApproval}
             onRequestChanges={onRequestChanges}
