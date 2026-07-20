@@ -3,8 +3,10 @@
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
+import { PhaseGateStepper } from '@/components/layout/PhaseGateStepper'
 import { MOCK_PROJECTS } from '@/components/dashboard/dashboard-data'
 import type { ProjectData } from '@/components/project/project-command-center'
+import type { GateDef, GateState } from '@/components/project/phase-gate-stepper'
 import type { PhaseKey } from '@/components/app-shell/nav-config'
 
 // ─────────────────────────────────────────────────────────────
@@ -99,6 +101,12 @@ export default function ProjectDetailRoute() {
     openPanel('documents')
   }, [openPanel])
 
+  const handleGateClick = React.useCallback((gate: GateDef, _state: GateState) => {
+    // Gate detail panel is handled internally by PhaseGateStepper's own drawer.
+    // Hook here for analytics, deep-linking, or external navigation if needed.
+    console.log('[v0] Clicked gate:', gate.code, gate.shortName)
+  }, [])
+
   // ── 404 state ──────────────────────────────────────────────
   if (!project) {
     return (
@@ -118,17 +126,27 @@ export default function ProjectDetailRoute() {
     )
   }
 
+  // Convert numeric gate → string code for the stepper
+  const currentGateCode = `G${project.gate}`
+  const completedGateCodes = Array.from({ length: project.gate }, (_, i) => `G${i}`)
+
   return (
     <>
-      {/*
-        ProjectCommandCenter is also rendered inside ProjectDetailPage.
-        Here we keep a standalone usage per the spec snippet — the
-        detail page re-uses the same project prop so both stay in sync.
-      */}
+      {/* ProjectCommandCenter header is rendered inside ProjectDetailPage */}
       <ProjectDetailPage
         project={project}
         onBack={handleBack}
+        hideStepper
       />
+
+      {/* ── PhaseGateStepper — owned by this route per spec ── */}
+      <section className="mt-6" aria-label="Stage gate progress">
+        <PhaseGateStepper
+          currentGate={currentGateCode}
+          completedGates={completedGateCodes}
+          onGateClick={handleGateClick}
+        />
+      </section>
 
       {/* ── Side panels (wired, ready for real drawer components) ── */}
       {activePanel === 'comments' && (

@@ -363,7 +363,7 @@ function QuickActionsCard() {
 
 // ─────────────────────────────────────────────────────────────
 // Props + main page
-// ────────────────────────────────────────���────────────────────
+// ────────────────────────────────────────�����────────────────────
 
 export interface ProjectDetailPageProps {
   project?: ProjectData
@@ -371,6 +371,8 @@ export interface ProjectDetailPageProps {
   approvals?: ApprovalItem[]
   loading?: boolean
   onBack?: () => void
+  /** Pass true when the parent renders its own PhaseGateStepper to avoid duplication */
+  hideStepper?: boolean
 }
 
 export function ProjectDetailPage({
@@ -379,6 +381,7 @@ export function ProjectDetailPage({
   approvals = MOCK_APPROVALS,
   loading = false,
   onBack,
+  hideStepper = false,
 }: ProjectDetailPageProps) {
   const gateNumber = project?.gate ?? 4
   const currentGateCode = `G${gateNumber}`
@@ -393,13 +396,15 @@ export function ProjectDetailPage({
         onBack={onBack}
       />
 
-      {/* ── Phase Gate Stepper ── */}
-      <section className="mt-6" aria-label="Stage gate progress">
-        <PhaseGateStepper
-          currentGate={currentGateCode}
-          completedGates={completedGateCodes}
-        />
-      </section>
+      {/* ── Phase Gate Stepper — suppressed when parent owns it ── */}
+      {!hideStepper && (
+        <section className="mt-6" aria-label="Stage gate progress">
+          <PhaseGateStepper
+            currentGate={currentGateCode}
+            completedGates={completedGateCodes}
+          />
+        </section>
+      )}
 
       {/* ── Main 2/3 + 1/3 grid ── */}
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
