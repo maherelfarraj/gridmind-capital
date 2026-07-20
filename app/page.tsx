@@ -1,6 +1,7 @@
 import { AppShell } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui/toast'
 import { DataRegisterDemo } from '@/components/ui/data-register-demo'
+import { HelpHubPanel } from '@/components/help/help-hub-panel'
 
 export default function Home() {
   return (
@@ -15,6 +16,7 @@ export default function Home() {
     >
       <ToastProvider position="bottom-right">
         <DataRegisterDemo />
+        <HelpHubPanel context="Projects" userRole="PROJECT_MANAGER" />
       </ToastProvider>
     </AppShell>
   )
