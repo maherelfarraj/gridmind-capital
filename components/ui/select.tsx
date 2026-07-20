@@ -236,3 +236,108 @@ function SelectItem({ option }: { option: SelectOption }) {
 }
 
 export { Select }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   shadcn/ui-compatible named exports
+   These let consumers import { SelectTrigger, SelectValue, SelectContent,
+   SelectItem } from '@/components/ui/select' without breaking the existing
+   Select wrapper above. They are thin React forwarding stubs that delegate
+   to the Base UI primitives already used internally.
+──────────────────────────────────────────────────────────────────────────────*/
+
+/** Root wrapper — use `<Select>` directly for the full controlled component,
+ *  or `<SelectRoot>` when composing primitives manually. */
+const SelectRoot = SelectPrimitive.Root
+
+/** Trigger button that opens the dropdown. */
+const SelectTrigger = React.forwardRef<
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement>
+>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Trigger
+    ref={ref}
+    className={cn(
+      'flex w-full items-center justify-between rounded-lg border border-border bg-input/30 px-3 py-2',
+      'font-sans text-sm text-foreground transition-colors duration-150 outline-none cursor-pointer',
+      'focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:pointer-events-none disabled:opacity-40',
+      'hover:border-ring/50 data-[popup-open]:border-ring data-[popup-open]:ring-2 data-[popup-open]:ring-ring/30',
+      className,
+    )}
+    {...props}
+  >
+    {children}
+    <SelectPrimitive.Icon><ChevronIcon /></SelectPrimitive.Icon>
+  </SelectPrimitive.Trigger>
+))
+SelectTrigger.displayName = 'SelectTrigger'
+
+/** Displays the currently selected value or placeholder. */
+const SelectValue = React.forwardRef<
+  HTMLSpanElement,
+  React.HTMLAttributes<HTMLSpanElement> & { placeholder?: string }
+>(({ placeholder, ...props }, _ref) => (
+  <SelectPrimitive.Value
+    placeholder={placeholder ? <span className="text-muted-foreground">{placeholder}</span> : undefined}
+    {...props}
+  />
+))
+SelectValue.displayName = 'SelectValue'
+
+/** Dropdown content container. */
+const SelectContent = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, children, ...props }, _ref) => (
+  <SelectPrimitive.Portal>
+    <SelectPrimitive.Positioner sideOffset={6}>
+      <SelectPrimitive.Popup
+        className={cn(
+          'z-50 min-w-[var(--anchor-width)] rounded-xl border border-border bg-popover',
+          'p-1 shadow-[0_8px_30px_rgba(0,0,0,0.18)] outline-none',
+          'data-[ending-style]:opacity-0 data-[ending-style]:scale-[0.98]',
+          'data-[starting-style]:opacity-0 data-[starting-style]:translate-y-1',
+          'transition-[opacity,transform] duration-[160ms] ease-[cubic-bezier(0.16,1,0.3,1)]',
+          className,
+        )}
+        {...props}
+      >
+        <SelectPrimitive.List>{children}</SelectPrimitive.List>
+      </SelectPrimitive.Popup>
+    </SelectPrimitive.Positioner>
+  </SelectPrimitive.Portal>
+))
+SelectContent.displayName = 'SelectContent'
+
+/** Individual option item inside `<SelectContent>`. */
+const SelectItemPrimitive = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { value: string; disabled?: boolean }
+>(({ className, children, value, disabled, ...props }, _ref) => (
+  <SelectPrimitive.Item
+    value={value}
+    disabled={disabled}
+    className={cn(
+      'flex cursor-pointer items-center justify-between rounded-lg px-3 py-2',
+      'font-sans text-sm text-popover-foreground outline-none transition-colors duration-100',
+      'hover:bg-accent hover:text-accent-foreground',
+      'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',
+      'data-[selected]:text-[#64ffda] disabled:pointer-events-none disabled:opacity-40',
+      className,
+    )}
+    {...props}
+  >
+    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    <SelectPrimitive.ItemIndicator className="ml-2 flex items-center">
+      <CheckIcon />
+    </SelectPrimitive.ItemIndicator>
+  </SelectPrimitive.Item>
+))
+SelectItemPrimitive.displayName = 'SelectItem'
+
+export {
+  SelectRoot,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItemPrimitive as SelectItem,
+}
