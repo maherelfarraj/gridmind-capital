@@ -244,7 +244,7 @@ function GateNode({
             aria-current={state === 'current' ? 'step' : undefined}
             className={cn(
               'relative flex items-center justify-center rounded-full',
-              'size-10 shrink-0',
+              'size-10 shrink-0 overflow-visible',
               'border-2 transition-all duration-200',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
               // State styles
@@ -269,10 +269,10 @@ function GateNode({
               isActive && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
             )}
           >
-            {/* Pulse ring for current */}
+            {/* Pulse ring for current — rendered outside button clip via overflow-visible */}
             {state === 'current' && (
               <span
-                className="absolute inset-0 rounded-full animate-ping opacity-30 bg-[#64ffda]"
+                className="absolute -inset-1.5 rounded-full animate-ping bg-[#64ffda]/25 pointer-events-none"
                 aria-hidden="true"
               />
             )}
@@ -282,8 +282,8 @@ function GateNode({
               <Check className="size-4 text-white" strokeWidth={3} aria-hidden="true" />
             )}
             {state === 'current' && (
-              <span className="text-[#64ffda] font-mono font-bold text-sm leading-none">
-                {gate.id}
+              <span className="relative z-10 text-[#64ffda] font-mono font-bold text-xs leading-none tracking-tight">
+                {gate.code}
               </span>
             )}
             {state === 'locked' && (
@@ -383,7 +383,7 @@ function GateNode({
 
 // ─────────────────────────────────────────────────────────────
 // Detail Panel (slide-in from right)
-// ─────────────────────────────────────────────────────────────
+// ──────��──────────────────────────────────────────────────────
 
 interface DetailPanelProps {
   gate: GateDef | null
