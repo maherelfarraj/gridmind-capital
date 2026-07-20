@@ -5,11 +5,11 @@ import { PhaseGateStepper, PhaseGateStepperSkeleton, type GateDef, type GateStat
 import { Button } from '@/components/ui/button'
 
 const PRESETS = [
-  { label: 'G0 — New Opportunity',     currentGate: 0, completedGates: [] },
-  { label: 'G4 — In Construction',      currentGate: 4, completedGates: [0, 1, 2, 3] },
-  { label: 'G6 — Commissioning',        currentGate: 6, completedGates: [0, 1, 2, 3, 4, 5] },
-  { label: 'G9 — AI Optimisation',      currentGate: 9, completedGates: [0, 1, 2, 3, 4, 5, 6, 7, 8] },
-] as const
+  { label: 'G0 — New Opportunity',  currentGate: 'G0', completedGates: [] as string[] },
+  { label: 'G4 — In Construction',  currentGate: 'G4', completedGates: ['G0','G1','G2','G3'] },
+  { label: 'G6 — Commissioning',    currentGate: 'G6', completedGates: ['G0','G1','G2','G3','G4','G5'] },
+  { label: 'G9 — AI Optimisation',  currentGate: 'G9', completedGates: ['G0','G1','G2','G3','G4','G5','G6','G7','G8'] },
+]
 
 export function PhaseGateStepperDemo() {
   const [preset, setPreset] = React.useState(1) // default: G4 In Construction

@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Clock,
 } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -167,8 +168,10 @@ export const GATE_DEFINITIONS: GateDef[] = [
 export type GateState = 'completed' | 'current' | 'future' | 'locked'
 
 export interface PhaseGateStepperProps {
-  currentGate: number
-  completedGates?: number[]
+  /** Gate code string, e.g. "G2" */
+  currentGate: string
+  /** Array of completed gate code strings, e.g. ["G0", "G1"] */
+  completedGates?: string[]
   className?: string
   onGateClick?: (gate: GateDef, state: GateState) => void
 }
@@ -177,10 +180,12 @@ export interface PhaseGateStepperProps {
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-function getGateState(gateId: number, currentGate: number, completedGates: number[]): GateState {
-  if (completedGates.includes(gateId)) return 'completed'
-  if (gateId === currentGate) return 'current'
-  if (gateId < currentGate && !completedGates.includes(gateId)) return 'locked'
+function getGateState(gateCode: string, currentGate: string, completedGates: string[]): GateState {
+  if (completedGates.includes(gateCode)) return 'completed'
+  if (gateCode === currentGate) return 'current'
+  const currentIdx = GATE_DEFINITIONS.findIndex((g) => g.code === currentGate)
+  const gateIdx = GATE_DEFINITIONS.findIndex((g) => g.code === gateCode)
+  if (gateIdx < currentIdx && !completedGates.includes(gateCode)) return 'locked'
   return 'future'
 }
 
@@ -414,42 +419,48 @@ const STATE_BANNERS: Record<GateState, { bg: string; text: string; icon: React.R
 }
 
 function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
-  const isOpen = gate !== null
   const banner = state ? STATE_BANNERS[state] : null
 
   // Close on Escape
   React.useEffect(() => {
-    if (!isOpen) return
+    if (!gate) return
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [isOpen, onClose])
+  }, [gate, onClose])
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className={cn(
-          'fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-200',
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
-        )}
-        aria-hidden="true"
-        onClick={onClose}
-      />
+    <AnimatePresence>
+      {gate !== null && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            key="backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            aria-hidden="true"
+            onClick={onClose}
+          />
 
-      {/* Panel */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={gate ? `${gate.code} Gate Details` : 'Gate Details'}
-        className={cn(
-          'fixed right-0 top-0 h-full z-50 w-full max-w-md',
-          'bg-card border-l border-border shadow-2xl',
-          'flex flex-col',
-          'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
-          isOpen ? 'translate-x-0' : 'translate-x-full',
-        )}
-      >
+          {/* Panel */}
+          <motion.div
+            key="panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={gate ? `${gate.code} Gate Details` : 'Gate Details'}
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className={cn(
+              'fixed right-0 top-0 h-full z-50 w-full max-w-md',
+              'bg-card border-l border-border shadow-2xl',
+              'flex flex-col',
+            )}
+          >
         {/* Panel header */}
         <div className="flex items-start justify-between gap-3 p-5 border-b border-border shrink-0">
           <div className="min-w-0">
@@ -572,8 +583,10 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
             </>
           )}
         </div>
-      </div>
-    </>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -629,7 +642,7 @@ export function PhaseGateStepper({
 
   // Scroll current gate into view on mount
   React.useEffect(() => {
-    const el = scrollRef.current?.querySelector(`[data-gate-id="${currentGate}"]`) as HTMLElement | null
+    const el = scrollRef.current?.querySelector(`[data-gate-code="${currentGate}"]`) as HTMLElement | null
     el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
   }, [currentGate])
 
@@ -650,7 +663,7 @@ export function PhaseGateStepper({
               {completedGates.length}/10 Complete
             </span>
             <Badge variant="gate" className="tabular-nums">
-              G{currentGate} Active
+              {currentGate} Active
             </Badge>
           </div>
         </div>
@@ -686,11 +699,11 @@ export function PhaseGateStepper({
             role="list"
           >
             {GATE_DEFINITIONS.map((gate, idx) => {
-              const state = getGateState(gate.id, currentGate, completedGates)
+              const state = getGateState(gate.code, currentGate, completedGates)
               return (
                 <div
-                  key={gate.id}
-                  data-gate-id={gate.id}
+                  key={gate.code}
+                  data-gate-code={gate.code}
                   role="listitem"
                   style={{ scrollSnapAlign: 'center' }}
                   className={cn(
@@ -706,7 +719,7 @@ export function PhaseGateStepper({
                     tooltipVisible={activeTooltip === gate.id}
                     onMouseEnter={() => setActiveTooltip(gate.id)}
                     onMouseLeave={() => setActiveTooltip(null)}
-                    isActive={activePanel?.gate.id === gate.id}
+                    isActive={activePanel?.gate.code === gate.code}
                   />
                 </div>
               )
@@ -730,7 +743,7 @@ export function PhaseGateStepper({
         </div>
       </nav>
 
-      {/* Detail panel */}
+      {/* Detail panel — AnimatePresence drives slide-in/out */}
       <DetailPanel
         gate={activePanel?.gate ?? null}
         state={activePanel?.state ?? null}

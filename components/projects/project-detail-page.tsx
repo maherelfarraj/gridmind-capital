@@ -363,7 +363,7 @@ function QuickActionsCard() {
 
 // ─────────────────────────────────────────────────────────────
 // Props + main page
-// ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────���────────────────────
 
 export interface ProjectDetailPageProps {
   project?: ProjectData
@@ -381,7 +381,8 @@ export function ProjectDetailPage({
   onBack,
 }: ProjectDetailPageProps) {
   const gateNumber = project?.gate ?? 4
-  const completedGates = Array.from({ length: gateNumber }, (_, i) => i)
+  const currentGateCode = `G${gateNumber}`
+  const completedGateCodes = Array.from({ length: gateNumber }, (_, i) => `G${i}`)
 
   return (
     <div className="relative min-h-full">
@@ -395,8 +396,8 @@ export function ProjectDetailPage({
       {/* ── Phase Gate Stepper ── */}
       <section className="mt-6" aria-label="Stage gate progress">
         <PhaseGateStepper
-          currentGate={gateNumber}
-          completedGates={completedGates}
+          currentGate={currentGateCode}
+          completedGates={completedGateCodes}
         />
       </section>
 
