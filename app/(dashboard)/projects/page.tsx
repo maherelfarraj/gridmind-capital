@@ -1,14 +1,20 @@
-import { ToastProvider } from '@/components/ui/toast'
-import { ProjectsListPage } from '@/components/projects/projects-list-page'
-import { HelpHubPanel } from '@/components/help/help-hub-panel'
+'use client'
 
-export const metadata = { title: 'Projects — GridMind Capital' }
+import { useRouter } from 'next/navigation'
+import { ProjectsListPage, type Project } from '@/components/projects/projects-list-page'
+import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
 
 export default function Page() {
+  const router = useRouter()
+
   return (
-    <ToastProvider position="bottom-right">
-      <ProjectsListPage />
-      <HelpHubPanel context="Projects" userRole="ADMIN" />
-    </ToastProvider>
+    <>
+      <ProjectsListPage
+        onNewProject={() => router.push('/projects/new')}
+        onRowClick={(project: Project) => router.push(`/projects/${project.id}`)}
+        onExport={() => {/* export handler */}}
+      />
+      <HelpHubPanel contextModule="construction" userRole="PROJECT_MANAGER" />
+    </>
   )
 }
