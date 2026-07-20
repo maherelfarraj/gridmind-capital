@@ -4,14 +4,15 @@ import * as React from 'react'
 import {
   ArrowLeft,
   TrendingUp,
-  Clock,
-  CheckCircle2,
+  Calendar,
+  Target,
   Layers,
   GitBranch,
   MapPin,
   MessageSquare,
-  FolderOpen,
+  FileText,
   Pencil,
+  MoreVertical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -55,6 +56,67 @@ export interface ProjectData {
   location: string
   /** Unread comment count (shown on Comments button) */
   commentCount?: number
+  /** ISO 4217 currency code, e.g. "USD" */
+  currency?: string
+}
+
+/**
+ * Raw DB-row shape from the spec / API response.
+ * Use `adaptProjectRaw` to convert to `ProjectData` for this component.
+ */
+export interface ProjectRaw {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  client_name: string | null
+  phase: string
+  gate: string
+  status: string
+  budget_amount: number | null
+  currency: string
+  start_date: string | null
+  target_cod: string | null
+  actual_cod: string | null
+  location: string | null
+  capacity_mw: number | null
+  technology_type: string | null
+  epc_contractor: string | null
+  owner_engineer: string | null
+}
+
+/** Convert a raw API/DB row to the internal ProjectData shape. */
+export function adaptProjectRaw(raw: ProjectRaw): ProjectData {
+  // Gate string "G2" → number 2; fallback to 0
+  const gateNum = parseInt(raw.gate.replace(/\D/g, ''), 10) || 0
+  // Phase string "engineering" → PhaseKey "g3" via reverse lookup; fallback to "g0"
+  const PHASE_STRING_TO_KEY: Record<string, string> = {
+    intake: 'g0', development: 'g1', commercial: 'g2',
+    engineering: 'g3', procurement: 'g4', construction: 'g5',
+    commissioning: 'g6', om: 'g7', finance: 'g8', 'ai-analytics': 'g9',
+  }
+  const phaseKey = (PHASE_STRING_TO_KEY[raw.phase.toLowerCase()] ?? 'g0') as PhaseKey
+
+  const GATE_NAMES: Record<number, string> = {
+    0: 'Investment Intake', 1: 'Development Approval', 2: 'Engineering IFC',
+    3: 'Procurement Ready', 4: 'Construction Mobilization', 5: 'Systems Commissioning',
+    6: 'COD Declaration', 7: 'O&M Handover', 8: 'Financial Close', 9: 'AI Analytics',
+  }
+
+  return {
+    id: raw.id,
+    code: raw.code,
+    name: raw.name,
+    client: raw.client_name ?? 'Unknown Client',
+    status: (raw.status as ProjectStatus) ?? 'active',
+    phase: phaseKey,
+    gate: gateNum,
+    gateName: GATE_NAMES[gateNum] ?? `Gate ${gateNum}`,
+    budgetUsd: raw.budget_amount ?? 0,
+    startDate: raw.start_date ?? new Date().toISOString(),
+    targetCod: raw.target_cod ?? new Date().toISOString(),
+    location: raw.location ?? 'Location TBD',
+  }
 }
 
 export interface ProjectCommandCenterProps {
@@ -69,6 +131,8 @@ export interface ProjectCommandCenterProps {
   onDocuments?: () => void
   /** Called when Edit button is clicked */
   onEdit?: () => void
+  /** Called when Actions (⋯) dropdown is clicked */
+  onActions?: () => void
   className?: string
 }
 
@@ -254,13 +318,14 @@ function HeaderSkeleton() {
 // ProjectCommandCenter
 // ─────────────────────────────────────────────────────────────
 
-export function ProjectCommandCenter({
+export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
   project,
   loading = false,
   onBack,
   onComments,
   onDocuments,
   onEdit,
+  onActions,
   className,
 }: ProjectCommandCenterProps) {
   // ── Loading state ──
@@ -302,45 +367,41 @@ export function ProjectCommandCenter({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2" role="group" aria-label="Project actions">
+            {/* Comments */}
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={onComments}
-              aria-label={
-                project.commentCount
-                  ? `Comments — ${project.commentCount} unread`
-                  : 'Comments'
-              }
+              aria-label={project.commentCount ? `Comments — ${project.commentCount} unread` : 'Comments'}
               className="gap-1.5"
             >
               <MessageSquare className="size-3.5" aria-hidden="true" />
               <span>Comments</span>
               {!!project.commentCount && (
                 <span
-                  className={cn(
-                    'ml-0.5 inline-flex size-4 items-center justify-center rounded-full',
-                    'bg-[#64ffda] text-[9px] font-bold text-[#0a192f]',
-                  )}
+                  className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#64ffda] px-1 text-[9px] font-bold text-[#0a192f]"
                   aria-hidden="true"
                 >
-                  {project.commentCount > 9 ? '9+' : project.commentCount}
+                  {project.commentCount > 99 ? '99+' : project.commentCount}
                 </span>
               )}
             </Button>
 
+            {/* Documents */}
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={onDocuments}
               aria-label="Documents"
               className="gap-1.5"
             >
-              <FolderOpen className="size-3.5" aria-hidden="true" />
+              <FileText className="size-3.5" aria-hidden="true" />
               <span>Documents</span>
             </Button>
 
+            {/* Edit */}
             <Button
-              variant="default"
+              variant="outline"
               size="sm"
               onClick={onEdit}
               aria-label="Edit project"
@@ -348,6 +409,18 @@ export function ProjectCommandCenter({
             >
               <Pencil className="size-3.5" aria-hidden="true" />
               <span>Edit</span>
+            </Button>
+
+            {/* Actions ⋯ */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onActions}
+              aria-label="More actions"
+              aria-haspopup="menu"
+              className="px-2"
+            >
+              <MoreVertical className="size-4" aria-hidden="true" />
             </Button>
           </div>
         </div>
@@ -382,39 +455,44 @@ export function ProjectCommandCenter({
           className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
         >
 
-          {/* 1. Budget */}
+          {/* 1. Budget — emerald per spec */}
           <div role="listitem">
             <StatTile
               icon={<TrendingUp className="size-4" aria-hidden="true" />}
               label="Budget"
-              iconColor="#64ffda"
+              iconColor="#10b981"
               value={
-                <span
-                  className="font-mono text-sm font-bold tracking-tight"
-                  aria-label={`Budget: ${formatCurrency(project.budgetUsd)}`}
-                >
-                  {formatCurrency(project.budgetUsd)}
+                <span className="inline-flex items-baseline gap-1.5">
+                  <span
+                    className="font-mono text-sm font-bold tracking-tight"
+                    aria-label={`Budget: ${formatCurrency(project.budgetUsd)} ${project.currency ?? 'USD'}`}
+                  >
+                    {formatCurrency(project.budgetUsd)}
+                  </span>
+                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {project.currency ?? 'USD'}
+                  </span>
                 </span>
               }
             />
           </div>
 
-          {/* 2. Start Date */}
+          {/* 2. Start Date — blue per spec */}
           <div role="listitem">
             <StatTile
-              icon={<Clock className="size-4" aria-hidden="true" />}
+              icon={<Calendar className="size-4" aria-hidden="true" />}
               label="Start Date"
               iconColor="#3b82f6"
               value={formatDate(project.startDate)}
             />
           </div>
 
-          {/* 3. Target COD */}
+          {/* 3. Target COD — purple per spec */}
           <div role="listitem">
             <StatTile
-              icon={<CheckCircle2 className="size-4" aria-hidden="true" />}
+              icon={<Target className="size-4" aria-hidden="true" />}
               label="Target COD"
-              iconColor="#22c55e"
+              iconColor="#8b5cf6"
               value={formatDate(project.targetCod)}
             />
           </div>
@@ -455,14 +533,14 @@ export function ProjectCommandCenter({
             />
           </div>
 
-          {/* 6. Location */}
+          {/* 6. Location — red per spec */}
           <div role="listitem">
             <StatTile
               icon={<MapPin className="size-4" aria-hidden="true" />}
               label="Location"
-              iconColor="#8b5cf6"
+              iconColor="#ef4444"
               value={
-                <span className="leading-snug text-pretty">
+                <span className="block truncate leading-snug" title={project.location}>
                   {project.location}
                 </span>
               }
@@ -472,4 +550,4 @@ export function ProjectCommandCenter({
       </div>
     </header>
   )
-}
+})
