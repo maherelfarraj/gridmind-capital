@@ -3,12 +3,24 @@
 import * as React from 'react'
 import {
   FolderKanban,
-  Activity,
   Clock,
   AlertTriangle,
   Plus,
   ChevronRight,
   TrendingUp,
+  Zap,
+  ClipboardCheck,
+  AlertCircle,
+  Flame,
+  ArrowUpCircle,
+  Calendar,
+  ArrowRight,
+  BarChart3,
+  Users,
+  Settings,
+  PlusCircle,
+  Briefcase,
+  RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -33,6 +45,7 @@ export interface DashboardProject {
   budgetM: number
   status: ProjectRowStatus
   client: string
+  targetCod?: string
 }
 
 export interface DashboardStats {
@@ -40,6 +53,10 @@ export interface DashboardStats {
   activeProjects: number
   pendingApprovals: number
   overdueApprovals: number
+  totalProjectsTrend?: string
+  activeProjectsTrend?: string
+  pendingApprovalsTrend?: string
+  overdueApprovalsTrend?: string
 }
 
 export interface DashboardPageProps {
@@ -48,31 +65,34 @@ export interface DashboardPageProps {
   projects?: DashboardProject[]
   approvals?: ApprovalItem[]
   loading?: boolean
+  error?: string | null
+  onRetry?: () => void
   onNewProject?: () => void
   onProjectClick?: (project: DashboardProject) => void
   onApprovalClick?: (id: string) => void
 }
 
 // ─────────────────────────────────────────────────────────────
-// Mock data
+// Mock data — spec-exact 5 projects
 // ─────────────────────────────────────────────────────────────
 
 const MOCK_STATS: DashboardStats = {
-  totalProjects: 18,
-  activeProjects: 14,
-  pendingApprovals: 7,
+  totalProjects: 12,
+  activeProjects: 8,
+  pendingApprovals: 5,
   overdueApprovals: 2,
+  totalProjectsTrend: '+2 this month',
+  activeProjectsTrend: '3 nearing COD',
+  pendingApprovalsTrend: '2 urgent (<24h)',
+  overdueApprovalsTrend: 'Escalated to CEO',
 }
 
 const MOCK_PROJECTS: DashboardProject[] = [
-  { id: 'p-sirius',  code: 'SRS-400', name: 'Sirius 400MW Solar Farm',  phase: 'g4', gate: 4, gateName: 'Construction Mob.', budgetM: 480,  status: 'active',    client: 'TotalEnergies'      },
-  { id: 'p-nova',    code: 'NOV-600', name: 'Nova Offshore Wind 600MW', phase: 'g4', gate: 4, gateName: 'Construction Mob.', budgetM: 1200, status: 'at-risk',   client: 'Vattenfall'         },
-  { id: 'p-atlas',   code: 'ATL-300', name: 'Atlas Solar PV 300MW',     phase: 'g5', gate: 5, gateName: 'Mech. Completion',  budgetM: 360,  status: 'active',    client: 'Masdar'             },
-  { id: 'p-ceres',   code: 'CRS-150', name: 'Ceres Wind Repowering',    phase: 'g6', gate: 6, gateName: 'Commissioning',     budgetM: 195,  status: 'active',    client: 'RWE Renewables'     },
-  { id: 'p-sol',     code: 'SOL-500', name: 'Sol Atacama 500MW',        phase: 'g3', gate: 3, gateName: 'Procurement Award', budgetM: 680,  status: 'active',    client: 'Enel Chile'         },
-  { id: 'p-orion',   code: 'ORN-180', name: 'Orion Wind Farm',          phase: 'g1', gate: 1, gateName: 'Baseline Approved', budgetM: 290,  status: 'planning',  client: 'Clean Energy Corp'  },
-  { id: 'p-vega',    code: 'VEG-400', name: 'Vega BESS Storage',        phase: 'g1', gate: 1, gateName: 'Baseline Approved', budgetM: 520,  status: 'active',    client: 'National Grid UK'   },
-  { id: 'p-ares',    code: 'ARS-250', name: 'Ares Solar + Storage',     phase: 'g7', gate: 7, gateName: 'Handover & Warranty', budgetM: 415, status: 'active',   client: 'AGL Energy'         },
+  { id: 'SOL-2026-001', code: 'SOL-2026-001', name: 'Al Dhafra Solar PV - Phase 1',    phase: 'g3', gate: 2, gateName: 'G2', budgetM: 1200, status: 'active',   client: 'EWEC',    targetCod: 'Jun 2028' },
+  { id: 'WND-2026-002', code: 'WND-2026-002', name: 'Dogger Bank Wind Farm - Phase A',  phase: 'g4', gate: 3, gateName: 'G3', budgetM: 850,  status: 'active',   client: 'Equinor', targetCod: 'Dec 2029' },
+  { id: 'HYD-2026-003', code: 'HYD-2026-003', name: 'Grand Inga Hydroelectric - Phase 1', phase: 'g1', gate: 0, gateName: 'G0', budgetM: 14000, status: 'active', client: 'AfDB',   targetCod: 'Jun 2032' },
+  { id: 'SOL-2026-004', code: 'SOL-2026-004', name: 'Noor Ouarzazate IV',               phase: 'g5', gate: 4, gateName: 'G4', budgetM: 500,  status: 'active',   client: 'MASEN',   targetCod: 'Mar 2027' },
+  { id: 'WND-2026-005', code: 'WND-2026-005', name: 'Hornsea Project Four',             phase: 'g2', gate: 1, gateName: 'G1', budgetM: 2100, status: 'on-hold',  client: 'Orsted',  targetCod: 'Sep 2030' },
 ]
 
 const MOCK_APPROVALS: ApprovalItem[] = [
@@ -84,7 +104,7 @@ const MOCK_APPROVALS: ApprovalItem[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────
-// Phase badge map — maps PhaseKey to Badge variant
+// Phase / status maps
 // ─────────────────────────────────────────────────────────────
 
 const PHASE_VARIANT: Record<PhaseKey, string> = {
@@ -102,8 +122,8 @@ const PHASE_VARIANT: Record<PhaseKey, string> = {
 
 const PHASE_LABEL: Record<PhaseKey, string> = {
   g0: 'Intake',
-  g1: 'Development',
-  g2: 'Commercial',
+  g1: 'Commercial',
+  g2: 'Engineering',
   g3: 'Engineering',
   g4: 'Procurement',
   g5: 'Construction',
@@ -113,16 +133,25 @@ const PHASE_LABEL: Record<PhaseKey, string> = {
   g9: 'AI & Analytics',
 }
 
+const STATUS_META: Record<ProjectRowStatus, { label: string; variant: string; dot?: boolean }> = {
+  active:    { label: 'Active',    variant: 'approved', dot: true },
+  'at-risk': { label: 'At Risk',   variant: 'critical', dot: true },
+  planning:  { label: 'Planning',  variant: 'submitted', dot: true },
+  completed: { label: 'Completed', variant: 'approved', dot: true },
+  'on-hold': { label: 'On Hold',   variant: 'draft',    dot: true },
+}
+
 // ─────────────────────────────────────────────────────────────
-// Status config
+// Helpers
 // ─────────────────────────────────────────────────────────────
 
-const STATUS_META: Record<ProjectRowStatus, { label: string; variant: string; dot?: boolean }> = {
-  active:    { label: 'Active',     variant: 'approved',    dot: true },
-  'at-risk': { label: 'At Risk',    variant: 'critical',    dot: true },
-  planning:  { label: 'Planning',   variant: 'submitted',   dot: true },
-  completed: { label: 'Completed',  variant: 'approved',    dot: true },
-  'on-hold': { label: 'On Hold',    variant: 'draft',       dot: true },
+function formatBudget(m: number): string {
+  if (m >= 1000) return `$${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)}B`
+  return `$${m}M`
+}
+
+function formatDate(d: Date): string {
+  return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -135,43 +164,57 @@ interface StatCardProps {
   icon: React.ElementType
   iconBg: string
   iconColor: string
+  trendText?: string
+  TrendIcon?: React.ElementType
+  trendColor?: string
+  trendPulse?: boolean
   loading?: boolean
   alert?: boolean
 }
 
-function StatCard({ label, value, icon: Icon, iconBg, iconColor, loading = false, alert = false }: StatCardProps) {
+function StatCard({
+  label, value, icon: Icon, iconBg, iconColor,
+  trendText, TrendIcon, trendColor = 'text-muted-foreground',
+  trendPulse = false, loading = false, alert = false,
+}: StatCardProps) {
   return (
     <article
-      className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4"
+      className="flex flex-col rounded-xl border border-slate-200 dark:border-border bg-white dark:bg-card px-5 py-5 shadow-sm hover:shadow-md transition-shadow duration-200"
       aria-label={`${label}: ${value}`}
     >
-      <span
-        className="flex size-11 shrink-0 items-center justify-center rounded-full"
+      <div
+        className="flex size-10 shrink-0 items-center justify-center rounded-full"
         style={{ backgroundColor: iconBg }}
         aria-hidden="true"
       >
-        <Icon className="size-5" style={{ color: iconColor }} />
-      </span>
-      <div className="min-w-0">
-        {loading ? (
-          <div className="space-y-1.5 animate-pulse">
-            <div className="h-7 w-14 rounded bg-muted" />
-            <div className="h-3 w-24 rounded bg-muted" />
-          </div>
-        ) : (
-          <>
-            <p
-              className={cn(
-                'text-3xl font-bold leading-none tabular-nums',
-                alert ? 'text-[#ef4444]' : 'text-foreground',
-              )}
-            >
-              {value}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground truncate">{label}</p>
-          </>
-        )}
+        <Icon className="size-6" style={{ color: iconColor }} />
       </div>
+
+      {loading ? (
+        <div className="mt-3 space-y-2 animate-pulse">
+          <div className="h-8 w-12 rounded bg-slate-200 dark:bg-muted" />
+          <div className="h-3 w-28 rounded bg-slate-200 dark:bg-muted" />
+          <div className="h-3 w-20 rounded bg-slate-200 dark:bg-muted" />
+        </div>
+      ) : (
+        <>
+          <p className="mt-3 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-muted-foreground">
+            {label}
+          </p>
+          <p className={cn(
+            'mt-1 text-3xl font-bold leading-none tabular-nums text-slate-900 dark:text-foreground',
+            alert && 'text-[#ef4444]',
+          )}>
+            {value}
+          </p>
+          {trendText && TrendIcon && (
+            <p className={cn('mt-2 flex items-center gap-1 text-xs font-medium', trendColor)}>
+              <TrendIcon className={cn('size-3.5 shrink-0', trendPulse && 'animate-pulse')} aria-hidden="true" />
+              {trendText}
+            </p>
+          )}
+        </>
+      )}
     </article>
   )
 }
@@ -180,143 +223,150 @@ function StatCard({ label, value, icon: Icon, iconBg, iconColor, loading = false
 // Recent projects table
 // ─────────────────────────────────────────────────────────────
 
-function formatBudget(m: number): string {
-  if (m >= 1000) return `$${(m / 1000).toFixed(2)}B`
-  return `$${m}M`
-}
-
-interface RecentProjectsProps {
-  projects: DashboardProject[]
-  onRowClick?: (p: DashboardProject) => void
-  loading?: boolean
-}
-
 function ProjectRowSkeleton() {
   return (
     <tr className="animate-pulse">
-      {[40, 44, 32, 28, 24, 24].map((w, i) => (
+      {[56, 120, 80, 56, 48, 60, 56].map((w, i) => (
         <td key={i} className="px-4 py-3">
-          <div className={`h-3 rounded bg-muted`} style={{ width: `${w * 2}px` }} />
+          <div className="h-3 rounded bg-slate-200 dark:bg-muted" style={{ width: w }} />
         </td>
       ))}
     </tr>
   )
 }
 
-function RecentProjects({ projects, onRowClick, loading = false }: RecentProjectsProps) {
+interface RecentProjectsProps {
+  projects: DashboardProject[]
+  onRowClick?: (p: DashboardProject) => void
+  onViewAll?: () => void
+  loading?: boolean
+}
+
+function RecentProjects({ projects, onRowClick, onViewAll, loading = false }: RecentProjectsProps) {
   return (
     <section
-      className="flex flex-col rounded-xl border border-border bg-card overflow-hidden"
+      className="flex flex-col rounded-xl border border-slate-200 dark:border-border bg-white dark:bg-card shadow-sm overflow-hidden"
       aria-label="Recent Projects"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground">Recent Projects</h2>
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-border">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-foreground">
+          <Briefcase className="size-5 text-slate-500 dark:text-muted-foreground" aria-hidden="true" />
+          Recent Projects
+        </h2>
         <button
           type="button"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+          onClick={onViewAll}
+          className="flex items-center gap-1 text-sm text-sky-600 hover:text-sky-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded transition-colors"
           aria-label="View all projects"
         >
-          View all
-          <ChevronRight className="size-3.5" aria-hidden="true" />
+          View All
+          <ArrowRight className="size-3.5" aria-hidden="true" />
         </button>
       </div>
 
+      {/* Empty state */}
+      {!loading && projects.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-12 text-center gap-3 px-6">
+          <FolderKanban className="size-12 text-slate-300 dark:text-muted-foreground/30" aria-hidden="true" />
+          <p className="text-lg font-medium text-slate-700 dark:text-foreground">No projects yet</p>
+          <p className="text-sm text-slate-500 dark:text-muted-foreground">Create your first project to get started</p>
+        </div>
+      )}
+
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-sm" role="table">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-[90px]">Code</th>
-              <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Project Name</th>
-              <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-[130px]">Phase</th>
-              <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-[160px]">Gate</th>
-              <th scope="col" className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-[90px]">Budget</th>
-              <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-[110px]">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60">
-            {loading
-              ? Array.from({ length: 6 }).map((_, i) => <ProjectRowSkeleton key={i} />)
-              : projects.map((p, idx) => {
-                  const statusMeta = STATUS_META[p.status]
-                  const phaseVariant = PHASE_VARIANT[p.phase] as Parameters<typeof Badge>[0]['variant']
-                  const isClickable = !!onRowClick
-
-                  return (
-                    <tr
-                      key={p.id}
-                      role={isClickable ? 'button' : undefined}
-                      tabIndex={isClickable ? 0 : undefined}
-                      onClick={() => onRowClick?.(p)}
-                      onKeyDown={(e) => {
-                        if (isClickable && (e.key === 'Enter' || e.key === ' ')) {
-                          e.preventDefault()
-                          onRowClick?.(p)
-                        }
-                      }}
-                      className={cn(
-                        'transition-colors duration-100',
-                        idx % 2 === 0 ? 'bg-transparent' : 'bg-muted/20',
-                        isClickable && 'cursor-pointer hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                      )}
-                      aria-label={isClickable ? `Open project: ${p.name}` : undefined}
-                    >
-                      {/* Code */}
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs tracking-wider text-muted-foreground">
-                          {p.code}
-                        </span>
-                      </td>
-
-                      {/* Name */}
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-foreground text-sm leading-snug line-clamp-1">
-                          {p.name}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground/70 truncate">{p.client}</p>
-                      </td>
-
-                      {/* Phase */}
-                      <td className="px-4 py-3">
-                        <Badge variant={phaseVariant}>
-                          {PHASE_LABEL[p.phase]}
-                        </Badge>
-                      </td>
-
-                      {/* Gate */}
-                      <td className="px-4 py-3">
-                        <Badge variant="gate">
-                          G{p.gate} · {p.gateName}
-                        </Badge>
-                      </td>
-
-                      {/* Budget */}
-                      <td className="px-4 py-3 text-right">
-                        <span className="text-xs font-semibold tabular-nums text-foreground">
-                          {formatBudget(p.budgetM)}
-                        </span>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-3">
-                        <Badge variant={statusMeta.variant as Parameters<typeof Badge>[0]['variant']} dot={statusMeta.dot}>
-                          {statusMeta.label}
-                        </Badge>
-                      </td>
-                    </tr>
-                  )
-                })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Footer count */}
-      {!loading && (
-        <div className="border-t border-border px-5 py-2.5">
-          <p className="text-[11px] text-muted-foreground">
-            Showing {projects.length} most recent projects
-          </p>
+      {(loading || projects.length > 0) && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-sm" role="table">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-border bg-slate-50 dark:bg-muted/40">
+                {['Code', 'Project Name', 'Phase', 'Gate', 'Budget', 'Status', 'Target COD'].map((col) => (
+                  <th
+                    key={col}
+                    scope="col"
+                    className={cn(
+                      'px-4 py-3 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-muted-foreground',
+                      col === 'Budget' ? 'text-right' : 'text-left',
+                    )}
+                  >
+                    {col}
+                  </th>
+                ))}
+                <th scope="col" className="w-8 px-2 py-3" aria-hidden="true" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-border/60">
+              {loading
+                ? Array.from({ length: 5 }).map((_, i) => <ProjectRowSkeleton key={i} />)
+                : projects.map((p) => {
+                    const statusMeta = STATUS_META[p.status]
+                    const phaseVariant = PHASE_VARIANT[p.phase] as Parameters<typeof Badge>[0]['variant']
+                    const isClickable = !!onRowClick
+                    return (
+                      <tr
+                        key={p.id}
+                        role={isClickable ? 'button' : undefined}
+                        tabIndex={isClickable ? 0 : undefined}
+                        onClick={() => onRowClick?.(p)}
+                        onKeyDown={(e) => {
+                          if (isClickable && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault()
+                            onRowClick?.(p)
+                          }
+                        }}
+                        className={cn(
+                          'transition-colors duration-100',
+                          isClickable && 'cursor-pointer hover:bg-sky-50 dark:hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300',
+                        )}
+                        aria-label={isClickable ? `Open project ${p.name}` : undefined}
+                      >
+                        <td className="px-4 py-3">
+                          <a
+                            href={`/projects/${p.id}`}
+                            onClick={(e) => { e.preventDefault(); onRowClick?.(p) }}
+                            className="font-mono text-xs tracking-wider text-sky-600 hover:underline focus-visible:outline-none"
+                          >
+                            {p.code}
+                          </a>
+                        </td>
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <p className="text-sm font-medium text-slate-900 dark:text-foreground truncate">{p.name}</p>
+                          <p className="text-[11px] text-slate-500 dark:text-muted-foreground/70">{p.client}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant={phaseVariant}>{PHASE_LABEL[p.phase]}</Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+                            {p.gateName}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-foreground">
+                            {formatBudget(p.budgetM)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge
+                            variant={statusMeta.variant as Parameters<typeof Badge>[0]['variant']}
+                            dot={statusMeta.dot}
+                          >
+                            {statusMeta.label}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm text-slate-500 dark:text-muted-foreground whitespace-nowrap">
+                            {p.targetCod ?? '—'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-3">
+                          <ChevronRight className="size-4 text-slate-400 dark:text-muted-foreground" aria-hidden="true" />
+                        </td>
+                      </tr>
+                    )
+                  })}
+            </tbody>
+          </table>
         </div>
       )}
     </section>
@@ -324,19 +374,84 @@ function RecentProjects({ projects, onRowClick, loading = false }: RecentProject
 }
 
 // ─────────────────────────────────────────────────────────────
-// Adapter: ApprovalItem (dashboard shape) → ApprovalRecord (inbox shape)
+// Quick actions bar
+// ─────────────────────────────────────────────────────────────
+
+interface QuickAction {
+  icon: React.ElementType
+  iconColor: string
+  label: string
+  desc: string
+  href: string
+}
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { icon: PlusCircle, iconColor: '#0a192f', label: 'Create Project',   desc: 'Start a new EPC project',          href: '/projects/new'  },
+  { icon: BarChart3,  iconColor: '#059669', label: 'View Reports',     desc: 'Financial and progress reports',   href: '/reports'       },
+  { icon: Users,      iconColor: '#2563eb', label: 'Team Management',  desc: 'Manage users and roles',           href: '/admin/users'   },
+  { icon: Settings,   iconColor: '#64748b', label: 'System Settings',  desc: 'Configure platform settings',      href: '/settings'      },
+]
+
+function QuickActions({ onNavigate }: { onNavigate?: (href: string) => void }) {
+  return (
+    <section
+      className="grid grid-cols-2 gap-4 lg:grid-cols-4"
+      aria-label="Quick actions"
+    >
+      {QUICK_ACTIONS.map(({ icon: Icon, iconColor, label, desc, href }) => (
+        <button
+          key={href}
+          type="button"
+          onClick={() => onNavigate?.(href)}
+          className="flex flex-col items-start rounded-xl border border-slate-200 dark:border-border bg-white dark:bg-card px-5 py-5 shadow-sm text-left cursor-pointer hover:shadow-md hover:border-sky-200 dark:hover:border-sky-700/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition-all duration-150"
+          aria-label={label}
+        >
+          <Icon className="size-6" style={{ color: iconColor }} aria-hidden="true" />
+          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-foreground">{label}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-muted-foreground">{desc}</p>
+        </button>
+      ))}
+    </section>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Error state
+// ─────────────────────────────────────────────────────────────
+
+function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900/50 px-5 py-5"
+    >
+      <AlertTriangle className="size-6 text-red-600 dark:text-red-400 shrink-0 mt-0.5" aria-hidden="true" />
+      <div className="flex-1 min-w-0">
+        <p className="text-lg font-semibold text-red-800 dark:text-red-300">Failed to load dashboard data</p>
+        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{message || 'Please refresh the page or contact support.'}</p>
+        {onRetry && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRetry}
+            className="mt-3 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+          >
+            <RefreshCw className="size-3.5 mr-1.5" aria-hidden="true" />
+            Retry
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Adapter: ApprovalItem → ApprovalRecord
 // ─────────────────────────────────────────────────────────────
 
 function toApprovalRecord(item: ApprovalItem): ApprovalRecord {
-  const PRIORITY_HOURS: Record<string, number> = {
-    critical: 4,
-    high: 24,
-    medium: 72,
-    low: 168,
-  }
+  const PRIORITY_HOURS: Record<string, number> = { critical: 4, high: 24, medium: 72, low: 168 }
   const hoursUntilDue = PRIORITY_HOURS[item.priority] ?? 48
-  const dueDate = new Date(Date.now() + hoursUntilDue * 3_600_000).toISOString()
-  const createdAt = new Date(Date.now() - item.daysOpen * 86_400_000).toISOString()
   return {
     id: item.id,
     object_type: item.type.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -345,15 +460,15 @@ function toApprovalRecord(item: ApprovalItem): ApprovalRecord {
     level: item.priority === 'critical' ? 3 : item.priority === 'high' ? 2 : 1,
     approver_role: 'Project Director',
     requested_by_name: item.requestedBy,
-    due_date: dueDate,
-    created_at: createdAt,
+    due_date: new Date(Date.now() + hoursUntilDue * 3_600_000).toISOString(),
+    created_at: new Date(Date.now() - item.daysOpen * 86_400_000).toISOString(),
     decided_at: null,
     decision_reason: null,
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// Dashboard Page
+// Main DashboardPage
 // ─────────────────────────────────────────────────────────────
 
 export function DashboardPage({
@@ -362,29 +477,18 @@ export function DashboardPage({
   projects = MOCK_PROJECTS,
   approvals = MOCK_APPROVALS,
   loading = false,
+  error = null,
+  onRetry,
   onNewProject,
   onProjectClick,
   onApprovalClick,
 }: DashboardPageProps) {
-
-  // Convert ApprovalItems to ApprovalRecords for the inbox widget
-  const pendingApprovals = React.useMemo(
-    () => approvals.map(toApprovalRecord),
-    [approvals],
-  )
-
-  // Greeting based on time of day
-  const greeting = React.useMemo(() => {
-    const hour = new Date().getHours()
-    if (hour < 12) return 'Good morning'
-    if (hour < 17) return 'Good afternoon'
-    return 'Good evening'
-  }, [])
-
+  const pendingApprovals = React.useMemo(() => approvals.map(toApprovalRecord), [approvals])
   const firstName = userName.split(' ')[0]
+  const today = React.useMemo(() => formatDate(new Date()), [])
 
   return (
-    <div className="space-y-6 animate-[fade-in_0.2s_ease-out]">
+    <div className="space-y-6 p-6 max-w-7xl mx-auto">
 
       {/* ── Welcome section ── */}
       <section
@@ -392,59 +496,70 @@ export function DashboardPage({
         aria-label="Welcome section"
       >
         <div>
-          <h1 className="text-xl font-bold text-foreground leading-tight text-balance">
-            {greeting}, {firstName}
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-foreground leading-tight">
+            Welcome back, {firstName}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Here&apos;s your portfolio snapshot for today.
-            {stats.overdueApprovals > 0 && (
-              <span className="ml-2 inline-flex items-center gap-1 text-[#f59e0b] font-medium">
-                <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
-                {stats.overdueApprovals} approval{stats.overdueApprovals !== 1 ? 's' : ''} overdue.
-              </span>
-            )}
+          <p className="mt-1 text-sm text-slate-500 dark:text-muted-foreground">
+            Here&apos;s what&apos;s happening across your projects
           </p>
         </div>
 
-        <Button
-          variant="gate"
-          size="default"
-          onClick={onNewProject}
-          aria-label="Create a new project"
-          className="shrink-0 self-start sm:self-auto"
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          New Project
-        </Button>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 dark:text-muted-foreground">
+            <Calendar className="size-4 shrink-0" aria-hidden="true" />
+            {today}
+          </span>
+          <Button
+            onClick={onNewProject}
+            className="bg-[#0a192f] hover:bg-slate-800 text-white text-sm"
+            aria-label="Create a new project"
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            New Project
+          </Button>
+        </div>
       </section>
 
-      {/* ── Stats strip (2 cols mobile → 4 cols desktop) ── */}
+      {/* ── Error state ── */}
+      {error && <ErrorState message={error} onRetry={onRetry} />}
+
+      {/* ── Stats strip ── */}
       <section
-        className="grid grid-cols-2 gap-4 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
         aria-label="Portfolio statistics"
       >
         <StatCard
           label="Total Projects"
           value={loading ? '—' : stats.totalProjects}
           icon={FolderKanban}
-          iconBg="rgba(100,255,218,0.12)"
-          iconColor="#64ffda"
+          iconBg="rgba(10,25,47,0.08)"
+          iconColor="#0a192f"
+          trendText={stats.totalProjectsTrend ?? '+2 this month'}
+          TrendIcon={TrendingUp}
+          trendColor="text-green-600 dark:text-green-400"
           loading={loading}
         />
         <StatCard
           label="Active Projects"
           value={loading ? '—' : stats.activeProjects}
-          icon={TrendingUp}
-          iconBg="rgba(59,130,246,0.12)"
-          iconColor="#3b82f6"
+          icon={Zap}
+          iconBg="rgba(16,185,129,0.10)"
+          iconColor="#10b981"
+          trendText={stats.activeProjectsTrend ?? '3 nearing COD'}
+          TrendIcon={AlertCircle}
+          trendColor="text-amber-600 dark:text-amber-400"
           loading={loading}
         />
         <StatCard
           label="Pending Approvals"
           value={loading ? '—' : stats.pendingApprovals}
-          icon={Clock}
-          iconBg="rgba(245,158,11,0.12)"
+          icon={ClipboardCheck}
+          iconBg="rgba(245,158,11,0.10)"
           iconColor="#f59e0b"
+          trendText={stats.pendingApprovalsTrend ?? '2 urgent (<24h)'}
+          TrendIcon={Flame}
+          trendColor="text-red-600 dark:text-red-400"
+          trendPulse
           loading={loading}
           alert={stats.pendingApprovals > 0 && stats.overdueApprovals > 0}
         />
@@ -452,18 +567,21 @@ export function DashboardPage({
           label="Overdue Approvals"
           value={loading ? '—' : stats.overdueApprovals}
           icon={AlertTriangle}
-          iconBg="rgba(239,68,68,0.12)"
+          iconBg="rgba(239,68,68,0.10)"
           iconColor="#ef4444"
+          trendText={stats.overdueApprovalsTrend ?? 'Escalated to CEO'}
+          TrendIcon={ArrowUpCircle}
+          trendColor="text-pink-600 dark:text-pink-400"
           loading={loading}
           alert={stats.overdueApprovals > 0}
         />
       </section>
 
       {/* ── 2/3 + 1/3 grid ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
-        {/* Left: Recent Projects (2/3 width) */}
-        <div className="xl:col-span-2">
+        {/* Left: Recent Projects */}
+        <div className="lg:col-span-2">
           <RecentProjects
             projects={projects}
             onRowClick={onProjectClick}
@@ -471,17 +589,42 @@ export function DashboardPage({
           />
         </div>
 
-        {/* Right: Approval Inbox compact widget (1/3 width) */}
-        <div className="xl:col-span-1">
-          <ApprovalInbox
-            approvals={pendingApprovals}
-            filter="pending"
-            onApprovalClick={onApprovalClick}
-            showFilters={false}
-          />
+        {/* Right: Approval Inbox widget */}
+        <div className="lg:col-span-1 flex flex-col rounded-xl border border-slate-200 dark:border-border bg-white dark:bg-card shadow-sm overflow-hidden">
+          {/* Widget header */}
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100 dark:border-border">
+            <Clock className="size-5 text-slate-500 dark:text-muted-foreground shrink-0" aria-hidden="true" />
+            <h2 className="flex-1 text-lg font-semibold text-slate-900 dark:text-foreground">Pending Approvals</h2>
+            <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
+              {loading ? '—' : stats.pendingApprovals}
+            </span>
+          </div>
+          {/* Inbox (filter hidden in compact mode) */}
+          <div className="flex-1 overflow-hidden">
+            <ApprovalInbox
+              approvals={loading ? [] : pendingApprovals}
+              filter="pending"
+              onApprovalClick={onApprovalClick}
+              showFilters={false}
+            />
+          </div>
+          {/* Footer */}
+          <div className="border-t border-slate-100 dark:border-border px-5 py-3 text-center">
+            <a
+              href="/approvals"
+              className="inline-flex items-center gap-1 text-sm text-sky-600 hover:text-sky-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded transition-colors"
+            >
+              View All Approvals
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </a>
+          </div>
         </div>
-
       </div>
+
+      {/* ── Quick Actions ── */}
+      <QuickActions onNavigate={(href) => {
+        if (typeof window !== 'undefined') window.location.href = href
+      }} />
 
     </div>
   )
