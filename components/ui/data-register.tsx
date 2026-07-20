@@ -146,19 +146,38 @@ export interface DataRegisterProps<T = Record<string, unknown>> {
 
 type SortDir = 'asc' | 'desc' | null
 
-function sortRows<T>(rows: T[], key: string, dir: SortDir): T[] {
-  if (!dir) return rows
+/** Single sort spec — used for multi-sort (Shift+click) */
+interface SortSpec {
+  key: string
+  dir: 'asc' | 'desc'
+}
+
+/** Debounce hook for search input */
+function useDebounce<T>(value: T, delay = 200): T {
+  const [debouncedValue, setDebouncedValue] = React.useState(value)
+  React.useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(timer)
+  }, [value, delay])
+  return debouncedValue
+}
+
+function sortRows<T>(rows: T[], specs: SortSpec[]): T[] {
+  if (!specs.length) return rows
   return [...rows].sort((a, b) => {
-    const av = (a as Record<string, unknown>)[key]
-    const bv = (b as Record<string, unknown>)[key]
-    if (av == null && bv == null) return 0
-    if (av == null) return 1
-    if (bv == null) return -1
-    const cmp =
-      typeof av === 'number' && typeof bv === 'number'
-        ? av - bv
-        : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
-    return dir === 'asc' ? cmp : -cmp
+    for (const { key, dir } of specs) {
+      const av = (a as Record<string, unknown>)[key]
+      const bv = (b as Record<string, unknown>)[key]
+      if (av == null && bv == null) continue
+      if (av == null) return 1
+      if (bv == null) return -1
+      const cmp =
+        typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
+      if (cmp !== 0) return dir === 'asc' ? cmp : -cmp
+    }
+    return 0
   })
 }
 
@@ -198,6 +217,37 @@ const alignClass: Record<ColumnAlign, string> = {
   left:   'text-left',
   center: 'text-center',
   right:  'text-right',
+}
+
+/* ─────────────────────────────────────────────────────────────
+   COLUMN RESIZE HOOK
+───────────────────────────────────────────── */
+
+function useColumnResize(initialWidths: Record<string, number>) {
+  const [widths, setWidths] = React.useState<Record<string, number>>(initialWidths)
+  const dragging = React.useRef<{ key: string; startX: number; startW: number } | null>(null)
+
+  const onMouseDown = React.useCallback((key: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    const startW = widths[key] ?? 100
+    dragging.current = { key, startX: e.clientX, startW }
+
+    function onMove(ev: MouseEvent) {
+      if (!dragging.current) return
+      const delta = ev.clientX - dragging.current.startX
+      const newW = Math.max(60, dragging.current.startW + delta)
+      setWidths((prev) => ({ ...prev, [dragging.current!.key]: newW }))
+    }
+    function onUp() {
+      dragging.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [widths])
+
+  return { widths, onMouseDown }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -642,13 +692,26 @@ export function DataRegister<T = Record<string, unknown>>({
   className,
 }: DataRegisterProps<T>) {
   const [query,       setQuery]       = React.useState('')
-  const [sortKey,     setSortKey]     = React.useState<string | null>(null)
-  const [sortDir,     setSortDir]     = React.useState<SortDir>(null)
+  const debouncedQuery                = useDebounce(query, 220)
+  const [sortSpecs,   setSortSpecs]   = React.useState<SortSpec[]>([])
   const [page,        setPage]        = React.useState(1)
   const [pageSize,    setPageSize]    = React.useState(initialPageSize)
   const [colFilters,  setColFilters]  = React.useState<Record<string, string>>({})
   const [selected,    setSelected]    = React.useState<Set<string>>(new Set())
   const searchRef = React.useRef<HTMLInputElement>(null)
+
+  // Column resize — seed initial widths from column.width strings
+  const initialColWidths = React.useMemo(() => {
+    const map: Record<string, number> = {}
+    columns.forEach((c) => {
+      if (c.width) {
+        const parsed = parseInt(c.width, 10)
+        if (!isNaN(parsed)) map[c.key] = parsed
+      }
+    })
+    return map
+  }, [columns])
+  const { widths: colWidths, onMouseDown: onResizeMouseDown } = useColumnResize(initialColWidths)
 
   // Resolve icon (new prop takes precedence over legacy titleIcon)
   const resolvedIcon = icon ?? titleIcon
@@ -685,16 +748,16 @@ export function DataRegister<T = Record<string, unknown>>({
   }, [data, rowKey, selected, onSelectionChange])
 
   // Reset page on filter change
-  React.useEffect(() => { setPage(1) }, [query, colFilters])
+  React.useEffect(() => { setPage(1) }, [debouncedQuery, colFilters])
 
   /* ── Derived rows ── */
   const filtered = React.useMemo(
-    () => filterRows(data, query, searchFields as (keyof T)[], colFilters, resolvedColumns),
-    [data, query, searchFields, colFilters, resolvedColumns],
+    () => filterRows(data, debouncedQuery, searchFields as (keyof T)[], colFilters, resolvedColumns),
+    [data, debouncedQuery, searchFields, colFilters, resolvedColumns],
   )
   const sorted = React.useMemo(
-    () => (sortKey ? sortRows(filtered, sortKey, sortDir) : filtered),
-    [filtered, sortKey, sortDir],
+    () => sortRows(filtered, sortSpecs),
+    [filtered, sortSpecs],
   )
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const safePage   = Math.min(page, totalPages)
@@ -710,19 +773,27 @@ export function DataRegister<T = Record<string, unknown>>({
     selected.has(String((r as Record<string, unknown>)[rowKey as string])),
   )
 
-  /* ── Sort toggle ── */
-  function handleSort(key: string) {
-    if (sortKey !== key) {
-      setSortKey(key)
-      setSortDir('asc')
-    } else if (sortDir === 'asc') {
-      setSortDir('desc')
-    } else {
-      setSortKey(null)
-      setSortDir(null)
-    }
+  /* ── Multi-sort toggle (Shift+click adds secondary sorts) ── */
+  function handleSort(key: string, shiftKey = false) {
+    setSortSpecs((prev) => {
+      const existing = prev.find((s) => s.key === key)
+      if (shiftKey) {
+        // Shift+click: add/cycle/remove as secondary sort
+        if (!existing) return [...prev, { key, dir: 'asc' }]
+        if (existing.dir === 'asc') return prev.map((s) => s.key === key ? { ...s, dir: 'desc' } : s)
+        return prev.filter((s) => s.key !== key)
+      }
+      // Normal click: single sort cycle
+      if (!existing) return [{ key, dir: 'asc' }]
+      if (existing.dir === 'asc') return [{ key, dir: 'desc' }]
+      return []
+    })
     setPage(1)
   }
+
+  // Compat helpers for legacy sortKey/sortDir references in the render
+  const sortKey = sortSpecs[0]?.key ?? null
+  const sortDir: SortDir = sortSpecs[0]?.dir ?? null
 
   /* ── Column filter ── */
   function setColFilter(key: string, val: string) {
@@ -804,6 +875,44 @@ export function DataRegister<T = Record<string, unknown>>({
       </div>
       )}
 
+      {/* ── Bulk action bar ─────────────────────────────────── */}
+      {selectable && selected.size > 0 && (
+        <div
+          role="toolbar"
+          aria-label="Bulk actions"
+          className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/8 border-b border-primary/20"
+        >
+          <span className="text-xs font-medium text-primary">
+            {selected.size} row{selected.size !== 1 ? 's' : ''} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10"
+              onClick={() => { setSelected(new Set()); onSelectionChange?.([]) }}
+            >
+              Clear selection
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+            >
+              <Download className="size-3 mr-1" aria-hidden="true" />
+              Export selected
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
+            >
+              Delete selected
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ── Error state ─────────────────────────────────────── */}
       {error && !loading && (
         <div
@@ -815,9 +924,42 @@ export function DataRegister<T = Record<string, unknown>>({
         </div>
       )}
 
-      {/* ── Table ───────────────────────────────────────────── */}
+      {/* ── Mobile card view (< sm) ─────────────────────────── */}
+      {!error && !loading && pageRows.length > 0 && (
+        <ul className="sm:hidden divide-y divide-border" aria-label={`${title} cards`}>
+          {pageRows.map((row) => {
+            const key = String((row as Record<string, unknown>)[rowKey as string])
+            return (
+              <li
+                key={key}
+                role={isClickable ? 'button' : undefined}
+                tabIndex={isClickable ? 0 : undefined}
+                onClick={isClickable ? () => onRowClick!(row) : undefined}
+                onKeyDown={isClickable ? (e) => handleRowKeyDown(e, row) : undefined}
+                className={cn(
+                  'px-4 py-3 flex flex-col gap-1.5',
+                  isClickable && 'cursor-pointer hover:bg-accent/60 focus-visible:outline-none focus-visible:bg-accent/60',
+                )}
+              >
+                {resolvedColumns
+                  .filter((c) => c.type !== 'action' && c.header)
+                  .map((col) => (
+                    <div key={col.key} className="flex items-start justify-between gap-2 text-sm">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide shrink-0 w-28">{col.header}</span>
+                      <span className={cn('flex-1 text-right', col.align === 'right' && 'tabular-nums')}>
+                        {col.render ? col.render(row) : renderCell(col, row)}
+                      </span>
+                    </div>
+                  ))}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {/* ── Table (sm+) ─────────────────────────────────────── */}
       {!error && (
-        <div className="overflow-x-auto">
+        <div className="hidden sm:block overflow-x-auto">
           <table
             role="grid"
             aria-label={title}
@@ -843,15 +985,17 @@ export function DataRegister<T = Record<string, unknown>>({
                   </th>
                 )}
                 {resolvedColumns.map((col) => {
-                  const isActive = sortKey === col.key
-                  const dir: SortDir = isActive ? sortDir : null
+                  const spec    = sortSpecs.find((s) => s.key === col.key)
+                  const dir: SortDir = spec?.dir ?? null
+                  const sortIdx = sortSpecs.findIndex((s) => s.key === col.key)
+                  const colW    = colWidths[col.key]
                   return (
                     <th
                       key={col.key}
                       scope="col"
-                      style={col.width ? { width: col.width } : undefined}
+                      style={colW ? { width: colW } : col.width ? { width: col.width } : undefined}
                       className={cn(
-                        'px-4 py-2.5 font-medium text-xs uppercase tracking-wider text-muted-foreground select-none',
+                        'relative px-4 py-2.5 font-medium text-xs uppercase tracking-wider text-muted-foreground select-none',
                         alignClass[col.align ?? 'left'],
                         col.sortable && 'cursor-pointer hover:text-foreground transition-colors hover:bg-muted/60',
                       )}
@@ -860,10 +1004,10 @@ export function DataRegister<T = Record<string, unknown>>({
                           ? dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'
                           : undefined
                       }
-                      onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                      onClick={col.sortable ? (e) => handleSort(col.key, e.shiftKey) : undefined}
                       onKeyDown={
                         col.sortable
-                          ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort(col.key) } }
+                          ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort(col.key, e.shiftKey) } }
                           : undefined
                       }
                       tabIndex={col.sortable ? 0 : undefined}
@@ -871,7 +1015,21 @@ export function DataRegister<T = Record<string, unknown>>({
                       <span className="inline-flex items-center gap-1">
                         {col.header}
                         {col.sortable && <SortIcon dir={dir} />}
+                        {/* Multi-sort index badge */}
+                        {col.sortable && sortIdx >= 0 && sortSpecs.length > 1 && (
+                          <span className="inline-flex size-3.5 items-center justify-center rounded-full bg-primary/20 text-primary text-[9px] font-bold leading-none">
+                            {sortIdx + 1}
+                          </span>
+                        )}
                       </span>
+                      {/* Column resize handle */}
+                      <span
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`Resize ${col.header} column`}
+                        onMouseDown={(e) => onResizeMouseDown(col.key, e)}
+                        className="absolute right-0 top-0 h-full w-1 cursor-col-resize opacity-0 hover:opacity-100 hover:bg-primary/40 transition-opacity"
+                      />
                     </th>
                   )
                 })}
