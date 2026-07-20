@@ -43,93 +43,17 @@ const MOCK_PROJECT: ProjectData = {
   commentCount: 12,
 }
 
+const _T = (hrsAgo: number) => new Date(Date.now() - hrsAgo * 3_600_000).toISOString()
+
 const MOCK_LOGS: WorkflowLogEntry[] = [
-  {
-    id: 'l1',
-    action: 'workflow.approve',
-    objectType: 'gate',
-    objectLabel: 'G4 Gate Review — Construction Mobilization',
-    actor: { id: 'u1', name: 'Ana Reyes', role: 'PMO Director', avatarInitials: 'AR' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 18),
-    stateBefore: 'under_review',
-    stateAfter: 'approved',
-    reason: 'All G4 pre-conditions satisfied. Mobilization plan accepted by PMO and client.',
-  },
-  {
-    id: 'l2',
-    action: 'workflow.submit',
-    objectType: 'document',
-    objectLabel: 'Mobilization Plan Rev B — SRS-MOB-001',
-    actor: { id: 'u2', name: 'James Rivera', role: 'Project Manager', avatarInitials: 'JR' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 95),
-    stateBefore: 'draft',
-    stateAfter: 'submitted',
-    detail: 'SRS-MOB-001-RevB.pdf · 4.2 MB',
-  },
-  {
-    id: 'l3',
-    action: 'workflow.escalate',
-    objectType: 'budget',
-    objectLabel: '+$8.2M Contingency Draw-Down',
-    actor: { id: 'u3', name: 'Thomas Müller', role: 'Finance Lead', avatarInitials: 'TM' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4),
-    stateBefore: 'pending',
-    stateAfter: 'escalated',
-    reason: 'Module price escalation on inverter supply chain requires CFO sign-off above standard threshold.',
-  },
-  {
-    id: 'l4',
-    action: 'approval.approve',
-    objectType: 'contract',
-    objectLabel: 'EPC Sub-Contract — Civil Works Package',
-    actor: { id: 'u1', name: 'Ana Reyes', role: 'PMO Director', avatarInitials: 'AR' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 7),
-    stateBefore: 'pending_approval',
-    stateAfter: 'executed',
-    reason: 'Competitive bid. Vendor qualified. Insurance certificates verified.',
-    detail: 'Contract value: $24.6M · Duration: 14 months',
-  },
-  {
-    id: 'l5',
-    action: 'comment.create',
-    objectType: 'document',
-    objectLabel: 'G4 Gate Report',
-    actor: { id: 'u4', name: 'Sofia Al-Farsi', role: 'Lead Engineer', avatarInitials: 'SA' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 11),
-    detail: '"Section 3.2 inverter spec needs updated datasheet — Rev C superseded Rev B on 12-Nov."',
-  },
-  {
-    id: 'l6',
-    action: 'workflow.submit',
-    objectType: 'document',
-    objectLabel: 'IFC Drawing Package — Civil Foundations',
-    actor: { id: 'u4', name: 'Sofia Al-Farsi', role: 'Lead Engineer', avatarInitials: 'SA' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 18),
-    stateBefore: 'draft',
-    stateAfter: 'submitted',
-    detail: '48 drawings · SRS-CIV-IFC-001 through SRS-CIV-IFC-048',
-  },
-  {
-    id: 'l7',
-    action: 'workflow.reject',
-    objectType: 'change-order',
-    objectLabel: 'CO-037 — Tracker Row Spacing Change',
-    actor: { id: 'u5', name: 'Luca Costa', role: 'Client Rep (TotalEnergies)', avatarInitials: 'LC' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 29),
-    stateBefore: 'under_review',
-    stateAfter: 'rejected',
-    reason: 'Row spacing change impacts yield model assumptions agreed in G2. Requires yield engineer re-certification before resubmission.',
-  },
-  {
-    id: 'l8',
-    action: 'project.create',
-    objectType: 'project',
-    objectLabel: 'SRS-400 — Sirius 400MW Solar Farm',
-    actor: { id: 'u6', name: 'System', role: 'Platform', avatarInitials: 'SY' },
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 18),
-    stateAfter: 'active',
-    detail: 'Project created at G0 — Opportunity Accepted.',
-  },
+  { id: 'l1', action: 'workflow.approve',  object_type: 'Gate',         object_id: 'g4',  object_code: 'G4 — Construction Mobilization', actor_name: 'Ana Reyes',     actor_role: 'PMO Director',             before_state: 'under_review',    after_state: 'approved',   decision_reason: 'All G4 pre-conditions satisfied. Mobilization plan accepted by PMO and client.', metadata: null,                                              created_at: _T(0.3)    },
+  { id: 'l2', action: 'workflow.submit',   object_type: 'Document',     object_id: 'doc', object_code: 'SRS-MOB-001',                    actor_name: 'James Rivera',  actor_role: 'Project Manager',          before_state: 'draft',           after_state: 'submitted',  decision_reason: null,                                                                           metadata: { detail: 'SRS-MOB-001-RevB.pdf · 4.2 MB' },      created_at: _T(1.6)    },
+  { id: 'l3', action: 'workflow.escalate', object_type: 'Finance',      object_id: 'fin', object_code: 'CONT-2026-008',                  actor_name: 'Thomas Müller', actor_role: 'Finance Lead',             before_state: 'pending',         after_state: 'escalated',  decision_reason: 'Module price escalation on inverter supply chain requires CFO sign-off above standard threshold.', metadata: null,    created_at: _T(4)      },
+  { id: 'l4', action: 'approval.approve',  object_type: 'Contract',     object_id: 'ctr', object_code: 'CTR-CIV-001',                    actor_name: 'Ana Reyes',     actor_role: 'PMO Director',             before_state: 'pending_approval',after_state: 'approved',   decision_reason: 'Competitive bid. Vendor qualified. Insurance certificates verified.',          metadata: { detail: 'Contract value: $24.6M · Duration: 14 months' }, created_at: _T(7) },
+  { id: 'l5', action: 'comment.create',    object_type: 'Document',     object_id: 'doc', object_code: 'G4-GATE-REPORT',                 actor_name: 'Sofia Al-Farsi',actor_role: 'Lead Engineer',            before_state: null,              after_state: null,         decision_reason: null,                                                                           metadata: { detail: 'Section 3.2 inverter spec needs updated datasheet — Rev C superseded Rev B on 12-Nov.' }, created_at: _T(11) },
+  { id: 'l6', action: 'workflow.submit',   object_type: 'Document',     object_id: 'doc', object_code: 'SRS-CIV-IFC-001',                actor_name: 'Sofia Al-Farsi',actor_role: 'Lead Engineer',            before_state: 'draft',           after_state: 'submitted',  decision_reason: null,                                                                           metadata: { detail: '48 drawings · SRS-CIV-IFC-001 through SRS-CIV-IFC-048' },             created_at: _T(18)   },
+  { id: 'l7', action: 'workflow.reject',   object_type: 'Change Order', object_id: 'co',  object_code: 'CO-037',                         actor_name: 'Luca Costa',    actor_role: 'Client Rep (TotalEnergies)',before_state: 'under_review',    after_state: 'rejected',   decision_reason: 'Row spacing change impacts yield model assumptions agreed in G2. Requires yield engineer re-certification before resubmission.', metadata: null, created_at: _T(29) },
+  { id: 'l8', action: 'project.create',    object_type: 'Project',      object_id: 'proj',object_code: 'SRS-400',                         actor_name: 'System',        actor_role: 'Platform',                 before_state: null,              after_state: 'active',     decision_reason: null,                                                                           metadata: { detail: 'Project created at G0 — Opportunity Accepted.' },                     created_at: _T(432)  },
 ]
 
 const MOCK_APPROVALS: ApprovalItem[] = [
@@ -363,7 +287,7 @@ function QuickActionsCard() {
 
 // ─────────────────────────────────────────────────────────────
 // Props + main page
-// ────────────────────────────────────────�����────────────────────
+// ────────────────────────────────────────�������────────────────────
 
 export interface ProjectDetailPageProps {
   project?: ProjectData
@@ -426,9 +350,7 @@ export function ProjectDetailPage({
               <WorkflowTimeline
                 logs={logs}
                 showActor
-                initialVisible={5}
                 loading={loading}
-                emptyMessage="No activity recorded for this project yet."
               />
             </CardContent>
           </Card>
