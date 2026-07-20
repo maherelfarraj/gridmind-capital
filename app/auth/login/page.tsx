@@ -1,14 +1,12 @@
 'use client'
 
 import React from 'react'
+import { useRouter } from 'next/navigation'
 import { LoginPage } from '@/components/auth/login-page'
-
-const DEMO_CREDENTIALS: Record<string, string> = {
-  'admin@gridmind.capital': 'Admin123!',
-  'pm@gridmind.capital':    'PM123!',
-}
+import { createClient } from '@/lib/supabase/client'
 
 export default function Page() {
+  const router = useRouter()
   const [error, setError] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(false)
 
@@ -16,29 +14,21 @@ export default function Page() {
     setIsLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      const supabase = createClient()
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       })
 
-      // API route not yet implemented — fall back to demo credentials
-      if (response.status === 404) {
-        await new Promise((r) => setTimeout(r, 600))
-        if (DEMO_CREDENTIALS[email] === password) {
-          window.location.href = '/dashboard'
-        } else {
-          setError('Invalid email or password. Try the demo credentials below.')
-        }
+      if (authError) {
+        setError(authError.message ?? 'Invalid email or password.')
         return
       }
 
-      const data = await response.json()
-      if (data.success) {
-        window.location.href = '/dashboard'
-      } else {
-        setError(data.error ?? 'Invalid email or password.')
-      }
+      // Redirect to dashboard on success — router.refresh() ensures the
+      // server layout picks up the new session cookie immediately.
+      router.refresh()
+      router.push('/dashboard')
     } catch {
       setError('Network error — please check your connection and try again.')
     } finally {
