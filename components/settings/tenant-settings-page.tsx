@@ -546,6 +546,17 @@ export function TenantSettingsPage({
   const [saving, setSaving] = React.useState(false)
   const [showDeleteModal, setShowDeleteModal] = React.useState(false)
   const [orgNameError, setOrgNameError] = React.useState('')
+  const [toasts, setToasts] = React.useState<{ id: string; type: 'success' | 'error'; message: string }[]>([])
+
+  function addToast(type: 'success' | 'error', message: string) {
+    const id = String(Date.now())
+    setToasts(prev => [...prev, { id, type, message }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000)
+  }
+
+  function dismissToast(id: string) {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }
 
   const isSaving = saving || externalSaving
 
@@ -568,9 +579,11 @@ export function TenantSettingsPage({
   }
 
   async function handleSave() {
-    if (!form.orgName.trim()) {
-      setOrgNameError('Organization name is required')
+    if (!form.orgName.trim() || form.orgName.trim().length < 2) {
+      const msg = !form.orgName.trim() ? 'Organization name is required.' : 'Organization name must be at least 2 characters.'
+      setOrgNameError(msg)
       setActiveTab('general')
+      addToast('error', msg)
       return
     }
 
@@ -606,6 +619,9 @@ export function TenantSettingsPage({
       } else {
         await new Promise(r => setTimeout(r, 1200))
       }
+      addToast('success', 'Settings saved successfully.')
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Failed to save settings. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -623,6 +639,38 @@ export function TenantSettingsPage({
 
   return (
     <>
+      {/* Toast stack — fixed top-right */}
+      {toasts.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="region" aria-label="Notifications">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              role="alert"
+              className={cn(
+                'flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg text-sm',
+                t.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-800'
+                  : 'border-red-200 bg-red-50 text-red-800',
+              )}
+            >
+              {t.type === 'success'
+                ? <CheckCircle className="size-4 mt-0.5 shrink-0 text-green-600" aria-hidden="true" />
+                : <AlertCircle className="size-4 mt-0.5 shrink-0 text-red-600" aria-hidden="true" />
+              }
+              <span className="flex-1">{t.message}</span>
+              <button
+                type="button"
+                onClick={() => dismissToast(t.id)}
+                className="shrink-0 rounded p-0.5 hover:bg-black/10"
+                aria-label="Dismiss"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="min-h-screen bg-slate-50 p-6">
         <div className="mx-auto max-w-4xl">
 
