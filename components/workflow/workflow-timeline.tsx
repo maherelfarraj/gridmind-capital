@@ -338,11 +338,12 @@ function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) 
             {entry.object_type.replace(/_/g, ' ')}
           </span>
 
-          {/* Timestamp */}
+          {/* Timestamp — suppressHydrationWarning because relative time differs between SSR and client */}
           <time
             dateTime={new Date(entry.created_at).toISOString()}
             title={absolute}
             className="ml-auto shrink-0 text-[11px] text-muted-foreground tabular-nums"
+            suppressHydrationWarning
           >
             {relative}
           </time>
