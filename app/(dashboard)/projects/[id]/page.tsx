@@ -109,10 +109,8 @@ export default function ProjectDetailRoute() {
     openPanel('documents')
   }, [openPanel])
 
-  const handleGateClick = React.useCallback((gate: GateDef, _state: GateState) => {
+  const handleGateClick = React.useCallback((_gate: GateDef, _state: GateState) => {
     // Gate detail panel is handled internally by PhaseGateStepper's own drawer.
-    // Hook here for analytics, deep-linking, or external navigation if needed.
-    console.log('[v0] Clicked gate:', gate.code, gate.shortName)
   }, [])
 
   // ── 404 state ──────────────────────────────────────────────
