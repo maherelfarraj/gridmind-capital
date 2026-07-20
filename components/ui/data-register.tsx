@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   ChevronLeft,
   ChevronRight,
+  MoreHorizontal,
   Search,
   Plus,
   Download,
@@ -200,6 +201,73 @@ const alignClass: Record<ColumnAlign, string> = {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   ROW ACTION MENU (3-dot dropdown)
+───────────────────────────────────────────── */
+
+function RowActionMenu() {
+  const [open, setOpen] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label="Row actions"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'inline-flex items-center justify-center size-7 rounded-md',
+          'text-muted-foreground hover:text-foreground hover:bg-accent/60',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+          'transition-colors duration-100',
+          open && 'bg-accent/60 text-foreground',
+        )}
+      >
+        <MoreHorizontal className="size-4" aria-hidden="true" />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="Row action menu"
+          className={cn(
+            'absolute right-0 z-50 mt-1 w-36 origin-top-right rounded-lg border border-border',
+            'bg-card shadow-lg shadow-black/20 py-1',
+            'animate-in fade-in-0 zoom-in-95 duration-100',
+          )}
+        >
+          {(['View', 'Edit', 'Delete'] as const).map((label) => (
+            <button
+              key={label}
+              role="menuitem"
+              type="button"
+              onClick={() => setOpen(false)}
+              className={cn(
+                'flex w-full items-center px-3 py-1.5 text-sm text-foreground',
+                'hover:bg-accent/60 focus-visible:outline-none focus-visible:bg-accent/60',
+                label === 'Delete' && 'text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
    BUILT-IN CELL RENDERERS
 ───────────────────────────────────────────── */
 
@@ -326,15 +394,7 @@ function renderCell<T>(col: ColumnDef<T>, row: T): React.ReactNode {
     }
 
     case 'action': {
-      // Renders a ChevronRight affordance; actual click is handled by onRowClick on the row
-      return (
-        <span
-          aria-hidden="true"
-          className="inline-flex items-center justify-center size-7 rounded-md text-muted-foreground"
-        >
-          <ChevronRight className="size-3.5" />
-        </span>
-      )
+      return <RowActionMenu />
     }
 
     // 'text' and default
