@@ -115,6 +115,7 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
 ───────────────────────────────────────────── */
 
 export interface Project {
+  id: string        // same as code — used as rowKey per spec
   code: string
   name: string
   client_name: string
@@ -146,11 +147,11 @@ const PROJECT_COLUMNS: ColumnDef<Project>[] = [
 ───────────────────────────────────────────── */
 
 const PROJECT_DATA: Project[] = [
-  { code: 'SOL-2026-001', name: 'Al Dhafra Solar PV',   client_name: 'EWEC',    phase: 'engineering',  gate: 'G2', budget_amount: 1_200_000_000,  status: 'active',   target_cod: '2028-06-30' },
-  { code: 'WND-2026-002', name: 'Dogger Bank Wind',      client_name: 'Equinor', phase: 'procurement',  gate: 'G3', budget_amount:   850_000_000,  status: 'active',   target_cod: '2029-12-31' },
-  { code: 'HYD-2026-003', name: 'Grand Inga Hydro',      client_name: 'AfDB',    phase: 'intake',       gate: 'G0', budget_amount: 14_000_000_000, status: 'active',   target_cod: '2032-06-30' },
-  { code: 'SOL-2026-004', name: 'Noor Ouarzazate IV',    client_name: 'MASEN',   phase: 'construction', gate: 'G4', budget_amount:   500_000_000,  status: 'active',   target_cod: '2027-03-15' },
-  { code: 'WND-2026-005', name: 'Hornsea Project Four',  client_name: 'Orsted',  phase: 'commercial',   gate: 'G1', budget_amount: 2_100_000_000,  status: 'on-hold',  target_cod: '2030-09-30' },
+  { id: 'SOL-2026-001', code: 'SOL-2026-001', name: 'Al Dhafra Solar PV',   client_name: 'EWEC',    phase: 'engineering',  gate: 'G2', budget_amount: 1_200_000_000,  status: 'active',   target_cod: '2028-06-30' },
+  { id: 'WND-2026-002', code: 'WND-2026-002', name: 'Dogger Bank Wind',      client_name: 'Equinor', phase: 'procurement',  gate: 'G3', budget_amount:   850_000_000,  status: 'active',   target_cod: '2029-12-31' },
+  { id: 'HYD-2026-003', code: 'HYD-2026-003', name: 'Grand Inga Hydro',      client_name: 'AfDB',    phase: 'intake',       gate: 'G0', budget_amount: 14_000_000_000, status: 'active',   target_cod: '2032-06-30' },
+  { id: 'SOL-2026-004', code: 'SOL-2026-004', name: 'Noor Ouarzazate IV',    client_name: 'MASEN',   phase: 'construction', gate: 'G4', budget_amount:   500_000_000,  status: 'active',   target_cod: '2027-03-15' },
+  { id: 'WND-2026-005', code: 'WND-2026-005', name: 'Hornsea Project Four',  client_name: 'Orsted',  phase: 'commercial',   gate: 'G1', budget_amount: 2_100_000_000,  status: 'on-hold',  target_cod: '2030-09-30' },
 ]
 
 // Legacy helper kept for PipelineProject-based columns (phase-tab counts, stats footer)
@@ -543,19 +544,20 @@ export function ProjectsListPage({
       {/* ── Spec DataRegister (type-based columns, flat Project shape) ── */}
       <div className="mt-6" aria-label="Spec project register">
         <DataRegister<Project>
-          title="Project Register"
-          icon={<FolderKanban className="size-4" />}
           data={PROJECT_DATA}
           columns={PROJECT_COLUMNS}
-          rowKey="code"
+          title="Projects"
+          icon={<FolderKanban className="w-5 h-5" />}
           searchFields={['code', 'name', 'client_name']}
-          searchable
-          sortable
+          onRowClick={(row) => handleRowClick({ id: row.id, code: row.code, name: row.name } as PipelineProject)}
+          rowKey="id"
           pageSize={10}
+          sortable={true}
+          filterable={true}
+          searchable={true}
           pageSizeOptions={[5, 10, 25]}
           emptyTitle="No projects found"
           emptySubtitle="Try adjusting your search or filters."
-          onRowClick={(row) => handleRowClick({ id: row.code, code: row.code, name: row.name } as PipelineProject)}
         />
       </div>
 
