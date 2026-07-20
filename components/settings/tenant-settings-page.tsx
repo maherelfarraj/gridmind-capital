@@ -29,6 +29,58 @@ import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 /* ─────────────────────────────────────────────
+   Public types (spec-exact)
+───────────────────────────────────────────── */
+export interface Tenant {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  status: 'active' | 'suspended' | 'trial' | 'churned'
+  created_at?: string
+}
+
+export interface TenantSettings {
+  name: string
+  slug: string
+  plan: string
+  status: string
+  timezone: string
+  date_format: string
+  language: string
+  default_currency: string
+  approval_threshold_low: number
+  approval_threshold_medium: number
+  approval_threshold_high: number
+  auto_escalation_hours: number
+  escalation_target: string
+  notifications_email: boolean
+  notifications_push: boolean
+  notifications_in_app: boolean
+  notifications_sms: boolean
+  email_priority: string
+  push_priority: string
+  in_app_priority: string
+  sso_provider: string
+  mfa_required: boolean
+  session_timeout: string
+  max_concurrent_sessions: number
+}
+
+export interface TenantSettingsProps {
+  /** Live tenant record — drives read-only identity fields (slug, plan, status). */
+  tenant?: Tenant
+  /** Current persisted settings — seeds the form on mount. */
+  settings?: Partial<TenantSettings>
+  /** Called with the changed fields when the user clicks Save. */
+  onSave?: (settings: Partial<TenantSettings>) => Promise<void>
+  /** External saving flag merged with internal loading state. */
+  isSaving?: boolean
+  /** When false every input is disabled and Save is hidden. Defaults to true. */
+  canEdit?: boolean
+}
+
+/* ─────────────────────────────────────────────
    Mock data (spec-exact)
 ───────────────────────────────────────────── */
 const mockTenantSettings = {
@@ -454,15 +506,51 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 /* ─────────────────────────────────────────────
    Main Page
 ───────────────────────────────────────────── */
-export function TenantSettingsPage() {
+export function TenantSettingsPage({
+  tenant,
+  settings: externalSettings,
+  onSave,
+  isSaving: externalSaving = false,
+  canEdit = true,
+}: TenantSettingsProps = {}) {
+  // Derive initial form from external settings when provided, fall back to mock
+  const initialForm = React.useMemo<FormState>(() => {
+    const s = externalSettings
+    if (!s) return DEFAULT_FORM
+    return {
+      orgName:           s.name               ?? DEFAULT_FORM.orgName,
+      timezone:          s.timezone           ?? DEFAULT_FORM.timezone,
+      dateFormat:        s.date_format        ?? DEFAULT_FORM.dateFormat,
+      language:          s.language           ?? DEFAULT_FORM.language,
+      currency:          s.default_currency   ?? DEFAULT_FORM.currency,
+      thresholdLow:      s.approval_threshold_low    != null ? String(s.approval_threshold_low)    : DEFAULT_FORM.thresholdLow,
+      thresholdMedium:   s.approval_threshold_medium != null ? String(s.approval_threshold_medium) : DEFAULT_FORM.thresholdMedium,
+      thresholdHigh:     s.approval_threshold_high   != null ? String(s.approval_threshold_high)   : DEFAULT_FORM.thresholdHigh,
+      escalationHours:   s.auto_escalation_hours     != null ? String(s.auto_escalation_hours)     : DEFAULT_FORM.escalationHours,
+      escalationTarget:  s.escalation_target  ?? DEFAULT_FORM.escalationTarget,
+      notifyEmail:       s.notifications_email   ?? DEFAULT_FORM.notifyEmail,
+      notifyPush:        s.notifications_push    ?? DEFAULT_FORM.notifyPush,
+      notifyInApp:       s.notifications_in_app  ?? DEFAULT_FORM.notifyInApp,
+      notifySms:         s.notifications_sms     ?? DEFAULT_FORM.notifySms,
+      notifPriorities:   DEFAULT_FORM.notifPriorities,
+      ssoProvider:       s.sso_provider      ?? DEFAULT_FORM.ssoProvider,
+      mfaRequired:       s.mfa_required      ?? DEFAULT_FORM.mfaRequired,
+      sessionTimeout:    s.session_timeout   ?? DEFAULT_FORM.sessionTimeout,
+      maxSessions:       s.max_concurrent_sessions != null ? String(s.max_concurrent_sessions) : DEFAULT_FORM.maxSessions,
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [activeTab, setActiveTab] = React.useState<Tab>('general')
-  const [form, setForm] = React.useState<FormState>(DEFAULT_FORM)
+  const [form, setForm] = React.useState<FormState>(initialForm)
   const [saving, setSaving] = React.useState(false)
   const [showDeleteModal, setShowDeleteModal] = React.useState(false)
   const [orgNameError, setOrgNameError] = React.useState('')
 
-  // Track unsaved changes
-  const isDirty = JSON.stringify(form) !== JSON.stringify(DEFAULT_FORM)
+  const isSaving = saving || externalSaving
+
+  // Track unsaved changes against whichever baseline was used
+  const isDirty = JSON.stringify(form) !== JSON.stringify(initialForm)
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -475,7 +563,7 @@ export function TenantSettingsPage() {
   }
 
   function handleDiscard() {
-    setForm(DEFAULT_FORM)
+    setForm(initialForm)
     setOrgNameError('')
   }
 
@@ -485,9 +573,42 @@ export function TenantSettingsPage() {
       setActiveTab('general')
       return
     }
+
+    // Build the partial TenantSettings delta to pass to the caller
+    const delta: Partial<TenantSettings> = {
+      name:                       form.orgName,
+      timezone:                   form.timezone,
+      date_format:                form.dateFormat,
+      language:                   form.language,
+      default_currency:           form.currency,
+      approval_threshold_low:     Number(form.thresholdLow),
+      approval_threshold_medium:  Number(form.thresholdMedium),
+      approval_threshold_high:    Number(form.thresholdHigh),
+      auto_escalation_hours:      Number(form.escalationHours),
+      escalation_target:          form.escalationTarget,
+      notifications_email:        form.notifyEmail,
+      notifications_push:         form.notifyPush,
+      notifications_in_app:       form.notifyInApp,
+      notifications_sms:          form.notifySms,
+      email_priority:             form.notifPriorities['email'] ?? 'normal',
+      push_priority:              form.notifPriorities['push'] ?? 'normal',
+      in_app_priority:            form.notifPriorities['in_app'] ?? 'normal',
+      sso_provider:               form.ssoProvider,
+      mfa_required:               form.mfaRequired,
+      session_timeout:            form.sessionTimeout,
+      max_concurrent_sessions:    Number(form.maxSessions),
+    }
+
     setSaving(true)
-    await new Promise(r => setTimeout(r, 1200))
-    setSaving(false)
+    try {
+      if (onSave) {
+        await onSave(delta)
+      } else {
+        await new Promise(r => setTimeout(r, 1200))
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   const currencySymbol = CURRENCY_SYMBOLS[form.currency] ?? form.currency
@@ -514,11 +635,11 @@ export function TenantSettingsPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {isDirty && (
+              {canEdit && isDirty && (
                 <button
                   type="button"
                   onClick={handleDiscard}
-                  disabled={saving}
+                  disabled={isSaving}
                   className={cn(
                     'flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700',
                     'hover:bg-slate-50 transition-colors',
@@ -529,23 +650,30 @@ export function TenantSettingsPage() {
                   Discard
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!isDirty || saving}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-lg bg-[#0a192f] px-3 py-2 text-sm font-medium text-white',
-                  'hover:bg-slate-800 transition-colors',
-                  'disabled:opacity-50 disabled:cursor-not-allowed',
-                )}
-              >
-                {saving ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <CheckCircle className="size-4" aria-hidden="true" />
-                )}
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!isDirty || isSaving}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg bg-[#0a192f] px-3 py-2 text-sm font-medium text-white',
+                    'hover:bg-slate-800 transition-colors',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                >
+                  {isSaving ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <CheckCircle className="size-4" aria-hidden="true" />
+                  )}
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              )}
+              {!canEdit && (
+                <span className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-400">
+                  View only
+                </span>
+              )}
             </div>
           </div>
 
@@ -628,7 +756,7 @@ export function TenantSettingsPage() {
                       <input
                         id="org-slug"
                         type="text"
-                        value={form.orgName ? form.orgName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : mockTenantSettings.slug}
+                        value={tenant?.slug ?? (form.orgName ? form.orgName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : mockTenantSettings.slug)}
                         disabled
                         className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pr-9 text-sm text-slate-500 outline-none"
                         aria-readonly="true"
@@ -639,8 +767,8 @@ export function TenantSettingsPage() {
 
                   <Field label="Current Plan" helper="">
                     <div className="flex items-center gap-2 py-1">
-                      <span className="inline-flex items-center rounded-full bg-[#0a192f] px-3 py-1 text-xs font-medium text-white">
-                        Enterprise
+                      <span className="inline-flex items-center rounded-full bg-[#0a192f] px-3 py-1 text-xs font-medium text-white capitalize">
+                        {tenant?.plan ?? 'Enterprise'}
                       </span>
                       <span className="text-xs text-slate-500">Contact support to upgrade or downgrade</span>
                       <a href="#" className="ml-1 text-xs text-sky-600 hover:underline">Upgrade</a>
@@ -649,9 +777,20 @@ export function TenantSettingsPage() {
 
                   <Field label="Account Status" helper="Your account is in good standing">
                     <div className="flex items-center gap-2 py-1">
-                      <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-                        Active
-                      </span>
+                      {(() => {
+                        const status = tenant?.status ?? 'active'
+                        const map: Record<string, string> = {
+                          active:    'bg-green-100 text-green-700',
+                          trial:     'bg-sky-100 text-sky-700',
+                          suspended: 'bg-red-100 text-red-700',
+                          churned:   'bg-slate-100 text-slate-500',
+                        }
+                        return (
+                          <span className={cn('inline-flex items-center rounded-full px-3 py-1 text-xs font-medium capitalize', map[status] ?? map.active)}>
+                            {status}
+                          </span>
+                        )
+                      })()}
                     </div>
                   </Field>
                 </div>
