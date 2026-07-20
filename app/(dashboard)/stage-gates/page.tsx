@@ -1,3 +1,5 @@
+'use client'
+
 import { StageGateReviewPage } from '@/components/stage-gate/stage-gate-review-page'
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
 
