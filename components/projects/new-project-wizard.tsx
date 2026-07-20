@@ -1119,8 +1119,8 @@ export function NewProjectWizard({
             <div />
           )}
 
-          {/* Error hint */}
-          {Object.keys(errors).length > 0 && (
+          {/* Error hint — only show on steps 1-3; step 4 has inline error on the submit button */}
+          {Object.keys(errors).length > 0 && !isLastStep && (
             <p className="hidden sm:block text-xs text-red-500 flex-1 text-center" role="alert">
               Please fix the errors above to continue.
             </p>
