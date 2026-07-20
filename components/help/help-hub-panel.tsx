@@ -725,6 +725,17 @@ function RichBody({ text, highlight }: { text: string; highlight?: string }) {
 /* ─────────────────────────────────────────────────────
    TOPIC CARD
 ───────────────────────────────────────────────────── */
+function highlightTitle(title: string, query: string): React.ReactNode {
+  if (!query || query.length < 2) return title
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const parts = title.split(new RegExp(`(${escaped})`, 'gi'))
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase()
+      ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-900/60 text-foreground rounded-[2px] px-0.5">{part}</mark>
+      : part,
+  )
+}
+
 function TopicCard({
   topic,
   searchQuery,
@@ -767,7 +778,7 @@ function TopicCard({
         {/* Title + module tag */}
         <span className="flex-1 min-w-0">
           <span className="block text-sm font-medium text-foreground truncate leading-snug">
-            {topic.title}
+            {highlightTitle(topic.title, searchQuery)}
           </span>
           <span className="block text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">
             {MODULE_TABS.find(t => t.key === topic.module)?.label ?? topic.module}
@@ -862,7 +873,7 @@ function TopicCard({
   )
 }
 
-/* ─────────────────────────────────────────────────────
+/* ───────────────────────────────────────���─────────────
    CONVERT EXTERNAL HelpTopic → InternalTopic
 ───────────────────────────────────────────────────── */
 function externalToInternal(t: HelpTopic): InternalTopic {
@@ -912,6 +923,11 @@ export function HelpHubPanel({
   const [activeModule, setActiveModule] = React.useState<HelpModuleKey | 'all'>(
     validContextModule ?? defaultModule,
   )
+
+  // Re-sync active module when contextModule changes (e.g. route navigation)
+  React.useEffect(() => {
+    if (validContextModule) setActiveModule(validContextModule)
+  }, [validContextModule])
   const [query, setQuery] = React.useState('')
   const [showTooltip, setShowTooltip] = React.useState(false)
   const panelRef = React.useRef<HTMLDivElement>(null)
@@ -1162,6 +1178,8 @@ export function HelpHubPanel({
         >
           {MODULE_TABS.map((tab, idx) => {
             const count = countByModule[tab.key] ?? 0
+            // Hide tabs with no visible topics (e.g. admin tab for non-admin users)
+            if (count === 0 && tab.key !== 'all') return null
             const isActive = activeModule === tab.key
             const TabIcon = tab.icon
             return (
@@ -1182,7 +1200,6 @@ export function HelpHubPanel({
                   isActive
                     ? 'bg-[#0a192f] text-[#64ffda] dark:bg-[#64ffda] dark:text-[#0a192f]'
                     : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground',
-                  count === 0 && 'opacity-40 pointer-events-none',
                 )}
               >
                 <TabIcon className="size-3" aria-hidden="true" />
@@ -1251,7 +1268,7 @@ export function HelpHubPanel({
           )}
         </div>
 
-        {/* ── Footer ── */}
+        {/* ─�� Footer ── */}
         <div className="shrink-0 border-t border-border px-4 py-2.5 flex items-center justify-between">
           <span className="text-[11px] text-muted-foreground tabular-nums">
             {filtered.length} topic{filtered.length !== 1 ? 's' : ''}
