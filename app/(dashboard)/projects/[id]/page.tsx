@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ProjectCommandCenter } from '@/components/layout/ProjectCommandCenter'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
 import { MOCK_PROJECTS } from '@/components/dashboard/dashboard-data'
 import type { ProjectData } from '@/components/project/project-command-center'
@@ -13,9 +12,35 @@ import type { PhaseKey } from '@/components/app-shell/nav-config'
 // Replace with a real API/DB fetch when the backend is wired up.
 // ─────────────────────────────────────────────────────────────
 
+// Gate names aligned with the GREOS stage-gate model
+const GATE_NAMES: Record<number, string> = {
+  0: 'Investment Intake',
+  1: 'Development Approval',
+  2: 'Commercial IFC',
+  3: 'Engineering IFC',
+  4: 'Procurement Ready',
+  5: 'Construction Mobilization',
+  6: 'Systems Commissioning',
+  7: 'COD Declaration',
+  8: 'O&M Handover',
+  9: 'AI Analytics',
+}
+
+// Approximate start dates by gate — replace with real DB field when available
+const GATE_START_DATES: Record<number, string> = {
+  0: '2025-01-15', 1: '2024-06-01', 2: '2024-03-20',
+  3: '2026-01-15', 4: '2023-11-01', 5: '2023-07-10',
+  6: '2023-04-05', 7: '2023-01-20', 8: '2022-10-01', 9: '2022-06-01',
+}
+
 function findProject(id: string): ProjectData | null {
-  const raw = MOCK_PROJECTS.find((p) => p.id === id)
+  // Match by id OR code (case-insensitive) so /projects/SOL-2026-001 works
+  const normalised = id.toUpperCase()
+  const raw = MOCK_PROJECTS.find(
+    (p) => p.id === id || p.code.toUpperCase() === normalised,
+  )
   if (!raw) return null
+
   return {
     id: raw.id,
     name: raw.name,
@@ -24,10 +49,10 @@ function findProject(id: string): ProjectData | null {
     status: raw.status as ProjectData['status'],
     phase: raw.phase as PhaseKey,
     gate: raw.gate,
-    gateName: `Gate ${raw.gate}`,
+    gateName: GATE_NAMES[raw.gate] ?? `Gate ${raw.gate}`,
     budgetUsd: raw.budgetM * 1_000_000,
     currency: 'USD',
-    startDate: '2023-03-15',          // replace with raw.start_date when available
+    startDate: GATE_START_DATES[raw.gate] ?? '2024-01-01',
     targetCod: raw.targetCod,
     location: raw.location,
     commentCount: raw.gate >= 3 ? 12 : 0,
