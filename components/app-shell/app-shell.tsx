@@ -8,6 +8,7 @@ import { TopBar, type Breadcrumb } from './topbar'
 import { useSession } from '@/lib/session-context'
 import { getInitials, ROLE_LABELS, toNavRole } from '@/lib/session'
 import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
+import { ToastProvider } from '@/components/ui/toast'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -115,6 +116,7 @@ export function AppShell({
   }, [mobileOpen])
 
   return (
+    <ToastProvider position="bottom-right">
     <div className="flex h-screen overflow-hidden bg-background">
       {/* ── Sidebar ── */}
       <Sidebar
@@ -173,5 +175,6 @@ export function AppShell({
         userRole={session.roles[0]}
       />
     </div>
+    </ToastProvider>
   )
 }
