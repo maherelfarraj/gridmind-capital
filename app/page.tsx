@@ -1,20 +1,20 @@
 import { AppShell } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui/toast'
-import { TenantSettingsPage } from '@/components/settings/tenant-settings-page'
+import { UsersRolesPage } from '@/components/admin/users-roles-page'
 
 export default function Home() {
   return (
     <AppShell
-      title="Tenant Settings"
+      title="Users & Roles"
       breadcrumbs={[
         { label: 'Admin', href: '/admin' },
-        { label: 'Tenant Settings' },
+        { label: 'Users & Roles' },
       ]}
       notificationCount={3}
       approvalCount={4}
     >
       <ToastProvider position="bottom-right">
-        <TenantSettingsPage />
+        <UsersRolesPage />
       </ToastProvider>
     </AppShell>
   )
