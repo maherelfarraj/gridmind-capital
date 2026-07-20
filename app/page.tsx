@@ -1,20 +1,20 @@
 import { AppShell } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui/toast'
-import { DesignSystemShowcase } from '@/components/design-system/showcase'
+import { ProjectCommandCenterDemo } from '@/components/project/project-command-center-demo'
 
 export default function Home() {
   return (
     <AppShell
-      title="Design System"
+      title="Sirius 400MW Solar Farm"
       breadcrumbs={[
-        { label: 'GridMind Capital', href: '/' },
-        { label: 'Design System' },
+        { label: 'Projects', href: '/projects' },
+        { label: 'Sirius 400MW Solar Farm' },
       ]}
       notificationCount={3}
       approvalCount={4}
     >
       <ToastProvider position="bottom-right">
-        <DesignSystemShowcase />
+        <ProjectCommandCenterDemo />
       </ToastProvider>
     </AppShell>
   )
