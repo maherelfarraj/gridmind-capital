@@ -194,6 +194,8 @@ function formatCurrency(value: number): string {
 
 function formatDate(value: string | Date): string {
   const d = typeof value === 'string' ? new Date(value) : value
+  // Guard against non-ISO strings like "Q4 2025" or "Dec 2024"
+  if (isNaN(d.getTime())) return typeof value === 'string' ? value : '—'
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
