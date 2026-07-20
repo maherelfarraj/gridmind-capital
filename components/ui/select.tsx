@@ -137,14 +137,21 @@ function Select({
             hasError
               ? 'border-[#ef4444] focus:border-[#ef4444] focus:ring-[#ef4444]/20'
               : 'border-border hover:border-ring/50',
+            // NOTE: render selected label manually — Base UI's SelectPrimitive.Value
+            // does not resolve ItemText on SSR/hydration before items mount.
             'data-[popup-open]:border-ring data-[popup-open]:ring-2 data-[popup-open]:ring-ring/30',
           )}
         >
-          <SelectPrimitive.Value
-            placeholder={
-              <span className="text-muted-foreground">{placeholder}</span>
-            }
-          />
+          {/* Resolve label from options array so initial value always displays correctly */}
+          {(() => {
+            const currentValue = value ?? defaultValue
+            const found = options.find(o => o.value === currentValue)
+            return found
+              ? <span>{found.label}</span>
+              : <span className="text-muted-foreground">{placeholder}</span>
+          })()}
+          {/* Keep SelectPrimitive.Value hidden so Base UI still tracks selection internally */}
+          <SelectPrimitive.Value className="sr-only" />
           <SelectPrimitive.Icon>
             <ChevronIcon />
           </SelectPrimitive.Icon>

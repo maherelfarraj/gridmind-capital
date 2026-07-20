@@ -101,7 +101,7 @@ const mockTenantSettings = {
   notifications_push: true,
   notifications_in_app: true,
   notifications_sms: false,
-  sso_provider: 'none',
+  sso_provider: 'local',
   mfa_required: false,
   session_timeout: '2 hours',
   max_concurrent_sessions: 5,
@@ -221,7 +221,7 @@ const SESSION_TIMEOUTS = [
 ]
 
 const SSO_PROVIDERS = [
-  { value: 'none', label: 'None (local auth only)' },
+  { value: 'local', label: 'None (local auth only)' },
   { value: 'microsoft_entra', label: 'Microsoft Entra ID' },
   { value: 'google_workspace', label: 'Google Workspace' },
   { value: 'okta', label: 'Okta' },
@@ -290,7 +290,7 @@ const DEFAULT_FORM: FormState = {
     escalations: 'urgent',
     system_alerts: 'low',
   },
-  ssoProvider: mockTenantSettings.sso_provider,
+  ssoProvider: 'local',
   mfaRequired: mockTenantSettings.mfa_required,
   sessionTimeout: '2 hours',
   maxSessions: String(mockTenantSettings.max_concurrent_sessions),
@@ -396,7 +396,7 @@ function Field({
 
 /* ─────────────────────────────────────────────
    Delete Confirmation Modal
-───────────────────────────────────────────── */
+──────────────��────────────────────────────── */
 function DeleteModal({ onClose }: { onClose: () => void }) {
   const [confirmText, setConfirmText] = React.useState('')
   const [deleting, setDeleting] = React.useState(false)
