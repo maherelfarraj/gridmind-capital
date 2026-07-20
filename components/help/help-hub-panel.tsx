@@ -890,6 +890,93 @@ function externalToInternal(t: HelpTopic): InternalTopic {
 }
 
 /* ─────────────────────────────────────────────────────
+   VIRTUAL TOPIC LIST
+   Progressive rendering: shows PAGE_SIZE items initially,
+   loads more via IntersectionObserver sentinel — avoids
+   rendering 100+ collapsed TopicCards at once.
+───────────────────────────────────────────────────── */
+const VIRTUAL_PAGE = 10
+
+function VirtualTopicList({
+  topics,
+  searchQuery,
+  onClearSearch,
+  activeModule,
+}: {
+  topics: InternalTopic[]
+  searchQuery: string
+  onClearSearch: () => void
+  activeModule: string
+}) {
+  const [visibleCount, setVisibleCount] = React.useState(VIRTUAL_PAGE)
+  const sentinelRef = React.useRef<HTMLDivElement>(null)
+
+  // Reset when topics list changes (filter/search/tab)
+  React.useEffect(() => { setVisibleCount(VIRTUAL_PAGE) }, [topics])
+
+  // Load more when sentinel scrolls into view
+  React.useEffect(() => {
+    if (!sentinelRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount(c => Math.min(c + VIRTUAL_PAGE, topics.length))
+        }
+      },
+      { threshold: 0.1 },
+    )
+    observer.observe(sentinelRef.current)
+    return () => observer.disconnect()
+  }, [topics.length])
+
+  const visible = topics.slice(0, visibleCount)
+
+  return (
+    <div
+      id={`help-panel-${activeModule}`}
+      role="tabpanel"
+      aria-labelledby={`help-tab-${activeModule}`}
+      className="flex-1 overflow-y-auto px-3 py-3 space-y-2"
+    >
+      {topics.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+          <SearchX className="size-12 text-muted-foreground/30" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-foreground">No topics found</p>
+            {searchQuery ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Try different keywords or{' '}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={onClearSearch}
+                >
+                  browse all topics
+                </button>
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                No topics are available for this module.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          {visible.map(topic => (
+            <TopicCard key={topic.id} topic={topic} searchQuery={searchQuery} />
+          ))}
+          {/* Sentinel — triggers loading next page when scrolled into view */}
+          {visibleCount < topics.length && (
+            <div ref={sentinelRef} className="h-4" aria-hidden="true" />
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────
    MAIN COMPONENT
 ───────────────────────────────────────────────────── */
 export function HelpHubPanel({
@@ -954,6 +1041,33 @@ export function HelpHubPanel({
       const frame = requestAnimationFrame(() => searchRef.current?.focus())
       return () => cancelAnimationFrame(frame)
     }
+  }, [open])
+
+  // Focus trap — keep Tab/Shift+Tab inside dialog when open
+  React.useEffect(() => {
+    if (!open || !panelRef.current) return
+    const FOCUSABLE = [
+      'a[href]', 'button:not([disabled])', 'input:not([disabled])',
+      'select:not([disabled])', 'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',')
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !panelRef.current) return
+      const nodes = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+      if (!nodes.length) return
+      const first = nodes[0]
+      const last  = nodes[nodes.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', handler)
+    // Move initial focus into panel
+    const first = panelRef.current.querySelector<HTMLElement>(FOCUSABLE)
+    first?.focus()
+    return () => document.removeEventListener('keydown', handler)
   }, [open])
 
   // Close on Escape
@@ -1071,12 +1185,12 @@ export function HelpHubPanel({
         >
           {open
             ? <X className="size-5" aria-hidden="true" />
-            : <HelpCircle className="size-5" aria-hidden="true" />
+            : <HelpCircle className="size-6" aria-hidden="true" />
           }
           {/* Unread dot */}
           {hasUnread && (
             <span
-              className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-red-500 ring-2 ring-[#0a192f] dark:ring-[#64ffda]"
+              className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-red-500 ring-2 ring-[#0a192f] dark:ring-[#64ffda] animate-pulse"
               aria-label="New help topics available"
             />
           )}
@@ -1101,19 +1215,27 @@ export function HelpHubPanel({
         aria-label="Help Center"
         className={cn(
           'fixed z-50 transition-all duration-200 ease-out',
-          // mobile: bottom sheet
-          'inset-x-0 bottom-0 rounded-t-2xl',
+          // mobile: full-width bottom sheet, 80vh
+          'inset-x-0 bottom-0 rounded-t-2xl max-h-[80vh]',
           // desktop: floating card above FAB
-          'sm:inset-x-auto sm:bottom-24 sm:right-6 sm:rounded-2xl sm:w-full sm:max-w-[400px]',
+          'sm:inset-x-auto sm:bottom-24 sm:right-6 sm:rounded-2xl sm:w-full sm:max-w-[400px] sm:max-h-[70vh]',
           // surface
           'bg-background border border-border shadow-2xl',
-          'flex flex-col max-h-[70vh]',
+          'flex flex-col',
           // animation
           open
             ? 'translate-y-0 opacity-100 pointer-events-auto'
             : 'translate-y-4 opacity-0 pointer-events-none sm:translate-y-2',
         )}
       >
+        {/* ── Mobile drag handle ── */}
+        <div
+          aria-hidden="true"
+          className="flex justify-center pt-3 pb-1 sm:hidden"
+        >
+          <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
+        </div>
+
         {/* ── Header ── */}
         <div className="shrink-0 border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
@@ -1231,42 +1353,13 @@ export function HelpHubPanel({
           </div>
         )}
 
-        {/* ── Topic list ── */}
-        <div
-          id={`help-panel-${activeModule}`}
-          role="tabpanel"
-          aria-labelledby={`help-tab-${activeModule}`}
-          className="flex-1 overflow-y-auto px-3 py-3 space-y-2"
-        >
-          {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-              <SearchX className="size-12 text-muted-foreground/30" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-medium text-foreground">No topics found</p>
-                {query ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Try different keywords or{' '}
-                    <button
-                      type="button"
-                      className="underline underline-offset-2 hover:text-foreground"
-                      onClick={() => setQuery('')}
-                    >
-                      browse all topics
-                    </button>
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    No topics are available for this module.
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            filtered.map(topic => (
-              <TopicCard key={topic.id} topic={topic} searchQuery={query.trim()} />
-            ))
-          )}
-        </div>
+        {/* ── Topic list (progressive virtual rendering) ── */}
+        <VirtualTopicList
+          topics={filtered}
+          searchQuery={query.trim()}
+          onClearSearch={() => setQuery('')}
+          activeModule={activeModule}
+        />
 
         {/* ─�� Footer ── */}
         <div className="shrink-0 border-t border-border px-4 py-2.5 flex items-center justify-between">
