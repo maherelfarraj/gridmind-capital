@@ -1,20 +1,20 @@
 import { AppShell } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui/toast'
-import { ProjectDetailPage } from '@/components/projects/project-detail-page'
+import { NewProjectWizardPage } from '@/components/projects/new-project-wizard'
 
 export default function Home() {
   return (
     <AppShell
-      title="Sirius 400MW Solar Farm"
+      title="New Project"
       breadcrumbs={[
         { label: 'Projects', href: '/projects' },
-        { label: 'SRS-400 — Sirius 400MW Solar Farm' },
+        { label: 'New Project' },
       ]}
       notificationCount={3}
       approvalCount={4}
     >
       <ToastProvider position="bottom-right">
-        <ProjectDetailPage />
+        <NewProjectWizardPage />
       </ToastProvider>
     </AppShell>
   )
