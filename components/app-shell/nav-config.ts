@@ -105,7 +105,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Approvals',
     href: '/approvals',
     icon: CheckSquare,
-    badge: 4,
+    badge: 3,
   },
 
   // ── Stage Gates ──

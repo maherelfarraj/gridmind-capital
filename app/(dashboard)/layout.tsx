@@ -11,7 +11,7 @@ export default function DashboardLayout({
   // (e.g. auth.api.getSession()) when the auth backend is wired up.
   return (
     <SessionProvider session={mockSession}>
-      <AppShell>
+      <AppShell approvalCount={3}>
         {children}
       </AppShell>
     </SessionProvider>
