@@ -7,6 +7,7 @@ import { Sidebar } from './sidebar'
 import { TopBar, type Breadcrumb } from './topbar'
 import { useSession } from '@/lib/session-context'
 import { getInitials, ROLE_LABELS, toNavRole } from '@/lib/session'
+import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -74,6 +75,27 @@ export function AppShell({
     roleLabel: ROLE_LABELS[session.roles[0]] ?? 'User',
     initials: getInitials(session.fullName),
   }), [session])
+
+  // Derive help context module from the current pathname segment
+  const contextModule = React.useMemo(() => {
+    const segment = pathname.split('/').filter(Boolean)[0] ?? 'general'
+    // Map common route prefixes to HelpModuleKey values
+    const map: Record<string, string> = {
+      projects:       'construction',
+      engineering:    'engineering',
+      procurement:    'procurement',
+      finance:        'finance',
+      commercial:     'commercial',
+      hse:            'hse',
+      construction:   'construction',
+      commissioning:  'commissioning',
+      'stage-gates':  'stage-gate',
+      esg:            'esg',
+      risk:           'governance',
+      admin:          'governance',
+    }
+    return map[segment] ?? segment
+  }, [pathname])
 
   // Close mobile drawer on route change
   React.useEffect(() => {
@@ -145,6 +167,11 @@ export function AppShell({
           </div>
         </main>
       </div>
+      {/* ── Global Help Hub (floating FAB, context-aware) ── */}
+      <HelpHubPanel
+        contextModule={contextModule}
+        userRole={session.roles[0]}
+      />
     </div>
   )
 }

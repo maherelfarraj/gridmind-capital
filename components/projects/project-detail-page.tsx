@@ -20,7 +20,7 @@ import { ProjectCommandCenter, type ProjectData } from '@/components/project/pro
 import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-gate-stepper'
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
-import { HelpHubPanel } from '@/components/help/help-hub-panel'
+import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
 
 // ─────────────────────────────────────────────────────────────
@@ -285,9 +285,9 @@ function QuickActionsCard() {
   )
 }
 
-// ──────────────────────────��──────────────────────────────────
+// ──────────────────────────���──────────────────────────────────
 // Props + main page
-// ────────────────────────────────────────���������────────────────────
+// ────────────────────────────────────────�����������────────────────────
 
 export interface ProjectDetailPageProps {
   project?: ProjectData
@@ -381,9 +381,8 @@ export function ProjectDetailPage({
 
       {/* ── Help Hub (floating) ── */}
       <HelpHubPanel
-        context={`Gate ${gateNumber} — ${GATE_DEFINITIONS[gateNumber]?.shortName ?? ''}`}
+        contextModule="construction"
         userRole="PROJECT_MANAGER"
-        defaultModule="construction"
       />
     </div>
   )
