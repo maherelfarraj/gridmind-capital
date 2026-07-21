@@ -96,37 +96,6 @@ export default function RootLayout({
           </LocaleProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
-        {/* Dev-only: reload on stale chunks. Placed at end of body to avoid
-            conflicting with v0 sandbox head injection (hydration mismatch). */}
-        {process.env.NODE_ENV !== 'production' && (
-          <script dangerouslySetInnerHTML={{ __html: `
-(function() {
-  var reloading = false;
-  function scheduleReload() {
-    if (reloading) return;
-    reloading = true;
-    var attempts = 0;
-    var t = setInterval(function() {
-      attempts++;
-      fetch(location.href, { method: 'HEAD', cache: 'no-store' })
-        .then(function(r) { if (r.ok || attempts > 30) { clearInterval(t); location.reload(); } })
-        .catch(function() { if (attempts > 30) { clearInterval(t); location.reload(); } });
-    }, 700);
-  }
-  function isChunkErr(msg) {
-    return msg && (msg.indexOf('ChunkLoadError') !== -1 || msg.indexOf('Failed to load chunk') !== -1);
-  }
-  window.addEventListener('error', function(e) { if (isChunkErr(e && e.message)) scheduleReload(); }, true);
-  window.addEventListener('unhandledrejection', function(e) { if (isChunkErr(e && e.reason && String(e.reason))) scheduleReload(); });
-  try {
-    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var ws = new WebSocket(proto + '//' + location.host + '/_next/webpack-hmr?page=/_error');
-    ws.onmessage = function(e) { try { var d = JSON.parse(e.data); if (d && d.action === 'reload') scheduleReload(); } catch(_) {} };
-    ws.onclose = function() { scheduleReload(); };
-  } catch(_) {}
-})();
-          ` }} />
-        )}
       </body>
     </html>
   )
