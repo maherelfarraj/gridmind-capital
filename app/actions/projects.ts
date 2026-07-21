@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { Project } from '@/components/projects/projects-list-page'
 
 const PHASE_MAP: Record<number, string> = {
@@ -9,7 +9,7 @@ const PHASE_MAP: Record<number, string> = {
 }
 
 export async function getProjects(): Promise<Project[]> {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('projects')
