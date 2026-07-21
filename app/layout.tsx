@@ -89,6 +89,42 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} bg-background`} suppressHydrationWarning>
+      {/* In dev: auto-reload the tab when Turbopack restarts so stale chunks never load */}
+      {process.env.NODE_ENV !== 'production' && (
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: `
+(function() {
+  if (typeof window === 'undefined') return;
+  // Turbopack HMR EventSource — fired on every server restart
+  try {
+    var es = new EventSource('/_next/webpack-hmr');
+    var reloading = false;
+    es.addEventListener('message', function(e) {
+      if (reloading) return;
+      try {
+        var d = JSON.parse(e.data);
+        // action:'reload' means Turbopack wants a full page refresh
+        if (d && (d.action === 'reload' || d.action === 'serverComponentChanges')) {
+          reloading = true;
+          window.location.reload();
+        }
+      } catch (_) {}
+    });
+    es.onerror = function() {
+      // EventSource closed = server restarted; reload after it comes back
+      if (reloading) return;
+      reloading = true;
+      var t = setInterval(function() {
+        fetch('/_next/static/chunks/polyfills.js', { method: 'HEAD', cache: 'no-store' })
+          .then(function(r) { if (r.ok) { clearInterval(t); window.location.reload(); } })
+          .catch(function() {});
+      }, 800);
+    };
+  } catch(_) {}
+})();
+          ` }} />
+        </head>
+      )}
       <body className="antialiased font-sans">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <LocaleProvider>
