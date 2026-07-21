@@ -1,10 +1,10 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 
 export async function getApprovals(): Promise<ApprovalRecord[]> {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('approvals')
@@ -29,7 +29,7 @@ export async function getApprovals(): Promise<ApprovalRecord[]> {
 }
 
 export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { error } = await supabase
     .from('approvals')
     .update({ status, updated_at: new Date().toISOString() })
