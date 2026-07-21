@@ -6,7 +6,8 @@ import { useParams } from 'next/navigation'
 import {
   ChevronRight, Plus, X, Search, CheckCircle, Clock, AlertTriangle,
   ChevronDown, ChevronUp, Filter, Download, FileText, Wrench, ClipboardList,
-  Award, BarChart2, AlertCircle, CheckSquare, XCircle, Send, Eye,
+  Award, BarChart2, AlertCircle, CheckSquare, XCircle, Send, Eye, FolderOpen,
+  Upload, Pencil, Link2,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -61,6 +62,23 @@ interface TestPlan {
   test_type: string; status: 'not_started' | 'in_progress' | 'passed' | 'failed'
   planned_date: string; actual_date: string | null; responsible: string
   steps_total: number; steps_completed: number; result: string
+}
+
+type AsBuiltStatus = 'pending' | 'redlines_submitted' | 'under_review' | 'approved' | 'superseded'
+
+interface Redline {
+  id: string; description: string; markup_by: string; markup_date: string
+  area: string; status: 'open' | 'incorporated' | 'rejected'
+}
+
+interface AsBuilt {
+  id: string; drawing_number: string; title: string; discipline: string
+  revision: string; system: string; status: AsBuiltStatus
+  original_ifc_rev: string; as_built_rev: string | null
+  prepared_by: string; reviewed_by: string | null; approved_by: string | null
+  submitted_date: string | null; approved_date: string | null
+  redlines: Redline[]; linked_punch_items: string[]; linked_ncrs: string[]
+  file_url: string | null
 }
 
 // ─── Mock Data ──────────────────────────────────────────────────────────────
@@ -1357,6 +1375,349 @@ function AnalyticsTab() {
   )
 }
 
+// ─── As-Builts Tab ────────────────────────────────────────────────────────────
+
+const AB_STATUS_META: Record<AsBuiltStatus, { label: string; color: string }> = {
+  pending:            { label: 'Pending',           color: '#6b7280' },
+  redlines_submitted: { label: 'Redlines Submitted', color: '#3b82f6' },
+  under_review:       { label: 'Under Review',      color: '#f59e0b' },
+  approved:           { label: 'Approved',          color: '#22c55e' },
+  superseded:         { label: 'Superseded',        color: '#a855f7' },
+}
+
+function AsBuiltsTab({ drawings }: { drawings: AsBuilt[] }) {
+  const [search,   setSearch]   = React.useState('')
+  const [filter,   setFilter]   = React.useState<AsBuiltStatus | 'all'>('all')
+  const [discDisc, setDiscDisc] = React.useState<string>('all')
+  const [expanded, setExpanded] = React.useState<string | null>(null)
+  const [uploadOpen, setUploadOpen] = React.useState(false)
+
+  const disciplines = Array.from(new Set(drawings.map((d) => d.discipline))).sort()
+  const filtered = drawings.filter((d) => {
+    const q = search.toLowerCase()
+    const matchQ = !q || d.drawing_number.toLowerCase().includes(q) || d.title.toLowerCase().includes(q) || d.system.toLowerCase().includes(q)
+    const matchS = filter === 'all' || d.status === filter
+    const matchD = discDisc === 'all' || d.discipline === discDisc
+    return matchQ && matchS && matchD
+  })
+
+  const stats = {
+    total:    drawings.length,
+    approved: drawings.filter((d) => d.status === 'approved').length,
+    pending:  drawings.filter((d) => d.status === 'pending').length,
+    review:   drawings.filter((d) => d.status === 'under_review' || d.status === 'redlines_submitted').length,
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Drawings', value: stats.total,    color: '#64ffda' },
+          { label: 'Approved',       value: stats.approved, color: '#22c55e' },
+          { label: 'Under Review',   value: stats.review,   color: '#f59e0b' },
+          { label: 'Pending Upload', value: stats.pending,  color: '#6b7280' },
+        ].map((k) => (
+          <div key={k.label} className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">{k.label}</p>
+            <p className="text-2xl font-bold" style={{ color: k.color }}>{k.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Status distribution bar */}
+      {(() => {
+        const statusOrder: AsBuiltStatus[] = ['approved', 'under_review', 'redlines_submitted', 'pending', 'superseded']
+        const counts = statusOrder.map((s) => ({ status: s, count: drawings.filter((d) => d.status === s).length, ...AB_STATUS_META[s] }))
+        return (
+          <div className="rounded-xl border border-border bg-card px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">As-Built Status Distribution</p>
+            <div className="flex h-4 rounded-full overflow-hidden gap-px">
+              {counts.filter((c) => c.count > 0).map((c) => (
+                <div key={c.status} title={`${c.label}: ${c.count}`}
+                  style={{ width: `${(c.count / drawings.length) * 100}%`, background: c.color }} />
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-4 mt-3">
+              {counts.filter((c) => c.count > 0).map((c) => (
+                <div key={c.status} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="size-2.5 rounded-full inline-block" style={{ background: c.color }} />
+                  {c.label} ({c.count})
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Filters + upload button */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search drawings…"
+              className="pl-8 pr-3 py-1.5 rounded-lg border border-border bg-muted/20 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#64ffda]/40 w-52" />
+          </div>
+          <select value={filter} onChange={(e) => setFilter(e.target.value as AsBuiltStatus | 'all')}
+            className="px-3 py-1.5 rounded-lg border border-border bg-muted/20 text-sm text-foreground focus:outline-none">
+            <option value="all">All Statuses</option>
+            {(Object.keys(AB_STATUS_META) as AsBuiltStatus[]).map((s) => (
+              <option key={s} value={s}>{AB_STATUS_META[s].label}</option>
+            ))}
+          </select>
+          <select value={discDisc} onChange={(e) => setDiscDisc(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-muted/20 text-sm text-foreground focus:outline-none">
+            <option value="all">All Disciplines</option>
+            {disciplines.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <button type="button" onClick={() => setUploadOpen(true)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#64ffda]/10 border border-[#64ffda]/30 text-sm font-medium text-[#64ffda] hover:bg-[#64ffda]/20 transition-colors whitespace-nowrap">
+          <Upload className="size-3.5" /> Upload As-Built
+        </button>
+      </div>
+
+      {/* Drawing register */}
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+              {['', 'Drawing No.', 'Title', 'Discipline', 'System', 'IFC Rev', 'AB Rev', 'Status', 'Redlines', 'Approved By', ''].map((h) => (
+                <th key={h} className="px-4 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((d) => {
+              const meta   = AB_STATUS_META[d.status]
+              const isOpen = expanded === d.id
+              const openRL = d.redlines.filter((r) => r.status === 'open').length
+              return (
+                <React.Fragment key={d.id}>
+                  <tr className="border-b border-border hover:bg-muted/20 transition-colors">
+                    <td className="px-2 py-3">
+                      {d.redlines.length > 0 && (
+                        <button type="button" onClick={() => setExpanded(isOpen ? null : d.id)}
+                          className="text-muted-foreground hover:text-foreground">
+                          {isOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-[#64ffda]">{d.drawing_number}</td>
+                    <td className="px-4 py-3 text-sm text-foreground max-w-[220px] truncate" title={d.title}>{d.title}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-0.5 rounded-full">{d.discipline}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{d.system}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-bold text-foreground text-center">{d.original_ifc_rev}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-bold text-[#64ffda] text-center">{d.as_built_rev ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                        style={{ color: meta.color, background: `${meta.color}18` }}>
+                        {meta.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {d.redlines.length > 0 ? (
+                        <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full',
+                          openRL > 0 ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400')}>
+                          {d.redlines.length} ({openRL} open)
+                        </span>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{d.approved_by ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        {d.file_url
+                          ? <button type="button" className="text-xs text-[#64ffda] hover:underline flex items-center gap-1"><Download className="size-3" /> Download</button>
+                          : <button type="button" onClick={() => setUploadOpen(true)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"><Upload className="size-3" /> Upload</button>
+                        }
+                        {d.linked_punch_items.length > 0 && (
+                          <span className="text-[10px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                            <Link2 className="size-2.5" />{d.linked_punch_items.length} PL
+                          </span>
+                        )}
+                        {d.linked_ncrs.length > 0 && (
+                          <span className="text-[10px] bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                            <Link2 className="size-2.5" />{d.linked_ncrs.length} NCR
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Redlines sub-table */}
+                  {isOpen && d.redlines.length > 0 && (
+                    <tr className="border-b border-border bg-amber-500/5">
+                      <td colSpan={11} className="px-6 py-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-400 mb-2 flex items-center gap-1.5">
+                          <Pencil className="size-3" /> Redlines / Markups
+                        </p>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                              {['Description', 'Area', 'Marked Up By', 'Date', 'Status'].map((h) => (
+                                <th key={h} className="py-1.5 pr-4 text-left font-semibold">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {d.redlines.map((rl) => {
+                              const rlColors = { open: '#f59e0b', incorporated: '#22c55e', rejected: '#ef4444' }
+                              return (
+                                <tr key={rl.id} className="border-b border-border/50 last:border-0">
+                                  <td className="py-2 pr-4 text-foreground max-w-[280px]">{rl.description}</td>
+                                  <td className="py-2 pr-4 text-muted-foreground font-mono text-[11px]">{rl.area}</td>
+                                  <td className="py-2 pr-4 text-muted-foreground">{rl.markup_by}</td>
+                                  <td className="py-2 pr-4 font-mono text-muted-foreground">{rl.markup_date}</td>
+                                  <td className="py-2">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold capitalize"
+                                      style={{ color: rlColors[rl.status], background: `${rlColors[rl.status]}18` }}>
+                                      {rl.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+        {filtered.length === 0 && (
+          <div className="py-12 text-center text-muted-foreground text-sm">No drawings match the current filters.</div>
+        )}
+      </div>
+
+      {/* Upload modal */}
+      {uploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setUploadOpen(false)} />
+          <div className="relative w-full max-w-md rounded-2xl border border-border bg-background shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-foreground">Upload As-Built Drawing</h3>
+              <button type="button" onClick={() => setUploadOpen(false)} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+            </div>
+            {[
+              { label: 'Drawing Number', type: 'text',   placeholder: 'e.g. CIV-001-001' },
+              { label: 'Title',          type: 'text',   placeholder: 'Drawing title' },
+              { label: 'Discipline',     type: 'text',   placeholder: 'e.g. Civil, Electrical' },
+              { label: 'As-Built Rev',   type: 'text',   placeholder: 'e.g. AB1' },
+            ].map((f) => (
+              <div key={f.label}>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1 block">{f.label}</label>
+                <input type={f.type} placeholder={f.placeholder}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-muted/20 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#64ffda]/40" />
+              </div>
+            ))}
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1 block">File (PDF / DWG)</label>
+              <div className="flex items-center justify-center h-20 rounded-lg border-2 border-dashed border-border bg-muted/10 text-muted-foreground text-sm hover:border-[#64ffda]/40 transition-colors cursor-pointer">
+                <div className="flex flex-col items-center gap-1 pointer-events-none">
+                  <Upload className="size-5" />
+                  <span>Click or drag to upload</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setUploadOpen(false)}
+                className="px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+                Cancel
+              </button>
+              <button type="button" onClick={() => setUploadOpen(false)}
+                className="px-4 py-2 rounded-lg bg-[#64ffda]/10 border border-[#64ffda]/30 text-sm font-medium text-[#64ffda] hover:bg-[#64ffda]/20 transition-colors">
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const MOCK_AS_BUILTS: AsBuilt[] = [
+  {
+    id: 'ab1', drawing_number: 'CIV-001-001', title: 'Site General Arrangement — As-Built',
+    discipline: 'Civil', revision: 'AB1', system: 'Site Infrastructure',
+    status: 'approved', original_ifc_rev: 'C', as_built_rev: 'AB1',
+    prepared_by: 'Al Futtaim Carillion', reviewed_by: 'Khalid Al-Mansouri', approved_by: 'James Morgan',
+    submitted_date: '2026-09-01', approved_date: '2026-09-10', file_url: null,
+    linked_punch_items: [], linked_ncrs: [],
+    redlines: [
+      { id: 'rl1', description: 'North access road shifted 2m east from IFC due to existing utility conflict', markup_by: 'Al Futtaim', markup_date: '2026-08-28', area: 'North Perimeter', status: 'incorporated' },
+      { id: 'rl2', description: 'Additional drainage channel added at N-12 grid intersection', markup_by: 'Site Surveyor', markup_date: '2026-08-30', area: 'Grid N-12', status: 'incorporated' },
+    ],
+  },
+  {
+    id: 'ab2', drawing_number: 'ELE-DC-101', title: 'DC Collection Cable Tray Layout — As-Built',
+    discipline: 'Electrical', revision: 'AB1', system: 'DC Collection',
+    status: 'under_review', original_ifc_rev: 'B', as_built_rev: 'AB1',
+    prepared_by: 'Prysmian Group', reviewed_by: null, approved_by: null,
+    submitted_date: '2026-09-05', approved_date: null, file_url: null,
+    linked_punch_items: ['p1', 'p2'], linked_ncrs: ['n2'],
+    redlines: [
+      { id: 'rl3', description: 'Corrected cable tray spacing at Row J sections 12-18 per NCR-MC-002 corrective action', markup_by: 'Prysmian', markup_date: '2026-09-03', area: 'Row J S12-18', status: 'incorporated' },
+    ],
+  },
+  {
+    id: 'ab3', drawing_number: 'MEC-TRK-201', title: 'Tracker Pile Layout — As-Built',
+    discipline: 'Mechanical', revision: 'AB1', system: 'Tracker System',
+    status: 'redlines_submitted', original_ifc_rev: 'A', as_built_rev: null,
+    prepared_by: 'Nextracker', reviewed_by: null, approved_by: null,
+    submitted_date: '2026-09-08', approved_date: null, file_url: null,
+    linked_punch_items: [], linked_ncrs: [],
+    redlines: [
+      { id: 'rl4', description: '14 piles repositioned up to 300mm for dune terrain — within tolerance per spec', markup_by: 'Nextracker Field', markup_date: '2026-09-07', area: 'Blocks A, C, F', status: 'open' },
+      { id: 'rl5', description: 'Torque arm angle adjusted 2° on 8 units in dune transition zone', markup_by: 'Nextracker Field', markup_date: '2026-09-07', area: 'Block F North', status: 'open' },
+    ],
+  },
+  {
+    id: 'ab4', drawing_number: 'ELE-SLD-001', title: '33kV Single Line Diagram — As-Built',
+    discipline: 'Electrical', revision: 'AB1', system: 'HV Substation',
+    status: 'pending', original_ifc_rev: 'A', as_built_rev: null,
+    prepared_by: 'ABB Power Grids', reviewed_by: null, approved_by: null,
+    submitted_date: null, approved_date: null, file_url: null,
+    linked_punch_items: [], linked_ncrs: ['n4'],
+    redlines: [],
+  },
+  {
+    id: 'ab5', drawing_number: 'INS-001-001', title: 'Instrument Index — As-Built',
+    discipline: 'Instrumentation', revision: 'AB1', system: 'SCADA / Control',
+    status: 'pending', original_ifc_rev: 'A', as_built_rev: null,
+    prepared_by: 'ABB Power Grids', reviewed_by: null, approved_by: null,
+    submitted_date: null, approved_date: null, file_url: null,
+    linked_punch_items: [], linked_ncrs: [],
+    redlines: [],
+  },
+  {
+    id: 'ab6', drawing_number: 'PRO-PID-001', title: 'P&ID Cooling Water System — As-Built',
+    discipline: 'Process', revision: 'AB2', system: 'Cooling Water',
+    status: 'approved', original_ifc_rev: 'B', as_built_rev: 'AB2',
+    prepared_by: 'GridMind Engineering', reviewed_by: 'Omar Al-Zaid', approved_by: 'Aisha Al-Rashidi',
+    submitted_date: '2026-08-20', approved_date: '2026-08-29', file_url: null,
+    linked_punch_items: [], linked_ncrs: [],
+    redlines: [
+      { id: 'rl6', description: 'Pipe routing of CW-RET-002 modified to avoid structural clash at column C-14', markup_by: 'GridMind Eng', markup_date: '2026-08-18', area: 'Column C-14', status: 'incorporated' },
+    ],
+  },
+  {
+    id: 'ab7', drawing_number: 'CIV-FDN-301', title: 'Substation Foundation As-Built',
+    discipline: 'Civil', revision: 'AB1', system: 'HV Substation',
+    status: 'superseded', original_ifc_rev: 'B', as_built_rev: 'AB1',
+    prepared_by: 'Al Futtaim Carillion', reviewed_by: 'Khalid Al-Mansouri', approved_by: null,
+    submitted_date: '2026-07-30', approved_date: null, file_url: null,
+    linked_punch_items: [], linked_ncrs: [],
+    redlines: [],
+  },
+]
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -1365,6 +1726,7 @@ const TABS = [
   { id: 'ncr',         label: 'NCRs',           icon: AlertCircle   },
   { id: 'testplans',   label: 'Test Plans',     icon: CheckSquare   },
   { id: 'certs',       label: 'MC Certificates', icon: Award        },
+  { id: 'asbuilts',    label: 'As-Builts',      icon: FolderOpen    },
   { id: 'analytics',   label: 'Analytics',      icon: BarChart2     },
 ] as const
 
@@ -1438,12 +1800,13 @@ export default function G5MechanicalCompletionPage() {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'inspections' && <InspectionsTab inspections={MOCK_INSPECTIONS} />}
-          {activeTab === 'punch'       && <PunchListTab   items={MOCK_PUNCH_ITEMS}        />}
-          {activeTab === 'ncr'         && <NcrTab         ncrs={MOCK_NCRS}                />}
-          {activeTab === 'testplans'   && <TestPlansTab   plans={MOCK_TEST_PLANS}         />}
-          {activeTab === 'certs'       && <MCCertificatesTab certs={MOCK_MC_CERTS}        />}
-          {activeTab === 'analytics'   && <AnalyticsTab                                   />}
+          {activeTab === 'inspections' && <InspectionsTab    inspections={MOCK_INSPECTIONS} />}
+          {activeTab === 'punch'       && <PunchListTab      items={MOCK_PUNCH_ITEMS}        />}
+          {activeTab === 'ncr'         && <NcrTab            ncrs={MOCK_NCRS}                />}
+          {activeTab === 'testplans'   && <TestPlansTab      plans={MOCK_TEST_PLANS}         />}
+          {activeTab === 'certs'       && <MCCertificatesTab certs={MOCK_MC_CERTS}           />}
+          {activeTab === 'asbuilts'    && <AsBuiltsTab       drawings={MOCK_AS_BUILTS}       />}
+          {activeTab === 'analytics'   && <AnalyticsTab                                      />}
         </div>
 
       </div>
