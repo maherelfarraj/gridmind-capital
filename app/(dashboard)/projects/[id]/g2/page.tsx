@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
   ChevronRight, Plus, MessageCircle, Send, FileUp, X, Zap, CheckCircle,
-  Clock, FileText, Eye, AlertTriangle, Search, ChevronDown,
+  Clock, FileText, Eye, AlertTriangle, Search, ChevronDown, Download,
 } from 'lucide-react'
 import {
   LineChart, Line, PieChart, Pie, Cell, BarChart, Bar,
@@ -36,6 +36,8 @@ interface Drawing {
 interface Transmittal {
   id: string; number: string; date: string; to: string; from: string
   subject: string; drawing_count: number; status: string
+  purpose?: string; remarks?: string
+  selected_drawings?: { number: string; title: string; revision: string; status: string }[]
 }
 interface RFIRecord {
   id: string; number: string; date: string; from_party: string; to_party: string
@@ -115,11 +117,51 @@ const MOCK_DRAWINGS: Drawing[] = [
 ]
 
 const MOCK_TRANSMITTALS: Transmittal[] = [
-  { id: 't1', number: 'T-001', date: 'Jan 15, 2026', to: 'Client (EWEC)',  from: 'GridMind Engineering', subject: 'G2 Civil IFC Package',     drawing_count: 12, status: 'Approved'     },
-  { id: 't2', number: 'T-002', date: 'Feb 01, 2026', to: 'Client (EWEC)',  from: 'GridMind Engineering', subject: 'G2 Mechanical Review',     drawing_count: 24, status: 'Acknowledged' },
-  { id: 't3', number: 'T-003', date: 'Feb 10, 2026', to: 'Client (EWEC)',  from: 'GridMind Engineering', subject: 'G2 Electrical Draft',      drawing_count: 18, status: 'Sent'         },
-  { id: 't4', number: 'T-004', date: 'Feb 15, 2026', to: 'Subcontractor',  from: 'GridMind Engineering', subject: 'Instrumentation Specs',    drawing_count:  8, status: 'Draft'        },
-  { id: 't5', number: 'T-005', date: 'Jan 25, 2026', to: 'Client (EWEC)',  from: 'GridMind Engineering', subject: 'G2 Process IFC',           drawing_count:  6, status: 'Approved'     },
+  {
+    id: 't1', number: 'T-001', date: 'Jan 15, 2026', to: 'Client (EWEC)', from: 'GridMind Engineering',
+    subject: 'G2 Civil IFC Package', drawing_count: 12, status: 'Approved',
+    purpose: 'For Approval', remarks: 'All drawings IFC-stamped and ready for construction.',
+    selected_drawings: [
+      { number: 'CIV-001-001', title: 'Site General Arrangement',       revision: 'C', status: 'Approved IFC' },
+      { number: 'CIV-001-002', title: 'Foundation Layout Plan',         revision: 'B', status: 'Approved IFC' },
+      { number: 'CIV-001-003', title: 'Pile Schedule',                  revision: 'A', status: 'Approved IFC' },
+    ],
+  },
+  {
+    id: 't2', number: 'T-002', date: 'Feb 01, 2026', to: 'Client (EWEC)', from: 'GridMind Engineering',
+    subject: 'G2 Mechanical Review', drawing_count: 24, status: 'Acknowledged',
+    purpose: 'For Review & Comment', remarks: 'Awaiting client comments within 10 working days.',
+    selected_drawings: [
+      { number: 'MEC-001-001', title: 'Equipment Layout — Main Hall',   revision: 'B', status: 'Client Review' },
+      { number: 'MEC-001-002', title: 'Turbine Arrangement',            revision: 'A', status: 'Client Review' },
+    ],
+  },
+  {
+    id: 't3', number: 'T-003', date: 'Feb 10, 2026', to: 'Client (EWEC)', from: 'GridMind Engineering',
+    subject: 'G2 Electrical Draft', drawing_count: 18, status: 'Sent',
+    purpose: 'For Information', remarks: 'Draft issue for client awareness. Not for construction.',
+    selected_drawings: [
+      { number: 'ELE-001-001', title: 'Single Line Diagram 33kV',       revision: 'A', status: 'Internal Review' },
+      { number: 'ELE-001-002', title: 'Cable Schedule',                 revision: 'A', status: 'Draft' },
+    ],
+  },
+  {
+    id: 't4', number: 'T-004', date: 'Feb 15, 2026', to: 'Subcontractor', from: 'GridMind Engineering',
+    subject: 'Instrumentation Specs', drawing_count: 8, status: 'Draft',
+    purpose: 'For Tender', remarks: 'Tender package — confirm receipt.',
+    selected_drawings: [
+      { number: 'INS-001-001', title: 'Instrument Index',               revision: 'A', status: 'Draft' },
+    ],
+  },
+  {
+    id: 't5', number: 'T-005', date: 'Jan 25, 2026', to: 'Client (EWEC)', from: 'GridMind Engineering',
+    subject: 'G2 Process IFC', drawing_count: 6, status: 'Approved',
+    purpose: 'For Approval', remarks: 'Process & P&ID package — final IFC revision.',
+    selected_drawings: [
+      { number: 'PRO-001-001', title: 'Process Flow Diagram',           revision: 'C', status: 'Approved IFC' },
+      { number: 'PRO-001-002', title: 'P&ID — Cooling Water System',   revision: 'B', status: 'Approved IFC' },
+    ],
+  },
 ]
 
 const MOCK_RFIS: RFIRecord[] = [
@@ -443,7 +485,8 @@ function DrawingRegisterTab({ drawings }: { drawings: Drawing[] }) {
 // ─── Tab: Transmittals ─────────────────────────────────────────
 
 function TransmittalsTab({ transmittals }: { transmittals: Transmittal[] }) {
-  const [addOpen, setAddOpen] = React.useState(false)
+  const [addOpen,   setAddOpen]   = React.useState(false)
+  const [coverT,    setCoverT]    = React.useState<Transmittal | null>(null)
   return (
     <div>
       {addOpen && (
@@ -476,14 +519,14 @@ function TransmittalsTab({ transmittals }: { transmittals: Transmittal[] }) {
         <table className="w-full min-w-[700px] text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-              {['Transmittal No.', 'Date', 'To', 'From', 'Subject', 'Drawings', 'Status'].map((h) => (
+              {['Transmittal No.', 'Date', 'To', 'From', 'Subject', 'Drawings', 'Status', ''].map((h) => (
                 <th key={h} className="px-4 py-2.5 text-left font-semibold">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {transmittals.map((t) => (
-              <tr key={t.id} className="border-b border-border hover:bg-muted/20 transition-colors">
+              <tr key={t.id} className="border-b border-border hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors">
                 <td className="px-4 py-3 font-mono text-xs text-indigo-400">{t.number}</td>
                 <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{t.date}</td>
                 <td className="px-4 py-3 text-sm text-foreground">{t.to}</td>
@@ -491,11 +534,101 @@ function TransmittalsTab({ transmittals }: { transmittals: Transmittal[] }) {
                 <td className="px-4 py-3 text-sm text-foreground max-w-[200px] truncate">{t.subject}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground text-center">{t.drawing_count}</td>
                 <td className="px-4 py-3"><StatusBadge status={t.status} meta={TRANSMITTAL_STATUS_META} /></td>
+                <td className="px-4 py-3">
+                  <button type="button" onClick={() => setCoverT(t)}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-2 whitespace-nowrap">
+                    Cover Sheet
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* Cover Sheet slide-in panel */}
+      {coverT && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/50" onClick={() => setCoverT(null)} />
+          <div className="w-full max-w-[540px] bg-background dark:bg-[#0a192f] border-l border-border shadow-2xl flex flex-col overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-background dark:bg-[#0a192f] z-10">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-0.5">Transmittal Cover Sheet</p>
+                <p className="text-base font-bold text-foreground">{coverT.number} — {coverT.subject}</p>
+              </div>
+              <button type="button" onClick={() => setCoverT(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="flex-1 px-6 py-5 space-y-5">
+              {/* Header grid */}
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { label: 'Transmittal No.', value: coverT.number },
+                  { label: 'Date',             value: coverT.date },
+                  { label: 'From',             value: coverT.from },
+                  { label: 'To',               value: coverT.to },
+                  { label: 'Purpose',          value: coverT.purpose ?? '—' },
+                  { label: 'Status',           value: coverT.status },
+                ].map(({ label, value }) => (
+                  <div key={label}>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">{label}</p>
+                    <p className="text-sm text-foreground font-medium">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Remarks */}
+              {coverT.remarks && (
+                <div className="rounded-lg border border-border bg-muted/20 dark:bg-muted/10 px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">Remarks</p>
+                  <p className="text-sm text-foreground leading-relaxed">{coverT.remarks}</p>
+                </div>
+              )}
+
+              {/* Drawing list */}
+              {coverT.selected_drawings && coverT.selected_drawings.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+                    Attached Drawings ({coverT.selected_drawings.length} of {coverT.drawing_count})
+                  </p>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {['Drawing No.','Title','Rev','Status'].map((h) => (
+                          <th key={h} className="py-1.5 pr-3 text-left font-semibold">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {coverT.selected_drawings.map((d) => (
+                        <tr key={d.number} className="border-b border-border/50 last:border-0">
+                          <td className="py-2 pr-3 font-mono text-indigo-400">{d.number}</td>
+                          <td className="py-2 pr-3 text-foreground">{d.title}</td>
+                          <td className="py-2 pr-3 font-mono font-bold text-foreground">{d.revision}</td>
+                          <td className="py-2"><StatusBadge status={d.status} meta={PKG_STATUS_META} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 pt-2">
+                <button type="button"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+                  <Download className="size-3.5" /> Download PDF
+                </button>
+                <button type="button"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-indigo-500/50 text-sm text-indigo-400 hover:bg-indigo-500/10 transition-colors">
+                  <Send className="size-3.5" /> Resend
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

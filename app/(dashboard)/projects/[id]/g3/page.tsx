@@ -73,11 +73,17 @@ interface PurchaseOrder {
   created_at: string
 }
 
+interface ContractVariation {
+  vo_number: string; description: string; value: number; status: 'pending' | 'approved' | 'rejected'
+  submitted_date: string
+}
+
 interface Contract {
   id: string; code: string; vendor_id: string; vendor_name: string
   title: string; type: string; value: number; currency: string
   status: ContractStatus; start_date: string; end_date: string
   retention_pct: number; created_at: string
+  variations?: ContractVariation[]
 }
 
 // ─── Mock Data ────────────────────────────────────────────────
@@ -238,6 +244,23 @@ const MOCK_RFQS: RFQ[] = [
     evaluation_criteria: [{ criterion: 'Technical', weight: 35, max_score: 100 }, { criterion: 'Commercial', weight: 40, max_score: 100 }, { criterion: 'Past Performance', weight: 25, max_score: 100 }],
     bids: [], created_at: '2026-07-10',
   },
+  {
+    id: 'r6', code: 'RFQ-2026-006', title: 'SCADA & Control System', description: 'Plant-wide SCADA system including HMI, historians, and remote monitoring dashboard.',
+    category: 'SCADA', status: 'published', value_min: 3_500_000, value_max: 5_000_000, currency: 'USD',
+    bid_deadline: '2026-08-25', evaluation_period_days: 14, publish_date: '2026-07-15',
+    invited_vendors: ['v3', 'v6'], responded_vendors: ['v3'],
+    specifications: [
+      { section: 'Technical', requirement: 'IEC 61850 compliant', mandatory: true },
+      { section: 'Technical', requirement: 'Cybersecurity IEC 62443', mandatory: true },
+      { section: 'Commercial', requirement: 'Training included', mandatory: false },
+    ],
+    evaluation_criteria: [
+      { criterion: 'Technical', weight: 55, max_score: 100 },
+      { criterion: 'Commercial', weight: 30, max_score: 100 },
+      { criterion: 'Past Performance', weight: 15, max_score: 100 },
+    ],
+    bids: [], created_at: '2026-07-15',
+  },
 ]
 
 const MOCK_BIDS: Bid[] = [
@@ -344,6 +367,52 @@ const MOCK_POS: PurchaseOrder[] = [
     changes: [],
     created_at: '2026-04-20',
   },
+  {
+    id: 'po4', code: 'PO-2026-004', vendor_id: 'v3', vendor_name: 'ABB Power Grids',
+    description: '33kV GIS Switchgear — Main HV substation', total_amount: 8_750_000, currency: 'USD',
+    status: 'issued', delivery_date: '2026-11-30', incoterms: 'DDP Site',
+    payment_terms: [
+      { milestone: 'Advance on PO', percentage: 25, due_days: 14 },
+      { milestone: 'Factory acceptance test', percentage: 50, due_days: 7 },
+      { milestone: 'Delivery & commissioning', percentage: 25, due_days: 30 },
+    ],
+    line_items: [
+      { code: 'GIS-33K', description: 'ZX1.5 33kV GIS Panel', qty: 12, unit: 'pc', unit_price: 450_000, total: 5_400_000 },
+      { code: 'PROT-001', description: 'REF630 Protection Relay', qty: 12, unit: 'pc', unit_price: 112_500, total: 1_350_000 },
+      { code: 'SCADA-ABB', description: 'MicroSCADA Pro integration', qty: 1, unit: 'lot', unit_price: 2_000_000, total: 2_000_000 },
+    ],
+    milestones: [
+      { name: 'PO Issue', due_date: '2026-07-20', completed: true },
+      { name: 'Drawing Approval', due_date: '2026-08-20', completed: false },
+      { name: 'FAT', due_date: '2026-10-15', completed: false },
+      { name: 'Site Delivery', due_date: '2026-11-30', completed: false },
+    ],
+    changes: [],
+    created_at: '2026-07-20',
+  },
+  {
+    id: 'po5', code: 'PO-2026-005', vendor_id: 'v7', vendor_name: 'Nextracker',
+    description: 'Single-axis tracker system — 400MWp', total_amount: 21_500_000, currency: 'USD',
+    status: 'acknowledged', delivery_date: '2026-10-31', incoterms: 'CIF Dammam',
+    payment_terms: [
+      { milestone: 'Down payment', percentage: 30, due_days: 14 },
+      { milestone: 'Shipment B/L presentation', percentage: 50, due_days: 7 },
+      { milestone: 'Installation complete', percentage: 20, due_days: 60 },
+    ],
+    line_items: [
+      { code: 'TRK-NX', description: 'NX Horizon Tracker Assembly (per MW installed)', qty: 400, unit: 'MW', unit_price: 53_750, total: 21_500_000 },
+    ],
+    milestones: [
+      { name: 'PO Acknowledgement', due_date: '2026-06-15', completed: true },
+      { name: 'Engineering Freeze', due_date: '2026-07-31', completed: true },
+      { name: 'Shipment Phase 1', due_date: '2026-09-15', completed: false },
+      { name: 'Shipment Phase 2', due_date: '2026-10-31', completed: false },
+    ],
+    changes: [
+      { co_number: 'CO-001', description: 'Additional torque tube length for dune terrain', value: 320_000, status: 'approved' },
+    ],
+    created_at: '2026-06-15',
+  },
 ]
 
 const MOCK_CONTRACTS: Contract[] = [
@@ -374,6 +443,20 @@ const MOCK_CONTRACTS: Contract[] = [
     value: 38_000_000, currency: 'USD', status: 'draft',
     start_date: '2026-10-01', end_date: '2028-03-31', retention_pct: 10,
     created_at: '2026-07-10',
+    variations: [
+      { vo_number: 'VO-001', description: 'Additional cut-and-fill for northern dune area', value: 1_200_000, status: 'pending', submitted_date: '2026-07-18' },
+    ],
+  },
+  {
+    id: 'c5', code: 'CON-2026-005', vendor_id: 'v7', vendor_name: 'Nextracker',
+    title: 'Supply & Install — Single-Axis Tracker 400MWp', type: 'Supply & Install',
+    value: 21_820_000, currency: 'USD', status: 'active',
+    start_date: '2026-06-15', end_date: '2027-04-30', retention_pct: 5,
+    created_at: '2026-06-14',
+    variations: [
+      { vo_number: 'VO-001', description: 'Extended torque tube for dune terrain +320kSAR', value: 320_000, status: 'approved', submitted_date: '2026-07-10' },
+      { vo_number: 'VO-002', description: 'Additional wind stow algorithm customisation', value: 0, status: 'approved', submitted_date: '2026-07-15' },
+    ],
   },
 ]
 
@@ -712,6 +795,37 @@ function BidEvaluationTab({ bids, rfqs }: { bids: Bid[]; rfqs: RFQ[] }) {
         </Card>
       )}
 
+      {/* Consensus scoring summary */}
+      {sorted.length > 0 && (() => {
+        const avg = (arr: number[]) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0
+        const consensus = {
+          technical:   avg(sorted.map((b) => b.technical_score)),
+          commercial:  avg(sorted.map((b) => b.commercial_score)),
+          delivery:    avg(sorted.map((b) => b.delivery_score)),
+          performance: avg(sorted.map((b) => b.past_performance_score)),
+          total:       avg(sorted.map((b) => b.total_score)),
+        }
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {[
+              { label: 'Technical Avg',   value: consensus.technical,   color: '#64ffda' },
+              { label: 'Commercial Avg',  value: consensus.commercial,  color: '#3b82f6' },
+              { label: 'Delivery Avg',    value: consensus.delivery,    color: '#f97316' },
+              { label: 'Performance Avg', value: consensus.performance, color: '#a855f7' },
+              { label: 'Consensus Score', value: consensus.total,       color: '#22c55e' },
+            ].map((m) => (
+              <div key={m.label} className="rounded-xl border border-border bg-card px-4 py-3 text-center">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">{m.label}</p>
+                <p className="text-2xl font-bold" style={{ color: m.color }}>{m.value.toFixed(1)}</p>
+                <div className="mt-1.5 h-1 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${m.value}%`, background: m.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
       {/* Bid register table */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] text-sm">
@@ -889,36 +1003,99 @@ function POsTab({ pos }: { pos: PurchaseOrder[] }) {
 // ─── Tab: Contracts ───────────────────────────────────────────
 
 function ContractsTab({ contracts }: { contracts: Contract[] }) {
+  const [expanded, setExpanded] = React.useState<string | null>(null)
+
+  const VO_STATUS = {
+    pending:  { label: 'Pending',  color: '#f59e0b' },
+    approved: { label: 'Approved', color: '#22c55e' },
+    rejected: { label: 'Rejected', color: '#ef4444' },
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button size="sm"><Plus className="size-3.5" /> New Contract</Button>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[700px] text-sm">
+        <table className="w-full min-w-[780px] text-sm">
           <thead>
-            <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-              {['Contract No.','Vendor','Title','Type','Value','Retention','Start','End','Status'].map((h) => (
+            <tr className="border-b border-border bg-muted/40 dark:bg-muted/20 text-[11px] uppercase tracking-wider text-muted-foreground">
+              {['','Contract No.','Vendor','Title','Type','Value','Retention','Start','End','Status','Variations'].map((h) => (
                 <th key={h} className="px-4 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {contracts.map((c) => (
-              <tr key={c.id} className="border-b border-border hover:bg-muted/20 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-[#64ffda]">{c.code}</td>
-                <td className="px-4 py-3 text-sm text-foreground">{c.vendor_name}</td>
-                <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[200px] truncate">{c.title}</td>
-                <td className="px-4 py-3">
-                  <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-0.5 rounded-full">{c.type}</span>
-                </td>
-                <td className="px-4 py-3 font-semibold text-foreground">{fmt(c.value)}</td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">{c.retention_pct}%</td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.start_date}</td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.end_date}</td>
-                <td className="px-4 py-3"><StatusBadge status={c.status} meta={CONTRACT_STATUS_META} /></td>
-              </tr>
-            ))}
+            {contracts.map((c) => {
+              const isOpen = expanded === c.id
+              const voCount = c.variations?.length ?? 0
+              return (
+                <React.Fragment key={c.id}>
+                  <tr className="border-b border-border hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors">
+                    <td className="px-2 py-3">
+                      {voCount > 0 && (
+                        <button type="button" onClick={() => setExpanded(isOpen ? null : c.id)}
+                          className="text-muted-foreground hover:text-foreground">
+                          {isOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-[#64ffda]">{c.code}</td>
+                    <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.vendor_name}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[180px] truncate">{c.title}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs bg-muted/50 dark:bg-muted/30 text-muted-foreground px-2 py-0.5 rounded-full">{c.type}</span>
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-foreground">{fmt(c.value)}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{c.retention_pct}%</td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.start_date}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.end_date}</td>
+                    <td className="px-4 py-3"><StatusBadge status={c.status} meta={CONTRACT_STATUS_META} /></td>
+                    <td className="px-4 py-3">
+                      {voCount > 0
+                        ? <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full font-semibold">{voCount} VO{voCount > 1 ? 's' : ''}</span>
+                        : <span className="text-[10px] text-muted-foreground">—</span>
+                      }
+                    </td>
+                  </tr>
+                  {isOpen && c.variations && c.variations.length > 0 && (
+                    <tr className="border-b border-border bg-amber-500/5 dark:bg-amber-500/5">
+                      <td colSpan={11} className="px-6 py-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-400 mb-2">Contract Variations</p>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                              {['VO No.','Description','Value','Status','Submitted'].map((h) => (
+                                <th key={h} className="py-1.5 pr-4 text-left font-semibold">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {c.variations.map((vo) => {
+                              const voMeta = VO_STATUS[vo.status]
+                              return (
+                                <tr key={vo.vo_number} className="border-b border-border/50 last:border-0">
+                                  <td className="py-2 pr-4 font-mono text-amber-400">{vo.vo_number}</td>
+                                  <td className="py-2 pr-4 text-foreground">{vo.description}</td>
+                                  <td className="py-2 pr-4 font-semibold text-foreground">{vo.value > 0 ? fmt(vo.value) : '—'}</td>
+                                  <td className="py-2 pr-4">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                                      style={{ color: voMeta.color, background: `${voMeta.color}18` }}>
+                                      {voMeta.label}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 font-mono text-muted-foreground">{vo.submitted_date}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
           </tbody>
         </table>
       </div>
