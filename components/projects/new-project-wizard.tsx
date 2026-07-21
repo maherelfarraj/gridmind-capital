@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  CheckCircle2, AlertTriangle, ArrowLeft, ArrowRight,
+  CheckCircle2, CheckCircle, AlertTriangle, ArrowLeft, ArrowRight,
   Wand2, Building2, MapPin, DollarSign, Calendar, FileText,
   User, Loader2, X, Plus, Check,
 } from 'lucide-react'
@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { createProject } from '@/app/actions/projects'
+import { G0IntakeForm } from '@/components/stage-gate/g0-intake-form'
 
 /* ─────────────────────────────────────────────────────────────────
    Types
@@ -1142,18 +1143,89 @@ export function NewProjectWizard({
    Page wrapper
 ───────────────────────────────────────────────────────────────── */
 
+// ─────────────────────────────────────────────────────────────────
+//  G0 Step — shown after successful project creation
+// ─────────────────────────────────────────────────────────────────
+
+function G0Step({
+  projectId,
+  projectCode,
+  projectName,
+  onSkip,
+  onDone,
+}: {
+  projectId: string
+  projectCode: string
+  projectName: string
+  onSkip: () => void
+  onDone: () => void
+}) {
+  const [submitted, setSubmitted] = React.useState(false)
+
+  if (submitted) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <div className="size-16 rounded-full bg-[#64ffda]/10 flex items-center justify-center">
+          <CheckCircle className="size-8 text-[#64ffda]" aria-hidden />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-foreground">G0 Intake Submitted</h2>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+            The Gate 0 Investment Intake package has been saved and the review team has been notified.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDone}
+          className="mt-2 flex items-center gap-2 rounded-lg bg-[#0a192f] dark:bg-[#112240] hover:bg-slate-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors"
+        >
+          View Project <ArrowRight className="size-4" aria-hidden />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">Optional — Complete Now or Later</p>
+          <h2 className="text-xl font-bold text-foreground">Gate 0 Investment Intake</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Fill in the G0 package for <span className="font-mono text-[#64ffda]">{projectCode}</span> to start the approval workflow.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onSkip}
+          className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
+        >
+          Skip for now
+        </button>
+      </div>
+      <G0IntakeForm
+        projectId={projectId}
+        projectCode={projectCode}
+        projectName={projectName}
+        onSubmitted={() => setSubmitted(true)}
+      />
+    </div>
+  )
+}
+
 export function NewProjectWizardPage() {
   const router = useRouter()
-  const [createdId, setCreatedId] = React.useState<string | null>(null)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
+  const [createdProject, setCreatedProject] = React.useState<{ id: string; code: string; name: string } | null>(null)
+  const [showG0, setShowG0] = React.useState(false)
 
   // Normalise a date value (YYYY-MM-DD | MM/DD/YYYY | Date) → 'YYYY-MM-DD' or ''
   const toIsoDate = (val: string | Date | undefined | null): string => {
     if (!val) return ''
     if (val instanceof Date) return val.toISOString().split('T')[0]
     const s = String(val).trim()
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s             // already ISO
-    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {              // MM/DD/YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
       const [m, d, y] = s.split('/')
       return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
     }
@@ -1181,10 +1253,29 @@ export function NewProjectWizardPage() {
       throw new Error(result.error)
     }
 
-    setCreatedId(result.id)
-    // Redirect to the new project after showing the success overlay
-    setTimeout(() => router.push(`/projects/${result.id}`), 2800)
+    setCreatedProject({ id: result.id, code: data.code, name: data.name })
     router.refresh()
+    // Show G0 step after the wizard's own success overlay fades
+    setTimeout(() => setShowG0(true), 2800)
+  }
+
+  // G0 step shown after wizard success overlay
+  if (showG0 && createdProject) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <Card className="shadow-sm flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            <G0Step
+              projectId={createdProject.id}
+              projectCode={createdProject.code}
+              projectName={createdProject.name}
+              onSkip={() => router.push(`/projects/${createdProject.id}`)}
+              onDone={() => router.push(`/projects/${createdProject.id}`)}
+            />
+          </div>
+        </Card>
+      </div>
+    )
   }
 
   return (

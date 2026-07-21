@@ -13,11 +13,13 @@ import {
   Wrench,
   Hammer,
   Zap,
+  PackageCheck,
   DollarSign,
   BarChart3,
   ClipboardList,
   Users,
   Globe,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -116,6 +118,12 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'PROJECTS',
     items: [
       {
+        id: 'opportunities',
+        label: 'Opportunities',
+        href: '/opportunities',
+        icon: Sparkles,
+      },
+      {
         id: 'projects',
         label: 'All Projects',
         href: '/projects',
@@ -131,6 +139,17 @@ export const NAV_SECTIONS: NavSection[] = [
           { id: 'g7', label: 'G7 · O&M',            href: '/projects?gate=G7', phase: 'g7' },
           { id: 'g8', label: 'G8 · Finance',        href: '/projects?gate=G8', phase: 'g8' },
           { id: 'g9', label: 'G9 · Analytics',      href: '/projects?gate=G9', phase: 'g9' },
+        ],
+      },
+      {
+        id: 'project-sub',
+        label: 'Project Sub-pages',
+        icon: FolderKanban,
+        children: [
+          { id: 'proj-commercial',  label: 'Commercial Charter', href: '/projects', phase: 'g1' },
+          { id: 'proj-schedule',    label: 'Schedule / Gantt',   href: '/projects', phase: 'g1' },
+          { id: 'proj-stakeholders',label: 'Stakeholders',       href: '/projects', phase: 'g1' },
+          { id: 'proj-risks',       label: 'Project Risks',      href: '/risks',    phase: 'g1' },
         ],
       },
     ],
@@ -157,6 +176,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/procurement',
         icon: ClipboardList,
         children: [
+          { id: 'proc-rfqs',      label: 'RFQ Register',      href: '/procurement' },
           { id: 'proc-contracts', label: 'Contracts',         href: '/procurement/contracts' },
           { id: 'proc-po',        label: 'Purchase Orders',   href: '/procurement/purchase-orders' },
           { id: 'proc-receiving', label: 'Receiving',         href: '/procurement/receiving' },
@@ -178,6 +198,22 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Commissioning',
         href: '/commissioning',
         icon: Zap,
+      },
+      {
+        id: 'handover',
+        label: 'Handover',
+        href: '/handover',
+        icon: PackageCheck,
+      },
+      {
+        id: 'om',
+        label: 'O&M',
+        href: '/om',
+        icon: Wrench,
+        children: [
+          { id: 'om-assets',      label: 'Asset Registry',    href: '/om' },
+          { id: 'om-maintenance', label: 'Maintenance Plans', href: '/om#maintenance' },
+        ],
       },
     ],
   },
@@ -209,7 +245,8 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: DollarSign,
         children: [
           { id: 'fin-budget',     label: 'Budget',            href: '/finance/budget' },
-          { id: 'fin-actuals',    label: 'Actuals & EVM',     href: '/finance/actuals' },
+          { id: 'fin-evm',        label: 'EVM & Cash Flow',   href: '/finance/evm' },
+          { id: 'fin-actuals',    label: 'Actuals',           href: '/finance/actuals' },
           { id: 'fin-forecast',   label: 'Forecast',          href: '/finance/forecast' },
         ],
       },
@@ -220,15 +257,21 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'INTELLIGENCE',
     items: [
       {
+        id: 'risks',
+        label: 'Risk Register',
+        href: '/risks',
+        icon: AlertTriangle,
+      },
+      {
         id: 'esg',
         label: 'ESG & Reporting',
         href: '/esg',
         icon: Globe,
       },
       {
-        id: 'ai',
+        id: 'ai-insights',
         label: 'AI Insights',
-        href: '/ai',
+        href: '/ai-insights',
         icon: Sparkles,
       },
       {

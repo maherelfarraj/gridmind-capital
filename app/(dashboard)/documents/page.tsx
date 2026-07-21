@@ -1,6 +1,6 @@
 import { DocumentsPage } from '@/components/documents/documents-page'
 
-export const metadata = { title: 'Documents — GridMind Capital' }
+export const metadata = { title: 'Documents' }
 
 export default function Page() {
   return (

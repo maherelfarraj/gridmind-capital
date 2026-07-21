@@ -1,0 +1,412 @@
+'use client'
+
+import * as React from 'react'
+import useSWR from 'swr'
+import {
+  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+} from 'recharts'
+import {
+  Plus, RefreshCw, Loader2, Hammer, HardHat, ClipboardList,
+  CheckCircle2, AlertTriangle, X,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useToast } from '@/components/ui/toast'
+import {
+  loadConstructionDashboard, closePunchItem, recordInspection, seedConstructionDemoData,
+} from '@/app/actions/construction'
+import type { WorkPackage, InspectionRecord, PunchItem } from '@/lib/types/action-types'
+
+// ─── Constants ────────────────────────────────────────────────
+
+const HEALTH_META: Record<string, { color: string }> = {
+  green: { color: '#22c55e' },
+  amber: { color: '#f59e0b' },
+  red:   { color: '#ef4444' },
+}
+const DISC_COLORS = ['#64ffda', '#3b82f6', '#f97316', '#a855f7', '#22c55e', '#f59e0b']
+
+// ─── New inspection modal ──────────────────────────────────────
+
+function NewInspectionModal({ open, onClose, onCreated }: {
+  open: boolean; onClose: () => void; onCreated: () => void
+}) {
+  const { toast } = useToast()
+  const [loading, setLoading] = React.useState(false)
+  const [form, setForm] = React.useState({ title: '', type: 'safety', result: 'pass', location: '' })
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.title) { toast({ title: 'Title required', variant: 'danger' }); return }
+    setLoading(true)
+    const { error } = await recordInspection(form)
+    setLoading(false)
+    if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
+    toast({ title: 'Inspection recorded', variant: 'success' })
+    onCreated(); onClose()
+  }
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <form onSubmit={handleSubmit} className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-foreground">Record Inspection</h2>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        {[
+          { label: 'Title *', key: 'title', type: 'text' },
+          { label: 'Location', key: 'location', type: 'text' },
+        ].map(({ label, key, type }) => (
+          <div key={key}>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
+            <input type={type} value={form[key as keyof typeof form]}
+              onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+              className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#64ffda]/40" />
+          </div>
+        ))}
+        {[
+          { label: 'Type', key: 'type', options: ['safety', 'quality', 'environmental'] },
+          { label: 'Result', key: 'result', options: ['pass', 'fail', 'hold', 'pending'] },
+        ].map(({ label, key, options }) => (
+          <div key={key}>
+            <label className="block text-xs font-medium text-muted-foreground mb-1 capitalize">{label}</label>
+            <select value={form[key as keyof typeof form]}
+              onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+              className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#64ffda]/40 capitalize">
+              {options.map((o) => <option key={o} className="capitalize">{o}</option>)}
+            </select>
+          </div>
+        ))}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button type="submit" size="sm" disabled={loading}>{loading && <Loader2 className="size-3.5 animate-spin" />} Record</Button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+// ─── WP row ────────────────────────────────────────────────────
+
+function WPRow({ item }: { item: WorkPackage }) {
+  const hm = HEALTH_META[item.health] ?? HEALTH_META.green
+  const variance = item.actual_pct - item.planned_pct
+  return (
+    <tr className="border-b border-border hover:bg-muted/20 transition-colors">
+      <td className="px-4 py-3 font-mono text-xs text-[#64ffda]">{item.wp_code}</td>
+      <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[180px] truncate">{item.title}</td>
+      <td className="px-4 py-3 text-xs text-muted-foreground">{item.discipline}</td>
+      <td className="px-4 py-3 text-xs text-muted-foreground hidden md:table-cell">{item.contractor}</td>
+      <td className="px-4 py-3">
+        <div className="space-y-1 min-w-[80px]">
+          <div className="flex justify-between text-[10px] text-muted-foreground">
+            <span>Plan {item.planned_pct}%</span>
+            <span>Act {item.actual_pct}%</span>
+          </div>
+          <div className="relative h-1.5 bg-muted rounded-full">
+            <div className="absolute h-1.5 rounded-full bg-muted-foreground/40" style={{ width: `${item.planned_pct}%` }} />
+            <div className="absolute h-1.5 rounded-full bg-[#64ffda]" style={{ width: `${item.actual_pct}%` }} />
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-xs font-semibold" style={{ color: variance >= 0 ? '#22c55e' : '#ef4444' }}>
+        {variance >= 0 ? '+' : ''}{variance}%
+      </td>
+      <td className="px-4 py-3">
+        <span className="h-2 w-2 rounded-full inline-block" style={{ backgroundColor: hm.color }} />
+      </td>
+    </tr>
+  )
+}
+
+// ─── Punch item row ─────────────────────────────────────────────
+
+function PunchRow({ item, onClose }: { item: PunchItem; onClose: (id: string) => void }) {
+  return (
+    <tr className="border-b border-border hover:bg-muted/20 transition-colors">
+      <td className="px-4 py-3 font-mono text-xs text-[#64ffda]">{item.ref}</td>
+      <td className="px-4 py-3">
+        <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold',
+          item.category === 'A' ? 'bg-[#ef4444]/15 text-[#ef4444]' : 'bg-[#f59e0b]/15 text-[#f59e0b]')}>
+          Cat {item.category}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[200px] truncate">{item.title}</td>
+      <td className="px-4 py-3 text-xs text-muted-foreground">{item.discipline}</td>
+      <td className="px-4 py-3 text-xs text-muted-foreground hidden md:table-cell">{item.assigned_to}</td>
+      <td className="px-4 py-3">
+        <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold',
+          item.status === 'closed' ? 'bg-[#22c55e]/10 text-[#22c55e]' : 'bg-[#ef4444]/10 text-[#ef4444]')}>
+          {item.status === 'closed' ? 'Closed' : 'Open'}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        {item.status !== 'closed' && (
+          <button onClick={() => onClose(item.id)}
+            className="text-xs px-2 py-1 rounded bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            Close
+          </button>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────
+
+export function ConstructionPage() {
+  const { toast } = useToast()
+  const [tab, setTab]       = React.useState<'wp' | 'inspections' | 'punch'>('wp')
+  const [inspModal, setInspModal] = React.useState(false)
+  const [seeding,   setSeeding]   = React.useState(false)
+
+  const { data, isLoading, mutate } = useSWR('construction-dashboard', loadConstructionDashboard, { revalidateOnFocus: true })
+
+  async function handleClosePunch(id: string) {
+    const { error } = await closePunchItem(id)
+    if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
+    toast({ title: 'Punch item closed', variant: 'success' })
+    mutate()
+  }
+
+  async function handleSeed() {
+    setSeeding(true)
+    const { error } = await seedConstructionDemoData()
+    setSeeding(false)
+    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
+    toast({ title: 'Demo data seeded', variant: 'success' })
+    mutate()
+  }
+
+  const overallPct = (() => {
+    const wps = data?.workPackages ?? []
+    if (!wps.length) return 0
+    return Math.round(wps.reduce((s, w) => s + w.actual_pct, 0) / wps.length)
+  })()
+
+  const kpis = [
+    { label: 'Work Packages',  value: data?.totalWPs     ?? 0, color: '#64ffda', icon: Hammer       },
+    { label: 'Completed WPs',  value: data?.completedWPs ?? 0, color: '#22c55e', icon: CheckCircle2 },
+    { label: 'Open Punches',   value: data?.openPunches  ?? 0, color: '#f59e0b', icon: ClipboardList },
+    { label: 'Cat A Punches',  value: data?.catAPunches  ?? 0, color: '#ef4444', icon: AlertTriangle },
+  ]
+
+  return (
+    <>
+      <NewInspectionModal open={inspModal} onClose={() => setInspModal(false)} onCreated={() => mutate()} />
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Construction</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">G4–G5 · Work packages, HSE inspections, and punch lists</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => mutate()}><RefreshCw className="size-3.5" /></Button>
+            <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
+              {seeding ? <Loader2 className="size-3.5 animate-spin" /> : 'Seed Demo'}
+            </Button>
+            <Button size="sm" onClick={() => setInspModal(true)}><Plus className="size-4" /> Record Inspection</Button>
+          </div>
+        </div>
+
+        {/* Overall progress bar */}
+        <div className="rounded-xl bg-card border border-border p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-foreground">Overall Construction Progress</span>
+            <span className="text-xl font-bold text-[#64ffda]">{overallPct}%</span>
+          </div>
+          <div className="h-3 bg-muted rounded-full overflow-hidden">
+            <div className="h-3 rounded-full bg-[#64ffda] transition-all duration-500" style={{ width: `${overallPct}%` }} />
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {kpis.map(({ label, value, color, icon: Icon }) => (
+            <div key={label} className="rounded-xl bg-card border border-border p-4" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{label}</span>
+                <Icon className="size-4" style={{ color }} aria-hidden />
+              </div>
+              <p className="text-2xl font-bold text-foreground">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Charts */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Planned vs Actual by Discipline</CardTitle></CardHeader>
+            <CardContent className="h-52">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm gap-2"><Loader2 className="size-4 animate-spin" />Loading…</div>
+              ) : (data?.wpByDiscipline?.length ?? 0) === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No data — seed demo first</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={data!.wpByDiscipline} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} formatter={(v) => [`${v}%`, '']} />
+                    <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="planned" name="Planned %" fill="#64748b" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="actual"  name="Actual %"  fill="#64ffda" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Punch List by Category</CardTitle></CardHeader>
+            <CardContent className="h-52">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm gap-2"><Loader2 className="size-4 animate-spin" />Loading…</div>
+              ) : (data?.punchByCategory?.every((p) => p.value === 0) ?? true) ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No punch items</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={data!.punchByCategory.filter((p) => p.value > 0)} dataKey="value" nameKey="name"
+                      cx="50%" cy="50%" outerRadius={72}
+                      label={({ name, percent }: { name?: string; percent?: number }) => `${(name ?? '').split('(')[0]} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
+                      {(data?.punchByCategory ?? []).map((e, i) => <Cell key={i} fill={e.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Live badge */}
+        <span className={cn('inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full',
+          (data?.totalWPs ?? 0) > 0 ? 'bg-[#22c55e]/10 text-[#22c55e]' : 'bg-muted text-muted-foreground')}>
+          <span className={cn('h-1.5 w-1.5 rounded-full', (data?.totalWPs ?? 0) > 0 ? 'bg-[#22c55e]' : 'bg-muted-foreground')} />
+          {(data?.totalWPs ?? 0) > 0 ? 'Live data' : 'Illustrative — seed demo to populate'}
+        </span>
+
+        {/* Tabs */}
+        <div role="tablist" className="flex gap-1 border-b border-border">
+          {[
+            { id: 'wp'          as const, label: `Work Packages (${data?.totalWPs ?? 0})` },
+            { id: 'inspections' as const, label: `Inspections (${data?.inspections?.length ?? 0})` },
+            { id: 'punch'       as const, label: `Punch List (${data?.openPunches ?? 0} open)` },
+          ].map(({ id, label }) => (
+            <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+              className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                tab === id ? 'border-[#64ffda] text-[#64ffda]' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Work Packages */}
+        {tab === 'wp' && (
+          <Card className="overflow-hidden">
+            <CardContent className="p-0 overflow-x-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading…</div>
+              ) : (data?.workPackages?.length ?? 0) === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <Hammer className="size-12 text-muted-foreground/30" />
+                  <p className="text-sm font-semibold text-foreground">No work packages</p>
+                  <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
+                </div>
+              ) : (
+                <table className="w-full min-w-[700px] text-sm" role="table">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                      {['WP Code', 'Title', 'Discipline', 'Contractor', 'Progress', 'Variance', ''].map((h) => (
+                        <th key={h} className="px-4 py-2.5 text-left font-semibold">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>{data!.workPackages.map((w) => <WPRow key={w.id} item={w} />)}</tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Inspections */}
+        {tab === 'inspections' && (
+          <Card className="overflow-hidden">
+            <CardContent className="p-0 overflow-x-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading…</div>
+              ) : (data?.inspections?.length ?? 0) === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <HardHat className="size-12 text-muted-foreground/30" />
+                  <p className="text-sm font-semibold text-foreground">No inspections recorded</p>
+                  <Button size="sm" onClick={() => setInspModal(true)}><Plus className="size-4" /> Record Inspection</Button>
+                </div>
+              ) : (
+                <table className="w-full min-w-[600px] text-sm" role="table">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                      {['Ref', 'Title', 'Type', 'Location', 'Date', 'Result'].map((h) => (
+                        <th key={h} className="px-4 py-2.5 text-left font-semibold">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data!.inspections.map((i) => (
+                      <tr key={i.id} className="border-b border-border hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-[#64ffda]">{i.ref}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[180px] truncate">{i.title}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground capitalize">{i.type}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{i.location}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{i.date?.slice(0, 10)}</td>
+                        <td className="px-4 py-3">
+                          <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold capitalize',
+                            i.result === 'pass' ? 'bg-[#22c55e]/10 text-[#22c55e]' :
+                            i.result === 'fail' ? 'bg-[#ef4444]/10 text-[#ef4444]' :
+                            i.result === 'hold' ? 'bg-[#f59e0b]/10 text-[#f59e0b]' :
+                            'bg-muted text-muted-foreground')}>
+                            {i.result ?? 'Pending'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Punch list */}
+        {tab === 'punch' && (
+          <Card className="overflow-hidden">
+            <CardContent className="p-0 overflow-x-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading…</div>
+              ) : (data?.punchItems?.length ?? 0) === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <ClipboardList className="size-12 text-muted-foreground/30" />
+                  <p className="text-sm font-semibold text-foreground">No punch items</p>
+                  <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
+                </div>
+              ) : (
+                <table className="w-full min-w-[700px] text-sm" role="table">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                      {['Ref', 'Cat', 'Title', 'Discipline', 'Assigned', 'Status', ''].map((h) => (
+                        <th key={h} className="px-4 py-2.5 text-left font-semibold">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>{data!.punchItems.map((p) => <PunchRow key={p.id} item={p} onClose={handleClosePunch} />)}</tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </>
+  )
+}
