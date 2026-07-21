@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Menu, Bell, Search, ChevronRight, X, Command } from 'lucide-react'
+import { Menu, Bell, Search, ChevronRight, X, Command, Sun, Moon } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
 // ─────────────────────────────────────────────────────────────
@@ -133,6 +134,32 @@ function SearchBar() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Theme toggle
+// ─────────────────────────────────────────────────────────────
+
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => setMounted(true), [])
+  if (!mounted) return <div className="h-8 w-8" />
+
+  const isDark = resolvedTheme === 'dark'
+  return (
+    <button
+      type="button"
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-150"
+    >
+      {isDark
+        ? <Sun  size={15} aria-hidden="true" />
+        : <Moon size={15} aria-hidden="true" />
+      }
+    </button>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
 // Notification bell
 // ─────────────────────────────────────────────────────────────
 
@@ -230,6 +257,7 @@ export function TopBar({
         <LiveClock />
         <div className="h-4 w-px bg-border hidden lg:block" />
         <SearchBar />
+        <ThemeToggle />
         <NotificationBell count={notificationCount} />
       </div>
     </header>
