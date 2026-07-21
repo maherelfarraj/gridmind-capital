@@ -69,12 +69,22 @@ export async function getUsers(): Promise<UserProfile[]> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, email, role, department, avatar_url, created_at, last_seen_at')
+    .select('id, full_name, email, role, department, avatar_url, created_at, last_active')
     .eq('tenant_id', DEMO_TENANT)
     .order('created_at', { ascending: false })
 
   if (error || !data) return []
-  return data as UserProfile[]
+
+  return data.map((u) => ({
+    id: u.id,
+    full_name: u.full_name ?? '',
+    email: u.email ?? '',
+    role: u.role ?? 'viewer',
+    department: u.department ?? null,
+    avatar_url: u.avatar_url ?? null,
+    created_at: u.created_at ?? '',
+    last_seen_at: u.last_active ?? null,
+  })) satisfies UserProfile[]
 }
 
 export async function updateUserRole(userId: string, role: string): Promise<{ error?: string }> {
