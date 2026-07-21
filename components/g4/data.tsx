@@ -1,6 +1,12 @@
-// G4 Construction — types, mock data, and chart data
+import React from 'react'
+import {
+  AlertOctagon, Flame, ArrowUp, ArrowDown, CheckCircle, PauseCircle,
+  XOctagon, Clock, Loader2, Eye, XCircle, AlertTriangle, RefreshCw,
+} from 'lucide-react'
 
-export interface Milestone { id: string; name: string; date: string; status: string }
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface Milestone  { id: string; name: string; date: string; status: string }
 export interface IssueItem  { id: string; title: string; priority: string; status: string; owner: string }
 export interface DocItem    { id: string; name: string; type: string; status: string; date: string }
 
@@ -12,8 +18,8 @@ export interface WorkPackage {
   milestones: Milestone[]; issues: IssueItem[]; documents: DocItem[]
 }
 
-export interface HSEPlanItem  { id: string; name: string; status: string; date: string; detail?: string }
-export interface Incident     { id: string; date: string; type: string; severity: string; description: string; person: string; status: string }
+export interface HSEPlanItem   { id: string; name: string; status: string; date: string; detail?: string }
+export interface Incident      { id: string; date: string; type: string; severity: string; description: string; person: string; status: string }
 
 export interface Permit {
   id: string; code: string; type: string; authority: string; status: string
@@ -32,40 +38,49 @@ export interface Material      { id: string; item: string; description: string; 
 export interface Subcontractor { id: string; company: string; scope: string; value: number; start_date: string; personnel: number; status: string; performance: number }
 export interface DisciplineProgress { discipline: string; weight: number; planned: number; actual: number }
 
-// ─── Chart / EV Data ─────────────────────────────────────────────────────────
+// ─── Meta / lookup constants ─────────────────────────────────────────────────
 
-export const S_CURVE_DATA = [
-  { month: 'Jan', planned: 2,   actual: 1.5  },
-  { month: 'Feb', planned: 6,   actual: 5.2  },
-  { month: 'Mar', planned: 12,  actual: 10.1 },
-  { month: 'Apr', planned: 20,  actual: 18.0 },
-  { month: 'May', planned: 30,  actual: null },
-  { month: 'Jun', planned: 42,  actual: null },
-  { month: 'Jul', planned: 55,  actual: null },
-  { month: 'Aug', planned: 68,  actual: null },
-  { month: 'Sep', planned: 80,  actual: null },
-  { month: 'Oct', planned: 90,  actual: null },
-  { month: 'Nov', planned: 96,  actual: null },
-  { month: 'Dec', planned: 100, actual: null },
-]
+export const PRIORITY_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  Critical: { label: 'Critical', color: 'bg-red-100 text-red-700',        icon: <AlertOctagon className="size-3" /> },
+  High:     { label: 'High',     color: 'bg-orange-100 text-orange-700',  icon: <Flame       className="size-3" /> },
+  Medium:   { label: 'Medium',   color: 'bg-amber-100 text-amber-700',    icon: <ArrowUp     className="size-3" /> },
+  Low:      { label: 'Low',      color: 'bg-green-100 text-green-700',    icon: <ArrowDown   className="size-3" /> },
+}
 
-export const EV_DATA = [
-  { month: 'Jan', bcws: 1800000,  bcwp: 1350000,  acwp: 1420000  },
-  { month: 'Feb', bcws: 5400000,  bcwp: 4680000,  acwp: 4850000  },
-  { month: 'Mar', bcws: 10800000, bcwp: 9090000,   acwp: 9500000  },
-  { month: 'Apr', bcws: 18000000, bcwp: null,       acwp: null     },
-]
+export const STATUS_META: Record<string, { label: string; color: string; icon?: React.ReactNode }> = {
+  'Not Started': { label: 'Not Started', color: 'bg-slate-100 text-slate-700' },
+  'In Progress': { label: 'In Progress', color: 'bg-blue-100 text-blue-700',   icon: <Loader2     className="size-3 animate-spin" /> },
+  'Complete':    { label: 'Complete',    color: 'bg-green-100 text-green-700', icon: <CheckCircle className="size-3" /> },
+  'On Hold':     { label: 'On Hold',     color: 'bg-amber-100 text-amber-700', icon: <PauseCircle className="size-3" /> },
+  'Blocked':     { label: 'Blocked',     color: 'bg-red-100 text-red-700',     icon: <XOctagon    className="size-3" /> },
+}
 
-export const DISCIPLINE_PROGRESS: DisciplineProgress[] = [
-  { discipline: 'Civil',           weight: 30, planned: 40, actual: 35 },
-  { discipline: 'Structural',      weight: 20, planned: 18, actual: 15 },
-  { discipline: 'Mechanical',      weight: 20, planned: 8,  actual: 5  },
-  { discipline: 'Electrical',      weight: 15, planned: 5,  actual: 2  },
-  { discipline: 'Instrumentation', weight: 10, planned: 2,  actual: 0  },
-  { discipline: 'Commissioning',   weight: 5,  planned: 0,  actual: 0  },
-]
+export const PERMIT_STATUS_META: Record<string, { color: string; icon: React.ReactNode }> = {
+  'Approved':          { color: 'bg-green-100 text-green-700',   icon: <CheckCircle   className="size-3" /> },
+  'Pending':           { color: 'bg-amber-100 text-amber-700',   icon: <Clock         className="size-3" /> },
+  'Under Review':      { color: 'bg-blue-100 text-blue-700',     icon: <Eye           className="size-3" /> },
+  'Rejected':          { color: 'bg-red-100 text-red-700',       icon: <XCircle       className="size-3" /> },
+  'Expired':           { color: 'bg-red-200 text-red-800',       icon: <AlertTriangle className="size-3" /> },
+  'Renewal Required':  { color: 'bg-orange-100 text-orange-700', icon: <RefreshCw     className="size-3" /> },
+  'Not Started':       { color: 'bg-slate-100 text-slate-700',   icon: <Clock         className="size-3" /> },
+}
 
-// ─── Mock Data ───────────────────────────────────────────────────────────────
+export const INCIDENT_SEVERITY: Record<string, string> = {
+  Fatal:      'bg-black text-white',
+  Major:      'bg-red-100 text-red-800',
+  Serious:    'bg-orange-100 text-orange-700',
+  Minor:      'bg-amber-100 text-amber-700',
+  'Near Miss':'bg-sky-100 text-sky-700',
+}
+
+export const INCIDENT_STATUS: Record<string, string> = {
+  Open:                  'bg-red-100 text-red-700',
+  'Under Investigation': 'bg-amber-100 text-amber-700',
+  Closed:                'bg-green-100 text-green-700',
+  Referred:              'bg-blue-100 text-blue-700',
+}
+
+// ─── Mock data ───────────────────────────────────────────────────────────────
 
 export const MOCK_WORK_PACKAGES: WorkPackage[] = [
   {
@@ -78,7 +93,7 @@ export const MOCK_WORK_PACKAGES: WorkPackage[] = [
     milestones: [
       { id: 'm1', name: 'Site clearing complete', date: 'Feb 28', status: 'Complete' },
       { id: 'm2', name: 'Grading Phase 1',        date: 'Mar 31', status: 'In Progress' },
-      { id: 'm3', name: 'Final earthworks',        date: 'Jun 30', status: 'Not Started' },
+      { id: 'm3', name: 'Final earthworks',       date: 'Jun 30', status: 'Not Started' },
     ],
     issues: [
       { id: 'i1', title: 'Unexpected rock layer at -2.5m depth', priority: 'High', status: 'Open', owner: 'Ahmed Al-Rashid' },
@@ -112,7 +127,7 @@ export const MOCK_WORK_PACKAGES: WorkPackage[] = [
     budget_amount: 2100000, actual_cost: 0,
     start_date: 'Mar 15, 2026', end_date: 'Sep 30, 2026', team_size: 0,
     milestones: [
-      { id: 'm6', name: 'Equipment delivery',  date: 'Mar 15', status: 'Not Started' },
+      { id: 'm6', name: 'Equipment delivery',    date: 'Mar 15', status: 'Not Started' },
       { id: 'm7', name: 'Installation complete', date: 'Sep 30', status: 'Not Started' },
     ],
     issues: [], documents: [],
@@ -124,9 +139,7 @@ export const MOCK_WORK_PACKAGES: WorkPackage[] = [
     progress_percent: 0, planned_hours: 2800, actual_hours: 0,
     budget_amount: 1500000, actual_cost: 0,
     start_date: 'Apr 1, 2026', end_date: 'Aug 31, 2026', team_size: 0,
-    milestones: [
-      { id: 'm8', name: 'Cable pulling Phase 1', date: 'May 31', status: 'Not Started' },
-    ],
+    milestones: [{ id: 'm8', name: 'Cable pulling Phase 1', date: 'May 31', status: 'Not Started' }],
     issues: [], documents: [],
   },
   {
@@ -137,12 +150,8 @@ export const MOCK_WORK_PACKAGES: WorkPackage[] = [
     budget_amount: 650000, actual_cost: 120000,
     start_date: 'Feb 15, 2026', end_date: 'Jun 15, 2026', team_size: 4,
     milestones: [],
-    issues: [
-      { id: 'i2', title: 'SCADA vendor drawing approval delayed 3 weeks', priority: 'Medium', status: 'Open', owner: 'Sara Khalid' },
-    ],
-    documents: [
-      { id: 'd4', name: 'SCADA Architecture Rev A', type: 'Drawing', status: 'Under Review', date: 'Feb 10' },
-    ],
+    issues: [{ id: 'i2', title: 'SCADA vendor drawing approval delayed 3 weeks', priority: 'Medium', status: 'Open', owner: 'Sara Khalid' }],
+    documents: [{ id: 'd4', name: 'SCADA Architecture Rev A', type: 'Drawing', status: 'Under Review', date: 'Feb 10' }],
   },
   {
     id: 'wp6', code: 'WP-006', wbs_code: '1.3.3', title: 'Piping & Utilities',
@@ -151,9 +160,7 @@ export const MOCK_WORK_PACKAGES: WorkPackage[] = [
     progress_percent: 25, planned_hours: 2000, actual_hours: 560,
     budget_amount: 720000, actual_cost: 180000,
     start_date: 'Mar 1, 2026', end_date: 'Jul 31, 2026', team_size: 5,
-    milestones: [
-      { id: 'm9', name: 'Main header installation', date: 'May 15', status: 'In Progress' },
-    ],
+    milestones: [{ id: 'm9', name: 'Main header installation', date: 'May 15', status: 'In Progress' }],
     issues: [], documents: [],
   },
   {
@@ -180,12 +187,12 @@ export const MOCK_HSE_PLAN: HSEPlanItem[] = [
   { id: 'h1',  name: 'HSE Management Plan',      status: 'Complete',    date: 'Jan 15' },
   { id: 'h2',  name: 'Risk Assessment Register', status: 'Complete',    date: 'Jan 20' },
   { id: 'h3',  name: 'Method Statements',        status: 'In Progress', date: 'Feb 28', detail: '15 of 24 complete' },
-  { id: 'h4',  name: 'COSHH Assessments',        status: 'Complete',    date: 'Feb 1' },
+  { id: 'h4',  name: 'COSHH Assessments',        status: 'Complete',    date: 'Feb 1'  },
   { id: 'h5',  name: 'Emergency Response Plan',  status: 'Complete',    date: 'Jan 25' },
   { id: 'h6',  name: 'Fire Safety Plan',         status: 'In Progress', date: 'Feb 15' },
   { id: 'h7',  name: 'Environmental Mgmt Plan',  status: 'Complete',    date: 'Feb 10' },
-  { id: 'h8',  name: 'Waste Management Plan',    status: 'Not Started', date: 'Mar 1' },
-  { id: 'h9',  name: 'Traffic Management Plan',  status: 'Complete',    date: 'Feb 5' },
+  { id: 'h8',  name: 'Waste Management Plan',    status: 'Not Started', date: 'Mar 1'  },
+  { id: 'h9',  name: 'Traffic Management Plan',  status: 'Complete',    date: 'Feb 5'  },
   { id: 'h10', name: 'First Aid Arrangements',   status: 'Complete',    date: 'Jan 18' },
 ]
 
@@ -247,37 +254,37 @@ export const SITE_READINESS_ITEMS: SiteReadinessItem[] = [
   { id: 'sr32', category: 'Logistics',            description: 'Customs clearance agent engaged',   responsible: 'Procurement', due_date: 'Feb 1',  status: 'Complete'    },
   { id: 'sr33', category: 'Medical',              description: 'First aid station ready',           responsible: 'HSE',         due_date: 'Jan 28', status: 'Complete'    },
   { id: 'sr34', category: 'Medical',              description: 'Ambulance standby arrangement',     responsible: 'HSE',         due_date: 'Jan 30', status: 'Complete'    },
-  { id: 'sr35', category: 'Medical',              description: 'Hospital MOU in place',             responsible: 'HSE',         due_date: 'Feb 5',  status: 'Complete'    },
+  { id: 'sr35', category: 'Medical',              description: 'Hospital MOU in place',             responsible: 'HSE',         due_date: 'Jan 20', status: 'Complete'    },
 ]
 
 export const MOCK_PERSONNEL: Personnel[] = [
   { id: 'per1', name: 'Ahmed Al-Rashid',  role: 'Construction Manager',  company: 'GridMind EPC', start_date: 'Jan 5',  induction_date: 'Jan 5',  status: 'Active' },
-  { id: 'per2', name: 'Sarah Johnson',   role: 'HSE Manager',            company: 'GridMind EPC', start_date: 'Jan 10', induction_date: 'Jan 10', status: 'Active' },
-  { id: 'per3', name: 'Carlos Rivera',   role: 'Site Engineer — Civil',  company: 'GridMind EPC', start_date: 'Jan 15', induction_date: 'Jan 15', status: 'Active' },
-  { id: 'per4', name: 'Li Wei',          role: 'Structural Lead',        company: 'Jinko Const.', start_date: 'Feb 1',  induction_date: 'Feb 1',  status: 'Active' },
-  { id: 'per5', name: 'Mohammed Hassan', role: 'Electrical Supervisor',  company: 'ABB On-Site',  start_date: 'Feb 10', induction_date: 'Feb 12', status: 'Induction Pending' },
-  { id: 'per6', name: 'Priya Nair',      role: 'Instrumentation Eng.',   company: 'GridMind EPC', start_date: 'Feb 15', induction_date: 'Feb 15', status: 'Active' },
-  { id: 'per7', name: 'Tom Wilson',      role: 'Piping Supervisor',      company: 'Al Futtaim',   start_date: 'Mar 1',  induction_date: '—',      status: 'Induction Pending' },
-  { id: 'per8', name: 'Yuki Tanaka',     role: 'QC Inspector',           company: 'GridMind EPC', start_date: 'Jan 20', induction_date: 'Jan 20', status: 'Active' },
+  { id: 'per2', name: 'Sarah Johnson',    role: 'HSE Manager',            company: 'GridMind EPC', start_date: 'Jan 10', induction_date: 'Jan 10', status: 'Active' },
+  { id: 'per3', name: 'Carlos Rivera',    role: 'Site Engineer — Civil',  company: 'GridMind EPC', start_date: 'Jan 15', induction_date: 'Jan 15', status: 'Active' },
+  { id: 'per4', name: 'Li Wei',           role: 'Structural Lead',        company: 'Jinko Const.', start_date: 'Feb 1',  induction_date: 'Feb 1',  status: 'Active' },
+  { id: 'per5', name: 'Mohammed Hassan',  role: 'Electrical Supervisor',  company: 'ABB On-Site',  start_date: 'Feb 10', induction_date: 'Feb 12', status: 'Induction Pending' },
+  { id: 'per6', name: 'Priya Nair',       role: 'Instrumentation Eng.',   company: 'GridMind EPC', start_date: 'Feb 15', induction_date: 'Feb 15', status: 'Active' },
+  { id: 'per7', name: 'Tom Wilson',       role: 'Piping Supervisor',      company: 'Al Futtaim',   start_date: 'Mar 1',  induction_date: '—',      status: 'Induction Pending' },
+  { id: 'per8', name: 'Yuki Tanaka',      role: 'QC Inspector',           company: 'GridMind EPC', start_date: 'Jan 20', induction_date: 'Jan 20', status: 'Active' },
 ]
 
 export const MOCK_EQUIPMENT: Equipment[] = [
-  { id: 'eq1', equipment_id: 'EQ-001', type: 'Excavator',          model: 'CAT 390F',         qty: 3, location: 'Zone A',   status: 'In Use',      utilization: 85 },
-  { id: 'eq2', equipment_id: 'EQ-002', type: 'Tower Crane',        model: 'Liebherr 280',     qty: 1, location: 'Central',  status: 'In Use',      utilization: 70 },
-  { id: 'eq3', equipment_id: 'EQ-003', type: 'Piling Rig',         model: 'BAUER BG 28',      qty: 2, location: 'Zone B',   status: 'In Use',      utilization: 90 },
-  { id: 'eq4', equipment_id: 'EQ-004', type: 'Concrete Pump',      model: 'Putzmeister M52',  qty: 1, location: 'Zone A',   status: 'Available',   utilization: 0  },
-  { id: 'eq5', equipment_id: 'EQ-005', type: 'Compactor',          model: 'BOMAG BW 213',     qty: 4, location: 'Zone C',   status: 'In Use',      utilization: 60 },
-  { id: 'eq6', equipment_id: 'EQ-006', type: 'Articulated Truck',  model: 'Volvo A40G',       qty: 6, location: 'Zone A',   status: 'In Use',      utilization: 75 },
-  { id: 'eq7', equipment_id: 'EQ-007', type: 'Telescopic Handler', model: 'JLG 1255',         qty: 2, location: 'Yard',     status: 'Maintenance', utilization: 0  },
+  { id: 'eq1', equipment_id: 'EQ-001', type: 'Excavator',          model: 'CAT 390F',          qty: 3, location: 'Zone A',  status: 'In Use',      utilization: 85 },
+  { id: 'eq2', equipment_id: 'EQ-002', type: 'Tower Crane',        model: 'Liebherr 280',      qty: 1, location: 'Central', status: 'In Use',      utilization: 70 },
+  { id: 'eq3', equipment_id: 'EQ-003', type: 'Piling Rig',         model: 'BAUER BG 28',       qty: 2, location: 'Zone B',  status: 'In Use',      utilization: 90 },
+  { id: 'eq4', equipment_id: 'EQ-004', type: 'Concrete Pump',      model: 'Putzmeister M52',   qty: 1, location: 'Zone A',  status: 'Available',   utilization: 0  },
+  { id: 'eq5', equipment_id: 'EQ-005', type: 'Compactor',          model: 'BOMAG BW 213',      qty: 4, location: 'Zone C',  status: 'In Use',      utilization: 60 },
+  { id: 'eq6', equipment_id: 'EQ-006', type: 'Articulated Truck',  model: 'Volvo A40G',        qty: 6, location: 'Zone A',  status: 'In Use',      utilization: 75 },
+  { id: 'eq7', equipment_id: 'EQ-007', type: 'Telescopic Handler', model: 'JLG 1255',          qty: 2, location: 'Yard',    status: 'Maintenance', utilization: 0  },
 ]
 
 export const MOCK_MATERIALS: Material[] = [
-  { id: 'mat1', item: 'Structural Steel',    description: 'S355 sections — tracker structure',     ordered: 850,   received: 320,  installed: 180,  unit: 'tonnes', delivery_date: 'Apr 15',   status: 'On Order' },
-  { id: 'mat2', item: 'Concrete (RMC)',      description: '35 MPa pile caps & foundations',        ordered: 4200,  received: 1800, installed: 1600, unit: 'm³',     delivery_date: 'Ongoing',  status: 'In Stock' },
-  { id: 'mat3', item: 'Piling Casing',       description: '600mm driven steel piles',              ordered: 2400,  received: 2400, installed: 960,  unit: 'lm',     delivery_date: 'Received', status: 'In Stock' },
-  { id: 'mat4', item: 'MV Cable 33kV',       description: 'XLPE armoured 3-core 300mm²',          ordered: 42,    received: 0,    installed: 0,    unit: 'km',     delivery_date: 'May 30',   status: 'On Order' },
-  { id: 'mat5', item: 'Piping Carbon Steel', description: 'A106 Gr.B, 2" – 12"',                  ordered: 6500,  received: 1200, installed: 400,  unit: 'm',      delivery_date: 'Ongoing',  status: 'In Stock' },
-  { id: 'mat6', item: 'Gravel Backfill',     description: 'Compacted granular sub-base',          ordered: 18000, received: 12000,installed: 9000, unit: 'tonnes', delivery_date: 'Ongoing',  status: 'In Stock' },
+  { id: 'mat1', item: 'Structural Steel',    description: 'S355 sections — tracker structure', ordered: 850,   received: 320,   installed: 180,  unit: 'tonnes', delivery_date: 'Apr 15',   status: 'On Order' },
+  { id: 'mat2', item: 'Concrete (RMC)',      description: '35 MPa pile caps & foundations',    ordered: 4200,  received: 1800,  installed: 1600, unit: 'm³',     delivery_date: 'Ongoing',  status: 'In Stock' },
+  { id: 'mat3', item: 'Piling Casing',       description: '600mm driven steel piles',          ordered: 2400,  received: 2400,  installed: 960,  unit: 'lm',     delivery_date: 'Received', status: 'In Stock' },
+  { id: 'mat4', item: 'MV Cable 33kV',       description: 'XLPE armoured 3-core 300mm²',      ordered: 42,    received: 0,     installed: 0,    unit: 'km',     delivery_date: 'May 30',   status: 'On Order' },
+  { id: 'mat5', item: 'Piping Carbon Steel', description: 'A106 Gr.B, 2" – 12"',              ordered: 6500,  received: 1200,  installed: 400,  unit: 'm',      delivery_date: 'Ongoing',  status: 'In Stock' },
+  { id: 'mat6', item: 'Gravel Backfill',     description: 'Compacted granular sub-base',       ordered: 18000, received: 12000, installed: 9000, unit: 'tonnes', delivery_date: 'Ongoing',  status: 'In Stock' },
 ]
 
 export const MOCK_SUBCONTRACTORS: Subcontractor[] = [
@@ -287,7 +294,33 @@ export const MOCK_SUBCONTRACTORS: Subcontractor[] = [
   { id: 'sub4', company: 'Prysmian Install Co.', scope: 'Cabling & Terminations',  value: 4200000,  start_date: 'Apr 15', personnel: 0,  status: 'Mobilising', performance: 0 },
 ]
 
-// ─── Utility helpers ─────────────────────────────────────────────────────────
+export const S_CURVE_DATA = [
+  { month: 'Jan', planned: 2,   actual: 1.5  },
+  { month: 'Feb', planned: 6,   actual: 5.2  },
+  { month: 'Mar', planned: 12,  actual: 10.1 },
+  { month: 'Apr', planned: 20,  actual: 18.0 },
+  { month: 'May', planned: 30,  actual: null },
+  { month: 'Jun', planned: 42,  actual: null },
+  { month: 'Jul', planned: 55,  actual: null },
+  { month: 'Aug', planned: 68,  actual: null },
+  { month: 'Sep', planned: 80,  actual: null },
+  { month: 'Oct', planned: 90,  actual: null },
+  { month: 'Nov', planned: 96,  actual: null },
+  { month: 'Dec', planned: 100, actual: null },
+]
 
-export const fmt = (n: number) =>
-  n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n}`
+export const EV_DATA = [
+  { month: 'Jan', bcws: 1800000,  bcwp: 1350000, acwp: 1420000 },
+  { month: 'Feb', bcws: 5400000,  bcwp: 4680000, acwp: 4850000 },
+  { month: 'Mar', bcws: 10800000, bcwp: 9090000,  acwp: 9500000 },
+  { month: 'Apr', bcws: 18000000, bcwp: null,      acwp: null    },
+]
+
+export const DISCIPLINE_PROGRESS: DisciplineProgress[] = [
+  { discipline: 'Civil',           weight: 30, planned: 40, actual: 35 },
+  { discipline: 'Structural',      weight: 20, planned: 18, actual: 15 },
+  { discipline: 'Mechanical',      weight: 20, planned: 8,  actual: 5  },
+  { discipline: 'Electrical',      weight: 15, planned: 5,  actual: 2  },
+  { discipline: 'Instrumentation', weight: 10, planned: 2,  actual: 0  },
+  { discipline: 'Commissioning',   weight: 5,  planned: 0,  actual: 0  },
+]
