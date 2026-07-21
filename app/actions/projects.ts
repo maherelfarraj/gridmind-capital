@@ -23,28 +23,82 @@ const GATE_NAMES: Record<number, string> = {
   8: 'O&M Handover',
 }
 
-export async function getProjects(): Promise<Project[]> {
+export interface GetProjectsOptions {
+  phase?: string | null
+  search?: string | null
+  status?: string | null
+  page?: number
+  pageSize?: number
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface GetProjectsResult {
+  projects: Project[]
+  totalCount: number
+}
+
+export async function getProjects(opts?: GetProjectsOptions): Promise<Project[]>
+export async function getProjects(opts: GetProjectsOptions & { paginated: true }): Promise<GetProjectsResult>
+export async function getProjects(opts?: GetProjectsOptions & { paginated?: boolean }): Promise<Project[] | GetProjectsResult> {
   const supabase = createAdminClient()
 
-  const { data, error } = await supabase
+  const phase     = opts?.phase     ?? null
+  const search    = opts?.search    ?? null
+  const status    = opts?.status    ?? null
+  const page      = opts?.page      ?? 1
+  const pageSize  = opts?.pageSize  ?? 50
+  const sortBy    = opts?.sortBy    ?? 'created_at'
+  const sortOrder = opts?.sortOrder ?? 'desc'
+  const paginated = opts?.paginated ?? false
+
+  let query = supabase
     .from('projects')
-    .select('id, code, name, status, technology, budget_usd, current_phase, target_completion, location, country')
+    .select('id, code, name, status, technology, budget_usd, current_phase, target_completion, location, country, client_name', { count: 'exact' })
     .eq('tenant_id', DEMO_TENANT)
-    .order('created_at', { ascending: false })
 
-  if (error || !data) return []
+  if (phase && phase !== 'all') {
+    // Map phase key back to current_phase number(s)
+    const phaseNums = Object.entries(PHASE_MAP)
+      .filter(([, v]) => v === phase)
+      .map(([k]) => Number(k))
+    if (phaseNums.length > 0) query = query.in('current_phase', phaseNums)
+  }
 
-  return data.map((p) => ({
+  if (status && status !== 'all') {
+    query = query.eq('status', status)
+  }
+
+  if (search) {
+    query = query.or(`code.ilike.%${search}%,name.ilike.%${search}%,client_name.ilike.%${search}%`)
+  }
+
+  const sortCol = sortBy === 'budget_amount' ? 'budget_usd'
+    : sortBy === 'target_cod' ? 'target_completion'
+    : sortBy === 'name' ? 'name'
+    : 'created_at'
+
+  query = query
+    .order(sortCol, { ascending: sortOrder === 'asc' })
+    .range((page - 1) * pageSize, page * pageSize - 1)
+
+  const { data, error, count } = await query
+
+  if (error || !data) return paginated ? { projects: [], totalCount: 0 } : []
+
+  const projects = data.map((p) => ({
     id: p.id,
     code: p.code,
     name: p.name,
-    client_name: p.location ?? p.country ?? '—',
+    client_name: (p as any).client_name ?? p.location ?? p.country ?? '—',
     phase: PHASE_MAP[p.current_phase ?? 0] ?? 'intake',
     gate: `G${p.current_phase ?? 0}`,
     budget_amount: p.budget_usd ?? 0,
     status: (p.status as Project['status']) ?? 'active',
     target_cod: p.target_completion ?? '',
   }))
+
+  return paginated ? { projects, totalCount: count ?? projects.length } : projects
 }
 
 export async function getProject(id: string): Promise<ProjectData | null> {
