@@ -74,6 +74,86 @@ export async function createApproval(opts: {
   return { id: data.id }
 }
 
+export async function decideApproval(opts: {
+  id: string
+  decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject'
+  rationale: string
+  conditions?: string
+}): Promise<{ error: string | null }> {
+  const supabase = createAdminClient()
+
+  const statusMap = {
+    proceed:             'approved',
+    conditional_proceed: 'approved',
+    hold:                'pending',
+    reject:              'rejected',
+  } as const
+
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('title, object_type, description')
+    .eq('id', opts.id)
+    .single()
+
+  const { error } = await supabase
+    .from('approvals')
+    .update({
+      status:     statusMap[opts.decision],
+      updated_at: new Date().toISOString(),
+      // Store decision detail in description
+      description: [
+        approval?.description ?? '',
+        `\n\n[Decision: ${opts.decision.replace('_', ' ')}]`,
+        `\nRationale: ${opts.rationale}`,
+        opts.conditions ? `\nConditions: ${opts.conditions}` : '',
+      ].join(''),
+    })
+    .eq('id', opts.id)
+
+  if (!error && approval) {
+    sendApprovalDecisionEmail({
+      to: 'admin@gridmind.capital',
+      requesterName: 'Team',
+      title: approval.title ?? opts.id,
+      decision: statusMap[opts.decision] === 'approved' ? 'approved' : 'rejected',
+      decisionBy: 'Executive Sponsor',
+      projectCode: approval.object_type ?? 'G0',
+      approvalId: opts.id,
+      reason: opts.rationale,
+    }).catch(() => {})
+  }
+
+  return { error: error?.message ?? null }
+}
+
+export async function delegateApproval(opts: {
+  id: string
+  delegateId: string
+  reason: string
+}): Promise<{ error: string | null }> {
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('approvals')
+    .update({
+      status:      'delegated' as never,
+      description: `[Delegated to: ${opts.delegateId}]\nReason: ${opts.reason}`,
+      updated_at:  new Date().toISOString(),
+    })
+    .eq('id', opts.id)
+  return { error: error?.message ?? null }
+}
+
+export async function getApprovalById(id: string) {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('approvals')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error || !data) return null
+  return data
+}
+
 export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
   const supabase = createAdminClient()
 
