@@ -89,38 +89,53 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} bg-background`} suppressHydrationWarning>
-      {/* In dev: auto-reload the tab when Turbopack restarts so stale chunks never load */}
+      {/* In dev: auto-reload when Turbopack rebuilds so stale chunks never load */}
       {process.env.NODE_ENV !== 'production' && (
         <head>
           <script dangerouslySetInnerHTML={{ __html: `
 (function() {
   if (typeof window === 'undefined') return;
-  // Turbopack HMR EventSource — fired on every server restart
+  var reloading = false;
+  function doReload() {
+    if (reloading) return;
+    reloading = true;
+    // Wait for the server to finish restarting before reloading
+    var t = setInterval(function() {
+      fetch('/_next/static/development/_buildManifest.js', { cache: 'no-store' })
+        .then(function(r) {
+          if (r.ok) { clearInterval(t); window.location.reload(); }
+        })
+        .catch(function() {});
+    }, 600);
+  }
+
+  // 1. Turbopack uses a WebSocket at /_next/webpack-hmr
   try {
-    var es = new EventSource('/_next/webpack-hmr');
-    var reloading = false;
-    es.addEventListener('message', function(e) {
-      if (reloading) return;
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var ws = new WebSocket(proto + '//' + location.host + '/_next/webpack-hmr?page=/_error');
+    ws.onmessage = function(e) {
       try {
         var d = JSON.parse(e.data);
-        // action:'reload' means Turbopack wants a full page refresh
-        if (d && (d.action === 'reload' || d.action === 'serverComponentChanges')) {
-          reloading = true;
-          window.location.reload();
-        }
-      } catch (_) {}
-    });
-    es.onerror = function() {
-      // EventSource closed = server restarted; reload after it comes back
-      if (reloading) return;
-      reloading = true;
-      var t = setInterval(function() {
-        fetch('/_next/static/chunks/polyfills.js', { method: 'HEAD', cache: 'no-store' })
-          .then(function(r) { if (r.ok) { clearInterval(t); window.location.reload(); } })
-          .catch(function() {});
-      }, 800);
+        if (d && (d.action === 'reload' || d.action === 'serverComponentChanges')) doReload();
+      } catch(_) {}
     };
+    ws.onclose = function() { doReload(); };
+    ws.onerror = function() { doReload(); };
   } catch(_) {}
+
+  // 2. Fallback: detect chunk errors and reload immediately
+  window.addEventListener('error', function(e) {
+    if (e && e.message && e.message.indexOf('ChunkLoadError') !== -1) {
+      if (!reloading) { reloading = true; window.location.reload(); }
+    }
+  }, true);
+
+  // 3. Intercept unhandled promise rejections from dynamic import() failures
+  window.addEventListener('unhandledrejection', function(e) {
+    if (e && e.reason && String(e.reason).indexOf('ChunkLoadError') !== -1) {
+      if (!reloading) { reloading = true; window.location.reload(); }
+    }
+  });
 })();
           ` }} />
         </head>
