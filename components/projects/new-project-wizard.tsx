@@ -780,22 +780,16 @@ function Step4({ data, errors, confirm, onConfirmChange, onEdit, onSubmit, onCan
       <div className="border-t border-slate-200 dark:border-border pt-6 flex flex-col gap-4">
         {/* Checkbox */}
         <label className="flex items-start gap-3 cursor-pointer group">
-          <div
-            role="checkbox"
-            aria-checked={confirm}
-            tabIndex={0}
-            onClick={() => onConfirmChange(!confirm)}
-            onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && onConfirmChange(!confirm)}
+          <input
+            type="checkbox"
+            id="wizard-confirm"
+            checked={confirm}
+            onChange={(e) => onConfirmChange(e.target.checked)}
             className={cn(
-              'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border-2 transition-colors cursor-pointer',
-              confirm
-                ? 'bg-[#0a192f] border-[#0a192f] dark:bg-[#64ffda] dark:border-[#64ffda]'
-                : 'border-slate-300 dark:border-border bg-white dark:bg-card',
-              errors.confirm && !confirm && 'border-red-400',
+              'mt-0.5 size-4 shrink-0 cursor-pointer rounded border-2 accent-[#0a192f]',
+              errors.confirm && !confirm && 'outline outline-red-400',
             )}
-          >
-            {confirm && <Check className="size-3 text-white dark:text-[#0a192f]" aria-hidden />}
-          </div>
+          />
           <span className="text-sm text-slate-700 dark:text-foreground leading-snug">
             I confirm that all project information is accurate and complete
           </span>
