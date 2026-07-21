@@ -272,3 +272,21 @@
     background: var(--muted-foreground);
   }
 }
+
+/* ── RTL / Arabic layout overrides ───────────────────────── */
+[dir='rtl'] {
+  /* Reverse sidebar positioning */
+  .sidebar-rail { right: 0; left: auto; }
+
+  /* Flip inline chevrons used in breadcrumbs and lists */
+  .lucide-chevron-right { transform: scaleX(-1); }
+
+  /* Ensure font stack includes Arabic */
+  font-family: 'Inter', 'Segoe UI', 'Noto Sans Arabic', system-ui, sans-serif;
+}
+
+/* Arabic-specific typography adjustment */
+[dir='rtl'] .font-sans {
+  font-family: 'Noto Sans Arabic', 'Inter', system-ui, sans-serif;
+  line-height: 1.7;
+}

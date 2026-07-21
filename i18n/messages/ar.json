@@ -1,0 +1,79 @@
+{
+  "nav": {
+    "dashboard": "لوحة التحكم",
+    "projects": "المشاريع",
+    "documents": "المستندات",
+    "approvals": "الموافقات",
+    "stageGates": "بوابات المراحل",
+    "finance": "المالية",
+    "settings": "الإعدادات"
+  },
+  "dashboard": {
+    "title": "لوحة التحكم",
+    "welcome": "مرحباً بعودتك",
+    "totalProjects": "إجمالي المشاريع",
+    "activeProjects": "المشاريع النشطة",
+    "pendingApprovals": "الموافقات المعلقة",
+    "totalBudget": "إجمالي الميزانية",
+    "recentProjects": "المشاريع الأخيرة",
+    "pendingApprovalsTitle": "الموافقات المعلقة",
+    "viewAll": "عرض الكل"
+  },
+  "projects": {
+    "title": "المشاريع",
+    "newProject": "مشروع جديد",
+    "search": "البحث في المشاريع…",
+    "allPhases": "جميع المراحل",
+    "noResults": "لا توجد مشاريع",
+    "budget": "الميزانية",
+    "phase": "المرحلة",
+    "technology": "التقنية",
+    "location": "الموقع",
+    "capacity": "الطاقة"
+  },
+  "auth": {
+    "signIn": "تسجيل الدخول",
+    "signOut": "تسجيل الخروج",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "forgotPassword": "نسيت كلمة المرور؟",
+    "signingIn": "جارٍ تسجيل الدخول…"
+  },
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "close": "إغلاق",
+    "loading": "جارٍ التحميل…",
+    "error": "حدث خطأ",
+    "success": "نجاح",
+    "confirm": "تأكيد",
+    "back": "رجوع",
+    "next": "التالي",
+    "submit": "إرسال",
+    "search": "بحث",
+    "filter": "تصفية",
+    "upload": "رفع",
+    "download": "تنزيل"
+  },
+  "documents": {
+    "title": "المستندات",
+    "upload": "رفع مستند",
+    "noDocuments": "لا توجد مستندات بعد",
+    "uploadFirst": "ارفع مستندك الأول",
+    "dragDrop": "اسحب الملفات وأفلتها هنا",
+    "browse": "استعراض الملفات"
+  },
+  "stageGates": {
+    "title": "بوابات المراحل",
+    "g0": "G0 — استقبال الاستثمار",
+    "g1": "G1 — موافقة التطوير",
+    "g2": "G2 — إذن الهندسة",
+    "g3": "G3 — إذن المشتريات",
+    "convene": "عقد المراجعة",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "hold": "تعليق"
+  }
+}

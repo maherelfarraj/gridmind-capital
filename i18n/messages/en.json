@@ -1,0 +1,79 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "projects": "Projects",
+    "documents": "Documents",
+    "approvals": "Approvals",
+    "stageGates": "Stage Gates",
+    "finance": "Finance",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back",
+    "totalProjects": "Total Projects",
+    "activeProjects": "Active Projects",
+    "pendingApprovals": "Pending Approvals",
+    "totalBudget": "Total Budget",
+    "recentProjects": "Recent Projects",
+    "pendingApprovalsTitle": "Pending Approvals",
+    "viewAll": "View all"
+  },
+  "projects": {
+    "title": "Projects",
+    "newProject": "New Project",
+    "search": "Search projects…",
+    "allPhases": "All Phases",
+    "noResults": "No projects found",
+    "budget": "Budget",
+    "phase": "Phase",
+    "technology": "Technology",
+    "location": "Location",
+    "capacity": "Capacity"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "email": "Email address",
+    "password": "Password",
+    "forgotPassword": "Forgot password?",
+    "signingIn": "Signing in…"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "loading": "Loading…",
+    "error": "An error occurred",
+    "success": "Success",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "search": "Search",
+    "filter": "Filter",
+    "upload": "Upload",
+    "download": "Download"
+  },
+  "documents": {
+    "title": "Documents",
+    "upload": "Upload Document",
+    "noDocuments": "No documents yet",
+    "uploadFirst": "Upload your first document",
+    "dragDrop": "Drag and drop files here",
+    "browse": "Browse files"
+  },
+  "stageGates": {
+    "title": "Stage Gates",
+    "g0": "G0 — Investment Intake",
+    "g1": "G1 — Development Approval",
+    "g2": "G2 — Engineering Authorization",
+    "g3": "G3 — Procurement Authorization",
+    "convene": "Convene Review",
+    "approve": "Approve",
+    "reject": "Reject",
+    "hold": "Hold"
+  }
+}

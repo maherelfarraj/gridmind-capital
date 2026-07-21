@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { Menu, Bell, Search, ChevronRight, X, Command, Sun, Moon } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { LanguageSwitcher } from '@/components/i18n/language-switcher'
 import { cn } from '@/lib/utils'
 
 // ─────────────────────────────────────────────────────────────
@@ -258,6 +259,7 @@ export function TopBar({
         <div className="h-4 w-px bg-border hidden lg:block" />
         <SearchBar />
         <ThemeToggle />
+        <LanguageSwitcher />
         <NotificationBell count={notificationCount} />
       </div>
     </header>
