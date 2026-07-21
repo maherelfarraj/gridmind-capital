@@ -140,6 +140,17 @@ export const NAV_SECTIONS: NavSection[] = [
           { id: 'g9', label: 'G9 · Analytics',      href: '/projects?gate=G9', phase: 'g9' },
         ],
       },
+      {
+        id: 'project-sub',
+        label: 'Project Sub-pages',
+        icon: FolderKanban,
+        children: [
+          { id: 'proj-commercial',  label: 'Commercial Charter', href: '/projects', phase: 'g1' },
+          { id: 'proj-schedule',    label: 'Schedule / Gantt',   href: '/projects', phase: 'g1' },
+          { id: 'proj-stakeholders',label: 'Stakeholders',       href: '/projects', phase: 'g1' },
+          { id: 'proj-risks',       label: 'Project Risks',      href: '/risks',    phase: 'g1' },
+        ],
+      },
     ],
   },
   {

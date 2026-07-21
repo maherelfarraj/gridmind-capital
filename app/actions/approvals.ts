@@ -154,6 +154,112 @@ export async function getApprovalById(id: string) {
   return data
 }
 
+export interface ApprovalsDashboard {
+  total: number
+  pending: number
+  approved: number
+  rejected: number
+  overdue: number
+  byObjectType: { name: string; value: number }[]
+  byStatus: { name: string; value: number; color: string }[]
+  approvalRules: { object_type: string; levels: number; roles: string[] }[]
+}
+
+export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
+  const supabase = createAdminClient()
+  const [appRes, rulesRes] = await Promise.all([
+    supabase.from('approvals').select('id, object_type, status, priority, created_at').order('created_at', { ascending: false }),
+    supabase.from('approval_rules').select('object_type, level, approver_role').order('level'),
+  ])
+
+  const rows  = appRes.data  ?? []
+  const rules = rulesRes.data ?? []
+
+  const now = new Date()
+  const OVERDUE_DAYS = 5
+  const overdue = rows.filter((r) => {
+    const age = (now.getTime() - new Date(r.created_at).getTime()) / 86400000
+    return r.status === 'pending' && age > OVERDUE_DAYS
+  }).length
+
+  const statusColors: Record<string, string> = {
+    pending: '#f59e0b', approved: '#22c55e', rejected: '#ef4444',
+    under_review: '#3b82f6', changes_requested: '#f97316',
+  }
+
+  const byObjectType = (() => {
+    const m: Record<string, number> = {}
+    rows.forEach((r) => { m[r.object_type ?? 'General'] = (m[r.object_type ?? 'General'] ?? 0) + 1 })
+    return Object.entries(m).map(([name, value]) => ({ name, value }))
+  })()
+
+  const byStatus = (() => {
+    const m: Record<string, number> = {}
+    rows.forEach((r) => { m[r.status ?? 'pending'] = (m[r.status ?? 'pending'] ?? 0) + 1 })
+    return Object.entries(m).map(([name, value]) => ({ name, value, color: statusColors[name] ?? '#94a3b8' }))
+  })()
+
+  // Aggregate approval rules per object_type
+  const rulesMap: Record<string, { levels: number; roles: string[] }> = {}
+  for (const rule of rules) {
+    const key = rule.object_type ?? 'General'
+    if (!rulesMap[key]) rulesMap[key] = { levels: 0, roles: [] }
+    rulesMap[key].levels = Math.max(rulesMap[key].levels, rule.level ?? 1)
+    if (rule.approver_role && !rulesMap[key].roles.includes(rule.approver_role)) {
+      rulesMap[key].roles.push(rule.approver_role)
+    }
+  }
+  const approvalRules = Object.entries(rulesMap).map(([object_type, v]) => ({ object_type, ...v }))
+
+  return {
+    total:    rows.length,
+    pending:  rows.filter((r) => r.status === 'pending').length,
+    approved: rows.filter((r) => r.status === 'approved').length,
+    rejected: rows.filter((r) => r.status === 'rejected').length,
+    overdue,
+    byObjectType,
+    byStatus,
+    approvalRules,
+  }
+}
+
+export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  const { data: ex } = await supabase.from('approvals').select('id').limit(1)
+  if ((ex?.length ?? 0) > 0) return {}
+
+  const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+  const demos = [
+    { object_type: 'opportunity',    title: 'OPP-RAK-250', description: 'G0 gate review for 250MW Solar opportunity', status: 'pending',  priority: 'high',   amount: 175_000_000 },
+    { object_type: 'opportunity',    title: 'OPP-GOS-150', description: 'G0 gate review for 150MW Wind opportunity',  status: 'approved', priority: 'normal', amount: 210_000_000 },
+    { object_type: 'project_charter',title: 'CHR-SRS-400', description: 'G1 commercial charter — Sirius 400MW',      status: 'pending',  priority: 'high',   amount: 380_000_000 },
+    { object_type: 'change_order',   title: 'CO-041',      description: 'Inverter substitution SMA → Huawei',        status: 'pending',  priority: 'normal', amount: 0           },
+    { object_type: 'purchase_order', title: 'PO-2026-001', description: 'Module supply agreement — 500MW bifacial',  status: 'rejected', priority: 'high',   amount: 62_000_000  },
+    { object_type: 'variation',      title: 'VAR-012',     description: 'Schedule variation — weather delay +6wk',   status: 'pending',  priority: 'critical', amount: 12_400_000 },
+  ]
+  for (const d of demos) {
+    await supabase.from('approvals').insert({ tenant_id: DEMO_TENANT, ...d })
+  }
+
+  // Seed approval_rules
+  const ruleSeeds = [
+    { object_type: 'opportunity',     level: 1, approver_role: 'Project Manager' },
+    { object_type: 'opportunity',     level: 2, approver_role: 'Executive Sponsor' },
+    { object_type: 'project_charter', level: 1, approver_role: 'Project Manager' },
+    { object_type: 'project_charter', level: 2, approver_role: 'CFO' },
+    { object_type: 'project_charter', level: 3, approver_role: 'Board' },
+    { object_type: 'purchase_order',  level: 1, approver_role: 'Project Manager' },
+    { object_type: 'change_order',    level: 1, approver_role: 'Project Manager' },
+    { object_type: 'change_order',    level: 2, approver_role: 'Commercial Director' },
+  ]
+  const { data: exRules } = await supabase.from('approval_rules').select('id').limit(1)
+  if ((exRules?.length ?? 0) === 0) {
+    for (const r of ruleSeeds) await supabase.from('approval_rules').insert({ tenant_id: DEMO_TENANT, ...r })
+  }
+
+  return {}
+}
+
 export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
   const supabase = createAdminClient()
 
