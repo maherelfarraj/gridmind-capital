@@ -54,7 +54,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
 
   let query = supabase
     .from('projects')
-    .select('id, code, name, status, technology, budget_usd, current_phase, target_completion, location, country, client_name', { count: 'exact' })
+    .select('id, code, name, status, technology, budget_usd, current_phase, target_completion, location, country', { count: 'exact' })
     .eq('tenant_id', DEMO_TENANT)
 
   if (phase && phase !== 'all') {
@@ -70,7 +70,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
   }
 
   if (search) {
-    query = query.or(`code.ilike.%${search}%,name.ilike.%${search}%,client_name.ilike.%${search}%`)
+    query = query.or(`code.ilike.%${search}%,name.ilike.%${search}%,location.ilike.%${search}%`)
   }
 
   const sortCol = sortBy === 'budget_amount' ? 'budget_usd'
