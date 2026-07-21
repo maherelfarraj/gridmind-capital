@@ -13,10 +13,7 @@ export default function Page() {
   const session  = useSession()
   const tenantId = session.tenantId ?? TENANT_ID
 
-  const { data: projects, isLoading } = useSWR(
-    ['projects', tenantId],
-    () => getProjects(tenantId),
-  )
+  const { data: projects, isLoading } = useSWR('projects', getProjects)
 
   return (
     <ProjectsListPage

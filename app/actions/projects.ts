@@ -8,13 +8,12 @@ const PHASE_MAP: Record<number, string> = {
   4: 'procurement', 5: 'construction', 6: 'commissioning', 7: 'om', 8: 'finance',
 }
 
-export async function getProjects(tenantId: string): Promise<Project[]> {
+export async function getProjects(): Promise<Project[]> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('projects')
     .select('id, code, name, status, technology, budget_usd, current_phase, target_completion, location, country')
-    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
 
   if (error || !data) return []

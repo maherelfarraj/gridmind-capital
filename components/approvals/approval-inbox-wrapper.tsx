@@ -20,10 +20,7 @@ export function ApprovalInboxWrapper({ showFilters = true }: ApprovalInboxWrappe
 
   const [filter, setFilter] = React.useState<FilterOption>(showFilters ? 'all' : 'pending')
 
-  const { data: approvals, isLoading } = useSWR(
-    ['approvals', tenantId],
-    () => getApprovals(tenantId),
-  )
+  const { data: approvals, isLoading } = useSWR('approvals', getApprovals)
 
   return (
     <ApprovalInbox

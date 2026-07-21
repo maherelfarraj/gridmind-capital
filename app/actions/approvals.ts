@@ -3,13 +3,12 @@
 import { createClient } from '@/lib/supabase/server'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 
-export async function getApprovals(tenantId: string): Promise<ApprovalRecord[]> {
+export async function getApprovals(): Promise<ApprovalRecord[]> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('approvals')
     .select('id, object_type, title, status, priority, created_at, description, amount')
-    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
 
   if (error || !data) return []
@@ -27,4 +26,13 @@ export async function getApprovals(tenantId: string): Promise<ApprovalRecord[]> 
     decided_at: null,
     decision_reason: a.description ?? null,
   }))
+}
+
+export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('approvals')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  return { error: error?.message ?? null }
 }
