@@ -646,6 +646,24 @@ export function ProjectDetailPage({
   const workflowLogs  = timelineLogs.map(toWorkflowEntry)
   const approvalItems = approvals.map(toApprovalItem)
 
+  const router = useNextRouter()
+
+  // Gate code → sub-page route (only wired gates navigate; others open the info panel)
+  const GATE_ROUTES: Partial<Record<string, string>> = {
+    G1: `/projects/${project.id}/g1/approval`,
+    G2: `/projects/${project.id}/g2`,
+    G3: `/projects/${project.id}/g3`,
+  }
+
+  const handleGateClick = React.useCallback(
+    (gate: import('@/components/project/phase-gate-stepper').GateDef) => {
+      const route = GATE_ROUTES[gate.code]
+      if (route) router.push(route)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project.id, router],
+  )
+
   return (
     <div className="relative min-h-full space-y-6 p-6 bg-slate-50 dark:bg-background">
 
@@ -674,6 +692,7 @@ export function ProjectDetailPage({
           <PhaseGateStepper
             currentGate={currentGateCode}
             completedGates={completedGates}
+            onGateClick={handleGateClick}
           />
         </section>
       )}
