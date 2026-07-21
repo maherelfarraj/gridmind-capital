@@ -10,8 +10,11 @@ export function ServiceWorkerRegister() {
   React.useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
     navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
-      .then((reg) => console.log('[GMC] SW registered, scope:', reg.scope))
+      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .then((reg) => {
+        // Force the new SW to activate immediately, evicting the old cache
+        reg.update()
+      })
       .catch((err) => console.warn('[GMC] SW registration failed:', err))
   }, [])
   return null
