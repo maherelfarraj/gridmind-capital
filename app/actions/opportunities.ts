@@ -1,0 +1,195 @@
+'use server'
+
+import { createAdminClient } from '@/lib/supabase/admin'
+
+const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
+
+export interface Opportunity {
+  id: string
+  code: string
+  name: string
+  technology: string
+  capacity_mw: number
+  country: string
+  location: string
+  status: string
+  health: string
+  budget_usd: number
+  created_at: string
+  approvalStatus: string | null
+}
+
+export interface OpportunitiesDashboard {
+  total: number
+  submitted: number
+  underReview: number
+  approved: number
+  rejected: number
+  byTechnology: { name: string; value: number }[]
+  byStatus: { name: string; value: number; color: string }[]
+  items: Opportunity[]
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  draft:        '#94a3b8',
+  planning:     '#3b82f6',
+  active:       '#22c55e',
+  on_hold:      '#f59e0b',
+  cancelled:    '#64748b',
+  completed:    '#10b981',
+}
+
+export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboard> {
+  const supabase = createAdminClient()
+
+  const [projRes, approvalRes] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('id, code, name, technology, capacity_mw, country, location, status, health, budget_usd, created_at, current_phase')
+      .eq('tenant_id', DEMO_TENANT)
+      .in('current_phase', [0, 1])
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('approvals')
+      .select('id, title, status, object_type')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('object_type', 'opportunity'),
+  ])
+
+  const projects  = projRes.data  ?? []
+  const approvals = approvalRes.data ?? []
+
+  const approvalMap = new Map(approvals.map((a) => [a.title, a.status]))
+
+  const items: Opportunity[] = projects.map((p) => ({
+    id:             p.id,
+    code:           p.code,
+    name:           p.name,
+    technology:     p.technology ?? 'Solar PV',
+    capacity_mw:    p.capacity_mw ?? 0,
+    country:        p.country ?? '',
+    location:       p.location ?? '',
+    status:         p.status ?? 'draft',
+    health:         p.health ?? 'green',
+    budget_usd:     p.budget_usd ?? 0,
+    created_at:     p.created_at,
+    approvalStatus: approvalMap.get(p.code) ?? null,
+  }))
+
+  const byTech = items.reduce<Record<string, number>>((acc, p) => {
+    acc[p.technology] = (acc[p.technology] ?? 0) + 1
+    return acc
+  }, {})
+
+  const statusCounts = items.reduce<Record<string, number>>((acc, p) => {
+    acc[p.status] = (acc[p.status] ?? 0) + 1
+    return acc
+  }, {})
+
+  return {
+    total:      items.length,
+    submitted:  approvals.filter((a) => a.status === 'pending').length,
+    underReview:approvals.filter((a) => a.status === 'under_review').length,
+    approved:   approvals.filter((a) => a.status === 'approved').length,
+    rejected:   approvals.filter((a) => a.status === 'rejected').length,
+    byTechnology: Object.entries(byTech).map(([name, value]) => ({ name, value })),
+    byStatus: Object.entries(statusCounts).map(([name, value]) => ({
+      name, value, color: STATUS_COLORS[name] ?? '#94a3b8',
+    })),
+    items,
+  }
+}
+
+export async function createOpportunity(data: {
+  name: string
+  code: string
+  technology: string
+  capacity_mw: number
+  country: string
+  location: string
+  budget_usd: number
+  description: string
+}): Promise<{ id?: string; error?: string }> {
+  const supabase = createAdminClient()
+
+  // 1. Insert project at G0/draft
+  const { data: proj, error: pe } = await supabase
+    .from('projects')
+    .insert({
+      tenant_id:        DEMO_TENANT,
+      name:             data.name,
+      code:             data.code,
+      description:      data.description,
+      technology:       data.technology,
+      capacity_mw:      data.capacity_mw,
+      country:          data.country,
+      location:         data.location,
+      budget_usd:       data.budget_usd,
+      status:           'planning',
+      current_phase:    0,
+      health:           'green',
+      project_manager:  DEMO_USER,
+      created_by:       DEMO_USER,
+    })
+    .select('id')
+    .single()
+
+  if (pe || !proj) return { error: pe?.message ?? 'Failed to create project' }
+
+  // 2. Create approval record for G0 review
+  await supabase.from('approvals').insert({
+    tenant_id:   DEMO_TENANT,
+    object_type: 'opportunity',
+    title:       data.code,
+    description: `G0 Gate review for ${data.name}`,
+    status:      'pending',
+    priority:    'normal',
+    amount:      data.budget_usd,
+  })
+
+  return { id: proj.id }
+}
+
+export async function submitOpportunityForReview(projectId: string): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('projects')
+    .update({ status: 'active' })
+    .eq('id', projectId)
+    .eq('tenant_id', DEMO_TENANT)
+  return { error: error?.message }
+}
+
+export async function seedOpportunitiesDemoData(): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+
+  // Idempotent: check if demo opportunities already exist
+  const { data: existing } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('current_phase', 0)
+    .limit(1)
+
+  if ((existing?.length ?? 0) > 0) return {}
+
+  const demos = [
+    { name: 'Rub Al Khali Solar 250MW',   code: 'RAK-250', technology: 'Solar PV',  capacity_mw: 250, country: 'Saudi Arabia',  location: 'Rub Al Khali Desert',   budget_usd: 175_000_000, health: 'green' },
+    { name: 'Gulf of Suez Wind 150MW',    code: 'GOS-150', technology: 'Wind',       capacity_mw: 150, country: 'Egypt',         location: 'Gulf of Suez',          budget_usd: 210_000_000, health: 'green' },
+    { name: 'Jubail BESS 100MWh',         code: 'JBL-100', technology: 'BESS',       capacity_mw: 100, country: 'Saudi Arabia',  location: 'Jubail Industrial City',budget_usd: 90_000_000,  health: 'amber' },
+    { name: 'Muscat Green H2 50MW',       code: 'MCT-050', technology: 'Hydrogen',   capacity_mw:  50, country: 'Oman',          location: 'Muscat Industrial Zone',budget_usd: 125_000_000, health: 'green' },
+  ] as const
+
+  for (const d of demos) {
+    await supabase.from('projects').insert({
+      tenant_id: DEMO_TENANT, created_by: DEMO_USER,
+      project_manager: DEMO_USER,
+      status: 'planning', current_phase: 0,
+      description: `G0 opportunity — ${d.technology} project at ${d.location}`,
+      ...d,
+    })
+  }
+
+  return {}
+}

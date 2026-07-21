@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Users,
   Globe,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -116,6 +117,12 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'PROJECTS',
     items: [
       {
+        id: 'opportunities',
+        label: 'Opportunities',
+        href: '/opportunities',
+        icon: Sparkles,
+      },
+      {
         id: 'projects',
         label: 'All Projects',
         href: '/projects',
@@ -157,6 +164,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/procurement',
         icon: ClipboardList,
         children: [
+          { id: 'proc-rfqs',      label: 'RFQ Register',      href: '/procurement' },
           { id: 'proc-contracts', label: 'Contracts',         href: '/procurement/contracts' },
           { id: 'proc-po',        label: 'Purchase Orders',   href: '/procurement/purchase-orders' },
           { id: 'proc-receiving', label: 'Receiving',         href: '/procurement/receiving' },
@@ -219,6 +227,12 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'intelligence',
     label: 'INTELLIGENCE',
     items: [
+      {
+        id: 'risks',
+        label: 'Risk Register',
+        href: '/risks',
+        icon: AlertTriangle,
+      },
       {
         id: 'esg',
         label: 'ESG & Reporting',
