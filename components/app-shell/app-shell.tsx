@@ -98,6 +98,19 @@ export function AppShell({
     return map[segment] ?? segment
   }, [pathname])
 
+  // Auto-collapse sidebar on tablet (768–1199px), expand on desktop (≥1200px)
+  React.useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px) and (max-width: 1199px)')
+    const handle = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) setCollapsed(true)
+      else if (window.innerWidth >= 1200) setCollapsed(false)
+    }
+    handle(mq)
+    mq.addEventListener('change', handle)
+    return () => mq.removeEventListener('change', handle)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Close mobile drawer on route change
   React.useEffect(() => {
     setMobileOpen(false)
