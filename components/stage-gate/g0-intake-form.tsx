@@ -229,11 +229,19 @@ interface Props {
   projectId?:   string
   projectCode?: string
   projectName?: string
-  onSubmitted?: () => void
+  /**
+   * Called after successful submission.
+   * - If provided as (data) => Promise<void>, the form delegates ALL server actions
+   *   to the caller (external orchestration mode — no internal submitG0FormAction call).
+   * - If provided as () => void (legacy), the form handles submission internally.
+   */
+  onSubmitted?: ((data: G0FormData) => Promise<void>) | (() => void)
   initialData?: Partial<FormValues>
   readOnly?:    boolean
   /** If true, shows as standalone page (includes breadcrumb + AppLayout padding) */
   standalone?:  boolean
+  /** When true the Submit button shows a loading spinner (used by external orchestration) */
+  isSubmittingExternal?: boolean
 }
 
 // ─── Main component ──────────────────────────────────────────
@@ -241,6 +249,7 @@ interface Props {
 export function G0IntakeForm({
   projectId, projectCode, projectName,
   onSubmitted, initialData, readOnly = false, standalone = false,
+  isSubmittingExternal = false,
 }: Props) {
   const [activeStep, setActiveStep] = React.useState(0)
   const [submitting, setSubmitting] = React.useState(false)
@@ -347,11 +356,20 @@ export function G0IntakeForm({
       requestedDecision:   'proceed-g1',
     }
 
+    // External orchestration mode: caller owns all server actions
+    if (onSubmitted && onSubmitted.length > 0) {
+      await (onSubmitted as (data: G0FormData) => Promise<void>)(payload)
+      setSubmitting(false)
+      setSubmitted(true)
+      return
+    }
+
+    // Internal mode: form handles submission itself
     const { error } = await submitG0FormAction(payload, projectId ?? 'standalone')
     setSubmitting(false)
     if (!error) {
       setSubmitted(true)
-      onSubmitted?.()
+      ;(onSubmitted as (() => void) | undefined)?.()
     }
   }
 
@@ -1042,10 +1060,10 @@ export function G0IntakeForm({
           ) : (
             <button
               type="submit"
-              disabled={!confirm || submitting}
+              disabled={!confirm || submitting || isSubmittingExternal}
               className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#0a192f] dark:bg-sky-600 text-white text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 w-full justify-center"
             >
-              {submitting ? (
+              {(submitting || isSubmittingExternal) ? (
                 <>
                   <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden />
                   Submitting…
