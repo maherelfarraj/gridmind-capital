@@ -15,7 +15,7 @@ export default function Page() {
     setError(null)
     try {
       const supabase = createClient()
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
@@ -23,6 +23,15 @@ export default function Page() {
       if (authError) {
         setError(authError.message ?? 'Invalid email or password.')
         return
+      }
+
+      // Stamp last_login_at — fire and forget (non-blocking)
+      if (data.user) {
+        supabase
+          .from('profiles')
+          .update({ last_active: new Date().toISOString() })
+          .eq('id', data.user.id)
+          .then(() => {})
       }
 
       // Redirect to dashboard on success — router.refresh() ensures the
