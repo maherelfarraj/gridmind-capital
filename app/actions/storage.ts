@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { sendDocumentUploadEmail } from '@/lib/email/send'
 
 const BUCKET = 'documents'
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -107,6 +108,17 @@ export async function registerDocument(opts: {
 
   if (error) return { error: error.message }
   revalidatePath('/documents')
+
+  // Notify document register team — fire-and-forget
+  sendDocumentUploadEmail({
+    to: ['admin@gridmind.capital'],
+    uploaderName: opts.uploadedBy,
+    fileName: opts.fileName,
+    documentCode: code,
+    projectCode: opts.projectCode ?? 'General',
+    projectId: opts.projectId ?? undefined,
+  }).catch(() => {})
+
   return { id: data.id }
 }
 
