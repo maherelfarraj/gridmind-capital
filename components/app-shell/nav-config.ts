@@ -20,6 +20,7 @@ import {
   Users,
   Globe,
   AlertTriangle,
+  Store,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -273,6 +274,12 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'AI Insights',
         href: '/ai-insights',
         icon: Sparkles,
+      },
+      {
+        id: 'marketplace',
+        label: 'Marketplace',
+        href: '/marketplace',
+        icon: Store,
       },
       {
         id: 'analytics',
