@@ -1207,15 +1207,130 @@ function AnalyticsTab({ rfqs, bids, pos, contracts }: {
 
 // ─── Main Page ────────────────────────────────────────────────
 
-type TabId = 'rfqs' | 'vendors' | 'bids' | 'pos' | 'contracts' | 'analytics'
+type TabId = 'rfqs' | 'vendors' | 'bids' | 'pos' | 'contracts' | 'analytics' | 'award'
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'rfqs',      label: 'RFQs',         icon: FileText    },
-  { id: 'vendors',   label: 'Vendors',      icon: Building2   },
-  { id: 'bids',      label: 'Bid Evaluation',icon: Gavel      },
+  { id: 'rfqs',      label: 'RFQs',              icon: FileText    },
+  { id: 'vendors',   label: 'Vendors',           icon: Building2   },
+  { id: 'bids',      label: 'Bid Evaluation',    icon: Gavel       },
   { id: 'pos',       label: 'Purchase Orders',icon: ShoppingCart },
   { id: 'contracts', label: 'Contracts',    icon: Award       },
   { id: 'analytics', label: 'Analytics',    icon: BarChart3   },
+  { id: 'award',     label: 'Contract Award & Kickoff', icon: Award },
 ]
+
+// ─── Tab: Contract Award & Kickoff ────────────────────────────
+
+interface KickoffItem { id: string; category: string; title: string; responsible: string; status: 'complete' | 'in_progress' | 'pending'; due: string; notes: string }
+
+const MOCK_KICKOFF_ITEMS: KickoffItem[] = [
+  { id: 'k1',  category: 'Contract',    title: 'EPC Contract Executed',                   responsible: 'Sarah Chen',       status: 'complete',    due: '2026-07-01', notes: 'Signed by both parties; exchange of originals complete.' },
+  { id: 'k2',  category: 'Contract',    title: 'Performance Bond Issued (10% CAPEX)',     responsible: 'Aisha Al-Rashidi', status: 'complete',    due: '2026-07-05', notes: '$38M bond received from National Commercial Bank.' },
+  { id: 'k3',  category: 'Mobilisation','title': 'Advance Payment (10%) Released',       responsible: 'Aisha Al-Rashidi', status: 'complete',    due: '2026-07-08', notes: 'AP of $38M transferred against AP bond receipt.' },
+  { id: 'k4',  category: 'Mobilisation','title': 'Site Access Granted to EPC Contractor', responsible: 'James Morgan',     status: 'complete',    due: '2026-07-10', notes: 'Gates open, security deployed, compound established.' },
+  { id: 'k5',  category: 'Governance',  title: 'Kickoff Meeting Minutes Approved',        responsible: 'James Morgan',     status: 'in_progress', due: '2026-07-15', notes: 'Draft circulated to all parties for comment.' },
+  { id: 'k6',  category: 'Schedule',    title: 'Baseline Programme Agreed (Level 3)',     responsible: 'Omar Al-Zaid',     status: 'in_progress', due: '2026-07-20', notes: 'Contractor submitted L3 schedule Rev A; PMO review ongoing.' },
+  { id: 'k7',  category: 'Governance',  title: 'Project Management Plan (PMP) Issued',   responsible: 'Omar Al-Zaid',     status: 'pending',     due: '2026-07-25', notes: 'Awaiting Level 3 schedule finalisation before PMP submission.' },
+  { id: 'k8',  category: 'HSE',         title: 'HSEP Approved & Site Inductions Run',    responsible: 'Mohammed Hassan',  status: 'pending',     due: '2026-07-28', notes: 'HSE Plan v0.1 submitted; owner review due 2026-07-22.' },
+  { id: 'k9',  category: 'Schedule',    title: 'First Interim Payment Application (IPA)', responsible: 'Aisha Al-Rashidi', status: 'pending',     due: '2026-08-01', notes: 'IPA-01 expected at end of July mobilisation month.' },
+]
+
+const AWARD_DETAILS = {
+  contractor: 'ACWA Power Engineering & Construction',
+  contract_value: 285_000_000,
+  contract_type: 'Lump Sum EPC',
+  award_date: '2026-07-01',
+  ntp_date: '2026-07-10',
+  contract_duration_months: 30,
+  payment_terms: 'Monthly interim payment applications against milestone schedule',
+  retention: '5% of each IPA until 50% project completion, then 2.5% until PAC',
+  performance_bond: '10% of Contract Price',
+  advance_payment: '10% of Contract Price against AP Bond',
+}
+
+function ContractAwardTab() {
+  const complete   = MOCK_KICKOFF_ITEMS.filter((k) => k.status === 'complete').length
+  const inProgress = MOCK_KICKOFF_ITEMS.filter((k) => k.status === 'in_progress').length
+  const total      = MOCK_KICKOFF_ITEMS.length
+  const pct        = Math.round((complete / total) * 100)
+
+  const catGroups = Array.from(new Set(MOCK_KICKOFF_ITEMS.map((k) => k.category)))
+
+  return (
+    <div className="space-y-6">
+      {/* Award summary card */}
+      <div className="rounded-xl border border-[#64ffda]/30 bg-[#64ffda]/5 p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="col-span-2 sm:col-span-3 lg:col-span-4 mb-1">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#64ffda]/70 mb-0.5">Awarded Contractor</p>
+          <p className="text-lg font-bold text-foreground">{AWARD_DETAILS.contractor}</p>
+        </div>
+        {[
+          { label: 'Contract Value',   value: `$${(AWARD_DETAILS.contract_value / 1_000_000).toFixed(0)}M` },
+          { label: 'Contract Type',    value: AWARD_DETAILS.contract_type },
+          { label: 'Award Date',       value: AWARD_DETAILS.award_date },
+          { label: 'NTP Date',         value: AWARD_DETAILS.ntp_date },
+          { label: 'Duration',         value: `${AWARD_DETAILS.contract_duration_months} months` },
+          { label: 'Advance Payment',  value: AWARD_DETAILS.advance_payment },
+          { label: 'Performance Bond', value: AWARD_DETAILS.performance_bond },
+          { label: 'Retention',        value: AWARD_DETAILS.retention },
+        ].map((f) => (
+          <div key={f.label}>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">{f.label}</p>
+            <p className="text-sm font-semibold text-foreground">{f.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Kickoff progress */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Kickoff Checklist Progress</p>
+          <span className="text-sm font-bold text-foreground">{complete}/{total} complete</span>
+        </div>
+        <div className="w-full h-2 rounded-full bg-muted/40 overflow-hidden mb-2">
+          <div className="h-full rounded-full bg-[#64ffda] transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="flex gap-4 text-xs text-muted-foreground">
+          <span className="text-green-500 font-semibold">{complete} complete</span>
+          <span className="text-blue-500 font-semibold">{inProgress} in progress</span>
+          <span>{total - complete - inProgress} pending</span>
+        </div>
+      </div>
+
+      {/* Checklist grouped by category */}
+      {catGroups.map((cat) => {
+        const items = MOCK_KICKOFF_ITEMS.filter((k) => k.category === cat)
+        return (
+          <div key={cat}>
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">{cat}</p>
+            <div className="rounded-xl border border-border overflow-hidden">
+              {items.map((k, i) => {
+                const color = k.status === 'complete' ? '#22c55e' : k.status === 'in_progress' ? '#3b82f6' : '#6b7280'
+                return (
+                  <div key={k.id} className={cn('flex items-start gap-4 px-5 py-3.5 border-b border-border last:border-0', i % 2 === 0 ? 'bg-card' : 'bg-muted/5')}>
+                    <div className="mt-0.5 flex-shrink-0">
+                      {k.status === 'complete'    ? <CheckCircle2 className="size-4 text-green-500" /> :
+                       k.status === 'in_progress' ? <Clock className="size-4 text-blue-500" /> :
+                       <AlertCircle className="size-4 text-muted-foreground" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">{k.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{k.notes}</p>
+                    </div>
+                    <div className="flex-shrink-0 text-right">
+                      <p className="text-xs font-semibold" style={{ color }}>{k.status === 'complete' ? 'Done' : k.status === 'in_progress' ? 'In Progress' : 'Pending'}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono">{k.due}</p>
+                      <p className="text-[10px] text-muted-foreground">{k.responsible}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function G3ProcurementPage() {
   const { id } = useParams<{ id: string }>()
@@ -1301,12 +1416,13 @@ export default function G3ProcurementPage() {
 
       {/* Tab content */}
       <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
-        {tab === 'rfqs'      && <RFQsTab      rfqs={rfqs} />}
-        {tab === 'vendors'   && <VendorsTab   vendors={vendors} />}
+        {tab === 'rfqs'      && <RFQsTab          rfqs={rfqs} />}
+        {tab === 'vendors'   && <VendorsTab       vendors={vendors} />}
         {tab === 'bids'      && <BidEvaluationTab bids={bids} rfqs={rfqs} />}
-        {tab === 'pos'       && <POsTab       pos={pos} />}
-        {tab === 'contracts' && <ContractsTab contracts={contracts} />}
-        {tab === 'analytics' && <AnalyticsTab rfqs={rfqs} bids={bids} pos={pos} contracts={contracts} />}
+        {tab === 'pos'       && <POsTab           pos={pos} />}
+        {tab === 'contracts' && <ContractsTab     contracts={contracts} />}
+        {tab === 'analytics' && <AnalyticsTab     rfqs={rfqs} bids={bids} pos={pos} contracts={contracts} />}
+        {tab === 'award'     && <ContractAwardTab />}
       </motion.div>
     </div>
   )

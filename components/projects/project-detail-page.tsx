@@ -650,6 +650,7 @@ export function ProjectDetailPage({
 
   // Gate code → sub-page route (only wired gates navigate; others open the info panel)
   const GATE_ROUTES: Partial<Record<string, string>> = {
+    G0: `/projects/${project.id}/g0`,
     G1: `/projects/${project.id}/g1/approval`,
     G2: `/projects/${project.id}/g2`,
     G3: `/projects/${project.id}/g3`,
