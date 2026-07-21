@@ -13,6 +13,7 @@ import {
   Wrench,
   Hammer,
   Zap,
+  PackageCheck,
   DollarSign,
   BarChart3,
   ClipboardList,
@@ -197,6 +198,12 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Commissioning',
         href: '/commissioning',
         icon: Zap,
+      },
+      {
+        id: 'handover',
+        label: 'Handover',
+        href: '/handover',
+        icon: PackageCheck,
       },
       {
         id: 'om',
