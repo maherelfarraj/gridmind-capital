@@ -170,7 +170,7 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
     const { error } = await submitG1Form(form, projectId)
     if (error) {
       setStatus('error')
-      toast({ title: 'Submission failed', description: error, variant: 'error' })
+      toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {
       setStatus('saved')
       toast({ title: 'G1 Package submitted', description: 'Gate 1 package saved and ready for review.', variant: 'success' })

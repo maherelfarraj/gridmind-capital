@@ -145,7 +145,7 @@ export function DocumentUploadModal({
       onSuccess()
       onClose()
     } else {
-      toast({ title: 'Some uploads failed', description: 'Check the error messages and retry.', variant: 'error' })
+      toast({ title: 'Some uploads failed', description: 'Check the error messages and retry.', variant: 'danger' })
     }
   }
 

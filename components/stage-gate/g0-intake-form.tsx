@@ -134,7 +134,7 @@ export function G0IntakeForm({ projectId, projectCode, projectName, onSubmitted,
     const { error } = await submitG0Form(form, projectId)
     if (error) {
       setStatus('error')
-      toast({ title: 'Submission failed', description: error, variant: 'error' })
+      toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {
       setStatus('saved')
       toast({ title: 'G0 Intake submitted', description: 'Gate 0 package saved and ready for review.', variant: 'success' })
@@ -304,7 +304,7 @@ export function G0IntakeForm({ projectId, projectCode, projectName, onSubmitted,
             <Field label="Strategic Fit" required hint="Why does this project fit GridMind Capital's strategy?">
               <textarea className={textareaCls} value={form.strategicFit} onChange={(e) => set('strategicFit', e.target.value)} placeholder="Describe alignment with portfolio strategy, country focus, and technology mix..." readOnly={readOnly} />
             </Field>
-            <Field label="Key Risks" required hint="Top 3–5 risks at this early stage">
+            <Field label="Key Risks" required hint="Top 3���5 risks at this early stage">
               <textarea className={textareaCls} value={form.keyRisks} onChange={(e) => set('keyRisks', e.target.value)} placeholder="1. Grid curtailment risk...\n2. Permitting timeline...\n3. Land acquisition..." readOnly={readOnly} />
             </Field>
             <Field label="Competitive Advantage">

@@ -44,15 +44,9 @@ function extToFileType(name: string): 'pdf' | 'dwg' | 'xlsx' | 'docx' | 'other' 
 
 // ─── Config maps ──────────────────────────────────────────────
 
-const STATUS_META: Record<DocStatus, { label: string; color: string; bg: string }> = {
-  ifc:         { label: 'IFC',        color: '#22c55e', bg: '#22c55e18' },
-  ifr:         { label: 'IFR',        color: '#3b82f6', bg: '#3b82f618' },
-  ifa:         { label: 'IFA',        color: '#f59e0b', bg: '#f59e0b18' },
-  draft:       { label: 'Draft',      color: '#94a3b8', bg: '#94a3b818' },
-  superseded:  { label: 'Superseded', color: '#64748b', bg: '#64748b18' },
-}
+type FileType = 'pdf' | 'dwg' | 'xlsx' | 'docx' | 'other'
 
-const TYPE_ICON: Record<DocumentRecord['type'], React.ElementType> = {
+const TYPE_ICON: Record<FileType, React.ElementType> = {
   pdf:   FileText,
   dwg:   FileImage,
   xlsx:  FileSpreadsheet,
@@ -60,7 +54,7 @@ const TYPE_ICON: Record<DocumentRecord['type'], React.ElementType> = {
   other: File,
 }
 
-const TYPE_COLOR: Record<DocumentRecord['type'], string> = {
+const TYPE_COLOR: Record<FileType, string> = {
   pdf:   '#ef4444',
   dwg:   '#3b82f6',
   xlsx:  '#22c55e',
@@ -184,7 +178,7 @@ export function DocumentsPage({ projectCode }: { projectCode?: string }) {
   async function handleDownload(storagePath: string, name: string) {
     const result = await getDownloadUrl(storagePath)
     if ('error' in result) {
-      addToast({ title: 'Download failed', description: result.error, variant: 'error' })
+      addToast({ title: 'Download failed', description: result.error, variant: 'danger' })
       return
     }
     const a = document.createElement('a')
@@ -197,7 +191,7 @@ export function DocumentsPage({ projectCode }: { projectCode?: string }) {
     if (!confirm('Delete this document? This cannot be undone.')) return
     const { error } = await deleteDocument(id, storagePath)
     if (error) {
-      addToast({ title: 'Delete failed', description: error, variant: 'error' })
+      addToast({ title: 'Delete failed', description: error, variant: 'danger' })
     } else {
       addToast({ title: 'Document deleted', variant: 'success' })
       mutate()

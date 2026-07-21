@@ -37,7 +37,13 @@ export async function GET() {
       ON document_files(project_id);
   `
 
-  const { error } = await supabase.rpc('exec_sql', { sql: ddl }).single().catch(() => ({ error: null }))
+  let error: { message?: string } | null = null
+  try {
+    const result = await supabase.rpc('exec_sql', { sql: ddl }).single()
+    error = result.error
+  } catch {
+    error = null
+  }
 
   // Fallback: try direct query if exec_sql RPC doesn't exist
   if (error) {

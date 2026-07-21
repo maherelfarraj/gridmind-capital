@@ -48,10 +48,12 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
     // Fire-and-forget — do not block response on email delivery
     sendApprovalDecisionEmail({
       to: 'admin@gridmind.capital',
-      approvalTitle: approval.title ?? id,
-      objectType: approval.object_type ?? 'Approval',
+      requesterName: 'Team',
+      title: approval.title ?? id,
       decision: status,
-      decidedBy: 'System',
+      decisionBy: 'System',
+      projectCode: approval.object_type ?? 'N/A',
+      approvalId: id,
       reason: approval.description ?? undefined,
     }).catch(() => {})
   }
