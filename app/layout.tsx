@@ -96,46 +96,66 @@ export default function RootLayout({
 (function() {
   if (typeof window === 'undefined') return;
   var reloading = false;
-  function doReload() {
+
+  function scheduleReload() {
     if (reloading) return;
     reloading = true;
-    // Wait for the server to finish restarting before reloading
+    // Poll until the dev server is back up, then do a hard reload
+    var attempts = 0;
     var t = setInterval(function() {
-      fetch('/_next/static/development/_buildManifest.js', { cache: 'no-store' })
+      attempts++;
+      fetch(location.href, { method: 'HEAD', cache: 'no-store' })
         .then(function(r) {
-          if (r.ok) { clearInterval(t); window.location.reload(); }
+          if (r.ok || attempts > 30) { clearInterval(t); window.location.reload(); }
         })
-        .catch(function() {});
-    }, 600);
+        .catch(function() { if (attempts > 30) { clearInterval(t); window.location.reload(); } });
+    }, 700);
   }
 
-  // 1. Turbopack uses a WebSocket at /_next/webpack-hmr
+  function isChunkError(msg) {
+    return msg && (msg.indexOf('ChunkLoadError') !== -1 || msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to load chunk') !== -1);
+  }
+
+  // 1. Patch __webpack_chunk_load__ — Turbopack's internal dynamic-import hook.
+  //    This fires synchronously inside the stale bootstrap before any React code
+  //    runs, making it the earliest possible intercept point.
+  var _origLoad = window.__webpack_chunk_load__;
+  Object.defineProperty(window, '__webpack_chunk_load__', {
+    configurable: true,
+    set: function(fn) { _origLoad = fn; },
+    get: function() {
+      return function(chunkId) {
+        var p = _origLoad ? _origLoad(chunkId) : Promise.reject(new Error('no loader'));
+        return p.catch(function(err) {
+          if (isChunkError(String(err))) scheduleReload();
+          return Promise.reject(err);
+        });
+      };
+    }
+  });
+
+  // 2. Capturing error listener — catches synchronous script errors
+  window.addEventListener('error', function(e) {
+    if (isChunkError(e && e.message)) scheduleReload();
+  }, true);
+
+  // 3. Unhandled-rejection listener — catches async import() failures
+  window.addEventListener('unhandledrejection', function(e) {
+    if (isChunkError(e && e.reason && String(e.reason))) scheduleReload();
+  });
+
+  // 4. Turbopack WebSocket — proactive reload before any chunk fails
   try {
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     var ws = new WebSocket(proto + '//' + location.host + '/_next/webpack-hmr?page=/_error');
     ws.onmessage = function(e) {
       try {
         var d = JSON.parse(e.data);
-        if (d && (d.action === 'reload' || d.action === 'serverComponentChanges')) doReload();
+        if (d && (d.action === 'reload' || d.action === 'serverComponentChanges')) scheduleReload();
       } catch(_) {}
     };
-    ws.onclose = function() { doReload(); };
-    ws.onerror = function() { doReload(); };
+    ws.onclose = function() { scheduleReload(); };
   } catch(_) {}
-
-  // 2. Fallback: detect chunk errors and reload immediately
-  window.addEventListener('error', function(e) {
-    if (e && e.message && e.message.indexOf('ChunkLoadError') !== -1) {
-      if (!reloading) { reloading = true; window.location.reload(); }
-    }
-  }, true);
-
-  // 3. Intercept unhandled promise rejections from dynamic import() failures
-  window.addEventListener('unhandledrejection', function(e) {
-    if (e && e.reason && String(e.reason).indexOf('ChunkLoadError') !== -1) {
-      if (!reloading) { reloading = true; window.location.reload(); }
-    }
-  });
 })();
           ` }} />
         </head>
