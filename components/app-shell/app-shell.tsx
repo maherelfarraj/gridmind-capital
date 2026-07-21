@@ -9,6 +9,7 @@ import { useSession } from '@/lib/session-context'
 import { getInitials, ROLE_LABELS, toNavRole } from '@/lib/session'
 import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
 import { ToastProvider } from '@/components/ui/toast'
+import { GlobalCommandPalette } from '@/components/command-palette/global-command-palette'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -68,6 +69,19 @@ export function AppShell({
   const session = useSession()
   const [collapsed, setCollapsed] = useCollapsed()
   const [mobileOpen, setMobileOpen] = React.useState(false)
+  const [paletteOpen, setPaletteOpen] = React.useState(false)
+
+  // Global CMD+K / Ctrl+K listener
+  React.useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // Derive sidebar user from session
   const sidebarUser = React.useMemo(() => ({
@@ -157,6 +171,7 @@ export function AppShell({
           title={title}
           breadcrumbs={breadcrumbs}
           notificationCount={notificationCount}
+          onSearchOpen={() => setPaletteOpen(true)}
         />
 
         {/* Scrollable content */}
@@ -187,6 +202,8 @@ export function AppShell({
         contextModule={contextModule}
         userRole={session.roles[0]}
       />
+      {/* ── Global Command Palette ── */}
+      <GlobalCommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
     </ToastProvider>
   )
