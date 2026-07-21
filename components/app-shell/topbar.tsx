@@ -22,6 +22,7 @@ export interface TopBarProps {
   breadcrumbs?: Breadcrumb[]
   notificationCount?: number
   onSearchOpen?: () => void
+  onNotifOpen?: () => void
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -117,11 +118,12 @@ function ThemeToggle() {
 // Notification bell
 // ─────────────────────────────────────────────────────────────
 
-function NotificationBell({ count = 0 }: { count?: number }) {
+function NotificationBell({ count = 0, onClick }: { count?: number; onClick?: () => void }) {
   return (
     <button
       type="button"
       aria-label={count > 0 ? `${count} unread notifications` : 'Notifications'}
+      onClick={onClick}
       className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-150"
     >
       <Bell size={15} aria-hidden="true" />
@@ -186,6 +188,7 @@ export function TopBar({
   breadcrumbs = [],
   notificationCount = 0,
   onSearchOpen,
+  onNotifOpen,
 }: TopBarProps) {
   const crumbs: Breadcrumb[] = breadcrumbs.length > 0 ? breadcrumbs : [{ label: title }]
 
@@ -214,7 +217,7 @@ export function TopBar({
         <SearchTrigger onOpen={onSearchOpen} />
         <ThemeToggle />
         <LanguageSwitcher />
-        <NotificationBell count={notificationCount} />
+        <NotificationBell count={notificationCount} onClick={onNotifOpen} />
       </div>
     </header>
   )

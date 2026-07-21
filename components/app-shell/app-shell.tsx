@@ -10,6 +10,7 @@ import { getInitials, ROLE_LABELS, toNavRole } from '@/lib/session'
 import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
 import { ToastProvider } from '@/components/ui/toast'
 import { GlobalCommandPalette } from '@/components/command-palette/global-command-palette'
+import { NotificationPanel } from '@/components/notifications/notification-panel'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -70,6 +71,7 @@ export function AppShell({
   const [collapsed, setCollapsed] = useCollapsed()
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [paletteOpen, setPaletteOpen] = React.useState(false)
+  const [notifOpen, setNotifOpen]     = React.useState(false)
 
   // Global CMD+K / Ctrl+K listener
   React.useEffect(() => {
@@ -172,6 +174,7 @@ export function AppShell({
           breadcrumbs={breadcrumbs}
           notificationCount={notificationCount}
           onSearchOpen={() => setPaletteOpen(true)}
+          onNotifOpen={() => setNotifOpen(true)}
         />
 
         {/* Scrollable content */}
@@ -204,6 +207,8 @@ export function AppShell({
       />
       {/* ── Global Command Palette ── */}
       <GlobalCommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {/* ── Notifications & Activity Feed ── */}
+      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} unreadCount={notificationCount} />
     </div>
     </ToastProvider>
   )
