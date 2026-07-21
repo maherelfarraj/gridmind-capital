@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
+import { ChunkErrorWatcher } from '@/components/chunk-error-watcher'
 import './globals.css'
 
 const inter = Inter({
@@ -96,6 +97,7 @@ export default function RootLayout({
           </LocaleProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
+        <ChunkErrorWatcher />
       </body>
     </html>
   )

@@ -10,6 +10,16 @@ export default function GlobalError({
   reset: () => void
 }) {
   React.useEffect(() => {
+    // ChunkLoadError = stale bootstrap JS in browser cache after a server restart.
+    // Hard-reload immediately so the browser fetches fresh chunk manifests.
+    if (
+      error?.message?.includes('ChunkLoadError') ||
+      error?.message?.includes('Failed to load chunk') ||
+      error?.message?.includes('Loading chunk')
+    ) {
+      window.location.reload()
+      return
+    }
     console.error('[GridMind] Global error:', error)
   }, [error])
 
