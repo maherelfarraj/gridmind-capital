@@ -1,4 +1,3 @@
-'use server'
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { OmPage } from '@/components/om/om-page'
