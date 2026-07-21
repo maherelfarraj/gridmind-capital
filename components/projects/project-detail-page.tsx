@@ -21,6 +21,7 @@ import {
   Send,
   RefreshCw,
 } from 'lucide-react'
+import { useRouter as useNextRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -392,14 +393,24 @@ function RiskSummaryCard({ risks }: { risks: Risk[] }) {
 // Quick Actions card
 // ─────────────────────────────────────────────────────────────
 
-const QUICK_ACTIONS = [
-  { label: 'Documents', icon: FileText,      iconColor: '#0a192f', bgColor: 'bg-[#0a192f]/10', count: '12 files',    ariaLabel: 'Open Documents' },
-  { label: 'Comments',  icon: MessageSquare, iconColor: '#2563eb', bgColor: 'bg-blue-100 dark:bg-blue-900/30',   count: '8 threads',  ariaLabel: 'Open Comments' },
-  { label: 'Team',      icon: Users,         iconColor: '#059669', bgColor: 'bg-emerald-100 dark:bg-emerald-900/30', count: '6 members',  ariaLabel: 'Open Team' },
-  { label: 'Settings',  icon: Settings,      iconColor: '#64748b', bgColor: 'bg-slate-100 dark:bg-muted',       count: 'Project config', ariaLabel: 'Open Project Settings' },
+const QUICK_ACTIONS: {
+  label:     string
+  icon:      React.ComponentType<{ className?: string; style?: React.CSSProperties }>
+  iconColor: string
+  bgColor:   string
+  count:     string
+  ariaLabel: string
+  href?:     string
+}[] = [
+  { label: 'Documents', icon: FileText,      iconColor: '#0a192f', bgColor: 'bg-[#0a192f]/10',                       count: '12 files',       ariaLabel: 'Open Documents' },
+  { label: 'Comments',  icon: MessageSquare, iconColor: '#2563eb', bgColor: 'bg-blue-100 dark:bg-blue-900/30',        count: '8 threads',      ariaLabel: 'Open Comments' },
+  { label: 'Team',      icon: Users,         iconColor: '#059669', bgColor: 'bg-emerald-100 dark:bg-emerald-900/30',  count: '6 members',      ariaLabel: 'Open Team' },
+  { label: 'Settings',  icon: Settings,      iconColor: '#64748b', bgColor: 'bg-slate-100 dark:bg-muted',             count: 'Project config', ariaLabel: 'Open Project Settings' },
+  { label: 'G0 Intake', icon: FileText,      iconColor: '#d97706', bgColor: 'bg-amber-100 dark:bg-amber-900/30',      count: 'New opportunity',ariaLabel: 'Start G0 Intake',       href: '/projects/new/intake' },
 ]
 
 function QuickActionsCard({ onAction }: { onAction?: (label: string) => void }) {
+  const router = useNextRouter()
   return (
     <Card className="rounded-xl border border-slate-200 shadow-sm dark:border-border">
       <CardHeader className="px-5 py-4 border-b border-slate-100 dark:border-border">
@@ -412,12 +423,12 @@ function QuickActionsCard({ onAction }: { onAction?: (label: string) => void }) 
       </CardHeader>
       <CardContent className="p-5">
         <div className="grid grid-cols-2 gap-4">
-          {QUICK_ACTIONS.map(({ label, icon: Icon, iconColor, bgColor, count, ariaLabel }) => (
+          {QUICK_ACTIONS.map(({ label, icon: Icon, iconColor, bgColor, count, ariaLabel, href }) => (
             <button
               key={label}
               type="button"
               aria-label={ariaLabel}
-              onClick={() => onAction?.(label)}
+              onClick={() => href ? router.push(href) : onAction?.(label)}
               className={cn(
                 'flex flex-col items-center rounded-lg border border-slate-200 p-4 text-center',
                 'cursor-pointer transition-colors duration-150',
