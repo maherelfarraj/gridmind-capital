@@ -30,12 +30,27 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const { pathname } = request.nextUrl
+
+  // Redirect authenticated users away from auth pages → dashboard
+  const isAuthPage =
+    pathname === '/login' ||
+    pathname === '/auth/login' ||
+    pathname === '/auth/signup' ||
+    pathname === '/auth/forgot-password'
+
+  if (isAuthPage && user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
+
   // Protect all dashboard routes — redirect to login if no session
   const isDashboardRoute =
-    request.nextUrl.pathname.startsWith('/dashboard') ||
-    request.nextUrl.pathname.startsWith('/admin') ||
-    request.nextUrl.pathname.startsWith('/projects') ||
-    request.nextUrl.pathname.startsWith('/greos')
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/projects') ||
+    pathname.startsWith('/greos')
 
   if (isDashboardRoute && !user) {
     const url = request.nextUrl.clone()
