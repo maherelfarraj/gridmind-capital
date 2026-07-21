@@ -80,14 +80,24 @@ export default function ProjectDetailRoute() {
           documentCount: project.documentCount,
         }}
         gateProgress={Object.fromEntries(
-          Array.from({ length: 9 }, (_, i) => [`G${i}`, i < project.gate]),
+          Array.from({ length: 10 }, (_, i) => [`G${i}`, i < project.gate]),
         )}
         deliverables={[
+          { name: 'Feasibility Study',        completed: project.gate >= 1 },
+          { name: 'Development Approval',     completed: project.gate >= 1 },
+          { name: 'Commercial IFC Package',   completed: project.gate >= 2 },
           { name: 'IFC Drawings',             completed: project.gate >= 3 },
           { name: 'Technical Specifications', completed: project.gate >= 2 },
           { name: 'Bill of Materials',        completed: project.gate >= 4 },
+          { name: 'Procurement Ready',        completed: project.gate >= 4 },
           { name: 'Design Calculations',      completed: project.gate >= 3 },
-        ]}
+        ].filter((_, i) => {
+          // Show 4 most relevant deliverables for current gate
+          const g = project.gate
+          if (g <= 1) return i < 2
+          if (g <= 3) return i >= 2 && i < 6
+          return i >= 4
+        })}
         risks={[
           { title: 'Permit delays',           probability: 'high',   impact: 'high',   status: 'open' },
           { title: 'Supply chain disruption', probability: 'medium', impact: 'medium', status: 'open' },
