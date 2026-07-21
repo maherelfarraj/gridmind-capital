@@ -782,8 +782,86 @@ function HSETab({ planItems, incidents }: { planItems: HSEPlanItem[]; incidents:
 // ─── Tab 3: Permits ──────────────────────────────────────────────────────────
 
 function PermitsTab({ permits }: { permits: Permit[] }) {
+  const [view, setView] = React.useState<'list' | 'calendar'>('list')
+
+  // Build calendar: month grid for 2026 using expiry/issue dates
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  type CalEntry = { code: string; type: string; label: string; color: string }
+  const calendarData: Record<string, CalEntry[]> = {}
+  const PERMIT_CAL_COLORS: Record<string, string> = {
+    'Approved': 'bg-green-100 text-green-700 border-green-200',
+    'Pending':  'bg-amber-100 text-amber-700 border-amber-200',
+    'Under Review': 'bg-blue-100 text-blue-700 border-blue-200',
+    'Not Started': 'bg-slate-100 text-slate-600 border-slate-200',
+  }
+  permits.forEach((p) => {
+    const parseMonth = (d: string | null) => {
+      if (!d || d === '—') return null
+      const parts = d.split(' ')
+      if (parts.length >= 2) return `${parts[0].slice(0, 3)} ${parts[1]}`
+      return null
+    }
+    const issueKey = parseMonth(p.issue_date)
+    const expiryKey = parseMonth(p.expiry_date)
+    if (issueKey) {
+      if (!calendarData[issueKey]) calendarData[issueKey] = []
+      calendarData[issueKey].push({ code: p.code, type: p.type, label: 'Issued', color: PERMIT_CAL_COLORS[p.status] ?? PERMIT_CAL_COLORS['Pending'] })
+    }
+    if (expiryKey) {
+      if (!calendarData[expiryKey]) calendarData[expiryKey] = []
+      expiryKey !== issueKey && calendarData[expiryKey].push({ code: p.code, type: p.type, label: 'Expires', color: 'bg-red-100 text-red-700 border-red-200' })
+    }
+  })
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="space-y-4">
+
+      {/* View toggle */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+          {(['list', 'calendar'] as const).map((v) => (
+            <button key={v} type="button" onClick={() => setView(v)}
+              className={cn('px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-colors',
+                view === v ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700')}>
+              {v === 'list' ? 'List View' : 'Calendar View'}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition-colors">
+          <Plus className="size-3" /> New Permit
+        </button>
+      </div>
+
+      {view === 'calendar' ? (
+        /* ── Calendar view ── */
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+          <p className="text-sm font-semibold text-slate-700">Permit Calendar — 2026</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {MONTHS.map((mon) => {
+              const key2026 = `${mon} 2026`
+              const key2027 = `${mon} 2027`
+              const entries = [...(calendarData[key2026] ?? []), ...(calendarData[key2027] ?? [])]
+              return (
+                <div key={mon} className={cn('rounded-xl border p-3 min-h-[90px]',
+                  entries.length > 0 ? 'border-orange-200 bg-orange-50/40' : 'border-slate-100 bg-slate-50/40')}>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">{mon}</p>
+                  {entries.length === 0
+                    ? <p className="text-[10px] text-slate-300 italic">No activity</p>
+                    : entries.map((e, i) => (
+                      <div key={i} className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded border mb-1 truncate', e.color)}>
+                        {e.code} — {e.label}
+                      </div>
+                    ))
+                  }
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[10px] text-slate-400">Green = issued, Red = expires. Toggle to List View for full details.</p>
+        </div>
+      ) : (
+        /* ── List view ── */
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
         <p className="text-sm font-semibold text-slate-800">Permit Tracker ({permits.length})</p>
         <button type="button" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition-colors">
@@ -838,6 +916,8 @@ function PermitsTab({ permits }: { permits: Permit[] }) {
           </div>
         ))}
       </div>
+    </div>
+      )}
     </div>
   )
 }

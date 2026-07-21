@@ -269,6 +269,69 @@ const MOCK_NCRS: NCR[] = [
     corrective_action: 'Piers re-grouted and re-aligned. Follow-up survey confirmed within ±10mm tolerance.',
     verification_required: false, cost_impact: 8_200,
   },
+  {
+    id: 'n6', code: 'NCR-2026-006', title: 'Inverter Cooling Fan Incorrect Rotation Direction', discipline: 'Mechanical', system: 'Inverter Station',
+    severity: 'major', status: 'open', raised_by: 'Omar Al-Zaid', assigned_to: 'Huawei Digital Power',
+    raised_date: '2026-08-12', due_date: '2026-08-22', closed_date: null,
+    description: 'Post-energisation check found 6 of 24 inverter cooling fans rotating in reverse, causing overtemperature warning after 15 min run.',
+    root_cause: 'Phase wiring transposition at terminal block during site installation. QC hold point missed.',
+    corrective_action: 'Re-wire L1/L2 at all 24 units, re-run thermal performance test. Updated site wiring checklist issued.',
+    verification_required: true, cost_impact: 14_500,
+  },
+  {
+    id: 'n7', code: 'NCR-2026-007', title: 'Weld Inspection Failure — Substation Steel Frame', discipline: 'Civil', system: 'HV Substation',
+    severity: 'major', status: 'open', raised_by: 'Yuki Tanaka', assigned_to: 'Al Futtaim Carillion',
+    raised_date: '2026-08-18', due_date: '2026-09-01', closed_date: null,
+    description: 'UT inspection of 4 butt welds on secondary steel frame reveals porosity exceeding AWS D1.1 acceptable limits.',
+    root_cause: 'Welder qualification lapse — WPS-003 recertification was due in July but missed in scheduler.',
+    corrective_action: 'Cut out and re-weld affected joints. Welder re-qualification in progress. All welds to be re-UT tested.',
+    verification_required: true, cost_impact: 22_000,
+  },
+  {
+    id: 'n8', code: 'NCR-2026-008', title: 'Cable Pulling Force Exceeded Spec on DC Run 7', discipline: 'Electrical', system: 'DC Collection',
+    severity: 'minor', status: 'under_review', raised_by: 'Sarah Chen', assigned_to: 'Prysmian Group',
+    raised_date: '2026-08-20', due_date: '2026-09-05', closed_date: null,
+    description: 'Pulling tension log shows 8.2kN on 240mm² DC cable run 7 — spec limit is 7.5kN. Cable insulation integrity unknown.',
+    root_cause: 'Conduit bend radius reduced during reroute. Crew exceeded pulling force limit without notifying QC.',
+    corrective_action: 'Megger test all cables in run 7. Replace if insulation resistance < 100MΩ. Submit revised pull tension record.',
+    verification_required: true, cost_impact: 5_800,
+  },
+  {
+    id: 'n9', code: 'NCR-2026-009', title: 'Earthing Electrode Resistance Above Spec', discipline: 'Electrical', system: 'HV Substation',
+    severity: 'major', status: 'closed', raised_by: 'Mohammed Hassan', assigned_to: 'ABB Power Grids',
+    raised_date: '2026-07-10', due_date: '2026-07-25', closed_date: '2026-07-24',
+    description: 'Earth electrode resistance measured at 12.4Ω — project spec requires ≤5Ω for primary substation earth.',
+    root_cause: 'High resistivity soil in northeast substation footprint. Initial design did not account for local geology report.',
+    corrective_action: 'Additional 6 x 3m earth rods installed in chemical-enhanced backfill. Re-test confirmed 3.2Ω.',
+    verification_required: false, cost_impact: 18_000,
+  },
+  {
+    id: 'n10', code: 'NCR-2026-010', title: 'Torque Verification Not Witnessed on Tracker Bolts — Block C', discipline: 'Mechanical', system: 'Tracker System',
+    severity: 'minor', status: 'closed', raised_by: 'Khalid Al-Mansouri', assigned_to: 'Nextracker',
+    raised_date: '2026-07-22', due_date: '2026-08-05', closed_date: '2026-08-04',
+    description: 'ITP hold point for torque verification on 144 tracker torque tube bolts in Block C was progressed without QC witness.',
+    root_cause: 'Miscommunication between site foreman and QC team on hold point notification procedure.',
+    corrective_action: '100% re-torque with QC witness completed. Procedure re-briefed to all site foremen.',
+    verification_required: false, cost_impact: 3_200,
+  },
+  {
+    id: 'n11', code: 'NCR-2026-011', title: 'PV Module Nameplate Discrepancy — Batch 5', discipline: 'Electrical', system: 'PV Array',
+    severity: 'critical', status: 'open', raised_by: 'Yuki Tanaka', assigned_to: 'Jinko Solar',
+    raised_date: '2026-08-25', due_date: '2026-09-10', closed_date: null,
+    description: '240 modules in Batch 5 show serialised nameplate Pmax of 575W instead of specified 580W. Potential revenue impact if installed.',
+    root_cause: 'Factory batch labelling error — investigation underway by Jinko QA. Power flash test results pending.',
+    corrective_action: 'Quarantine Batch 5. Await flash test data from factory. Replace if confirmed below spec; accept with deduction if within tolerance.',
+    verification_required: true, cost_impact: 0,
+  },
+  {
+    id: 'n12', code: 'NCR-2026-012', title: 'Fire Suppression Nozzle Spacing Non-Compliant in Battery Room', discipline: 'Mechanical', system: 'SCADA / Control',
+    severity: 'major', status: 'closed', raised_by: 'Sarah Johnson', assigned_to: 'GridMind Engineering',
+    raised_date: '2026-08-01', due_date: '2026-08-15', closed_date: '2026-08-14',
+    description: 'Civil Defense inspection found 2 nozzles in the battery room at 4.8m spacing — NFPA 750 requires max 3.7m for watermist systems.',
+    root_cause: 'Drawing revision 0 used by installer; revision B (which corrected spacing) was issued after fabrication.',
+    corrective_action: 'Added 2 intermediate nozzles and modified pipework. Civil Defense re-inspection passed on 13 Aug.',
+    verification_required: false, cost_impact: 9_500,
+  },
 ]
 
 const MOCK_MC_CERTS: MCCertificate[] = [
@@ -296,6 +359,21 @@ const MOCK_MC_CERTS: MCCertificate[] = [
     id: 'cert5', cert_number: 'MCC-2026-005', system: 'HV Substation', discipline: 'Electrical',
     status: 'pending', issued_date: null, issued_by: '—', mc_coordinator: 'Sarah Chen',
     punch_outstanding: 0, ncr_outstanding: 0, comments: 'Awaiting structural IE sign-off.',
+  },
+  {
+    id: 'cert6', cert_number: 'MCC-2026-006', system: 'SCADA / Control', discipline: 'SCADA',
+    status: 'issued', issued_date: '2026-09-05', issued_by: 'James Morgan', mc_coordinator: 'Omar Al-Zaid',
+    punch_outstanding: 0, ncr_outstanding: 0, comments: 'All NCRs closed. SCADA FAT (site) passed. MC certificate issued.',
+  },
+  {
+    id: 'cert7', cert_number: 'MCC-2026-007', system: 'Fencing & Security', discipline: 'Civil',
+    status: 'draft', issued_date: null, issued_by: '—', mc_coordinator: 'Khalid Al-Mansouri',
+    punch_outstanding: 1, ncr_outstanding: 0, comments: 'Cat-B punch PL-010 (gate latch misalignment) outstanding — non-blocking.',
+  },
+  {
+    id: 'cert8', cert_number: 'MCC-2026-008', system: 'PV Array — Blocks A-D', discipline: 'Electrical',
+    status: 'pending', issued_date: null, issued_by: '—', mc_coordinator: 'Sarah Chen',
+    punch_outstanding: 0, ncr_outstanding: 1, comments: 'Awaiting closure of NCR-2026-011 (Batch 5 module nameplate discrepancy).',
   },
 ]
 
@@ -676,16 +754,24 @@ function PunchListTab({ items }: { items: PunchItem[] }) {
     return matchQ && matchC && matchS && matchD
   })
 
-  const openA  = items.filter((i) => i.category === 'A' && i.status !== 'closed').length
-  const openB  = items.filter((i) => i.category === 'B' && i.status !== 'closed').length
-  const total  = items.length
-  const closed = items.filter((i) => i.status === 'closed').length
+  // Project-level totals (full dataset — register below shows representative sample)
+  const PROJECT_PUNCH_TOTAL   = 320
+  const PROJECT_PUNCH_OPEN    = 45
+  const PROJECT_PUNCH_CLOSED  = PROJECT_PUNCH_TOTAL - PROJECT_PUNCH_OPEN
+  const PROJECT_PUNCH_CAT_A   = 12
+  const PROJECT_PUNCH_CAT_B   = 28
+  const PROJECT_PUNCH_CAT_C   = PROJECT_PUNCH_OPEN - PROJECT_PUNCH_CAT_A - PROJECT_PUNCH_CAT_B
 
-  const catData = (['A','B','C'] as PunchCategory[]).map((c) => ({
-    category: `Cat ${c}`,
-    open:   items.filter((i) => i.category === c && i.status !== 'closed').length,
-    closed: items.filter((i) => i.category === c && i.status === 'closed').length,
-  }))
+  const openA  = PROJECT_PUNCH_CAT_A
+  const openB  = PROJECT_PUNCH_CAT_B
+  const total  = PROJECT_PUNCH_TOTAL
+  const closed = PROJECT_PUNCH_CLOSED
+
+  const catData = [
+    { category: 'Cat A', open: PROJECT_PUNCH_CAT_A, closed: 88  },
+    { category: 'Cat B', open: PROJECT_PUNCH_CAT_B, closed: 156 },
+    { category: 'Cat C', open: PROJECT_PUNCH_CAT_C, closed: 31  },
+  ]
 
   return (
     <div className="space-y-6">
