@@ -1,54 +1,11 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { IFCPackage, DrawingRecord, RFIRecord, EngineeringDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
 const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
-
-export interface IFCPackage {
-  id: string
-  package_number: string
-  discipline: string
-  title: string
-  revision: string
-  status: string
-  completion_pct: number
-  created_at: string
-}
-
-export interface DrawingRecord {
-  id: string
-  drawing_number: string
-  title: string
-  discipline: string
-  revision: string
-  status: string
-  created_at: string
-}
-
-export interface RFIRecord {
-  id: string
-  ref: string
-  title: string
-  discipline: string
-  status: string
-  days_open: number
-  is_overdue: boolean
-  created_at: string
-}
-
-export interface EngineeringDashboard {
-  totalPackages: number
-  approvedPackages: number
-  openRFIs: number
-  overdueRFIs: number
-  byDiscipline: { name: string; value: number; color: string }[]
-  rfiStatus: { name: string; value: number; color: string }[]
-  packages: IFCPackage[]
-  drawings: DrawingRecord[]
-  rfis: RFIRecord[]
-}
 
 const DISC_COLORS: Record<string, string> = {
   Civil:         '#64ffda',

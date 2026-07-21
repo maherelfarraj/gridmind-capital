@@ -18,9 +18,8 @@ import {
   updateTestStatusAction,
   seedCommissioningDemoAction,
   approveHandoverDocAction,
-  type CommissioningTest,
-  type HandoverRecord,
 } from '@/app/actions/commissioning'
+import type { CommissioningTest, HandoverRecord } from '@/lib/types/action-types'
 
 // ── Helpers ───────────────────────────────────────────────────
 const TEST_STATUS_META: Record<CommissioningTest['status'], { label: string; color: string; icon: React.ElementType }> = {

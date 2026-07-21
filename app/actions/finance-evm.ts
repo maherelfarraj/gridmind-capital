@@ -2,55 +2,9 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import type { FinanceRecord, CashFlowRecord, FinanceEvmDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
-export interface FinanceRecord {
-  id: string
-  project_id: string
-  project_name: string
-  period: string
-  bac: number
-  pv: number
-  ev: number
-  ac: number
-  cpi: number
-  spi: number
-  eac: number
-  etc: number
-  cv: number
-  sv: number
-  created_at: string
-}
-
-export interface CashFlowRecord {
-  id: string
-  project_id: string
-  project_name: string
-  period: string
-  planned_inflow: number
-  actual_inflow: number
-  planned_outflow: number
-  actual_outflow: number
-  cumulative_net: number
-  created_at: string
-}
-
-export interface FinanceEvmDashboard {
-  records: FinanceRecord[]
-  cashflow: CashFlowRecord[]
-  summary: {
-    totalBAC: number
-    totalEV: number
-    totalAC: number
-    avgCPI: number
-    avgSPI: number
-    totalEAC: number
-    variance: number
-  }
-  evmTrend: { period: string; pv: number; ev: number; ac: number }[]
-  cashTrend: { period: string; inflow: number; outflow: number; net: number }[]
-}
 
 export async function loadFinanceEvmDashboard(): Promise<FinanceEvmDashboard> {
   const sb = createAdminClient()

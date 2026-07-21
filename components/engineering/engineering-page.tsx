@@ -15,8 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
   loadEngineeringDashboard, createRFI, closeRFI, seedEngineeringDemoData,
-  type IFCPackage, type RFIRecord,
 } from '@/app/actions/engineering'
+import type { IFCPackage, RFIRecord } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
 

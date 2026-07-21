@@ -2,55 +2,9 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import type { CommissioningTest, HandoverRecord, CommissioningDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
-// ─── Types ───────────────────────────────────────────────────
-export interface CommissioningTest {
-  id: string
-  project_id: string
-  project_name: string
-  system: string
-  subsystem: string
-  test_number: string
-  description: string
-  test_type: 'functional' | 'performance' | 'integrated' | 'pre_comm'
-  status: 'pending' | 'in_progress' | 'passed' | 'failed' | 'conditional'
-  scheduled_date: string | null
-  completed_date: string | null
-  witness_required: boolean
-  defects_raised: number
-  created_at: string
-}
-
-export interface HandoverRecord {
-  id: string
-  project_id: string
-  project_name: string
-  document_type: 'as_built' | 'operation_manual' | 'warranty' | 'training_cert' | 'spare_parts'
-  title: string
-  revision: string
-  status: 'pending' | 'submitted' | 'approved' | 'rejected'
-  submitted_by: string | null
-  approved_date: string | null
-  created_at: string
-}
-
-export interface CommissioningDashboard {
-  tests: CommissioningTest[]
-  handover: HandoverRecord[]
-  stats: {
-    totalTests: number
-    passedTests: number
-    failedTests: number
-    pendingTests: number
-    handoverDocs: number
-    approvedDocs: number
-    passRate: number
-  }
-  bySystem: { system: string; total: number; passed: number; failed: number }[]
-  testsByType: { type: string; count: number }[]
-}
 
 // ─── Load ─────────────────────────────────────────────────────
 export async function loadCommissioningDashboard(): Promise<CommissioningDashboard> {

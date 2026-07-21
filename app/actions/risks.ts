@@ -1,35 +1,10 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { RiskRecord, RisksDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
-
-export interface RiskRecord {
-  id: string
-  code: string
-  title: string
-  category: string
-  probability: number
-  impact: number
-  score: number
-  rag: 'green' | 'amber' | 'red'
-  status: string
-  owner: string
-  mitigation: string
-  project_id: string | null
-  created_at: string
-}
-
-export interface RisksDashboard {
-  total: number
-  open: number
-  highOrCritical: number
-  byCategory: { name: string; value: number }[]
-  byBand: { name: string; value: number; color: string }[]
-  matrixData: { probability: number; impact: number; title: string; id: string; score: number }[]
-  items: RiskRecord[]
-}
 
 function calcRag(score: number): 'green' | 'amber' | 'red' {
   if (score <= 4)  return 'green'

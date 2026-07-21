@@ -1,44 +1,11 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
 const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
-
-export interface RFQRecord {
-  id: string
-  rfq_number: string
-  title: string
-  vendor: string
-  status: string
-  issue_date: string
-  close_date: string | null
-  amount_usd: number
-  score: number | null
-}
-
-export interface PORecord {
-  id: string
-  po_number: string
-  vendor: string
-  description: string
-  amount_usd: number
-  status: string
-  issued_date: string | null
-  expected_delivery: string | null
-}
-
-export interface ProcurementDashboard {
-  totalRFQs: number
-  openRFQs: number
-  totalPOs: number
-  poValue: number
-  rfqStatus: { name: string; value: number; color: string }[]
-  poByVendor: { name: string; value: number }[]
-  rfqs: RFQRecord[]
-  pos: PORecord[]
-}
 
 const RFQ_STATUS_COLORS: Record<string, string> = {
   draft:       '#94a3b8',

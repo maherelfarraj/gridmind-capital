@@ -2,45 +2,9 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import type { AiInsight, MarketplaceProvider, AiMarketplaceDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
-export interface AiInsight {
-  id: string
-  tenant_id: string
-  project_id: string
-  project_name: string
-  module: 'predictive_maintenance' | 'anomaly_detection' | 'schedule_risk' | 'cost_overrun' | 'safety'
-  title: string
-  description: string
-  confidence: number
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
-  status: 'open' | 'acknowledged' | 'resolved' | 'dismissed'
-  recommended_action: string
-  created_at: string
-}
-
-export interface MarketplaceProvider {
-  id: string
-  tenant_id: string
-  name: string
-  category: 'data_feed' | 'analytics' | 'epc_tool' | 'compliance' | 'finance' | 'field_service'
-  description: string
-  logo_url: string | null
-  integration_type: 'api' | 'webhook' | 'file_import' | 'oauth'
-  status: 'available' | 'connected' | 'pending' | 'deprecated'
-  rating: number
-  review_count: number
-  created_at: string
-}
-
-export interface AiMarketplaceDashboard {
-  insights: AiInsight[]
-  providers: MarketplaceProvider[]
-  insightStats: { open: number; critical: number; acknowledged: number; resolved: number }
-  byModule: { module: string; count: number }[]
-  bySeverity: { severity: string; count: number }[]
-}
 
 export async function loadAiMarketplaceDashboard(): Promise<AiMarketplaceDashboard> {
   const sb = createAdminClient()

@@ -11,52 +11,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { createAdminClient } from '@/lib/supabase/admin'
-
-// ─── Server action ────────────────────────────────────────────
-
-async function submitG0Form(formData: G0FormData, projectId: string): Promise<{ error: string | null }> {
-  'use server'
-  const supabase = createAdminClient()
-  const { error } = await supabase.from('gate_submissions').upsert({
-    project_id:  projectId,
-    gate_number: 0,
-    form_data:   formData,
-    status:      'submitted',
-    submitted_at: new Date().toISOString(),
-    updated_at:  new Date().toISOString(),
-  }, { onConflict: 'project_id,gate_number' })
-  return { error: error?.message ?? null }
-}
-
-// ─── Types ────────────────────────────────────────────────────
-
-interface G0FormData {
-  // Section 1 — Project Identification
-  projectSponsor:    string
-  hostCountry:       string
-  siteCoordinates:   string
-  landStatus:        'owned' | 'leased' | 'option' | 'tbd'
-  // Section 2 — Technical Concept
-  technology:        string
-  capacityMwp:       string
-  connectionVoltage: string
-  storageIncluded:   boolean
-  storageMwh:        string
-  // Section 3 — Financial Concept
-  capexEstimateUsd:  string
-  capexBasis:        'desktop' | 'feasibility' | 'pre-feasibility' | 'concept'
-  targetIrrPct:      string
-  fundingSource:     'equity' | 'debt' | 'mixed' | 'tbd'
-  // Section 4 — Strategic Rationale
-  strategicFit:      string
-  keyRisks:          string
-  competitiveEdge:   string
-  // Section 5 — Next Steps
-  proposedTimeline:  string
-  resourcesRequired: string
-  requestedDecision: 'proceed-g1' | 'hold' | 'reject'
-}
+import { submitG0FormAction, type G0FormData } from '@/app/actions/gate-submissions'
 
 const EMPTY: G0FormData = {
   projectSponsor: '', hostCountry: '', siteCoordinates: '', landStatus: 'tbd',
@@ -131,7 +86,7 @@ export function G0IntakeForm({ projectId, projectCode, projectName, onSubmitted,
     e.preventDefault()
     if (readOnly) return
     setStatus('saving')
-    const { error } = await submitG0Form(form, projectId)
+    const { error } = await submitG0FormAction(form, projectId)
     if (error) {
       setStatus('error')
       toast({ title: 'Submission failed', description: error, variant: 'danger' })

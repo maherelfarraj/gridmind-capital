@@ -1,57 +1,11 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { WorkPackage, InspectionRecord, PunchItem, ConstructionDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
 const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
-
-export interface WorkPackage {
-  id: string
-  wp_code: string
-  title: string
-  discipline: string
-  contractor: string
-  planned_pct: number
-  actual_pct: number
-  status: string
-  health: string
-}
-
-export interface InspectionRecord {
-  id: string
-  ref: string
-  title: string
-  type: string
-  result: string | null
-  date: string
-  inspector: string
-  location: string
-}
-
-export interface PunchItem {
-  id: string
-  ref: string
-  title: string
-  category: 'A' | 'B'
-  discipline: string
-  status: string
-  assigned_to: string
-  raised_date: string
-}
-
-export interface ConstructionDashboard {
-  totalWPs: number
-  completedWPs: number
-  openPunches: number
-  catAPunches: number
-  wpByDiscipline: { name: string; planned: number; actual: number }[]
-  punchByCategory: { name: string; value: number; color: string }[]
-  inspectionResult: { name: string; value: number; color: string }[]
-  workPackages: WorkPackage[]
-  inspections: InspectionRecord[]
-  punchItems: PunchItem[]
-}
 
 export async function loadConstructionDashboard(): Promise<ConstructionDashboard> {
   const supabase = createAdminClient()

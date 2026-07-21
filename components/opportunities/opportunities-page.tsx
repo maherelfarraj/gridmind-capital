@@ -18,8 +18,8 @@ import {
   createOpportunity,
   submitOpportunityForReview,
   seedOpportunitiesDemoData,
-  type Opportunity,
 } from '@/app/actions/opportunities'
+import type { Opportunity } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
 

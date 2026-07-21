@@ -15,8 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
   loadConstructionDashboard, closePunchItem, recordInspection, seedConstructionDemoData,
-  type WorkPackage, type InspectionRecord, type PunchItem,
 } from '@/app/actions/construction'
+import type { WorkPackage, InspectionRecord, PunchItem } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
 

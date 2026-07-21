@@ -2,57 +2,9 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import type { Asset, MaintenancePlan, OmDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
-export interface Asset {
-  id: string
-  tenant_id: string
-  project_id: string
-  project_name: string
-  asset_tag: string
-  name: string
-  category: 'panel' | 'inverter' | 'transformer' | 'cable' | 'structure' | 'other'
-  manufacturer: string
-  model: string
-  serial_number: string
-  installed_date: string | null
-  warranty_expiry: string | null
-  status: 'operational' | 'degraded' | 'faulty' | 'decommissioned'
-  last_maintenance: string | null
-  next_maintenance: string | null
-  criticality: 'critical' | 'high' | 'medium' | 'low'
-  created_at: string
-}
-
-export interface MaintenancePlan {
-  id: string
-  tenant_id: string
-  asset_id: string
-  asset_name: string
-  title: string
-  frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual'
-  last_completed: string | null
-  next_due: string | null
-  status: 'scheduled' | 'overdue' | 'completed' | 'skipped'
-  assigned_to: string | null
-  created_at: string
-}
-
-export interface OmDashboard {
-  assets: Asset[]
-  plans: MaintenancePlan[]
-  stats: {
-    totalAssets: number
-    operational: number
-    faulty: number
-    overdueMaintenance: number
-    upcomingMaintenance: number
-    warrantyExpiringSoon: number
-  }
-  byCategory: { category: string; count: number }[]
-  byStatus: { status: string; count: number }[]
-}
 
 export async function loadOmDashboard(): Promise<OmDashboard> {
   const sb = createAdminClient()

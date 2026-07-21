@@ -11,63 +11,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { createAdminClient } from '@/lib/supabase/admin'
-
-// ─── Server action ────────────────────────────────────────────
-
-async function submitG1Form(formData: G1FormData, projectId: string): Promise<{ error: string | null }> {
-  'use server'
-  const supabase = createAdminClient()
-  const { error } = await supabase.from('gate_submissions').upsert({
-    project_id:  projectId,
-    gate_number: 1,
-    form_data:   formData,
-    status:      'submitted',
-    submitted_at: new Date().toISOString(),
-    updated_at:  new Date().toISOString(),
-  }, { onConflict: 'project_id,gate_number' })
-  return { error: error?.message ?? null }
-}
-
-// ─── Types ────────────────────────────────────────────────────
-
-interface G1FormData {
-  // Section 1 — Feasibility
-  feasibilityStatus:    'complete' | 'in-progress' | 'commissioned'
-  feasibilityContractor: string
-  windSolarResource:    'measured' | 'modelled' | 'satellite' | 'not-started'
-  p50YieldGwh:          string
-  p90YieldGwh:          string
-  gridStudyStatus:      'complete' | 'in-progress' | 'not-started'
-  connectionPointKv:    string
-  // Section 2 — Permitting & Environmental
-  eiaStatus:            'approved' | 'submitted' | 'in-progress' | 'not-started'
-  eiaConsultant:        string
-  keyPermitsMissing:    string
-  landSecured:          boolean
-  landNotes:            string
-  // Section 3 — Financial Model
-  modelVersion:         string
-  baseIrrPct:           string
-  baseDscrMin:          string
-  lcoeUsdMwh:           string
-  debtEquityRatio:      string
-  projectFinanceReady:  boolean
-  // Section 4 — Offtake & Commercial
-  offtakeType:          'ppa' | 'fita' | 'merchant' | 'hybrid' | 'tbd'
-  offtakeCounterparty:  string
-  offtakeTerm:          string
-  tariffUsdMwh:         string
-  contractorShortlist:  string
-  // Section 5 — Organisation & Plan
-  projectDirector:      string
-  oeConsultant:         string
-  fidTargetDate:        string
-  codTargetDate:        string
-  totalCapexFinalUsd:   string
-  contingencyPct:       string
-  requestedDecision:    'approve-fid' | 'conditional' | 'hold' | 'terminate'
-}
+import { submitG1FormAction, type G1FormData } from '@/app/actions/gate-submissions'
 
 const EMPTY: G1FormData = {
   feasibilityStatus: 'commissioned', feasibilityContractor: '', windSolarResource: 'satellite',
@@ -167,7 +111,7 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
     e.preventDefault()
     if (readOnly) return
     setStatus('saving')
-    const { error } = await submitG1Form(form, projectId)
+    const { error } = await submitG1FormAction(form, projectId)
     if (error) {
       setStatus('error')
       toast({ title: 'Submission failed', description: error, variant: 'danger' })

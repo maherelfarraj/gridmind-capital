@@ -10,7 +10,8 @@ import { Wrench, AlertTriangle, CheckCircle2, Clock, RefreshCw, Database } from 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { loadOmDashboard, updateAssetStatusAction, completeMaintenanceAction, seedOmDemoAction, type Asset, type MaintenancePlan } from '@/app/actions/om'
+import { loadOmDashboard, updateAssetStatusAction, completeMaintenanceAction, seedOmDemoAction } from '@/app/actions/om'
+import type { Asset, MaintenancePlan } from '@/lib/types/action-types'
 
 const STATUS_META: Record<Asset['status'], { label: string; color: string }> = {
   operational:    { label: 'Operational',    color: '#22c55e' },

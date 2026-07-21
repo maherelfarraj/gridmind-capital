@@ -1,35 +1,10 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { Opportunity, OpportunitiesDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
-
-export interface Opportunity {
-  id: string
-  code: string
-  name: string
-  technology: string
-  capacity_mw: number
-  country: string
-  location: string
-  status: string
-  health: string
-  budget_usd: number
-  created_at: string
-  approvalStatus: string | null
-}
-
-export interface OpportunitiesDashboard {
-  total: number
-  submitted: number
-  underReview: number
-  approved: number
-  rejected: number
-  byTechnology: { name: string; value: number }[]
-  byStatus: { name: string; value: number; color: string }[]
-  items: Opportunity[]
-}
 
 const STATUS_COLORS: Record<string, string> = {
   draft:        '#94a3b8',

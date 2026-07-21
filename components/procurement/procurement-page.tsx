@@ -14,8 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
   loadProcurementDashboard, issueRFQ, advancePOStatus, seedProcurementDemoData,
-  type RFQRecord, type PORecord,
 } from '@/app/actions/procurement'
+import type { RFQRecord, PORecord } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
 

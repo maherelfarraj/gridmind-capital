@@ -15,8 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
   loadRisksDashboard, createRisk, closeRisk, seedRisksDemoData,
-  type RiskRecord,
 } from '@/app/actions/risks'
+import type { RiskRecord } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
 

@@ -16,9 +16,8 @@ import {
   dismissInsightAction,
   connectProviderAction,
   seedAiMarketplaceDemoAction,
-  type AiInsight,
-  type MarketplaceProvider,
 } from '@/app/actions/ai-insights'
+import type { AiInsight, MarketplaceProvider } from '@/lib/types/action-types'
 
 const SEV_META: Record<AiInsight['severity'], { label: string; color: string; bg: string }> = {
   critical: { label: 'Critical', color: '#ef4444', bg: '#ef444415' },
