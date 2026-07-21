@@ -1153,6 +1153,20 @@ export function NewProjectWizardPage() {
   const [createdId, setCreatedId] = React.useState<string | null>(null)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
 
+  // Normalise a date value (YYYY-MM-DD | MM/DD/YYYY | Date) → 'YYYY-MM-DD' or ''
+  const toIsoDate = (val: string | Date | undefined | null): string => {
+    if (!val) return ''
+    if (val instanceof Date) return val.toISOString().split('T')[0]
+    const s = String(val).trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s             // already ISO
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {              // MM/DD/YYYY
+      const [m, d, y] = s.split('/')
+      return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
+    }
+    const parsed = new Date(s)
+    return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0]
+  }
+
   const handleSubmit = async (data: ProjectFormData) => {
     setSubmitError(null)
     const result = await createProject({
@@ -1160,11 +1174,11 @@ export function NewProjectWizardPage() {
       code:               data.code,
       technology:         data.technology_type,
       capacity_mw:        data.capacity_mw ?? 0,
-      location:           data.location,
-      country:            data.location.split(',').at(-1)?.trim() ?? '',
+      location:           data.location || '',
+      country:            (data.location || '').split(',').at(-1)?.trim() ?? '',
       budget_usd:         data.budget_amount ?? 0,
-      start_date:         data.start_date ?? new Date().toISOString().split('T')[0],
-      target_completion:  data.target_cod ?? '',
+      start_date:         toIsoDate(data.start_date),
+      target_completion:  toIsoDate(data.target_cod),
       description:        data.description || undefined,
     })
 

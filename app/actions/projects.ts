@@ -161,10 +161,15 @@ export async function createProject(payload: {
 }): Promise<{ id: string } | { error: string }> {
   const supabase = createAdminClient()
 
+  // Guard: Postgres DATE columns reject empty strings — convert to null
+  const isValidDate = (d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d)
+
   const { data, error } = await supabase
     .from('projects')
     .insert({
       ...payload,
+      start_date:        isValidDate(payload.start_date)        ? payload.start_date        : null,
+      target_completion: isValidDate(payload.target_completion) ? payload.target_completion : null,
       tenant_id: DEMO_TENANT,
       status: 'active',
       current_phase: 0,
