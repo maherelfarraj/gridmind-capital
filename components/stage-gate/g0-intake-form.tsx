@@ -508,7 +508,7 @@ export function G0IntakeForm({
 
       {/* Step content */}
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-8 min-h-[420px]">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 sm:p-8 min-h-[420px]">
           <AnimatePresence mode="wait" custom={direction} initial={false}>
             <motion.div
               key={activeStep}
@@ -1036,7 +1036,7 @@ export function G0IntakeForm({
         </div>
 
         {/* Navigation footer */}
-        <div className="flex items-center justify-between gap-3 pt-6 border-t border-slate-100 dark:border-slate-800 mt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-slate-100 dark:border-slate-800 mt-6">
           {activeStep > 0 ? (
             <button
               type="button"
@@ -1061,7 +1061,7 @@ export function G0IntakeForm({
             <button
               type="submit"
               disabled={!confirm || submitting || isSubmittingExternal}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#0a192f] dark:bg-sky-600 text-white text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 w-full justify-center"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#0a192f] dark:bg-sky-600 text-white text-sm font-semibold hover:opacity-90 transition disabled:opacity-50"
             >
               {(submitting || isSubmittingExternal) ? (
                 <>
