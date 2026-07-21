@@ -187,6 +187,16 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/commissioning',
         icon: Zap,
       },
+      {
+        id: 'om',
+        label: 'O&M',
+        href: '/om',
+        icon: Wrench,
+        children: [
+          { id: 'om-assets',      label: 'Asset Registry',    href: '/om' },
+          { id: 'om-maintenance', label: 'Maintenance Plans', href: '/om#maintenance' },
+        ],
+      },
     ],
   },
   {
@@ -217,7 +227,8 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: DollarSign,
         children: [
           { id: 'fin-budget',     label: 'Budget',            href: '/finance/budget' },
-          { id: 'fin-actuals',    label: 'Actuals & EVM',     href: '/finance/actuals' },
+          { id: 'fin-evm',        label: 'EVM & Cash Flow',   href: '/finance/evm' },
+          { id: 'fin-actuals',    label: 'Actuals',           href: '/finance/actuals' },
           { id: 'fin-forecast',   label: 'Forecast',          href: '/finance/forecast' },
         ],
       },
@@ -240,9 +251,9 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Globe,
       },
       {
-        id: 'ai',
+        id: 'ai-insights',
         label: 'AI Insights',
-        href: '/ai',
+        href: '/ai-insights',
         icon: Sparkles,
       },
       {
