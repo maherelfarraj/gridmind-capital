@@ -5,14 +5,19 @@ import {
   Shield,
   Settings,
   HelpCircle,
-  Layers,
-  Building2,
-  Activity,
   GitBranch,
+  Activity,
   Sparkles,
-  Users,
   FileText,
-  AlertCircle,
+  Building2,
+  Wrench,
+  Hammer,
+  Zap,
+  DollarSign,
+  BarChart3,
+  ClipboardList,
+  Users,
+  Globe,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -26,10 +31,14 @@ export interface NavChild {
   id: string
   label: string
   href: string
-  /** Short phase tag shown as a coloured dot */
   phase?: PhaseKey
-  /** Roles that can see this item. Empty = everyone. */
   roles?: UserRole[]
+}
+
+export interface NavSection {
+  id: string
+  label: string
+  items: NavItem[]
 }
 
 export interface NavItem {
@@ -37,13 +46,12 @@ export interface NavItem {
   label: string
   href?: string
   icon: LucideIcon
-  /** Expandable group — no href on the parent */
   children?: NavChild[]
-  /** Numeric badge (e.g. pending approvals) */
   badge?: number
-  /** Bottom-anchored items (Settings, Help) */
   bottom?: boolean
   roles?: UserRole[]
+  /** Section group this item belongs to */
+  section?: string
 }
 
 export type PhaseKey =
@@ -55,106 +63,209 @@ export type PhaseKey =
 // ─────────────────────────────────────────────────────────────
 
 export const PHASE_META: Record<PhaseKey, { label: string; color: string }> = {
-  g0: { label: 'G0', color: '#64748b' },
-  g1: { label: 'G1', color: '#3b82f6' },
-  g2: { label: 'G2', color: '#6366f1' },
-  g3: { label: 'G3', color: '#8b5cf6' },
-  g4: { label: 'G4', color: '#a855f7' },
-  g5: { label: 'G5', color: '#f97316' },
-  g6: { label: 'G6', color: '#14b8a6' },
-  g7: { label: 'G7', color: '#22c55e' },
-  g8: { label: 'G8', color: '#10b981' },
-  g9: { label: 'G9', color: '#06b6d4' },
+  g0: { label: 'G0 · Intake',          color: '#64748b' },
+  g1: { label: 'G1 · Development',     color: '#3b82f6' },
+  g2: { label: 'G2 · Commercial',      color: '#6366f1' },
+  g3: { label: 'G3 · Engineering',     color: '#8b5cf6' },
+  g4: { label: 'G4 · Procurement',     color: '#a855f7' },
+  g5: { label: 'G5 · Construction',    color: '#f97316' },
+  g6: { label: 'G6 · Commissioning',   color: '#14b8a6' },
+  g7: { label: 'G7 · O&M',             color: '#22c55e' },
+  g8: { label: 'G8 · Finance',         color: '#10b981' },
+  g9: { label: 'G9 · AI Analytics',    color: '#06b6d4' },
 }
 
 // ─────────────────────────────────────────────────────────────
-// Navigation tree
+// Navigation sections
 // ─────────────────────────────────────────────────────────────
 
-export const NAV_ITEMS: NavItem[] = [
-  // ── Dashboard ──
+export const NAV_SECTIONS: NavSection[] = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    href: '/',
-    icon: LayoutDashboard,
-  },
-
-  // ── Projects (expandable, G0–G9) ──
-  {
-    id: 'projects',
-    label: 'Projects',
-    icon: FolderKanban,
-    children: [
-      { id: 'g0', label: 'G0 · Intake',         href: '/projects/g0', phase: 'g0' },
-      { id: 'g1', label: 'G1 · Development',     href: '/projects/g1', phase: 'g1' },
-      { id: 'g2', label: 'G2 · Commercial',      href: '/projects/g2', phase: 'g2' },
-      { id: 'g3', label: 'G3 · Engineering',     href: '/projects/g3', phase: 'g3' },
-      { id: 'g4', label: 'G4 · Procurement',     href: '/projects/g4', phase: 'g4' },
-      { id: 'g5', label: 'G5 · Construction',    href: '/projects/g5', phase: 'g5' },
-      { id: 'g6', label: 'G6 · Commissioning',   href: '/projects/g6', phase: 'g6' },
-      { id: 'g7', label: 'G7 · O&M',             href: '/projects/g7', phase: 'g7' },
-      { id: 'g8', label: 'G8 · Finance',         href: '/projects/g8', phase: 'g8' },
-      { id: 'g9', label: 'G9 · AI Analytics',    href: '/projects/g9', phase: 'g9' },
+    id: 'core',
+    label: 'OVERVIEW',
+    items: [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        href: '/dashboard',
+        icon: LayoutDashboard,
+      },
+      {
+        id: 'portfolio',
+        label: 'Portfolio',
+        href: '/portfolio',
+        icon: BarChart3,
+      },
+      {
+        id: 'stage-gates',
+        label: 'Stage Gates',
+        href: '/stage-gates',
+        icon: GitBranch,
+      },
+      {
+        id: 'approvals',
+        label: 'Approvals',
+        href: '/approvals',
+        icon: CheckSquare,
+        badge: 0,
+      },
     ],
   },
-
-  // ── Approvals ──
   {
-    id: 'approvals',
-    label: 'Approvals',
-    href: '/approvals',
-    icon: CheckSquare,
-    badge: 3,
+    id: 'projects',
+    label: 'PROJECTS',
+    items: [
+      {
+        id: 'projects',
+        label: 'All Projects',
+        href: '/projects',
+        icon: FolderKanban,
+        children: [
+          { id: 'g0', label: 'G0 · Intake',         href: '/projects?gate=G0', phase: 'g0' },
+          { id: 'g1', label: 'G1 · Development',    href: '/projects?gate=G1', phase: 'g1' },
+          { id: 'g2', label: 'G2 · Commercial',     href: '/projects?gate=G2', phase: 'g2' },
+          { id: 'g3', label: 'G3 · Engineering',    href: '/projects?gate=G3', phase: 'g3' },
+          { id: 'g4', label: 'G4 · Procurement',    href: '/projects?gate=G4', phase: 'g4' },
+          { id: 'g5', label: 'G5 · Construction',   href: '/projects?gate=G5', phase: 'g5' },
+          { id: 'g6', label: 'G6 · Commissioning',  href: '/projects?gate=G6', phase: 'g6' },
+          { id: 'g7', label: 'G7 · O&M',            href: '/projects?gate=G7', phase: 'g7' },
+          { id: 'g8', label: 'G8 · Finance',        href: '/projects?gate=G8', phase: 'g8' },
+          { id: 'g9', label: 'G9 · Analytics',      href: '/projects?gate=G9', phase: 'g9' },
+        ],
+      },
+    ],
   },
-
-  // ── Stage Gates ──
   {
-    id: 'stage-gates',
-    label: 'Stage Gates',
-    href: '/stage-gates',
-    icon: GitBranch,
+    id: 'delivery',
+    label: 'DELIVERY',
+    items: [
+      {
+        id: 'engineering',
+        label: 'Engineering',
+        href: '/engineering',
+        icon: Wrench,
+        children: [
+          { id: 'eng-drawings',    label: 'Drawing Register',  href: '/engineering/drawings' },
+          { id: 'eng-rfis',        label: 'RFIs',              href: '/engineering/rfis' },
+          { id: 'eng-submittals',  label: 'Submittals',        href: '/engineering/submittals' },
+          { id: 'eng-transmittals',label: 'Transmittals',      href: '/engineering/transmittals' },
+        ],
+      },
+      {
+        id: 'procurement',
+        label: 'Procurement',
+        href: '/procurement',
+        icon: ClipboardList,
+        children: [
+          { id: 'proc-contracts', label: 'Contracts',         href: '/procurement/contracts' },
+          { id: 'proc-po',        label: 'Purchase Orders',   href: '/procurement/purchase-orders' },
+          { id: 'proc-receiving', label: 'Receiving',         href: '/procurement/receiving' },
+        ],
+      },
+      {
+        id: 'construction',
+        label: 'Construction',
+        href: '/construction',
+        icon: Hammer,
+        children: [
+          { id: 'con-hse',        label: 'HSE',               href: '/hse' },
+          { id: 'con-testing',    label: 'Testing & QA',      href: '/testing' },
+          { id: 'con-punch',      label: 'Punch Lists',       href: '/construction/punch-lists' },
+        ],
+      },
+      {
+        id: 'commissioning',
+        label: 'Commissioning',
+        href: '/commissioning',
+        icon: Zap,
+      },
+    ],
   },
-
-  // ── Portfolio ──
   {
-    id: 'portfolio',
-    label: 'Portfolio',
-    href: '/portfolio',
-    icon: Layers,
+    id: 'commercial',
+    label: 'COMMERCIAL',
+    items: [
+      {
+        id: 'documents',
+        label: 'Documents',
+        href: '/documents',
+        icon: FileText,
+      },
+      {
+        id: 'commercial',
+        label: 'Commercial',
+        href: '/commercial',
+        icon: Building2,
+        children: [
+          { id: 'com-contracts',  label: 'Contracts',         href: '/commercial/contracts' },
+          { id: 'com-variations', label: 'Variations',        href: '/commercial/variations' },
+          { id: 'com-claims',     label: 'Claims',            href: '/commercial/claims' },
+        ],
+      },
+      {
+        id: 'finance',
+        label: 'Finance',
+        href: '/finance',
+        icon: DollarSign,
+        children: [
+          { id: 'fin-budget',     label: 'Budget',            href: '/finance/budget' },
+          { id: 'fin-actuals',    label: 'Actuals & EVM',     href: '/finance/actuals' },
+          { id: 'fin-forecast',   label: 'Forecast',          href: '/finance/forecast' },
+        ],
+      },
+    ],
   },
-
-  // ── ESG ──
   {
-    id: 'esg',
-    label: 'ESG & Reporting',
-    href: '/esg',
-    icon: Activity,
+    id: 'intelligence',
+    label: 'INTELLIGENCE',
+    items: [
+      {
+        id: 'esg',
+        label: 'ESG & Reporting',
+        href: '/esg',
+        icon: Globe,
+      },
+      {
+        id: 'ai',
+        label: 'AI Insights',
+        href: '/ai',
+        icon: Sparkles,
+      },
+      {
+        id: 'analytics',
+        label: 'Analytics',
+        href: '/analytics',
+        icon: Activity,
+      },
+    ],
   },
-
-  // ── AI Insights ──
   {
-    id: 'ai',
-    label: 'AI Insights',
-    href: '/ai',
-    icon: Sparkles,
-  },
-
-  // ── Admin (role-gated, expandable) ──
-  {
-    id: 'admin',
-    label: 'Admin',
-    icon: Shield,
-    roles: ['admin'],
-    children: [
-      { id: 'admin-users',   label: 'User Management',    href: '/admin/users',   roles: ['admin'] },
-      { id: 'admin-roles',   label: 'Roles & Permissions', href: '/admin/roles',  roles: ['admin'] },
-      { id: 'admin-audit',   label: 'Audit Log',           href: '/admin/audit',  roles: ['admin'] },
-      { id: 'admin-org',     label: 'Organisation',        href: '/admin/org',    roles: ['admin'] },
-      { id: 'admin-tenants', label: 'Tenants',             href: '/admin/tenants',roles: ['admin'] },
+    id: 'admin-section',
+    label: 'ADMINISTRATION',
+    items: [
+      {
+        id: 'admin',
+        label: 'Admin',
+        icon: Shield,
+        roles: ['admin'],
+        children: [
+          { id: 'admin-users',   label: 'Users & Roles',     href: '/admin/users',   roles: ['admin'] },
+          { id: 'admin-tenant',  label: 'Tenant Settings',   href: '/admin/tenant',  roles: ['admin'] },
+          { id: 'admin-audit',   label: 'Audit Log',         href: '/admin/audit',   roles: ['admin'] },
+        ],
+      },
+      {
+        id: 'team',
+        label: 'Team',
+        href: '/team',
+        icon: Users,
+      },
     ],
   },
 ]
+
+// Flat list for sidebar rendering (legacy compat — main items only)
+export const NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((s) => s.items)
 
 // Bottom-anchored items
 export const NAV_BOTTOM: NavItem[] = [
@@ -187,6 +298,15 @@ export function filterNavByRole(items: NavItem[], role: UserRole): NavItem[] {
         (child) => !child.roles || child.roles.includes(role),
       ),
     }))
+}
+
+export function filterSectionsByRole(sections: NavSection[], role: UserRole): NavSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: filterNavByRole(section.items, role),
+    }))
+    .filter((section) => section.items.length > 0)
 }
 
 // ─────────────────────────────────────────────────────────────

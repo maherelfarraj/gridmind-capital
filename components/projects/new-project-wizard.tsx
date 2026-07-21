@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 import {
   CheckCircle2, AlertTriangle, ArrowLeft, ArrowRight,
   Wand2, Building2, MapPin, DollarSign, Calendar, FileText,
@@ -12,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { createProject } from '@/app/actions/projects'
 
 /* ─────────────────────────────────────────────────────────────────
    Types
@@ -778,22 +780,16 @@ function Step4({ data, errors, confirm, onConfirmChange, onEdit, onSubmit, onCan
       <div className="border-t border-slate-200 dark:border-border pt-6 flex flex-col gap-4">
         {/* Checkbox */}
         <label className="flex items-start gap-3 cursor-pointer group">
-          <div
-            role="checkbox"
-            aria-checked={confirm}
-            tabIndex={0}
-            onClick={() => onConfirmChange(!confirm)}
-            onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && onConfirmChange(!confirm)}
+          <input
+            type="checkbox"
+            id="wizard-confirm"
+            checked={confirm}
+            onChange={(e) => onConfirmChange(e.target.checked)}
             className={cn(
-              'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border-2 transition-colors cursor-pointer',
-              confirm
-                ? 'bg-[#0a192f] border-[#0a192f] dark:bg-[#64ffda] dark:border-[#64ffda]'
-                : 'border-slate-300 dark:border-border bg-white dark:bg-card',
-              errors.confirm && !confirm && 'border-red-400',
+              'mt-0.5 size-4 shrink-0 cursor-pointer rounded border-2 accent-[#0a192f]',
+              errors.confirm && !confirm && 'outline outline-red-400',
             )}
-          >
-            {confirm && <Check className="size-3 text-white dark:text-[#0a192f]" aria-hidden />}
-          </div>
+          />
           <span className="text-sm text-slate-700 dark:text-foreground leading-snug">
             I confirm that all project information is accurate and complete
           </span>
@@ -1147,20 +1143,61 @@ export function NewProjectWizard({
 ───────────────────────────────────────────────────────────────── */
 
 export function NewProjectWizardPage() {
-  const router = { push: (path: string) => { if (typeof window !== 'undefined') window.location.href = path } }
+  const router = useRouter()
+  const [createdId, setCreatedId] = React.useState<string | null>(null)
+  const [submitError, setSubmitError] = React.useState<string | null>(null)
+
+  // Normalise a date value (YYYY-MM-DD | MM/DD/YYYY | Date) → 'YYYY-MM-DD' or ''
+  const toIsoDate = (val: string | Date | undefined | null): string => {
+    if (!val) return ''
+    if (val instanceof Date) return val.toISOString().split('T')[0]
+    const s = String(val).trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s             // already ISO
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {              // MM/DD/YYYY
+      const [m, d, y] = s.split('/')
+      return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
+    }
+    const parsed = new Date(s)
+    return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0]
+  }
+
+  const handleSubmit = async (data: ProjectFormData) => {
+    setSubmitError(null)
+    const result = await createProject({
+      name:               data.name,
+      code:               data.code,
+      technology:         data.technology_type,
+      capacity_mw:        data.capacity_mw ?? 0,
+      location:           data.location || '',
+      country:            (data.location || '').split(',').at(-1)?.trim() ?? '',
+      budget_usd:         data.budget_amount ?? 0,
+      start_date:         toIsoDate(data.start_date),
+      target_completion:  toIsoDate(data.target_cod),
+      description:        data.description || undefined,
+    })
+
+    if ('error' in result) {
+      setSubmitError(result.error)
+      throw new Error(result.error)
+    }
+
+    setCreatedId(result.id)
+    // Redirect to the new project after showing the success overlay
+    setTimeout(() => router.push(`/projects/${result.id}`), 2800)
+    router.refresh()
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
+      {submitError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {submitError}
+        </div>
+      )}
       <Card className="shadow-sm min-h-[600px] flex flex-col overflow-hidden">
         <NewProjectWizard
-          users={[
-            { id: 'pm-001',  full_name: 'Project Manager', role: 'project_manager',      avatar_url: null },
-            { id: 'pm-002',  full_name: 'Sarah Chen',       role: 'project_manager',      avatar_url: null },
-            { id: 'eng-001', full_name: 'Mike Ross',         role: 'engineering_manager',  avatar_url: null },
-          ]}
-          onSubmit={async (_data) => {
-            await new Promise(r => setTimeout(r, 1400))
-          }}
+          users={[]}
+          onSubmit={handleSubmit}
           onCancel={() => router.push('/projects')}
         />
       </Card>
