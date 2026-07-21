@@ -18,8 +18,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Progress } from '@/components/ui/progress'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
-  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine,
+  XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts'
 import { cn } from '@/lib/utils'
 import { loadStakeholdersDashboard, createStakeholder, seedStakeholdersDemoData } from '@/app/actions/projects'
@@ -35,6 +35,8 @@ interface EngagementPlan {
   owner: string
   nextAction: string
   nextActionDate: string
+  currentEngagement: string
+  desiredEngagement: string
 }
 
 interface CommLog {
@@ -56,6 +58,7 @@ interface Issue {
   raised: string
   owner: string
   resolution: string | null
+  escalationPath: string
 }
 
 // ─── Mock data ────────────────────────────────────────────────
@@ -74,16 +77,16 @@ const MOCK_STAKEHOLDERS: Stakeholder[] = [
 ]
 
 const MOCK_PLANS: EngagementPlan[] = [
-  { stakeholderId: 's1', strategy: 'Monitor and maintain',   frequency: 'Monthly',    method: 'Formal meeting',   owner: 'M. Al-Farsi',  nextAction: 'Quarterly regulatory briefing',    nextActionDate: '2026-08-05' },
-  { stakeholderId: 's2', strategy: 'Manage closely',         frequency: 'Weekly',     method: 'Steering Cmte.',   owner: 'J. Rivera',    nextAction: 'Monthly progress report',           nextActionDate: '2026-08-01' },
-  { stakeholderId: 's3', strategy: 'Keep satisfied',         frequency: 'Quarterly',  method: 'Site visit',       owner: 'A. Carter',    nextAction: 'Evacuation point review',           nextActionDate: '2026-09-01' },
-  { stakeholderId: 's4', strategy: 'Manage closely',         frequency: 'Monthly',    method: 'Lender call',      owner: 'J. Rivera',    nextAction: 'E&S compliance update',             nextActionDate: '2026-08-15' },
-  { stakeholderId: 's5', strategy: 'Keep informed',          frequency: 'Bi-monthly', method: 'Community liaison',owner: 'M. Al-Farsi',  nextAction: 'Planning consent hearing',          nextActionDate: '2026-08-20' },
-  { stakeholderId: 's6', strategy: 'Manage closely',         frequency: 'Weekly',     method: 'EPC meeting',      owner: 'R. Chen',      nextAction: 'IFC drawing review',                nextActionDate: '2026-07-28' },
-  { stakeholderId: 's7', strategy: 'Keep informed',          frequency: 'Quarterly',  method: 'Briefing pack',    owner: 'M. Al-Farsi',  nextAction: 'Q3 environmental briefing',         nextActionDate: '2026-09-15' },
-  { stakeholderId: 's8', strategy: 'Keep informed',          frequency: 'Monthly',    method: 'Community meeting',owner: 'M. Al-Farsi',  nextAction: 'Community benefit update',          nextActionDate: '2026-08-10' },
-  { stakeholderId: 's9', strategy: 'Manage closely',         frequency: 'Monthly',    method: 'Investor call',    owner: 'J. Rivera',    nextAction: 'Monthly IRR update pack',           nextActionDate: '2026-08-01' },
-  { stakeholderId: 's10', strategy: 'Keep satisfied',        frequency: 'Quarterly',  method: 'Formal meeting',   owner: 'A. Carter',    nextAction: 'Development zone progress brief',   nextActionDate: '2026-09-01' },
+  { stakeholderId: 's1',  strategy: 'Monitor and maintain', frequency: 'Monthly',    method: 'Formal meeting',    owner: 'M. Al-Farsi', nextAction: 'Quarterly regulatory briefing',  nextActionDate: '2026-08-05', currentEngagement: 'Aware',     desiredEngagement: 'Supportive' },
+  { stakeholderId: 's2',  strategy: 'Manage closely',       frequency: 'Weekly',     method: 'Steering Cmte.',    owner: 'J. Rivera',   nextAction: 'Monthly progress report',         nextActionDate: '2026-08-01', currentEngagement: 'Leading',   desiredEngagement: 'Leading' },
+  { stakeholderId: 's3',  strategy: 'Keep satisfied',       frequency: 'Quarterly',  method: 'Site visit',        owner: 'A. Carter',   nextAction: 'Evacuation point review',         nextActionDate: '2026-09-01', currentEngagement: 'Resistant', desiredEngagement: 'Neutral' },
+  { stakeholderId: 's4',  strategy: 'Manage closely',       frequency: 'Monthly',    method: 'Lender call',       owner: 'J. Rivera',   nextAction: 'E&S compliance update',           nextActionDate: '2026-08-15', currentEngagement: 'Supportive',desiredEngagement: 'Leading' },
+  { stakeholderId: 's5',  strategy: 'Keep informed',        frequency: 'Bi-monthly', method: 'Community liaison', owner: 'M. Al-Farsi', nextAction: 'Planning consent hearing',        nextActionDate: '2026-08-20', currentEngagement: 'Unaware',   desiredEngagement: 'Neutral' },
+  { stakeholderId: 's6',  strategy: 'Manage closely',       frequency: 'Weekly',     method: 'EPC meeting',       owner: 'R. Chen',     nextAction: 'IFC drawing review',              nextActionDate: '2026-07-28', currentEngagement: 'Supportive',desiredEngagement: 'Leading' },
+  { stakeholderId: 's7',  strategy: 'Keep informed',        frequency: 'Quarterly',  method: 'Briefing pack',     owner: 'M. Al-Farsi', nextAction: 'Q3 environmental briefing',       nextActionDate: '2026-09-15', currentEngagement: 'Resistant', desiredEngagement: 'Neutral' },
+  { stakeholderId: 's8',  strategy: 'Keep informed',        frequency: 'Monthly',    method: 'Community meeting', owner: 'M. Al-Farsi', nextAction: 'Community benefit update',        nextActionDate: '2026-08-10', currentEngagement: 'Aware',     desiredEngagement: 'Supportive' },
+  { stakeholderId: 's9',  strategy: 'Manage closely',       frequency: 'Monthly',    method: 'Investor call',     owner: 'J. Rivera',   nextAction: 'Monthly IRR update pack',         nextActionDate: '2026-08-01', currentEngagement: 'Supportive',desiredEngagement: 'Leading' },
+  { stakeholderId: 's10', strategy: 'Keep satisfied',       frequency: 'Quarterly',  method: 'Formal meeting',    owner: 'A. Carter',   nextAction: 'Development zone progress brief', nextActionDate: '2026-09-01', currentEngagement: 'Neutral',   desiredEngagement: 'Supportive' },
 ]
 
 const MOCK_COMMS: CommLog[] = [
@@ -93,13 +96,16 @@ const MOCK_COMMS: CommLog[] = [
   { id: 'c4', stakeholder: 'Bedouin Community Rep.', date: '2026-07-05', method: 'Community Meeting', summary: 'Land access compensation discussed. Community raised access road concerns.', outcome: 'negative', followUp: 'Convene second meeting with legal team.' },
   { id: 'c5', stakeholder: 'EPC Consortium JV',     date: '2026-07-02', method: 'EPC Meeting',    summary: 'IFC drawing schedule reviewed. One-week delay flagged.',             outcome: 'neutral',   followUp: 'Recovery programme due 10 Jul.' },
   { id: 'c6', stakeholder: 'Riyadh Capital',        date: '2026-06-30', method: 'Investor Call',  summary: 'Q2 performance update delivered. IRR revised to 12.4%.',            outcome: 'positive',  followUp: null },
+  { id: 'c7', stakeholder: 'NEOM Authority',         date: '2026-06-25', method: 'Formal Meeting', summary: 'Development zone boundary confirmed. Additional buffer land required.', outcome: 'neutral', followUp: 'Submit revised site boundary plan by 15 Jul.' },
+  { id: 'c8', stakeholder: 'Aljouf Municipality',    date: '2026-06-18', method: 'Community Liaison', summary: 'Planning consent pre-application discussion. No objections raised in principle.', outcome: 'positive', followUp: null },
 ]
 
 const MOCK_ISSUES: Issue[] = [
-  { id: 'i1', stakeholder: 'Bedouin Community Rep.', title: 'Land access road compensation dispute', severity: 'high',   status: 'in_progress', raised: '2026-07-05', owner: 'M. Al-Farsi', resolution: null },
-  { id: 'i2', stakeholder: 'IFC / World Bank',       title: 'EIA scoping opinion delayed',           severity: 'medium', status: 'open',        raised: '2026-07-08', owner: 'A. Carter',   resolution: null },
-  { id: 'i3', stakeholder: 'Saudi Electricity Co.',  title: 'Evacuation point capacity constrained',  severity: 'critical', status: 'open',      raised: '2026-06-20', owner: 'J. Rivera',   resolution: null },
-  { id: 'i4', stakeholder: 'Desert Solar NGO',       title: 'Biodiversity impact study requested',   severity: 'low',    status: 'resolved',    raised: '2026-06-01', owner: 'M. Al-Farsi', resolution: 'Agreed to include specialist appendix in EIA.' },
+  { id: 'i1', stakeholder: 'Bedouin Community Rep.', title: 'Land access road compensation dispute', severity: 'high',     status: 'in_progress', raised: '2026-07-05', owner: 'M. Al-Farsi', resolution: null,                                              escalationPath: 'PM → Legal → Executive Sponsor' },
+  { id: 'i2', stakeholder: 'IFC / World Bank',       title: 'EIA scoping opinion delayed',           severity: 'medium',   status: 'open',        raised: '2026-07-08', owner: 'A. Carter',   resolution: null,                                              escalationPath: 'PM → PMO Director' },
+  { id: 'i3', stakeholder: 'Saudi Electricity Co.',  title: 'Evacuation point capacity constrained', severity: 'critical', status: 'open',        raised: '2026-06-20', owner: 'J. Rivera',   resolution: null,                                              escalationPath: 'PM → PMO Director → Executive Sponsor → Board' },
+  { id: 'i4', stakeholder: 'Desert Solar NGO',       title: 'Biodiversity impact study requested',   severity: 'low',      status: 'resolved',    raised: '2026-06-01', owner: 'M. Al-Farsi', resolution: 'Agreed to include specialist appendix in EIA.',  escalationPath: 'PM' },
+  { id: 'i5', stakeholder: 'Ministry of Energy',     title: 'Generation licence timeline uncertainty', severity: 'high',   status: 'open',        raised: '2026-07-18', owner: 'J. Rivera',   resolution: null,                                              escalationPath: 'PM → PMO Director → Regulatory Affairs' },
 ]
 
 // ─── Constants ────────────────────────────────────────────────
@@ -399,15 +405,73 @@ function RegisterTab({
 
 // ─── Tab: Matrix ──────────────────────────────────────────────
 
-function MatrixTab({ stakeholders }: { stakeholders: Stakeholder[] }) {
-  const data = stakeholders.map((s) => ({
-    x: s.interest,
-    y: s.influence,
-    name: s.name,
-    engagement: s.engagement,
-    id: s.id,
-  }))
+interface DragPos { x: number; y: number }
 
+function DraggableAvatar({ s, initX, initY }: { s: Stakeholder; initX: number; initY: number }) {
+  const [pos, setPos] = React.useState<DragPos>({ x: initX, y: initY })
+  const [dragging, setDragging] = React.useState(false)
+  const [tooltip, setTooltip] = React.useState(false)
+  const startRef = React.useRef<{ mx: number; my: number; px: number; py: number } | null>(null)
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const eng = ENGAGEMENT_META[s.engagement] ?? ENGAGEMENT_META.medium
+
+  function onMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    setDragging(true)
+    startRef.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y }
+    setTooltip(false)
+  }
+
+  React.useEffect(() => {
+    if (!dragging) return
+    function onMove(e: MouseEvent) {
+      if (!startRef.current || !containerRef.current) return
+      const rect = containerRef.current.closest('[data-matrix-bounds]')?.getBoundingClientRect()
+      if (!rect) return
+      const dx = e.clientX - startRef.current.mx
+      const dy = e.clientY - startRef.current.my
+      const newX = Math.max(0, Math.min(100, startRef.current.px + (dx / rect.width)  * 100))
+      const newY = Math.max(0, Math.min(100, startRef.current.py + (dy / rect.height) * 100))
+      setPos({ x: newX, y: newY })
+    }
+    function onUp() { setDragging(false); startRef.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [dragging])
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute z-20 -translate-x-1/2 -translate-y-1/2 group"
+      style={{ left: `${pos.x}%`, top: `${pos.y}%`, cursor: dragging ? 'grabbing' : 'grab' }}
+      onMouseDown={onMouseDown}
+      onMouseEnter={() => setTooltip(true)}
+      onMouseLeave={() => { if (!dragging) setTooltip(false) }}
+      role="img"
+      aria-label={s.name}
+    >
+      <div
+        className="size-8 rounded-full flex items-center justify-center text-[9px] font-bold border-2 shadow-md transition-transform group-hover:scale-110"
+        style={{ background: `${eng.color}25`, borderColor: eng.color, color: eng.color }}
+      >
+        {s.name.slice(0, 2).toUpperCase()}
+      </div>
+      {tooltip && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30 pointer-events-none">
+          <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs whitespace-nowrap">
+            <p className="font-semibold text-foreground">{s.name}</p>
+            <p className="text-muted-foreground">Inf {s.influence} · Int {s.interest}</p>
+            <p className="text-muted-foreground capitalize">{s.engagement} engagement</p>
+            <p className="text-muted-foreground">{quadrantLabel(s.influence, s.interest)}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MatrixTab({ stakeholders }: { stakeholders: Stakeholder[] }) {
   const byRole = React.useMemo(() => {
     const m: Record<string, number> = {}
     stakeholders.forEach((s) => { m[s.role] = (m[s.role] ?? 0) + 1 })
@@ -416,83 +480,57 @@ function MatrixTab({ stakeholders }: { stakeholders: Stakeholder[] }) {
 
   const ROLE_COLORS = ['#64ffda', '#3b82f6', '#f97316', '#a855f7', '#22c55e', '#f59e0b', '#06b6d4', '#ec4899']
 
+  // Map influence (1-5) → Y% (high influence = top = low %) and interest (1-5) → X%
+  function toXY(s: Stakeholder) {
+    const x = ((s.interest - 1) / 4) * 90 + 5
+    const y = (1 - (s.influence - 1) / 4) * 90 + 5
+    return { x, y }
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Scatter matrix */}
+        {/* 2×2 draggable avatar matrix */}
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">
             Influence / Interest Matrix
           </p>
           <div className="bg-card border border-border rounded-xl p-4">
-            {/* Quadrant labels overlay */}
-            <div className="relative">
-              <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 pointer-events-none z-10" style={{ margin: '20px 16px 40px 48px' }}>
-                <div className="flex items-start justify-start p-2">
-                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Keep Satisfied</span>
+            <div
+              className="relative w-full select-none"
+              style={{ height: 300 }}
+              data-matrix-bounds="true"
+            >
+              {/* Quadrant backgrounds */}
+              <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
+                <div className="border-r border-b border-dashed border-border/60 rounded-tl-lg bg-blue-500/5 flex items-start justify-start p-2">
+                  <span className="text-[9px] font-semibold text-blue-400 uppercase tracking-wider">Keep Satisfied</span>
                 </div>
-                <div className="flex items-start justify-end p-2">
+                <div className="border-b border-dashed border-border/60 rounded-tr-lg bg-emerald-500/5 flex items-start justify-end p-2">
                   <span className="text-[9px] font-semibold text-emerald-500 uppercase tracking-wider">Manage Closely</span>
                 </div>
-                <div className="flex items-end justify-start p-2">
+                <div className="border-r border-dashed border-border/60 rounded-bl-lg bg-muted/10 flex items-end justify-start p-2">
                   <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Monitor</span>
                 </div>
-                <div className="flex items-end justify-end p-2">
-                  <span className="text-[9px] font-semibold text-sky-500 uppercase tracking-wider">Keep Informed</span>
+                <div className="rounded-br-lg bg-amber-500/5 flex items-end justify-end p-2">
+                  <span className="text-[9px] font-semibold text-amber-400 uppercase tracking-wider">Keep Informed</span>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={280}>
-                <ScatterChart margin={{ top: 20, right: 16, bottom: 40, left: 48 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis
-                    type="number" dataKey="x" domain={[0.5, 5.5]} ticks={[1,2,3,4,5]}
-                    label={{ value: 'Interest →', position: 'insideBottom', offset: -8, fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                  />
-                  <YAxis
-                    type="number" dataKey="y" domain={[0.5, 5.5]} ticks={[1,2,3,4,5]}
-                    label={{ value: 'Influence', angle: -90, position: 'insideLeft', fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                  />
-                  <ReferenceLine x={3} stroke="var(--border)" strokeDasharray="4 2" />
-                  <ReferenceLine y={3} stroke="var(--border)" strokeDasharray="4 2" />
-                  <Tooltip
-                    contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
-                    content={({ payload }) => {
-                      if (!payload?.length) return null
-                      const d = payload[0].payload
-                      return (
-                        <div className="bg-card border border-border rounded-lg p-2.5 text-xs shadow-lg">
-                          <p className="font-semibold text-foreground">{d.name}</p>
-                          <p className="text-muted-foreground">Influence: {d.y} · Interest: {d.x}</p>
-                          <p className="text-muted-foreground capitalize">Engagement: {d.engagement}</p>
-                          <p className="text-muted-foreground">{quadrantLabel(d.y, d.x)}</p>
-                        </div>
-                      )
-                    }}
-                  />
-                  <Scatter
-                    data={data}
-                    fill="#64ffda"
-                    shape={(props: any) => {
-                      const eng = ENGAGEMENT_META[props.payload.engagement] ?? ENGAGEMENT_META.medium
-                      return (
-                        <circle
-                          cx={props.cx}
-                          cy={props.cy}
-                          r={8}
-                          fill={`${eng.color}40`}
-                          stroke={eng.color}
-                          strokeWidth={2}
-                        />
-                      )
-                    }}
-                  />
-                </ScatterChart>
-              </ResponsiveContainer>
+              {/* Axis labels */}
+              <div className="absolute bottom-1 left-0 right-0 flex justify-center">
+                <span className="text-[9px] text-muted-foreground">Interest →</span>
+              </div>
+              <div className="absolute top-0 bottom-0 left-1 flex items-center">
+                <span className="text-[9px] text-muted-foreground" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Influence →</span>
+              </div>
+              {/* Draggable avatar chips */}
+              {stakeholders.map((s) => {
+                const { x, y } = toXY(s)
+                return <DraggableAvatar key={s.id} s={s} initX={x} initY={y} />
+              })}
             </div>
             {/* Legend */}
-            <div className="flex flex-wrap gap-3 mt-2 justify-center">
+            <div className="flex flex-wrap gap-3 mt-3 justify-center">
               {Object.entries(ENGAGEMENT_META).map(([key, meta]) => (
                 <div key={key} className="flex items-center gap-1.5 text-[10px] text-muted-foreground capitalize">
                   <span className="size-2.5 rounded-full" style={{ background: meta.color }} />
@@ -566,7 +604,7 @@ function EngagementTab({ stakeholders, plans }: { stakeholders: Stakeholder[]; p
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              {['Stakeholder','Strategy','Frequency','Method','Owner','Next Action','Due'].map((h) => (
+              {['Stakeholder','Current','Desired','Strategy','Frequency','Method','Owner','Next Action','Due'].map((h) => (
                 <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -575,6 +613,12 @@ function EngagementTab({ stakeholders, plans }: { stakeholders: Stakeholder[]; p
             {plans.map((p, i) => (
               <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
                 <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap">{nameMap[p.stakeholderId] ?? p.stakeholderId}</td>
+                <td className="px-4 py-3">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 whitespace-nowrap">{p.currentEngagement}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 whitespace-nowrap font-semibold">{p.desiredEngagement}</span>
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">{p.strategy}</td>
                 <td className="px-4 py-3">
                   <span className="px-2 py-0.5 text-[11px] rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">{p.frequency}</span>
@@ -676,8 +720,8 @@ function IssuesTab({ issues }: { issues: Issue[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              {['Issue','Stakeholder','Severity','Status','Raised','Owner'].map((h) => (
-                <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+              {['Issue','Stakeholder','Severity','Status','Raised','Owner','Escalation Path'].map((h) => (
+                <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
@@ -702,8 +746,18 @@ function IssuesTab({ issues }: { issues: Issue[] }) {
                   <td className="px-4 py-3">
                     <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', st.cls)}>{st.label}</span>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{iss.raised}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{iss.owner}</td>
+                  <td className="px-4 py-3 text-muted-foreground font-mono text-xs whitespace-nowrap">{iss.raised}</td>
+                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{iss.owner}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {iss.escalationPath.split(' → ').map((step, idx, arr) => (
+                        <React.Fragment key={idx}>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 whitespace-nowrap">{step}</span>
+                          {idx < arr.length - 1 && <span className="text-muted-foreground text-[10px]">›</span>}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </td>
                 </tr>
               )
             })}

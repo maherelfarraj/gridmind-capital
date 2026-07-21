@@ -8,7 +8,7 @@ import useSWR from 'swr'
 import {
   ArrowLeft, FileText, Package, Users, Gavel, Clock,
   CheckCircle2, XCircle, PauseCircle, AlertCircle, Loader2,
-  Upload, Download, Send, Bell, RefreshCw, Shield,
+  Upload, Download, Send, Bell, RefreshCw, Shield, Database,
   ChevronDown, ChevronUp, Info, AlertTriangle,
 } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -297,7 +297,7 @@ function DeliverablesTab({ deliverables, onUpload }: { deliverables: Deliverable
   )
 }
 
-// ─── Tab: Approval Package ────────────────────────────────────
+// ─��─ Tab: Approval Package ────────────────────────────────────
 
 function PackageTab({ project, deliverables, onGenerate }: {
   project: typeof DEMO_PROJECT
@@ -347,6 +347,38 @@ function PackageTab({ project, deliverables, onGenerate }: {
           <span className="text-xl font-bold text-foreground shrink-0">{readyPct}%</span>
         </div>
         <p className="text-xs text-muted-foreground">{uploaded} of {deliverables.length} documents uploaded or approved</p>
+      </div>
+
+      {/* 8 Package Sections */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">Package Sections</p>
+        <div className="space-y-1.5">
+          {[
+            { no: '01', title: 'Executive Summary',           included: true  },
+            { no: '02', title: 'Project Description & Scope', included: true  },
+            { no: '03', title: 'Financial Analysis (IRR / NPV / DSCR)', included: true },
+            { no: '04', title: 'Technical Feasibility',       included: true  },
+            { no: '05', title: 'Environmental & Social Summary', included: true },
+            { no: '06', title: 'Land & Grid Status',          included: true  },
+            { no: '07', title: 'Risk Register Summary',       included: true  },
+            { no: '08', title: 'Approval Chain & Sign-offs',  included: false },
+          ].map((s) => (
+            <div key={s.no} className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-card hover:bg-muted/30 transition-colors">
+              <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-6">{s.no}</span>
+              <p className="flex-1 text-sm text-foreground">{s.title}</p>
+              <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0',
+                s.included ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-500/15 text-slate-400')}>
+                {s.included ? 'Included' : 'Pending'}
+              </span>
+              {s.included && (
+                <button type="button" aria-label={`Download ${s.title}`}
+                  className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                  <Download className="size-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Generate button */}
@@ -524,6 +556,11 @@ function DecisionTab({
   const isMyTurn = !!currentApprover
   const minLen   = decision ? MIN_RATIONALE[decision as DecisionType] : 50
 
+  // Quorum: count approvers who have decided (approved / rejected / escalated)
+  const decidedCount  = approvers.filter((a) => ['approved','rejected','escalated'].includes(a.status)).length
+  const quorumMet     = decidedCount >= Math.ceil(approvers.length / 2)
+  const isChairperson = currentApprover?.is_chairperson ?? false
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!decision) { setError('Please select a decision.'); return }
@@ -581,6 +618,40 @@ function DecisionTab({
           </Badge>
         )}
       </div>
+
+      {/* Quorum status */}
+      <div className={cn(
+        'flex items-center gap-3 p-3 rounded-xl border text-sm',
+        quorumMet ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-amber-500/40 bg-amber-500/5',
+      )}>
+        {quorumMet
+          ? <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
+          : <AlertCircle className="size-4 text-amber-400 shrink-0" />
+        }
+        <div>
+          <p className={cn('text-xs font-semibold', quorumMet ? 'text-emerald-400' : 'text-amber-400')}>
+            {quorumMet ? 'Quorum Reached' : 'Quorum Not Yet Met'}
+          </p>
+          <p className="text-[10px] text-muted-foreground">
+            {decidedCount} of {approvers.length} approvers have decided · {Math.ceil(approvers.length / 2)} required for quorum
+          </p>
+        </div>
+      </div>
+
+      {/* Chairperson override section */}
+      {isChairperson && (
+        <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Shield className="size-4 text-amber-400 shrink-0" />
+            <p className="text-xs font-semibold text-amber-400">Chairperson Authority</p>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            As chairperson you may cast the deciding vote and override a split result. Your rationale will be recorded
+            as the authoritative decision rationale in the immutable audit trail.
+            {!quorumMet && ' Note: quorum has not been met — your override will be recorded with a quorum waiver.'}
+          </p>
+        </div>
+      )}
 
       {/* Decision options */}
       <div>
@@ -676,7 +747,26 @@ function DecisionTab({
 // ─── Tab: Audit Trail ─────────────────────────────────────────
 
 const MemoAuditTrail = React.memo(function AuditTrailTab({ logs }: { logs: AuditLog[] }) {
+  function exportCSV() {
+    const header = 'Date,Actor,Action,Detail'
+    const rows = logs.map((l) =>
+      [fmt(l.created_at), l.actor, l.action, (l.detail ?? '').replace(/,/g, ';')].join(',')
+    )
+    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'g1-audit-trail.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">{logs.length} audit entries</p>
+        <Button size="sm" variant="outline" onClick={exportCSV} className="gap-1.5 h-7 text-xs">
+          <Download className="size-3.5" />Export CSV
+        </Button>
+      </div>
     <div className="relative">
       <div className="absolute left-4 top-0 bottom-0 w-px bg-border" aria-hidden />
       <ul className="space-y-4" aria-label="Approval audit trail">
@@ -706,6 +796,7 @@ const MemoAuditTrail = React.memo(function AuditTrailTab({ logs }: { logs: Audit
           </motion.li>
         ))}
       </ul>
+    </div>
     </div>
   )
 })
