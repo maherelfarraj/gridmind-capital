@@ -90,14 +90,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} bg-background`} suppressHydrationWarning>
+      {/* suppressHydrationWarning on <head> prevents React from erroring on the
+          v0 sandbox script (window.__V0_SANDBOX_ID__) that is injected into
+          <head> server-side but differs on the client. */}
+      <head suppressHydrationWarning />
       <body className="antialiased font-sans">
+        <ChunkErrorWatcher />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <LocaleProvider>
             {children}
           </LocaleProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
-        <ChunkErrorWatcher />
       </body>
     </html>
   )
