@@ -2,7 +2,6 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
-import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
 import './globals.css'
 
@@ -94,7 +93,6 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <LocaleProvider>
             {children}
-            <ServiceWorkerRegister />
           </LocaleProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
