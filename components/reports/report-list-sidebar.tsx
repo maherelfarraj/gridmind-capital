@@ -147,13 +147,13 @@ function ReportRow({
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         {report.shared && <Share2 size={10} className="text-muted-foreground" />}
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              onClick={e => e.stopPropagation()}
-              className="rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <MoreHorizontal size={12} />
-            </button>
+          <DropdownMenuTrigger>
+              <button
+                onClick={e => e.stopPropagation()}
+                className="rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <MoreHorizontal size={12} />
+              </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="text-xs">
             <DropdownMenuItem className="gap-2 text-xs"><Pencil size={11} /> Rename</DropdownMenuItem>
