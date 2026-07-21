@@ -29,6 +29,51 @@ export async function getApprovals(): Promise<ApprovalRecord[]> {
   }))
 }
 
+export async function createApproval(opts: {
+  title: string
+  description?: string
+  objectType?: string
+  priority?: 'critical' | 'high' | 'normal' | 'low'
+  approverEmail?: string
+  approverName?: string
+  requestedBy?: string
+  projectCode?: string
+  projectName?: string
+  amount?: number
+}): Promise<{ id: string } | { error: string }> {
+  const supabase = createAdminClient()
+
+  const { data, error } = await supabase
+    .from('approvals')
+    .insert({
+      title:       opts.title,
+      description: opts.description ?? null,
+      object_type: opts.objectType ?? 'General',
+      priority:    opts.priority ?? 'normal',
+      status:      'pending',
+      amount:      opts.amount ?? null,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) return { error: error?.message ?? 'Failed to create approval' }
+
+  // Notify approver — fire-and-forget
+  if (opts.approverEmail) {
+    sendApprovalRequestEmail({
+      to: opts.approverEmail,
+      approverName: opts.approverName ?? 'Approver',
+      title: opts.title,
+      requestedBy: opts.requestedBy ?? 'System',
+      projectCode: opts.projectCode ?? 'N/A',
+      projectName: opts.projectName ?? opts.title,
+      approvalId: data.id,
+    }).catch(() => {})
+  }
+
+  return { id: data.id }
+}
+
 export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
   const supabase = createAdminClient()
 

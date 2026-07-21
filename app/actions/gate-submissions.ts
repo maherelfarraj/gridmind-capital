@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendApprovalRequestEmail } from '@/lib/email/send'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -77,6 +78,20 @@ export async function submitG0FormAction(
     },
     { onConflict: 'project_id,gate_number' },
   )
+
+  if (!error) {
+    // Notify Executive Sponsor — fire-and-forget
+    sendApprovalRequestEmail({
+      to: 'admin@gridmind.capital',
+      approverName: 'Executive Sponsor',
+      title: 'Gate G0 Investment Intake Package',
+      requestedBy: formData.projectSponsor || 'Project Team',
+      projectCode: projectId.slice(0, 8).toUpperCase(),
+      projectName: `${formData.technology} — ${formData.capacityMwp} MWp`,
+      approvalId: projectId,
+    }).catch(() => {})
+  }
+
   return { error: error?.message ?? null }
 }
 

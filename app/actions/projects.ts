@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendProjectCreatedEmail } from '@/lib/email/send'
 import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
 
@@ -179,5 +180,17 @@ export async function createProject(payload: {
     .single()
 
   if (error) return { error: error.message }
+
+  // Fire-and-forget notification email — does not block response
+  sendProjectCreatedEmail({
+    to: 'admin@gridmind.capital',
+    recipientName: 'GridMind Team',
+    projectCode: payload.code,
+    projectName: payload.name,
+    technology: payload.technology,
+    budgetUsd: payload.budget_usd ?? 0,
+    projectId: data.id,
+  }).catch(() => {})
+
   return { id: data.id }
 }
