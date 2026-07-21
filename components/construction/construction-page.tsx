@@ -271,7 +271,7 @@ export function ConstructionPage() {
                   <PieChart>
                     <Pie data={data!.punchByCategory.filter((p) => p.value > 0)} dataKey="value" nameKey="name"
                       cx="50%" cy="50%" outerRadius={72}
-                      label={({ name, percent }) => `${name.split('(')[0]} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
+                      label={({ name, percent }: { name?: string; percent?: number }) => `${(name ?? '').split('(')[0]} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
                       {(data?.punchByCategory ?? []).map((e, i) => <Cell key={i} fill={e.color} />)}
                     </Pie>
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
