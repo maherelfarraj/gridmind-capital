@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { DashboardPage } from '@/components/dashboard/dashboard-page'
+import { CustomizableDashboard } from '@/components/dashboard/customizable-dashboard'
 import { useSession } from '@/lib/session-context'
 import { getDashboardStats, getDashboardProjects, getDashboardApprovals } from '@/app/actions/dashboard'
 import { useRealtime } from '@/lib/realtime/use-realtime'
@@ -29,11 +30,16 @@ export default function Page() {
   useRealtime({ table: 'approvals', onchange: handleChange })
 
   return (
-    <div className="relative">
+    <div className="relative space-y-8">
       {/* Live indicator top-right */}
       <div className="absolute -top-8 right-0 hidden md:block">
         <LiveIndicator flash={flash} />
       </div>
+
+      {/* ── Customizable widget dashboard ── */}
+      <CustomizableDashboard />
+
+      {/* ── Legacy stats + project list ── */}
       <DashboardPage
         userName={session.fullName}
         stats={stats}
