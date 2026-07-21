@@ -5,25 +5,61 @@ import { sendApprovalRequestEmail } from '@/lib/email/send'
 
 // ─── Types ────────────────────────────────────────────────────
 
+export interface G0RiskRow {
+  name:        string
+  probability: 'Low' | 'Medium' | 'High'
+  impact:      'Low' | 'Medium' | 'High'
+}
+
+export interface G0StakeholderRow {
+  name:         string
+  role:         string
+  organization: string
+  influence:    'High' | 'Medium' | 'Low'
+  interest:     'High' | 'Medium' | 'Low'
+}
+
 export interface G0FormData {
+  // Step 1 — Basic Info
+  opportunityName:   string
+  opportunityCode:   string
+  description:       string
+  source:            string
+  priority:          'Low' | 'Medium' | 'High' | 'Critical'
+
+  // Step 2 — Technical
+  technologyType:       string
+  estimatedCapacityMw:  string
+  siteLocation:         string
+  gridConnection:       string
+  landAvailability:     string
+  environmentalFlags:   string[]
+  technicalNotes:       string
+
+  // Step 3 — Commercial
+  clientName:          string
+  clientType:          string
+  budgetMin:           string
+  budgetMax:           string
+  currency:            string
+  fundingStatus:       string
+  ppaStatus:           string
+  expectedIrr:         string
+  commercialNotes:     string
+
+  // Step 4 — Risk
+  overallRisk:        'Low' | 'Medium' | 'High'
+  risks:              G0RiskRow[]
+  mitigationNotes:    string
+  stakeholders:       G0StakeholderRow[]
+
+  // Legacy fields kept for backward compat
   projectSponsor:    string
   hostCountry:       string
-  siteCoordinates:   string
-  landStatus:        'owned' | 'leased' | 'option' | 'tbd'
   technology:        string
   capacityMwp:       string
-  connectionVoltage: string
-  storageIncluded:   boolean
-  storageMwh:        string
   capexEstimateUsd:  string
-  capexBasis:        'desktop' | 'feasibility' | 'pre-feasibility' | 'concept'
   targetIrrPct:      string
-  fundingSource:     'equity' | 'debt' | 'mixed' | 'tbd'
-  strategicFit:      string
-  keyRisks:          string
-  competitiveEdge:   string
-  proposedTimeline:  string
-  resourcesRequired: string
   requestedDecision: 'proceed-g1' | 'hold' | 'reject'
 }
 
