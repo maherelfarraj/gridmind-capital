@@ -898,9 +898,164 @@ function DocumentControlTab() {
   )
 }
 
+// ─── Tab: Design Review & Approval ─────────────────────────────
+
+type ReviewStatus = 'pending' | 'in_review' | 'approved' | 'rejected' | 'conditional'
+
+interface ReviewItem {
+  id: string
+  discipline: string
+  package_code: string
+  title: string
+  reviewer: string
+  reviewer_role: string
+  submitted_date: string
+  due_date: string
+  status: ReviewStatus
+  comments: string
+  action_items: string[]
+}
+
+const REVIEW_STATUS_META: Record<ReviewStatus, { label: string; color: string }> = {
+  pending:     { label: 'Pending',      color: '#6b7280' },
+  in_review:   { label: 'In Review',    color: '#3b82f6' },
+  approved:    { label: 'Approved',     color: '#22c55e' },
+  rejected:    { label: 'Rejected',     color: '#ef4444' },
+  conditional: { label: 'Conditional',  color: '#f59e0b' },
+}
+
+const MOCK_REVIEWS: ReviewItem[] = [
+  { id: 'rv1', discipline: 'Civil',       package_code: 'EPC-CIV-001', title: 'Piling & Foundation Design',          reviewer: 'Omar Al-Zaid',    reviewer_role: 'Lead Civil Engineer',   submitted_date: '2026-04-10', due_date: '2026-04-25', status: 'approved',    comments: 'All pile load calculations verified. Geotech report incorporated.', action_items: [] },
+  { id: 'rv2', discipline: 'Electrical',  package_code: 'EPC-ELE-002', title: 'HV Cable Routing & Sizing',           reviewer: 'Yuki Tanaka',     reviewer_role: 'Sr. Electrical Eng.',   submitted_date: '2026-04-12', due_date: '2026-04-28', status: 'conditional', comments: 'Cable cross-section sizing accepted. Routing through Zone C needs clash check.', action_items: ['Resolve clash at Junction Box JB-14', 'Resubmit single-line diagram Rev C'] },
+  { id: 'rv3', discipline: 'Structural',  package_code: 'EPC-STR-003', title: 'Tracker Module Rail System',           reviewer: 'James Morgan',    reviewer_role: 'PMO Director',          submitted_date: '2026-04-15', due_date: '2026-05-02', status: 'in_review',   comments: 'Under structural peer review. Wind load analysis pending NEOM site data.', action_items: ['Provide NEOM wind load report', 'Confirm pile embedment depth'] },
+  { id: 'rv4', discipline: 'Electrical',  package_code: 'EPC-ELE-004', title: 'Inverter Station LV Layout',           reviewer: 'Aisha Al-Rashidi',reviewer_role: 'Finance / Owner Rep',   submitted_date: '2026-04-18', due_date: '2026-05-05', status: 'in_review',   comments: 'Owner review ongoing. Earthing philosophy to be confirmed.', action_items: [] },
+  { id: 'rv5', discipline: 'Civil',       package_code: 'EPC-CIV-005', title: 'Access Road Alignment & Pavement',    reviewer: 'Omar Al-Zaid',    reviewer_role: 'Lead Civil Engineer',   submitted_date: '2026-04-08', due_date: '2026-04-22', status: 'approved',    comments: 'Road alignment approved. Pavement design meets NEOM standards.', action_items: [] },
+  { id: 'rv6', discipline: 'Mechanical',  package_code: 'EPC-MEC-006', title: 'O&M Building HVAC & MEP',             reviewer: 'Sarah Chen',      reviewer_role: 'Legal / Technical Rep', submitted_date: '2026-04-20', due_date: '2026-05-10', status: 'pending',     comments: 'Awaiting mechanical consultant markup.', action_items: ['Upload MEP consultant review comments'] },
+]
+
+function DesignReviewTab({ packages }: { packages: EngineeringPackage[] }) {
+  const [expanded, setExpanded] = React.useState<string | null>(null)
+
+  const total      = MOCK_REVIEWS.length
+  const approved   = MOCK_REVIEWS.filter((r) => r.status === 'approved').length
+  const inReview   = MOCK_REVIEWS.filter((r) => r.status === 'in_review' || r.status === 'conditional').length
+  const pending    = MOCK_REVIEWS.filter((r) => r.status === 'pending').length
+  const rejected   = MOCK_REVIEWS.filter((r) => r.status === 'rejected').length
+  const pct        = Math.round((approved / total) * 100)
+
+  const pieData = [
+    { name: 'Approved',    value: approved, color: '#22c55e' },
+    { name: 'In Review',   value: inReview, color: '#3b82f6' },
+    { name: 'Pending',     value: pending,  color: '#6b7280' },
+    { name: 'Rejected',    value: rejected, color: '#ef4444' },
+  ].filter((d) => d.value > 0)
+
+  return (
+    <div className="p-5 space-y-6">
+      {/* KPI + pie row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-1 rounded-xl border border-border bg-background p-5 flex flex-col justify-between">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">Design Review Approval Rate</p>
+          <div className="text-4xl font-black text-foreground mb-3">{pct}<span className="text-2xl text-muted-foreground">%</span></div>
+          <div className="w-full h-2 rounded-full bg-muted/40 overflow-hidden mb-1">
+            <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-xs text-muted-foreground">{approved} of {total} reviews approved</p>
+        </div>
+        <div className="lg:col-span-2 rounded-xl border border-border bg-background p-5">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">Review Status Distribution</p>
+          <div className="flex items-center gap-6">
+            <ResponsiveContainer width={120} height={120}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={32} outerRadius={50} paddingAngle={3}>
+                  {pieData.map((d) => <Cell key={d.name} fill={d.color} />)}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-2">
+              {pieData.map((d) => (
+                <div key={d.name} className="flex items-center gap-2 text-sm">
+                  <span className="size-2.5 rounded-full" style={{ background: d.color }} />
+                  <span className="font-semibold text-foreground">{d.value}</span>
+                  <span className="text-muted-foreground">{d.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Review items */}
+      <div className="space-y-2">
+        {MOCK_REVIEWS.map((r) => {
+          const meta  = REVIEW_STATUS_META[r.status]
+          const isOpen = expanded === r.id
+          return (
+            <div key={r.id} className={cn('rounded-xl border border-border overflow-hidden', isOpen && 'bg-muted/10')}>
+              <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-muted/10 transition-colors cursor-pointer"
+                onClick={() => setExpanded(isOpen ? null : r.id)}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <span className="font-mono text-xs text-muted-foreground">{r.package_code}</span>
+                    <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-0.5 rounded-full">{r.discipline}</span>
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">{r.title}</p>
+                  <div className="flex items-center gap-4 mt-0.5 text-xs text-muted-foreground">
+                    <span>Reviewer: {r.reviewer}</span>
+                    <span>Due: {r.due_date}</span>
+                    {r.action_items.length > 0 && (
+                      <span className="text-amber-500 font-medium">{r.action_items.length} action item{r.action_items.length !== 1 ? 's' : ''}</span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border flex-shrink-0"
+                  style={{ color: meta.color, borderColor: `${meta.color}40`, background: `${meta.color}12` }}>
+                  {meta.label}
+                </span>
+                {isOpen ? <ChevronDown className="size-4 text-muted-foreground rotate-180 flex-shrink-0" /> : <ChevronDown className="size-4 text-muted-foreground flex-shrink-0" />}
+              </div>
+              {isOpen && (
+                <div className="px-5 pb-4 pt-0 border-t border-border/50 bg-muted/5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Reviewer Role</p>
+                      <p className="text-sm font-medium text-foreground">{r.reviewer_role}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Submitted</p>
+                      <p className="text-sm font-mono text-foreground">{r.submitted_date}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-muted-foreground mb-1">Review Comments</p>
+                      <p className="text-sm text-foreground">{r.comments}</p>
+                    </div>
+                    {r.action_items.length > 0 && (
+                      <div className="sm:col-span-2">
+                        <p className="text-xs font-semibold text-amber-500 mb-1">Open Action Items</p>
+                        <ul className="space-y-1">
+                          {r.action_items.map((item, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                              <span className="mt-1.5 size-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────
 
-type TabId = 'packages' | 'drawings' | 'transmittals' | 'rfis' | 'doccontrol'
+type TabId = 'packages' | 'drawings' | 'transmittals' | 'rfis' | 'doccontrol' | 'designreview'
 
 export default function G2EngineeringPage() {
   const params = useParams<{ id: string }>()
@@ -914,6 +1069,7 @@ export default function G2EngineeringPage() {
     { id: 'transmittals',label: 'Transmittals',         count: MOCK_TRANSMITTALS.length },
     { id: 'rfis',        label: 'RFIs',                 count: MOCK_RFIS.length },
     { id: 'doccontrol',  label: 'Document Control',     count: 0 },
+    { id: 'designreview',label: 'Design Review',        count: 0 },
   ]
 
   const openRFIs = MOCK_RFIS.filter((r) => r.status === 'Open' || r.status === 'Escalated').length
@@ -1017,6 +1173,7 @@ export default function G2EngineeringPage() {
         {tab === 'transmittals' && <TransmittalsTab     transmittals={MOCK_TRANSMITTALS}  />}
         {tab === 'rfis'         && <RFIsTab             rfis={MOCK_RFIS}                  />}
         {tab === 'doccontrol'   && <DocumentControlTab                                    />}
+        {tab === 'designreview' && <DesignReviewTab     packages={MOCK_PACKAGES}          />}
       </div>
     </div>
   )

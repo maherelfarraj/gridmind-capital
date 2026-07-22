@@ -13,6 +13,14 @@ export default function Error({
   reset: () => void
 }) {
   React.useEffect(() => {
+    if (
+      error?.message?.includes('ChunkLoadError') ||
+      error?.message?.includes('Failed to load chunk') ||
+      error?.message?.includes('Loading chunk')
+    ) {
+      window.location.reload()
+      return
+    }
     console.error('[GridMind] Route error:', error)
   }, [error])
 

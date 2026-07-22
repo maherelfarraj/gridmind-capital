@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Menu, Bell, Search, ChevronRight, X, Command, Sun, Moon } from 'lucide-react'
+import { Menu, Bell, Search, ChevronRight, Command, Sun, Moon } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { LanguageSwitcher } from '@/components/i18n/language-switcher'
 import { cn } from '@/lib/utils'
@@ -21,6 +21,8 @@ export interface TopBarProps {
   title: string
   breadcrumbs?: Breadcrumb[]
   notificationCount?: number
+  onSearchOpen?: () => void
+  onNotifOpen?: () => void
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -65,72 +67,24 @@ function LiveClock() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Search bar (expandable, ⌘K)
+// Search trigger (opens global command palette)
 // ─────────────────────────────────────────────────────────────
 
-function SearchBar() {
-  const [expanded, setExpanded] = React.useState(false)
-  const inputRef = React.useRef<HTMLInputElement>(null)
-
-  React.useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        setExpanded(true)
-        inputRef.current?.focus()
-      }
-      if (e.key === 'Escape' && expanded) setExpanded(false)
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [expanded])
-
-  React.useEffect(() => {
-    if (expanded) inputRef.current?.focus()
-  }, [expanded])
-
+function SearchTrigger({ onOpen }: { onOpen?: () => void }) {
   return (
-    <div className="relative flex items-center">
-      {expanded ? (
-        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-3 py-1.5 ring-1 ring-ring/30 transition-all">
-          <Search size={13} className="shrink-0 text-muted-foreground" aria-hidden="true" />
-          <input
-            ref={inputRef}
-            type="search"
-            placeholder="Search projects, documents, approvals…"
-            aria-label="Search"
-            className="w-56 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 outline-none border-none ring-0 sm:w-72"
-            onBlur={() => setExpanded(false)}
-            onKeyDown={(e) => { if (e.key === 'Escape') setExpanded(false) }}
-          />
-          <kbd className="hidden items-center gap-0.5 rounded border border-border bg-muted px-1 text-[10px] font-medium text-muted-foreground sm:flex">
-            Esc
-          </kbd>
-          <button
-            type="button"
-            aria-label="Close search"
-            onClick={() => setExpanded(false)}
-            className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          aria-label="Search (⌘K)"
-          onClick={() => setExpanded(true)}
-          className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-150"
-        >
-          <Search size={13} aria-hidden="true" />
-          <span className="hidden text-xs sm:block">Search</span>
-          <kbd className="hidden items-center gap-0.5 rounded border border-border bg-background/60 px-1 text-[10px] font-medium sm:flex">
-            <Command size={9} />
-            <span>K</span>
-          </kbd>
-        </button>
-      )}
-    </div>
+    <button
+      type="button"
+      aria-label="Search (⌘K)"
+      onClick={onOpen}
+      className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-150"
+    >
+      <Search size={13} aria-hidden="true" />
+      <span className="hidden text-xs sm:block">Search</span>
+      <kbd className="hidden items-center gap-0.5 rounded border border-border bg-background/60 px-1 text-[10px] font-medium sm:flex">
+        <Command size={9} />
+        <span>K</span>
+      </kbd>
+    </button>
   )
 }
 
@@ -164,11 +118,12 @@ function ThemeToggle() {
 // Notification bell
 // ─────────────────────────────────────────────────────────────
 
-function NotificationBell({ count = 0 }: { count?: number }) {
+function NotificationBell({ count = 0, onClick }: { count?: number; onClick?: () => void }) {
   return (
     <button
       type="button"
       aria-label={count > 0 ? `${count} unread notifications` : 'Notifications'}
+      onClick={onClick}
       className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-150"
     >
       <Bell size={15} aria-hidden="true" />
@@ -232,6 +187,8 @@ export function TopBar({
   title,
   breadcrumbs = [],
   notificationCount = 0,
+  onSearchOpen,
+  onNotifOpen,
 }: TopBarProps) {
   const crumbs: Breadcrumb[] = breadcrumbs.length > 0 ? breadcrumbs : [{ label: title }]
 
@@ -257,10 +214,10 @@ export function TopBar({
       <div className="flex shrink-0 items-center gap-3">
         <LiveClock />
         <div className="h-4 w-px bg-border hidden lg:block" />
-        <SearchBar />
+        <SearchTrigger onOpen={onSearchOpen} />
         <ThemeToggle />
         <LanguageSwitcher />
-        <NotificationBell count={notificationCount} />
+        <NotificationBell count={notificationCount} onClick={onNotifOpen} />
       </div>
     </header>
   )

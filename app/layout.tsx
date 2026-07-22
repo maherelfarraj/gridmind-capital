@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
+import { ChunkErrorWatcher } from '@/components/chunk-error-watcher'
 import './globals.css'
 
 const inter = Inter({
@@ -89,7 +90,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} bg-background`} suppressHydrationWarning>
+      {/* suppressHydrationWarning on <head> prevents React from erroring on the
+          v0 sandbox script (window.__V0_SANDBOX_ID__) that is injected into
+          <head> server-side but differs on the client. */}
+      <head suppressHydrationWarning />
       <body className="antialiased font-sans">
+        <ChunkErrorWatcher />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <LocaleProvider>
             {children}

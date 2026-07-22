@@ -650,12 +650,14 @@ export function ProjectDetailPage({
 
   // Gate code → sub-page route (only wired gates navigate; others open the info panel)
   const GATE_ROUTES: Partial<Record<string, string>> = {
+    G0: `/projects/${project.id}/g0`,
     G1: `/projects/${project.id}/g1/approval`,
     G2: `/projects/${project.id}/g2`,
     G3: `/projects/${project.id}/g3`,
     G4: `/projects/${project.id}/g4`,
     G5: `/projects/${project.id}/g5`,
     G6: `/projects/${project.id}/g6`,
+    G7: `/projects/${project.id}/g7`,
   }
 
   const handleGateClick = React.useCallback(
