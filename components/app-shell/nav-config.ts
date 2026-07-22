@@ -21,6 +21,8 @@ import {
   Globe,
   AlertTriangle,
   Store,
+  Bell,
+  GitMerge,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -152,6 +154,24 @@ export const NAV_SECTIONS: NavSection[] = [
           { id: 'proj-stakeholders',label: 'Stakeholders',       href: '/projects', phase: 'g1' },
           { id: 'proj-risks',       label: 'Project Risks',      href: '/risks',    phase: 'g1' },
         ],
+      },
+      {
+        id: 'pmo',
+        label: 'PMO Cockpit',
+        href: '/pmo',
+        icon: ClipboardList,
+      },
+      {
+        id: 'workflows',
+        label: 'Workflows',
+        href: '/workflows',
+        icon: GitMerge,
+      },
+      {
+        id: 'notifications',
+        label: 'Notifications & Audit',
+        href: '/notifications',
+        icon: Bell,
       },
     ],
   },

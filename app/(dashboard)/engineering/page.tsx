@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
-import { EngineeringPage } from '@/components/engineering/engineering-page'
+import { EngineeringCockpit } from '@/components/engineering/engineering-cockpit'
 
-export const metadata: Metadata = { title: 'Engineering' }
+export const metadata: Metadata = { title: 'Engineering — GridMind Capital' }
 
 export default function Page() {
-  return <EngineeringPage />
+  return <EngineeringCockpit />
 }
