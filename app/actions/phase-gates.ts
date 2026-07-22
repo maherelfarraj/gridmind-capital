@@ -83,7 +83,7 @@ export async function advanceProjectGate(
   // This drives the WorkflowTimeline (derived in getProjectTimeline).
   await supabase
     .from('phase_gates')
-    .update({ status: 'approved', reviewed_by: reviewerId, updated_at: nowIso })
+    .update({ status: 'approved', reviewed_by: reviewerId, reviewed_at: nowIso, updated_at: nowIso })
     .eq('project_id', projectId)
     .eq('phase_number', current)
 
