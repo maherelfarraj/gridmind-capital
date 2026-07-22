@@ -1,42 +1,20 @@
-import createMiddleware from 'next-intl/middleware'
+import { type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
-import { type NextRequest, NextResponse } from 'next/server'
-import { LOCALES, DEFAULT_LOCALE } from '@/i18n/request'
 
 /**
- * Locale middleware: reads the NEXT_LOCALE cookie and sets the `locale`
- * request header that next-intl/server (i18n/request.ts) consumes.
- * We do NOT rewrite URLs (no /en/ or /ar/ prefix) — the cookie is the
- * single source of truth.  next-intl routing is therefore "disabled" at
- * the middleware level; we only use it for its cookie-reader helper.
+ * Middleware: Supabase session refresh + auth-gate only.
+ *
+ * Locale handling is intentionally NOT done here. This app uses next-intl in
+ * cookie-only mode with NO URL prefix (no `app/[locale]` segment), so
+ * next-intl's `createMiddleware` must NOT run — it would internally rewrite
+ * every request to `/{locale}/...` and 404 against the prefix-less route tree.
+ *
+ * Instead, `i18n/request.ts` reads the `NEXT_LOCALE` cookie directly via
+ * `next/headers`, and `setLocaleAction` writes that cookie. The cookie is the
+ * single source of truth; no middleware locale work is required.
  */
-const intlMiddleware = createMiddleware({
-  locales: LOCALES,
-  defaultLocale: DEFAULT_LOCALE,
-  localePrefix: 'never',         // never rewrite URLs
-  localeDetection: false,        // we control detection ourselves via cookie
-})
-
 export async function middleware(request: NextRequest) {
-  // 1. Let Supabase handle auth (session refresh + redirect to /auth/login).
-  const supabaseResponse = await updateSession(request)
-
-  // If Supabase redirected (to /auth/login), pass that through directly —
-  // no need to run locale detection on redirects.
-  if (supabaseResponse.status !== 200 && supabaseResponse.headers.get('location')) {
-    return supabaseResponse
-  }
-
-  // 2. Run next-intl to set the x-next-intl-locale header (used by request.ts).
-  const intlResponse = intlMiddleware(request)
-
-  // 3. Merge the Supabase cookies (session tokens) onto the intl response so
-  //    both sets of cookies propagate to the browser.
-  supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
-    intlResponse.cookies.set(name, value)
-  })
-
-  return intlResponse
+  return updateSession(request)
 }
 
 export const config = {
