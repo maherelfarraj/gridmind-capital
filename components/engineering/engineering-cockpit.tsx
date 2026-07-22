@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { mockStore } from '@/lib/mock-store'
@@ -116,13 +116,12 @@ function DrawingsTab() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search drawings..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Select value={discipline} onValueChange={(v: string) => setDiscipline(v)}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Discipline" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All disciplines</SelectItem>
-            {disciplines.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <Select
+          value={discipline}
+          onValueChange={v => setDiscipline(v ?? 'all')}
+          options={[{ value: 'all', label: 'All disciplines' }, ...disciplines.map(d => ({ value: d, label: d }))]}
+          className="h-8 w-36 text-xs"
+        />
         <Button size="sm" className="h-8 text-xs gap-1.5"><Upload size={12} /> Issue Drawing</Button>
       </div>
       <div className="rounded-lg border border-border/60 bg-background overflow-hidden">

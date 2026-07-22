@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 
@@ -119,15 +119,15 @@ function PRTab() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search PRs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Select value={status} onValueChange={(v: string) => setStatus(v)}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {(['draft','submitted','approved','rejected'] as PRStatus[]).map(s => (
-              <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Select
+          value={status}
+          onValueChange={v => setStatus(v ?? 'all')}
+          options={[
+            { value: 'all', label: 'All statuses' },
+            ...(['draft','submitted','approved','rejected'] as PRStatus[]).map(s => ({ value: s, label: s })),
+          ]}
+          className="w-36"
+        />
         <Button size="sm" className="h-8 text-xs gap-1.5"><Plus size={12} /> New PR</Button>
       </div>
       <div className="rounded-lg border border-border/60 bg-background overflow-hidden">
@@ -242,15 +242,15 @@ function VendorTab() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search vendors..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Select value={tier} onValueChange={(v: string) => setTier(v)}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Tier" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All tiers</SelectItem>
-            {(['preferred','approved','restricted','pending'] as VendorTier[]).map(t => (
-              <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Select
+          value={tier}
+          onValueChange={v => setTier(v ?? 'all')}
+          options={[
+            { value: 'all', label: 'All tiers' },
+            ...(['preferred','approved','restricted','pending'] as VendorTier[]).map(t => ({ value: t, label: t })),
+          ]}
+          className="w-36"
+        />
         <Button size="sm" className="h-8 text-xs gap-1.5"><Plus size={12} /> Add Vendor</Button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

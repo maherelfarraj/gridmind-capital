@@ -5,7 +5,7 @@ import { Shield, Search, Download, User, Clock, Tag } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select } from '@/components/ui/select'
 import { mockStore, type AuditEntry } from '@/lib/mock-store'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -144,21 +144,22 @@ export function AuditTrail() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search audit log..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Select value={entityFilter} onValueChange={(v: string) => setEntityFilter(v)}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Entity type" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All entities</SelectItem>
-            {entityTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={resultFilter} onValueChange={(v: string) => setResultFilter(v)}>
-          <SelectTrigger className="h-8 w-28 text-xs"><SelectValue placeholder="Result" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All results</SelectItem>
-            <SelectItem value="success">Success</SelectItem>
-            <SelectItem value="failure">Failure</SelectItem>
-          </SelectContent>
-        </Select>
+        <Select
+          value={entityFilter}
+          onValueChange={v => setEntityFilter(v ?? 'all')}
+          options={[{ value: 'all', label: 'All entities' }, ...entityTypes.map(t => ({ value: t, label: t }))]}
+          className="w-36"
+        />
+        <Select
+          value={resultFilter}
+          onValueChange={v => setResultFilter(v ?? 'all')}
+          options={[
+            { value: 'all', label: 'All results' },
+            { value: 'success', label: 'Success' },
+            { value: 'failure', label: 'Failure' },
+          ]}
+          className="w-28"
+        />
       </div>
 
       {/* Table */}
