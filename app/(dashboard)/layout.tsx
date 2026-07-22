@@ -22,6 +22,8 @@ const ROLE_MAP: Record<string, AppRole> = {
   finance_manager:      'finance_controller',
   commercial_manager:   'procurement_manager',
   viewer:               'viewer',
+  subcontractor:        'subcontractor',
+  client_viewer:        'client_viewer',
 }
 
 // Permissions granted per role
@@ -41,6 +43,8 @@ const ROLE_PERMISSIONS: Record<AppRole, AppPermission[]> = {
   executive_sponsor:     ['project.read','approval.read','document.read','finance.read','hse.read'],
   client_pmc:            ['project.read','approval.read','document.read'],
   viewer:                ['project.read','approval.read','document.read'],
+  subcontractor:         ['project.read','document.read'],
+  client_viewer:         ['project.read','document.read'],
 }
 
 async function getSession(): Promise<AppSession> {

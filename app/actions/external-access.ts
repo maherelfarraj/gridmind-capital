@@ -75,8 +75,8 @@ export async function getExternalUsers(): Promise<ExternalUser[]> {
       last_active: p.last_active ?? null,
       projects: userGrants.map((g) => ({
         id: g.project_id,
-        code: (g.projects as { code: string; name: string } | null)?.code ?? '',
-        name: (g.projects as { code: string; name: string } | null)?.name ?? '',
+        code: (g.projects as unknown as { code: string; name: string } | null)?.code ?? '',
+        name: (g.projects as unknown as { code: string; name: string } | null)?.name ?? '',
         revoked: g.revoked_at !== null,
       })),
     }
@@ -97,12 +97,12 @@ export async function getExternalAccessGrants(userId: string): Promise<ExternalA
   return (data ?? []).map((g) => ({
     id: g.id,
     project_id: g.project_id,
-    project_code: (g.projects as { code: string; name: string } | null)?.code ?? '',
-    project_name: (g.projects as { code: string; name: string } | null)?.name ?? '',
+    project_code: (g.projects as unknown as { code: string; name: string } | null)?.code ?? '',
+    project_name: (g.projects as unknown as { code: string; name: string } | null)?.name ?? '',
     organization_name: g.organization_name,
     granted_at: g.granted_at,
     revoked_at: g.revoked_at ?? null,
-    granted_by_name: (g.profiles as { full_name: string } | null)?.full_name ?? null,
+    granted_by_name: (g.profiles as unknown as { full_name: string } | null)?.full_name ?? null,
   }))
 }
 
@@ -213,7 +213,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
 
 // ─────────────────────────────────────────────────────────────
 // Grant / Revoke
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────��─────────
 
 export async function assignProjectAccess(args: {
   userId: string

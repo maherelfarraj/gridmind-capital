@@ -6,7 +6,7 @@ import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import {
-  RefreshCw, Plus, Lock, AlertTriangle, Copy, Check, ChevronUp, Landmark, TrendingUp, Pencil, Trash2,
+  RefreshCw, Plus, Lock, AlertTriangle, Copy, Check, ChevronUp, Landmark, TrendingUp, Pencil, Trash2, Eye, EyeOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -23,6 +23,7 @@ import {
   seedCashFlowDemo, ESCALATION_LADDER,
   type CashFlowData, type PaymentMilestone, type MilestoneStatus,
 } from '@/app/actions/cash-flow'
+import { toggleMilestoneClientVisible } from '@/app/actions/external-access'
 
 // ─────────────────────────────────────────────────────────────
 // Formatting
@@ -260,15 +261,16 @@ export function CashFlowTracker({ projectId }: { projectId: string }) {
                 <th className="px-3 py-2.5 font-medium">Status</th>
                 <th className="px-3 py-2.5 font-medium">Escalation</th>
                 <th className="px-3 py-2.5 font-medium">Retention</th>
+                {canEdit && <th className="px-3 py-2.5 font-medium text-center">Client</th>}
                 {canEdit && <th className="px-3 py-2.5 font-medium text-right">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={canEdit ? 10 : 9} className="px-4 py-10 text-center text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={canEdit ? 11 : 9} className="px-4 py-10 text-center text-muted-foreground">Loading…</td></tr>
               )}
               {!isLoading && milestones.length === 0 && (
-                <tr><td colSpan={canEdit ? 10 : 9} className="px-4 py-10 text-center text-muted-foreground">No payment milestones yet.</td></tr>
+                <tr><td colSpan={canEdit ? 11 : 9} className="px-4 py-10 text-center text-muted-foreground">No payment milestones yet.</td></tr>
               )}
               {milestones.map((m) => (
                 <tr key={m.id} className="border-t border-border hover:bg-muted/20">
@@ -311,6 +313,29 @@ export function CashFlowTracker({ projectId }: { projectId: string }) {
                       </div>
                     ) : <span className="text-xs text-muted-foreground">—</span>}
                   </td>
+                  {canEdit && (
+                    <td className="px-3 py-2.5 text-center">
+                      <button
+                        type="button"
+                        title={m.client_visible ? 'Visible to client — click to hide' : 'Hidden from client — click to share'}
+                        aria-label={m.client_visible ? 'Hide from client' : 'Share with client'}
+                        onClick={async () => {
+                          await toggleMilestoneClientVisible(m.id, !m.client_visible)
+                          mutate()
+                        }}
+                        className={`p-1 rounded transition-colors ${
+                          m.client_visible
+                            ? 'text-[#64ffda] hover:bg-[#64ffda]/10'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                        }`}
+                      >
+                        {m.client_visible
+                          ? <Eye className="size-3.5" aria-hidden />
+                          : <EyeOff className="size-3.5" aria-hidden />
+                        }
+                      </button>
+                    </td>
+                  )}
                   {canEdit && (
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">

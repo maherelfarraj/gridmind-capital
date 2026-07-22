@@ -30,6 +30,7 @@ export interface PaymentMilestone {
   retention_pct: number
   days_overdue: number
   retention: RetentionEntry | null
+  client_visible: boolean
 }
 
 export interface RetentionEntry {
@@ -267,6 +268,7 @@ export async function loadCashFlow(projectId: string): Promise<CashFlowData> {
         retention_pct: num(r.retention_pct),
         days_overdue: status === 'overdue' ? daysSince(r.due_date) : 0,
         retention: retByMilestone.get(r.id) ?? null,
+        client_visible: r.client_visible ?? false,
         _outstanding: outstanding,
       } as PaymentMilestone & { _outstanding: number }
     })
@@ -465,6 +467,7 @@ export async function upsertMilestone(input: {
       retention_pct: num(full.retention_pct),
       days_overdue: derived === 'overdue' ? daysSince(full.due_date) : 0,
       retention: null,
+      client_visible: full.client_visible ?? false,
     },
   }
 }

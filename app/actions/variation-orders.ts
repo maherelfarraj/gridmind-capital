@@ -34,6 +34,7 @@ export interface VariationOrder {
   created_by_name: string | null
   created_at: string
   updated_at: string
+  client_visible: boolean
 }
 
 export interface VoKpis {
@@ -183,6 +184,7 @@ function mapRow(r: any): VariationOrder {
     created_by_name: r.profiles?.full_name ?? null,
     created_at: r.created_at,
     updated_at: r.updated_at,
+    client_visible: r.client_visible ?? false,
   }
 }
 

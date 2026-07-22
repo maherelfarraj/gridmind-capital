@@ -261,7 +261,7 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      {['VO #', 'Title', 'Origin', 'Cost Impact', 'Time', 'Status', 'Decision Date'].map((h) => (
+                      {['VO #', 'Title', 'Origin', 'Cost Impact', 'Time', 'Status', 'Client', 'Decision Date'].map((h) => (
                         <th key={h} className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -282,6 +282,27 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
                         <td className="py-2.5 px-3 text-foreground font-semibold font-mono whitespace-nowrap">{formatUsd(r.cost_impact)}</td>
                         <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">{r.time_impact_days == null ? '—' : `${r.time_impact_days}d`}</td>
                         <td className="py-2.5 px-3"><StatusBadge status={r.status} /></td>
+                        <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            title={r.client_visible ? 'Visible to client — click to hide' : 'Hidden from client — click to share'}
+                            aria-label={r.client_visible ? 'Hide from client' : 'Share with client'}
+                            onClick={async () => {
+                              await toggleVoClientVisible(r.id, !r.client_visible)
+                              mutate()
+                            }}
+                            className={`p-1 rounded transition-colors ${
+                              r.client_visible
+                                ? 'text-[#64ffda] hover:bg-[#64ffda]/10'
+                                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
+                          >
+                            {r.client_visible
+                              ? <Eye className="size-3.5" aria-hidden />
+                              : <EyeOff className="size-3.5" aria-hidden />
+                            }
+                          </button>
+                        </td>
                         <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">{formatDate(r.decided_at)}</td>
                       </tr>
                     ))}

@@ -13,9 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+import { Select } from '@/components/ui/select'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -136,13 +134,14 @@ function InviteDialog({
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
                 <Label>Role</Label>
-                <Select value={role} onValueChange={(v) => setRole(v as ExternalRole)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="subcontractor">Subcontractor</SelectItem>
-                    <SelectItem value="client_viewer">Client Viewer</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Select
+                  value={role}
+                  onValueChange={(v) => setRole((v ?? 'subcontractor') as ExternalRole)}
+                  options={[
+                    { value: 'subcontractor', label: 'Subcontractor' },
+                    { value: 'client_viewer',  label: 'Client Viewer' },
+                  ]}
+                />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="ext-org">Organisation</Label>
