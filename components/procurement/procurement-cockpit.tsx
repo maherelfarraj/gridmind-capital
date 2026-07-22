@@ -119,7 +119,7 @@ function PRTab() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search PRs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Select value={status} onValueChange={v => { if (v) setStatus(v) }}>
+        <Select value={status} onValueChange={(v: string) => setStatus(v)}>
           <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
@@ -242,7 +242,7 @@ function VendorTab() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search vendors..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Select value={tier} onValueChange={v => { if (v) setTier(v) }}>
+        <Select value={tier} onValueChange={(v: string) => setTier(v)}>
           <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Tier" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All tiers</SelectItem>

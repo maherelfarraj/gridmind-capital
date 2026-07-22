@@ -116,7 +116,7 @@ function DrawingsTab() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search drawings..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Select value={discipline} onValueChange={v => { if (v) setDiscipline(v) }}>
+        <Select value={discipline} onValueChange={(v: string) => setDiscipline(v)}>
           <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Discipline" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All disciplines</SelectItem>
