@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
+import { GatePackExportButton } from '@/components/stage-gate/gate-pack-export'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -443,6 +444,11 @@ export function StageGateReviewPage() {
               {activeGate.shortName} active
             </span>
           )}
+          <GatePackExportButton
+            targetId="gate-pack-printable"
+            gateCode={`G${gate.gate}`}
+            projectName="Sirius 400MW Solar Farm"
+          />
         </div>
       </div>
 
@@ -461,8 +467,8 @@ export function StageGateReviewPage() {
           ))}
         </nav>
 
-        {/* Detail panel */}
-        <div>
+        {/* Detail panel — id used by GatePackExportButton */}
+        <div id="gate-pack-printable">
           <GateDetailPanel gate={gate} />
         </div>
       </div>

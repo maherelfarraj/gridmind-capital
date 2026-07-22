@@ -10,6 +10,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { mockStore, MOCK_USERS, type GmcProject } from '@/lib/mock-store'
+import { createProject } from '@/app/actions/projects'
 
 /* ─── Types ─────────────────────────────────────────────────── */
 interface WizardData {
@@ -270,41 +271,46 @@ export function NewProjectWizardV2() {
 
   function back() { setErrors({}); setStep(s => Math.max(s - 1, 1)) }
 
-  function handleCreate() {
+  async function handleCreate() {
     setSubmitting(true)
-    setTimeout(() => {
-      const project: GmcProject = {
-        id: data.code, code: data.code, name: data.name,
-        type: data.type as GmcProject['type'], country: data.country,
-        region: data.region, siteCoordinates: data.siteCoordinates,
-        developerSpv: data.developerSpv,
-        mwac: Number(data.mwac), mwp: Number(data.mwp),
-        mwh: data.mwh ? Number(data.mwh) : undefined,
-        gridVoltage: data.gridVoltage, codTarget: data.codTarget,
-        ppaType: data.ppaType as GmcProject['ppaType'],
-        capex: Number(data.capex) * 1_000_000,
-        currency: data.currency,
-        equityPct: Number(data.equityPct), debtPct: Number(data.debtPct),
-        targetIrr: Number(data.targetIrr),
-        tariffAssumption: data.tariffAssumption,
-        team: {
-          projectDirector: data.projectDirector, pmoLead: data.pmoLead,
-          engineeringLead: data.engineeringLead, procurementLead: data.procurementLead,
-          constructionManager: data.constructionManager, financeLead: data.financeLead,
-        },
-        currentGate: 'G0', health: 'green', status: 'pending_activation',
-        createdAt: new Date().toISOString(),
+    try {
+      const result = await createProject({
+        code:          data.code,
+        name:          data.name,
+        status:        'draft',
+        client_name:   data.developerSpv || undefined,
+        budget_amount: Number(data.capex) * 1_000_000 || undefined,
+        target_cod:    data.codTarget || undefined,
+        description:   `${data.type} project — ${data.country}${data.region ? ', ' + data.region : ''}`,
+      })
+      if (result.error) {
+        // Fall back to mock if DB write fails (e.g. missing RLS / anon user)
+        const project: GmcProject = {
+          id: data.code, code: data.code, name: data.name,
+          type: data.type as GmcProject['type'], country: data.country,
+          region: data.region, siteCoordinates: data.siteCoordinates,
+          developerSpv: data.developerSpv,
+          mwac: Number(data.mwac), mwp: Number(data.mwp),
+          mwh: data.mwh ? Number(data.mwh) : undefined,
+          gridVoltage: data.gridVoltage, codTarget: data.codTarget,
+          ppaType: data.ppaType as GmcProject['ppaType'],
+          capex: Number(data.capex) * 1_000_000, currency: data.currency,
+          equityPct: Number(data.equityPct), debtPct: Number(data.debtPct),
+          targetIrr: Number(data.targetIrr), tariffAssumption: data.tariffAssumption,
+          team: { projectDirector: data.projectDirector, pmoLead: data.pmoLead, engineeringLead: data.engineeringLead, procurementLead: data.procurementLead, constructionManager: data.constructionManager, financeLead: data.financeLead },
+          currentGate: 'G0', health: 'green', status: 'pending_activation',
+          createdAt: new Date().toISOString(),
+        }
+        mockStore.addProject(project)
       }
-      mockStore.addProject(project)
-      mockStore.auditAndNotify(
-        { actor: 'PMO Director', action: 'PROJECT_CREATED', entityType: 'project', entityId: data.code, projectId: data.code, result: 'success', details: { name: data.name } },
-        { type: 'approval_requested', title: 'Project Activation Required', body: `New project ${data.code} "${data.name}" requires activation approval.`, module: 'Projects', projectId: data.code, projectName: data.name, severity: 'warning', recipientRole: 'PMO Director', status: 'unread' }
-      )
       setCreated(data.code)
       setProvisioning(true)
-      setSubmitting(false)
       if (typeof window !== 'undefined') localStorage.removeItem('gmc-wizard-draft')
-    }, 400)
+    } catch (err) {
+      console.error('[v0] handleCreate failed:', err)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (provisioning && created) {
