@@ -633,3 +633,163 @@ export async function updateRaciCell(input: {
   revalidatePath('/team/raci')
   return { data: { letter } }
 }
+
+// ── Admin: Roles & Approval Flow (Phase 9) ───────────────────
+
+/** Log an admin/config event (not tied to a project) to workflow_events. */
+async function logAdminEvent(
+  admin: ReturnType<typeof createAdminClient>,
+  transition: string,
+  actorId: string | null,
+  metadata: Record<string, unknown>,
+) {
+  await admin.from('workflow_events').insert({
+    instance_id: null,
+    from_state: null,
+    to_state: null,
+    transition_code: transition,
+    actor_id: actorId,
+    comment: null,
+    metadata: { module: 'team_roles', ...metadata },
+  })
+}
+
+/** Change a user's home role (Tab 1) with an audit_logs old/new record. */
+export async function changeUserHomeRole(input: {
+  userId: string
+  roleId: string | null
+}): Promise<ActionResult> {
+  const { userId, roleId } = input
+  if (!userId) return { error: 'Missing user.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { data: prior } = await admin
+    .from('profiles')
+    .select('home_role_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  const { error } = await admin.from('profiles').update({ home_role_id: roleId }).eq('id', userId)
+  if (error) return { error: error.message }
+
+  await admin.from('audit_logs').insert({
+    tenant_id: actor.tenantId,
+    actor_id: actor.userId,
+    action: 'update',
+    entity_type: 'profiles',
+    entity_id: userId,
+    old_data: { home_role_id: prior?.home_role_id ?? null },
+    new_data: { home_role_id: roleId },
+  })
+
+  revalidatePath('/admin/roles-flow')
+  return {}
+}
+
+/** Save a tenant-wide gate approver default (Tab 2). Logs to workflow_events. */
+export async function saveGateApproverDefault(input: {
+  gateNumber: number
+  primaryRole: string
+  secondaryRole: string | null
+}): Promise<ActionResult> {
+  const { gateNumber, primaryRole, secondaryRole } = input
+  if (!gateNumber || !primaryRole) return { error: 'Gate and primary approver are required.' }
+  if (secondaryRole && secondaryRole === primaryRole) {
+    return { error: 'Primary and secondary approvers must differ.' }
+  }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { error } = await admin
+    .from('gate_approver_defaults')
+    .upsert(
+      { gate_number: gateNumber, primary_role: primaryRole, secondary_role: secondaryRole },
+      { onConflict: 'gate_number' },
+    )
+  if (error) return { error: error.message }
+
+  await logAdminEvent(admin, 'GATE_APPROVER_DEFAULT', actor.userId, {
+    gate_number: gateNumber,
+    primary_role: primaryRole,
+    secondary_role: secondaryRole,
+  })
+
+  revalidatePath('/admin/roles-flow')
+  revalidatePath('/team/approvers')
+  return {}
+}
+
+export interface RuleResult {
+  code: string
+  label: string
+  status: 'pass' | 'fail' | 'error'
+  count: number | null
+  note: string
+  details: unknown[]
+  deepLink: string | null
+}
+
+const RULE_META: { code: string; fn: string; label: string; deepLink: string | null }[] = [
+  { code: 'B1', fn: 'gm_rule_b1', label: 'Gate approvals are signed', deepLink: '/admin/signatures' },
+  { code: 'B2', fn: 'gm_rule_b2', label: 'No PAC gate approved with open NCRs', deepLink: null },
+  { code: 'B3', fn: 'gm_rule_b3', label: 'Executed VOs are approved & baselined', deepLink: null },
+  { code: 'B4', fn: 'gm_rule_b4', label: 'No FAC gate with active guarantees', deepLink: null },
+  { code: 'B5', fn: 'gm_rule_b5', label: 'RLS enabled on non-reference tables', deepLink: null },
+  { code: 'B6', fn: 'gm_rule_b6', label: 'No self-approved approvals', deepLink: '/admin/audit' },
+  { code: 'B7', fn: 'gm_rule_b7', label: 'Deliverables have write policies', deepLink: null },
+  { code: 'B8', fn: 'gm_rule_b8', label: 'No draft client reports leaked to storage', deepLink: null },
+  { code: 'B9', fn: 'gm_rule_b9', label: 'Paid milestones have paid_at & amount', deepLink: null },
+  { code: 'B10', fn: 'gm_rule_b10', label: 'Recent changes are logged as events', deepLink: '/admin/audit' },
+]
+
+/**
+ * Run all 10 governance health-check rules. Each rule is an isolated RPC call;
+ * one failing/erroring query surfaces as a CHECK ERROR on that card only and
+ * never breaks the others. The run itself is logged to workflow_events.
+ */
+export async function runRulesHealthCheck(): Promise<{ results: RuleResult[]; ranAt: string }> {
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const results: RuleResult[] = await Promise.all(
+    RULE_META.map(async (meta): Promise<RuleResult> => {
+      try {
+        const { data, error } = await admin.rpc(meta.fn)
+        if (error) throw new Error(error.message)
+        const payload = (data ?? {}) as { ok?: boolean; count?: number; details?: unknown[]; note?: string }
+        return {
+          code: meta.code,
+          label: meta.label,
+          status: payload.ok ? 'pass' : 'fail',
+          count: typeof payload.count === 'number' ? payload.count : null,
+          note: payload.note ?? '',
+          details: Array.isArray(payload.details) ? payload.details : [],
+          deepLink: meta.deepLink,
+        }
+      } catch (e) {
+        return {
+          code: meta.code,
+          label: meta.label,
+          status: 'error',
+          count: null,
+          note: e instanceof Error ? e.message : 'Check failed to run.',
+          details: [],
+          deepLink: meta.deepLink,
+        }
+      }
+    }),
+  )
+
+  const ranAt = new Date().toISOString()
+  const passing = results.filter((r) => r.status === 'pass').length
+  await logAdminEvent(admin, 'rules_health_check', actor.userId, {
+    passing,
+    total: results.length,
+    ran_at: ranAt,
+  })
+
+  return { results, ranAt }
+}

@@ -731,3 +731,133 @@ export async function getGateApproverConfig(
     }
   })
 }
+
+// ── Admin: Roles & Approval Flow (Phase 9) ───────────────────
+
+export interface ApprovalMatrixRow {
+  id: string
+  action_code: string
+  action_name: string
+  category: string
+  department_code: string
+  initiator_role: string
+  approver_role: string
+  secondary_approver_role: string | null
+  threshold_usd: number | null
+  requires_segregation: boolean
+  notes: string | null
+  sort_order: number
+}
+
+/** The seeded 25-action approval-authority matrix (read-only, from DB). */
+export async function getApprovalMatrix(): Promise<ApprovalMatrixRow[]> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('approval_matrix')
+    .select(
+      'id, action_code, action_name, category, department_code, initiator_role, approver_role, secondary_approver_role, threshold_usd, requires_segregation, notes, sort_order',
+    )
+    .order('sort_order')
+  if (error) throw error
+  return (data ?? []) as ApprovalMatrixRow[]
+}
+
+export interface DirectoryUser {
+  id: string
+  full_name: string
+  email: string | null
+  role: string | null
+  home_role_id: string | null
+  home_role_code: string | null
+  home_role_title: string | null
+  last_active: string | null
+  external_org: string | null
+  user_type: string | null
+}
+
+export interface DepartmentDirectory {
+  code: string
+  name: string
+  roles: { id: string; code: string; title: string }[]
+  headcount: number
+  users: DirectoryUser[]
+}
+
+export interface OrgDirectory {
+  departments: DepartmentDirectory[]
+  governance: DirectoryUser[]
+  external: DirectoryUser[]
+}
+
+/**
+ * Organization directory for the admin roles-flow Tab 1. Groups internal staff
+ * under their home-role's department, and separates governance + external users.
+ */
+export async function getOrgDirectory(): Promise<OrgDirectory> {
+  const admin = createAdminClient()
+  const [deptRes, rolesRes, usersRes] = await Promise.all([
+    admin.from('departments').select('id, code, name').order('code'),
+    admin.from('roles').select('id, code, title, department_id, sort_order').order('sort_order'),
+    admin
+      .from('profiles')
+      .select('id, full_name, email, role, home_role_id, last_active, external_org, user_type')
+      .order('full_name'),
+  ])
+  if (deptRes.error) throw deptRes.error
+  if (rolesRes.error) throw rolesRes.error
+  if (usersRes.error) throw usersRes.error
+
+  const roleById = new Map((rolesRes.data ?? []).map((r) => [r.id as string, r]))
+  const deptById = new Map((deptRes.data ?? []).map((d) => [d.id as string, d]))
+
+  const enrich = (u: Record<string, unknown>): DirectoryUser => {
+    const role = u.home_role_id ? roleById.get(u.home_role_id as string) : undefined
+    return {
+      id: u.id as string,
+      full_name: (u.full_name as string) ?? 'Unnamed',
+      email: (u.email as string) ?? null,
+      role: (u.role as string) ?? null,
+      home_role_id: (u.home_role_id as string) ?? null,
+      home_role_code: role?.code ?? null,
+      home_role_title: role?.title ?? null,
+      last_active: (u.last_active as string) ?? null,
+      external_org: (u.external_org as string) ?? null,
+      user_type: (u.user_type as string) ?? null,
+    }
+  }
+
+  const users = (usersRes.data ?? []).map((u) => enrich(u as Record<string, unknown>))
+
+  // Bucket users by their home-role department.
+  const usersByDept = new Map<string, DirectoryUser[]>()
+  for (const u of users) {
+    if (u.user_type === 'governance' || u.user_type === 'external') continue
+    const role = u.home_role_id ? roleById.get(u.home_role_id) : undefined
+    const deptId = role?.department_id as string | undefined
+    const deptCode = deptId ? deptById.get(deptId)?.code : undefined
+    if (!deptCode) continue
+    const list = usersByDept.get(deptCode) ?? []
+    list.push(u)
+    usersByDept.set(deptCode, list)
+  }
+
+  const departments: DepartmentDirectory[] = (deptRes.data ?? []).map((d) => {
+    const deptRoles = (rolesRes.data ?? [])
+      .filter((r) => r.department_id === d.id)
+      .map((r) => ({ id: r.id as string, code: r.code as string, title: r.title as string }))
+    const deptUsers = usersByDept.get(d.code as string) ?? []
+    return {
+      code: d.code as string,
+      name: d.name as string,
+      roles: deptRoles,
+      headcount: deptUsers.length,
+      users: deptUsers,
+    }
+  })
+
+  return {
+    departments,
+    governance: users.filter((u) => u.user_type === 'governance'),
+    external: users.filter((u) => u.user_type === 'external'),
+  }
+}
