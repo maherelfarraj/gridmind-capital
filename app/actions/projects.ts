@@ -24,6 +24,13 @@ const GATE_NAMES: Record<number, string> = {
   8: 'O&M Handover',
 }
 
+// The governed gate model is G0–G6 (matches GATE_ORDER in app/actions/phase-gates.ts).
+// Used to seed phase_gates rows when a project is created.
+const GATE_PHASES: { phase: number; name: string }[] = Array.from({ length: 7 }, (_, i) => ({
+  phase: i,
+  name: GATE_NAMES[i],
+}))
+
 export interface GetProjectsOptions {
   phase?: string | null
   search?: string | null
@@ -173,13 +180,24 @@ export async function createProject(payload: {
       target_completion: isValidDate(payload.target_completion) ? payload.target_completion : null,
       tenant_id: DEMO_TENANT,
       status: 'active',
-      current_phase: 0,
+      current_phase: 1,   // G0 (origination) complete, G1 (development) in progress
       health: 'green',
     })
     .select('id')
     .single()
 
   if (error) return { error: error.message }
+
+  // Seed the G0–G6 gate records for the new project.
+  // G0 = approved (project originated), G1 = in_review (active gate), G2–G6 = pending.
+  const gateRows = GATE_PHASES.map((g) => ({
+    project_id:   data.id,
+    phase_number: g.phase,
+    phase_name:   g.name,
+    status:       g.phase === 0 ? 'approved' : g.phase === 1 ? 'in_review' : 'pending',
+  }))
+  const { error: gateErr } = await supabase.from('phase_gates').insert(gateRows)
+  if (gateErr) console.log('[v0] phase_gates seed failed:', gateErr.message)
 
   // Fire-and-forget notification email — does not block response
   sendProjectCreatedEmail({

@@ -4,14 +4,41 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 
-export async function getApprovals(): Promise<ApprovalRecord[]> {
+// Roles that see every approval regardless of routing rules.
+const ADMIN_APPROVER_ROLES = ['Super Admin', 'Tenant Admin', 'Executive Sponsor', 'PMO Director']
+
+/**
+ * Fetch approvals for the inbox.
+ * @param approverRole  Human-readable role label (e.g. "Project Manager"). When provided
+ *                      and not an admin role, results are scoped to the object_types this
+ *                      role is configured to approve in `approval_rules`. Omit for the
+ *                      full/admin view.
+ */
+export async function getApprovals(approverRole?: string): Promise<ApprovalRecord[]> {
   const supabase = createAdminClient()
 
-  const { data, error } = await supabase
+  // Resolve which object_types this approver is responsible for.
+  let allowedObjectTypes: string[] | null = null
+  if (approverRole && !ADMIN_APPROVER_ROLES.includes(approverRole)) {
+    const { data: rules } = await supabase
+      .from('approval_rules')
+      .select('object_type')
+      .eq('approver_role', approverRole)
+    allowedObjectTypes = Array.from(new Set((rules ?? []).map((r) => r.object_type).filter(Boolean)))
+  }
+
+  let query = supabase
     .from('approvals')
     .select('id, object_type, title, status, priority, created_at, description, amount')
     .order('created_at', { ascending: false })
 
+  // Scope to the approver's object types. If the role has no rules, it sees nothing.
+  if (allowedObjectTypes !== null) {
+    if (allowedObjectTypes.length === 0) return []
+    query = query.in('object_type', allowedObjectTypes)
+  }
+
+  const { data, error } = await query
   if (error || !data) return []
 
   return data.map((a) => ({
@@ -20,7 +47,7 @@ export async function getApprovals(): Promise<ApprovalRecord[]> {
     object_code: a.title ?? a.id.slice(0, 8).toUpperCase(),
     status: (a.status as ApprovalRecord['status']) ?? 'pending',
     level: 1,
-    approver_role: 'Project Manager',
+    approver_role: approverRole ?? 'Project Manager',
     requested_by_name: 'Team Member',
     due_date: null,
     created_at: a.created_at,

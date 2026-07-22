@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
 import { CommentThread } from '@/components/comments/comment-thread'
 import { getProject } from '@/app/actions/projects'
+import { getProjectTimeline } from '@/app/actions/phase-gates'
 
 // ─────────────────────────────────────────────────────────────
 // Page
@@ -19,6 +20,11 @@ export default function ProjectDetailRoute() {
   const { data: project, isLoading } = useSWR(
     id ? `project-${id}` : null,
     () => getProject(id),
+  )
+
+  const { data: timelineLogs } = useSWR(
+    id ? `project-timeline-${id}` : null,
+    () => getProjectTimeline(id),
   )
 
   const [activePanel, setActivePanel] = React.useState<'comments' | 'documents' | 'edit' | null>(null)
@@ -104,7 +110,7 @@ export default function ProjectDetailRoute() {
           { title: 'Supply chain disruption', probability: 'medium', impact: 'medium', status: 'open' },
           { title: 'Weather delays',          probability: 'medium', impact: 'low',    status: 'open' },
         ]}
-        timelineLogs={[]}
+        timelineLogs={timelineLogs ?? []}
         approvals={[]}
         teamMembers={[]}
         documents={[]}
