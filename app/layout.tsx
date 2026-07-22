@@ -1,6 +1,6 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
+import { Inter, JetBrains_Mono, Dancing_Script } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
 import { ChunkErrorWatcher } from '@/components/chunk-error-watcher'
@@ -15,6 +15,14 @@ const inter = Inter({
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-jetbrains-mono',
+  display: 'swap',
+})
+
+// Script face used to render "typed" electronic signatures.
+const dancingScript = Dancing_Script({
+  subsets: ['latin'],
+  weight: ['600', '700'],
+  variable: '--font-signature',
   display: 'swap',
 })
 
@@ -89,7 +97,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} bg-background`} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${dancingScript.variable} bg-background`} suppressHydrationWarning>
       {/* suppressHydrationWarning on <head> prevents React from erroring on the
           v0 sandbox script (window.__V0_SANDBOX_ID__) that is injected into
           <head> server-side but differs on the client. */}

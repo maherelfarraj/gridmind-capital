@@ -8,6 +8,9 @@ import {
   Flame, Mail, Download, Gavel, X,
 } from 'lucide-react'
 import type { G0FormData, G0RiskRow, G0StakeholderRow } from '@/app/actions/gate-submissions'
+import { SignaturePad } from '@/components/signatures/signature-pad'
+import { SignatureDisplay } from '@/components/signatures/signature-display'
+import type { SignatureRecord } from '@/app/actions/signatures'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -35,10 +38,15 @@ interface G0ApprovalReviewProps {
   approval:       ApprovalRecord
   opportunity:    Partial<G0FormData>
   requester:      UserProfile
-  onDecide:       (decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject', rationale: string, conditions?: string) => Promise<void>
+  onDecide:       (decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject', rationale: string, conditions?: string, signatureId?: string) => Promise<void>
   onDelegate:     (delegateId: string, reason: string) => Promise<void>
   onRequestInfo:  (message: string) => Promise<void>
   isSubmitting?:  boolean
+  /** Project context for the signature consent statement + linkage. */
+  projectId?:     string | null
+  projectName?:   string
+  /** Signatures already recorded against this approval. */
+  existingSignatures?: SignatureRecord[]
 }
 
 type Decision = 'proceed' | 'conditional_proceed' | 'hold' | 'reject'
@@ -288,8 +296,12 @@ export function G0ApprovalReview({
   approval, opportunity, requester,
   onDecide, onDelegate, onRequestInfo,
   isSubmitting = false,
+  projectId, projectName,
+  existingSignatures = [],
 }: G0ApprovalReviewProps) {
   const [decision, setDecision]         = React.useState<Decision>('proceed')
+  const [showSig, setShowSig]           = React.useState(false)
+  const [signature, setSignature]       = React.useState<SignatureRecord | null>(null)
   const [rationale, setRationale]       = React.useState('')
   const [conditions, setConditions]     = React.useState('')
   const [showDelegate, setShowDelegate] = React.useState(false)

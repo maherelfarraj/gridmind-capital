@@ -167,6 +167,11 @@ export async function getProjectTimeline(projectId: string): Promise<WorkflowLog
   const moduleLogs = await getModuleEvents(supabase, projectId)
   logs.push(...moduleLogs)
 
+  // Merge electronic signatures captured against this project (gate sign-offs,
+  // certificates) so each appears as a timeline entry with its signature image.
+  const signatureLogs = await getSignatureEvents(supabase, projectId)
+  logs.push(...signatureLogs)
+
   // Newest first
   return logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   }
@@ -197,6 +202,58 @@ function actionFor(transition: string | null, moduleKey: string): string {
     return 'finance.budget_update'
   }
   return 'activity'
+}
+
+const SIG_ENTITY_LABEL: Record<string, string> = {
+  gate_approval: 'Gate Approval',
+  vo_approval: 'Variation Order',
+  client_report: 'Client Report',
+  certificate: 'Gate Certificate',
+}
+
+/** Electronic signatures for a project → timeline entries carrying the signature image. */
+async function getSignatureEvents(
+  supabase: ReturnType<typeof createAdminClient>,
+  projectId: string,
+): Promise<WorkflowLogEntry[]> {
+  const { data } = await supabase
+    .from('signatures')
+    .select('id, entity_type, entity_id, signer_name, signer_role, signature_image_path, signed_at, ip_address, statement')
+    .eq('project_id', projectId)
+    .order('signed_at', { ascending: false })
+    .limit(100)
+
+  const rows = data ?? []
+  return Promise.all(
+    rows.map(async (r: Record<string, any>): Promise<WorkflowLogEntry> => {
+      const { data: signed } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(r.signature_image_path as string, 3600)
+      const label = SIG_ENTITY_LABEL[r.entity_type as string] ?? 'Signature'
+      return {
+        id: `sig-${r.id}`,
+        action: 'workflow.approve',
+        object_type: 'signature',
+        object_id: r.entity_id as string,
+        object_code: `${label} · Signed`,
+        actor_name: r.signer_name as string,
+        actor_role: (r.signer_role as string) ?? null,
+        before_state: null,
+        after_state: 'signed',
+        decision_reason: null,
+        metadata: {
+          signature: {
+            imageUrl: signed?.signedUrl ?? '',
+            signerName: r.signer_name,
+            signerRole: r.signer_role,
+            signedAt: r.signed_at,
+            ip: r.ip_address,
+          },
+        },
+        created_at: r.signed_at as string,
+      }
+    }),
+  )
 }
 
 async function getModuleEvents(

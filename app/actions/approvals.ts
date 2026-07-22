@@ -145,6 +145,8 @@ export async function decideApproval(opts: {
   decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject'
   rationale: string
   conditions?: string
+  /** Id of the electronic signature captured for this decision (gate approvals). */
+  signatureId?: string
 }): Promise<{ error: string | null }> {
   const supabase = createAdminClient()
 
@@ -172,6 +174,7 @@ export async function decideApproval(opts: {
         `\n\n[Decision: ${opts.decision.replace('_', ' ')}]`,
         `\nRationale: ${opts.rationale}`,
         opts.conditions ? `\nConditions: ${opts.conditions}` : '',
+        opts.signatureId ? `\n[Signed: ${opts.signatureId}]` : '',
       ].join(''),
     })
     .eq('id', opts.id)

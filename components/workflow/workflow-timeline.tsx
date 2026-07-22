@@ -280,6 +280,9 @@ function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) 
   const actorName = entry.actor_name ?? 'System'
   const tags = (entry.metadata?.tags as string[] | undefined) ?? []
   const detail = entry.metadata?.detail as string | undefined
+  const signature = entry.metadata?.signature as
+    | { imageUrl?: string; signerName?: string; signerRole?: string; signedAt?: string; ip?: string }
+    | undefined
 
   return (
     <motion.li
@@ -403,6 +406,33 @@ function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) 
           <p className="mt-2 text-xs italic text-muted-foreground leading-relaxed border-l-2 border-border pl-2.5">
             &ldquo;{entry.decision_reason}&rdquo;
           </p>
+        )}
+
+        {/* Row 4b: Electronic signature */}
+        {signature?.imageUrl && (
+          <div className="mt-2 flex items-center gap-3 rounded-lg border border-border bg-muted/20 p-2">
+            <span className="flex h-10 items-center justify-center rounded-md bg-white px-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={signature.imageUrl || '/placeholder.svg'}
+                alt={`Signature of ${signature.signerName ?? 'signer'}`}
+                crossOrigin="anonymous"
+                className="h-8 object-contain"
+              />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-foreground">
+                Signed by {signature.signerName ?? 'Authorized signer'}
+                {signature.signerRole ? <span className="font-normal text-muted-foreground"> · {signature.signerRole}</span> : null}
+              </p>
+              {signature.signedAt && (
+                <p className="text-[11px] text-muted-foreground tabular-nums">
+                  {new Date(signature.signedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {signature.ip ? ` · IP ${signature.ip}` : ''}
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Row 5: Detail (from metadata) */}
