@@ -409,8 +409,18 @@ const QUICK_ACTIONS: {
   { label: 'G0 Intake', icon: FileText,      iconColor: '#d97706', bgColor: 'bg-amber-100 dark:bg-amber-900/30',      count: 'New opportunity',ariaLabel: 'Start G0 Intake',       href: '/projects/new/intake' },
 ]
 
-function QuickActionsCard({ onAction }: { onAction?: (label: string) => void }) {
+function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) => void; projectId?: string }) {
   const router = useNextRouter()
+  const actions = projectId
+    ? [
+        ...QUICK_ACTIONS,
+        {
+          label: 'Client Report', icon: FileText, iconColor: '#7c3aed',
+          bgColor: 'bg-violet-100 dark:bg-violet-900/30', count: 'Monthly PDF',
+          ariaLabel: 'Open Client Report', href: `/projects/${projectId}/client-report`,
+        },
+      ]
+    : QUICK_ACTIONS
   return (
     <Card className="rounded-xl border border-slate-200 shadow-sm dark:border-border">
       <CardHeader className="px-5 py-4 border-b border-slate-100 dark:border-border">
@@ -423,7 +433,7 @@ function QuickActionsCard({ onAction }: { onAction?: (label: string) => void }) 
       </CardHeader>
       <CardContent className="p-5">
         <div className="grid grid-cols-2 gap-4">
-          {QUICK_ACTIONS.map(({ label, icon: Icon, iconColor, bgColor, count, ariaLabel, href }) => (
+          {actions.map(({ label, icon: Icon, iconColor, bgColor, count, ariaLabel, href }) => (
             <button
               key={label}
               type="button"
@@ -710,6 +720,7 @@ export function ProjectDetailPage({
             <ActivityTimelineCard logs={workflowLogs} loading={isLoading} />
           )}
           <QuickActionsCard
+            projectId={project.id}
             onAction={(label) => {
               if (label === 'Documents') onDocuments()
               else if (label === 'Comments') onComments()
