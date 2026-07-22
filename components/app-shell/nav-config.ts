@@ -4,9 +4,7 @@ import {
   CheckSquare,
   Shield,
   Settings,
-  HelpCircle,
   GitBranch,
-  Activity,
   Sparkles,
   FileText,
   Building2,
@@ -18,7 +16,6 @@ import {
   BarChart3,
   ClipboardList,
   Users,
-  Globe,
   AlertTriangle,
   Store,
   Bell,
@@ -213,24 +210,12 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Engineering',
         href: '/engineering',
         icon: Wrench,
-        children: [
-          { id: 'eng-drawings',    label: 'Drawing Register',  href: '/engineering/drawings' },
-          { id: 'eng-rfis',        label: 'RFIs',              href: '/engineering/rfis' },
-          { id: 'eng-submittals',  label: 'Submittals',        href: '/engineering/submittals' },
-          { id: 'eng-transmittals',label: 'Transmittals',      href: '/engineering/transmittals' },
-        ],
       },
       {
         id: 'procurement',
         label: 'Procurement',
         href: '/procurement',
         icon: ClipboardList,
-        children: [
-          { id: 'proc-rfqs',      label: 'RFQ Register',      href: '/procurement' },
-          { id: 'proc-contracts', label: 'Contracts',         href: '/procurement/contracts' },
-          { id: 'proc-po',        label: 'Purchase Orders',   href: '/procurement/purchase-orders' },
-          { id: 'proc-receiving', label: 'Receiving',         href: '/procurement/receiving' },
-        ],
       },
       {
         id: 'construction',
@@ -239,8 +224,6 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Hammer,
         children: [
           { id: 'con-hse',        label: 'HSE',               href: '/hse' },
-          { id: 'con-testing',    label: 'Testing & QA',      href: '/testing' },
-          { id: 'con-punch',      label: 'Punch Lists',       href: '/construction/punch-lists' },
         ],
       },
       {
@@ -282,11 +265,6 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Commercial',
         href: '/commercial',
         icon: Building2,
-        children: [
-          { id: 'com-contracts',  label: 'Contracts',         href: '/commercial/contracts' },
-          { id: 'com-variations', label: 'Variations',        href: '/commercial/variations' },
-          { id: 'com-claims',     label: 'Claims',            href: '/commercial/claims' },
-        ],
       },
       {
         id: 'finance',
@@ -294,10 +272,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/finance',
         icon: DollarSign,
         children: [
-          { id: 'fin-budget',     label: 'Budget',            href: '/finance/budget' },
           { id: 'fin-evm',        label: 'EVM & Cash Flow',   href: '/finance/evm' },
-          { id: 'fin-actuals',    label: 'Actuals',           href: '/finance/actuals' },
-          { id: 'fin-forecast',   label: 'Forecast',          href: '/finance/forecast' },
         ],
       },
     ],
@@ -313,12 +288,6 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: AlertTriangle,
       },
       {
-        id: 'esg',
-        label: 'ESG & Reporting',
-        href: '/esg',
-        icon: Globe,
-      },
-      {
         id: 'ai-insights',
         label: 'AI Insights',
         href: '/ai-insights',
@@ -329,12 +298,6 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Marketplace',
         href: '/marketplace',
         icon: Store,
-      },
-      {
-        id: 'analytics',
-        label: 'Analytics',
-        href: '/analytics',
-        icon: Activity,
       },
     ],
   },
@@ -378,13 +341,6 @@ export const NAV_BOTTOM: NavItem[] = [
     label: 'Settings',
     href: '/settings',
     icon: Settings,
-    bottom: true,
-  },
-  {
-    id: 'help',
-    label: 'Help & Docs',
-    href: '/help',
-    icon: HelpCircle,
     bottom: true,
   },
 ]
