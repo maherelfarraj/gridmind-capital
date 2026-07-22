@@ -285,14 +285,26 @@ export async function getProjectsLite(): Promise<{ id: string; code: string; nam
   return data ?? []
 }
 
-export async function getPeople(): Promise<{ id: string; full_name: string; role: string | null }[]> {
+export interface PersonLite {
+  id: string
+  full_name: string
+  role: string | null
+  is_active: boolean
+  user_type: string | null
+}
+
+/** Active people. Pass `internalOnly` to restrict to internal staff. */
+export async function getPeople(opts?: { internalOnly?: boolean }): Promise<PersonLite[]> {
   const admin = createAdminClient()
-  const { data, error } = await admin
+  let q = admin
     .from('profiles')
-    .select('id, full_name, role')
+    .select('id, full_name, role, is_active, user_type')
+    .eq('is_active', true)
     .order('full_name')
+  if (opts?.internalOnly) q = q.eq('user_type', 'internal')
+  const { data, error } = await q
   if (error) throw error
-  return (data ?? []) as { id: string; full_name: string; role: string | null }[]
+  return (data ?? []) as PersonLite[]
 }
 
 /** Current role→person assignments for a project. */

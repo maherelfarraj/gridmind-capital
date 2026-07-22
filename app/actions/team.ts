@@ -55,7 +55,19 @@ export async function assignRole(input: {
       },
       { onConflict: 'project_id,role_id' },
     )
-  if (error) return { error: error.message }
+  if (error) {
+    if (error.code === '23505') return { error: 'That role is already assigned on this project.' }
+    return { error: error.message }
+  }
+
+  await admin.from('audit_logs').insert({
+    tenant_id: actor.tenantId,
+    actor_id: actor.userId,
+    action: 'assign',
+    entity_type: 'project_team',
+    entity_id: projectId,
+    new_data: { project_id: projectId, role_id: roleId, person_id: personId },
+  })
 
   await logEvent(admin, {
     transition: 'TEAM_ASSIGN',
@@ -86,6 +98,15 @@ export async function unassignRole(input: {
     .eq('project_id', projectId)
     .eq('role_id', roleId)
   if (error) return { error: error.message }
+
+  await admin.from('audit_logs').insert({
+    tenant_id: actor.tenantId,
+    actor_id: actor.userId,
+    action: 'unassign',
+    entity_type: 'project_team',
+    entity_id: projectId,
+    old_data: { project_id: projectId, role_id: roleId },
+  })
 
   await logEvent(admin, {
     transition: 'TEAM_UNASSIGN',
