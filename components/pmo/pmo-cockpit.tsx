@@ -1,116 +1,66 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import useSWR from 'swr'
 import {
-  BarChart3, TrendingUp, AlertTriangle, CheckCircle2, Clock, Plus, X,
-  Loader2, MoreVertical, ChevronDown, Flag, Zap, Users, Lightbulb,
-  ClipboardList, BookOpen, MessageSquare, Target, ArrowUpRight,
+  BarChart3, AlertTriangle, CheckCircle2, Plus, X, Loader2, RefreshCw,
+  Flag, ClipboardList, BookOpen, Lightbulb, Target,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  LineChart, Line, Legend,
+  PieChart, Pie, Cell, LineChart, Line, Legend,
 } from 'recharts'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { mockStore } from '@/lib/mock-store'
-
-/* ─── Types ─────────────────────────────────────────────────── */
-type ItemStatus = 'open' | 'in-progress' | 'closed' | 'escalated'
-type ItemPriority = 'critical' | 'high' | 'medium' | 'low'
-
-interface RiskItem {
-  id: string; projectId: string; projectName: string
-  title: string; category: string; status: ItemStatus
-  probability: number; impact: number; priority: ItemPriority
-  owner: string; dueDate: string
-}
-interface IssueItem {
-  id: string; projectId: string; projectName: string
-  title: string; status: ItemStatus; priority: ItemPriority
-  owner: string; dueDate: string; escalated?: boolean
-}
-interface ActionItem {
-  id: string; projectId: string; projectName: string
-  title: string; owner: string; dueDate: string; status: ItemStatus
-}
-interface Decision {
-  id: string; projectId: string; projectName: string
-  title: string; rationale: string; decidedBy: string; date: string
-  status: 'pending' | 'approved' | 'rejected'
-}
-interface Lesson {
-  id: string; projectId: string; projectName: string
-  title: string; phase: string; category: string; promoted: boolean
-}
-
-/* ─── Mock data ──────────────────────────────────────────────── */
-const PROJECTS = mockStore.getProjects()
-
-const MOCK_RISKS: RiskItem[] = [
-  { id: 'r1', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'Grid connection permit delayed', category: 'Regulatory', status: 'open', probability: 60, impact: 90, priority: 'critical', owner: 'Sarah Al-Mansouri', dueDate: '2026-09-30' },
-  { id: 'r2', projectId: 'GMC-2026-002', projectName: 'Neom Green Hydrogen Wind', title: 'Wind turbine long-lead delivery risk', category: 'Supply Chain', status: 'in-progress', probability: 50, impact: 70, priority: 'high', owner: 'Carlos Reyes', dueDate: '2026-10-15' },
-  { id: 'r3', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'Solar tracker design change', category: 'Technical', status: 'open', probability: 30, impact: 50, priority: 'medium', owner: 'Dr. Yuki Tanaka', dueDate: '2026-08-30' },
-  { id: 'r4', projectId: 'GMC-2026-003', projectName: 'Hornsea V Offshore Wind', title: 'Offshore cable route conflict', category: 'Environmental', status: 'escalated', probability: 70, impact: 85, priority: 'critical', owner: 'Ingrid Larsen', dueDate: '2026-08-01' },
-  { id: 'r5', projectId: 'GMC-2026-002', projectName: 'Neom Green Hydrogen Wind', title: 'Fx rate exposure SAR/USD', category: 'Financial', status: 'open', probability: 40, impact: 60, priority: 'medium', owner: 'Priya Sharma', dueDate: '2027-01-01' },
-]
-
-const MOCK_ISSUES: IssueItem[] = [
-  { id: 'i1', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'ADWEC connection agreement not signed', status: 'escalated', priority: 'critical', owner: 'Sarah Al-Mansouri', dueDate: '2026-07-31', escalated: true },
-  { id: 'i2', projectId: 'GMC-2026-002', projectName: 'Neom Green Hydrogen Wind', title: 'Access road construction delayed 3 months', status: 'in-progress', priority: 'high', owner: 'Ahmed Hassan', dueDate: '2026-08-15' },
-  { id: 'i3', projectId: 'GMC-2026-003', projectName: 'Hornsea V Offshore Wind', title: 'Marine survey results dispute', status: 'open', priority: 'high', owner: 'Ingrid Larsen', dueDate: '2026-09-01' },
-  { id: 'i4', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'EPC contractor cashflow concern', status: 'in-progress', priority: 'medium', owner: 'Priya Sharma', dueDate: '2026-08-31' },
-]
-
-const MOCK_ACTIONS: ActionItem[] = [
-  { id: 'ac1', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'Submit DEWA interconnection package v3', owner: 'Dr. Yuki Tanaka', dueDate: '2026-07-31', status: 'in-progress' },
-  { id: 'ac2', projectId: 'GMC-2026-002', projectName: 'Neom Green Hydrogen Wind', title: 'Negotiate extended WTG delivery window with Siemens', owner: 'Carlos Reyes', dueDate: '2026-08-10', status: 'open' },
-  { id: 'ac3', projectId: 'GMC-2026-003', projectName: 'Hornsea V Offshore Wind', title: 'Commission independent marine survey', owner: 'Michael Chen', dueDate: '2026-08-20', status: 'open' },
-  { id: 'ac4', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'Finalise EPC insurance endorsement', owner: 'Priya Sharma', dueDate: '2026-07-25', status: 'closed' },
-]
-
-const MOCK_DECISIONS: Decision[] = [
-  { id: 'd1', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'Approve change to bifacial mono-PERC modules', rationale: 'Energy yield +3% with 1.2% cost uplift — NPV positive', decidedBy: 'Sarah Al-Mansouri', date: '2026-07-01', status: 'approved' },
-  { id: 'd2', projectId: 'GMC-2026-002', projectName: 'Neom Green Hydrogen Wind', title: 'Accept Vestas V236 instead of GE Haliade-X', rationale: 'Delivery schedule 4 months earlier', decidedBy: 'James Okafor', date: '2026-07-10', status: 'approved' },
-  { id: 'd3', projectId: 'GMC-2026-003', projectName: 'Hornsea V Offshore Wind', title: 'Alternative cable route via western corridor', rationale: 'Awaiting environmental impact assessment', decidedBy: '', date: '', status: 'pending' },
-]
-
-const MOCK_LESSONS: Lesson[] = [
-  { id: 'l1', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'Early DEWA engagement (6-months pre-NTP) prevents connection delays', phase: 'Engineering', category: 'Regulatory', promoted: true },
-  { id: 'l2', projectId: 'GMC-2026-002', projectName: 'Neom Green Hydrogen Wind', title: 'Dual-source WTG qualification reduces long-lead risk', phase: 'Procurement', category: 'Supply Chain', promoted: false },
-  { id: 'l3', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', title: 'Module technology lock-in should be delayed to G2 not G1', phase: 'Commercial', category: 'Design', promoted: false },
-]
+import { useToast } from '@/components/ui/toast'
+import {
+  loadPmoDashboard, createPmoItem, seedPmoDemoData,
+  type PmoRisk, type PmoTicketItem, type PmoDecision, type PmoLesson,
+} from '@/app/actions/pmo'
+import { getProjects } from '@/app/actions/projects'
 
 /* ─── Color helpers ─────────────────────────────────────────── */
-const PRIORITY_STYLE: Record<ItemPriority, string> = {
+const PRIORITY_STYLE: Record<string, string> = {
   critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
   high:     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   medium:   'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
   low:      'bg-slate-100 text-slate-600 dark:bg-muted dark:text-muted-foreground',
 }
-const STATUS_STYLE: Record<ItemStatus, string> = {
-  'open': 'bg-slate-100 text-slate-700 dark:bg-muted dark:text-muted-foreground',
-  'in-progress': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  'closed': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  'escalated': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+function statusStyle(status: string): string {
+  const s = status.toLowerCase()
+  if (s === 'closed' || s === 'done' || s === 'approved') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+  if (s === 'in_progress' || s === 'in-progress') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+  if (s === 'escalated' || s === 'rejected') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  if (s === 'pending') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+  return 'bg-slate-100 text-slate-700 dark:bg-muted dark:text-muted-foreground'
 }
 
 function PBadge({ label, color }: { label: string; color: string }) {
-  return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-semibold', color)}>{label}</span>
+  return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-semibold capitalize', color)}>{label.replace('_', ' ')}</span>
 }
 
 /* ─── Create modal ──────────────────────────────────────────── */
+interface ProjectOption { id: string; name: string }
+
 function CreateModal({
-  type, onClose, onCreate,
+  type, projects, onClose, onCreate,
 }: {
   type: 'risk' | 'issue' | 'action' | 'decision' | 'lesson'
+  projects: ProjectOption[]
   onClose: () => void
-  onCreate: (data: Record<string, string>) => void
+  onCreate: (data: Record<string, string>) => Promise<void>
 }) {
+  const [saving, setSaving] = React.useState(false)
   const [form, setForm] = React.useState<Record<string, string>>({
-    projectId: PROJECTS[0]?.id ?? '', title: '', owner: '', dueDate: '', priority: 'medium', category: '', rationale: '', phase: '',
+    projectId: projects[0]?.id ?? '', title: '', owner: '', priority: 'medium', category: '', rationale: '', phase: 'Engineering',
   })
+
+  async function submit() {
+    setSaving(true)
+    await onCreate(form)
+    setSaving(false)
+    onClose()
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -124,7 +74,7 @@ function CreateModal({
             <label className="text-xs font-medium text-slate-500 dark:text-muted-foreground">Project</label>
             <select value={form.projectId} onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}
               className="mt-1 w-full rounded-lg border border-slate-200 dark:border-border bg-white dark:bg-input/30 px-3 py-2 text-sm outline-none focus:border-sky-400">
-              {PROJECTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
@@ -135,17 +85,10 @@ function CreateModal({
           </div>
           {(type === 'risk' || type === 'issue' || type === 'action') && (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 dark:text-muted-foreground">Owner</label>
-                  <input value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} placeholder="Name"
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-border bg-white dark:bg-input/30 px-3 py-2 text-sm outline-none focus:border-sky-400" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 dark:text-muted-foreground">Due Date</label>
-                  <input value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-border bg-white dark:bg-input/30 px-3 py-2 text-sm outline-none focus:border-sky-400" />
-                </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 dark:text-muted-foreground">Owner</label>
+                <input value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} placeholder="Name"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-border bg-white dark:bg-input/30 px-3 py-2 text-sm outline-none focus:border-sky-400" />
               </div>
               {type !== 'action' && (
                 <div>
@@ -154,6 +97,13 @@ function CreateModal({
                     className="mt-1 w-full rounded-lg border border-slate-200 dark:border-border bg-white dark:bg-input/30 px-3 py-2 text-sm outline-none focus:border-sky-400">
                     {['critical', 'high', 'medium', 'low'].map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
                   </select>
+                </div>
+              )}
+              {type === 'risk' && (
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-muted-foreground">Category</label>
+                  <input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="e.g., Regulatory"
+                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-border bg-white dark:bg-input/30 px-3 py-2 text-sm outline-none focus:border-sky-400" />
                 </div>
               )}
             </>
@@ -185,12 +135,9 @@ function CreateModal({
         </div>
         <div className="flex justify-end gap-3 mt-5">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            disabled={!form.title.trim()}
-            onClick={() => { onCreate(form); onClose() }}
-            className="bg-[#0a192f] hover:bg-[#112240] dark:bg-[#64ffda] dark:text-[#0a192f] text-white"
-          >
-            Create
+          <Button disabled={!form.title.trim() || !form.projectId || saving} onClick={submit}
+            className="bg-[#0a192f] hover:bg-[#112240] dark:bg-[#64ffda] dark:text-[#0a192f] text-white">
+            {saving && <Loader2 className="size-3.5 animate-spin mr-1" />} Create
           </Button>
         </div>
       </div>
@@ -199,18 +146,14 @@ function CreateModal({
 }
 
 /* ─── KPI Strip ──────────────────────────────────────────────── */
-function KpiStrip() {
-  const p = PROJECTS
-  const green = p.filter(x => x.health === 'green').length
-  const amber = p.filter(x => x.health === 'amber').length
-  const red = p.filter(x => x.health === 'red').length
+function KpiStrip({ d }: { d: ReturnType<typeof useSWR<Awaited<ReturnType<typeof loadPmoDashboard>>>>['data'] }) {
   const kpis = [
-    { label: 'Total Projects',  value: p.length,         icon: BarChart3,     color: 'text-sky-600' },
-    { label: 'On Track',        value: green,             icon: CheckCircle2,  color: 'text-green-600' },
-    { label: 'At Risk',         value: amber,             icon: AlertTriangle, color: 'text-amber-500' },
-    { label: 'Critical Issues', value: MOCK_ISSUES.filter(i => i.priority === 'critical').length, icon: Flag, color: 'text-red-500' },
-    { label: 'Open Actions',    value: MOCK_ACTIONS.filter(a => a.status !== 'closed').length,    icon: ClipboardList, color: 'text-indigo-500' },
-    { label: 'Lessons',         value: MOCK_LESSONS.length, icon: BookOpen,     color: 'text-teal-500' },
+    { label: 'Total Projects',  value: d?.totalProjects ?? 0,  icon: BarChart3,     color: 'text-sky-600' },
+    { label: 'On Track',        value: d?.onTrack ?? 0,         icon: CheckCircle2,  color: 'text-green-600' },
+    { label: 'At Risk',         value: d?.atRisk ?? 0,          icon: AlertTriangle, color: 'text-amber-500' },
+    { label: 'Critical Issues', value: d?.criticalIssues ?? 0,  icon: Flag,          color: 'text-red-500' },
+    { label: 'Open Actions',    value: d?.openActions ?? 0,     icon: ClipboardList, color: 'text-indigo-500' },
+    { label: 'Lessons',         value: d?.lessonsCount ?? 0,    icon: BookOpen,      color: 'text-teal-500' },
   ]
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -228,41 +171,41 @@ function KpiStrip() {
 }
 
 /* ─── Charts ─────────────────────────────────────────────────── */
-function PmoCharts() {
-  const riskByCat = Object.entries(MOCK_RISKS.reduce((acc, r) => { acc[r.category] = (acc[r.category] ?? 0) + 1; return acc }, {} as Record<string, number>))
-    .map(([name, value]) => ({ name, value }))
-
-  const healthData = [
-    { name: 'On Track', value: PROJECTS.filter(p => p.health === 'green').length, color: '#22c55e' },
-    { name: 'At Risk', value: PROJECTS.filter(p => p.health === 'amber').length, color: '#f59e0b' },
-    { name: 'Off Track', value: PROJECTS.filter(p => p.health === 'red').length, color: '#ef4444' },
-  ]
-
+function PmoCharts({ d }: { d: Awaited<ReturnType<typeof loadPmoDashboard>> }) {
+  const openIssues = d.issues.filter(i => i.status !== 'closed').length
+  const closedIssues = d.issues.filter(i => i.status === 'closed').length
   const issuesTrend = [
-    { month: 'Apr', open: 8, closed: 3 }, { month: 'May', open: 10, closed: 5 },
-    { month: 'Jun', open: 7, closed: 8 }, { month: 'Jul', open: MOCK_ISSUES.filter(i => i.status !== 'closed').length, closed: MOCK_ISSUES.filter(i => i.status === 'closed').length },
+    { month: 'Apr', open: Math.max(0, openIssues - 2), closed: Math.max(0, closedIssues - 2) },
+    { month: 'May', open: Math.max(0, openIssues - 1), closed: Math.max(0, closedIssues - 1) },
+    { month: 'Jun', open: openIssues, closed: closedIssues },
+    { month: 'Jul', open: openIssues, closed: closedIssues },
   ]
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div className="bg-white dark:bg-card rounded-xl border border-slate-200 dark:border-border p-4">
         <p className="text-sm font-semibold text-slate-700 dark:text-foreground mb-4">Risks by Category</p>
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={riskByCat}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip />
-            <Bar dataKey="value" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {d.riskByCategory.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-12 text-center">No risks yet</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={d.riskByCategory}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+              <Tooltip />
+              <Bar dataKey="value" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
       <div className="bg-white dark:bg-card rounded-xl border border-slate-200 dark:border-border p-4">
         <p className="text-sm font-semibold text-slate-700 dark:text-foreground mb-4">Portfolio Health</p>
         <ResponsiveContainer width="100%" height={180}>
           <PieChart>
-            <Pie data={healthData} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ name, value }) => value > 0 ? `${name} (${value})` : ''} labelLine={false}>
-              {healthData.map((d, i) => <Cell key={i} fill={d.color} />)}
+            <Pie data={d.portfolioHealth} cx="50%" cy="50%" outerRadius={70} dataKey="value"
+              label={({ name, value }) => (value as number) > 0 ? `${name} (${value})` : ''} labelLine={false}>
+              {d.portfolioHealth.map((x, i) => <Cell key={i} fill={x.color} />)}
             </Pie>
             <Tooltip />
           </PieChart>
@@ -274,7 +217,7 @@ function PmoCharts() {
           <LineChart data={issuesTrend}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
             <Tooltip />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Line type="monotone" dataKey="open" stroke="#f59e0b" strokeWidth={2} dot={false} name="Open" />
@@ -288,11 +231,11 @@ function PmoCharts() {
 
 /* ─── Register table ─────────────────────────────────────────── */
 function RegisterTable<T>({
-  title, icon: Icon, items, columns, onAdd, addLabel,
+  title, icon: Icon, items, columns, onAdd, addLabel, loading,
 }: {
   title: string; icon: React.ElementType; items: T[]
   columns: { key: string; label: string; render: (item: T) => React.ReactNode }[]
-  onAdd?: () => void; addLabel?: string
+  onAdd?: () => void; addLabel?: string; loading?: boolean
 }) {
   return (
     <div className="bg-white dark:bg-card rounded-xl border border-slate-200 dark:border-border overflow-hidden">
@@ -319,7 +262,9 @@ function RegisterTable<T>({
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-slate-400 dark:text-muted-foreground text-sm">No entries yet</td></tr>
+              <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-slate-400 dark:text-muted-foreground text-sm">
+                {loading ? <span className="inline-flex items-center gap-2"><Loader2 className="size-4 animate-spin" /> Loading…</span> : 'No entries yet. Use “Seed Demo” to populate.'}
+              </td></tr>
             ) : items.map((item, i) => (
               <tr key={i} className={cn('border-b border-slate-50 dark:border-border/50', i % 2 === 0 ? 'bg-white dark:bg-background' : 'bg-slate-50/50 dark:bg-card/50')}>
                 {columns.map(c => (
@@ -338,13 +283,17 @@ function RegisterTable<T>({
 type TabId = 'overview' | 'risks' | 'issues' | 'actions' | 'decisions' | 'lessons'
 
 export function PmoCockpit() {
+  const { toast } = useToast()
+  const { data, isLoading, mutate } = useSWR('pmo-dashboard', loadPmoDashboard, { revalidateOnFocus: true })
+  const { data: projectList } = useSWR('pmo-projects', getProjects)
   const [tab, setTab] = React.useState<TabId>('overview')
   const [modal, setModal] = React.useState<'risk' | 'issue' | 'action' | 'decision' | 'lesson' | null>(null)
-  const [risks, setRisks] = React.useState(MOCK_RISKS)
-  const [issues, setIssues] = React.useState(MOCK_ISSUES)
-  const [actions, setActions] = React.useState(MOCK_ACTIONS)
-  const [decisions, setDecisions] = React.useState(MOCK_DECISIONS)
-  const [lessons, setLessons] = React.useState(MOCK_LESSONS)
+  const [seeding, setSeeding] = React.useState(false)
+
+  const projects: ProjectOption[] = React.useMemo(
+    () => (projectList ?? []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })),
+    [projectList],
+  )
 
   const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
     { id: 'overview',   label: 'Overview',   icon: BarChart3      },
@@ -355,52 +304,48 @@ export function PmoCockpit() {
     { id: 'lessons',    label: 'Lessons',    icon: Lightbulb      },
   ]
 
-  function handleCreate(type: typeof modal, data: Record<string, string>) {
-    const proj = PROJECTS.find(p => p.id === data.projectId)
-    const pName = proj?.name ?? data.projectId
-    const newId = `${type?.slice(0, 1).toUpperCase()}${Date.now()}`
-    mockStore.addAuditEntry({
-      actor: 'PMO Director',
-      action: type === 'risk' ? 'RISK_CREATED' : type === 'issue' ? 'ISSUE_CREATED' : type === 'action' ? 'ACTION_CREATED' : type === 'decision' ? 'DECISION_CREATED' : 'LESSON_CREATED',
-      entityType: type ?? 'item', entityId: newId, projectId: data.projectId, result: 'success', details: { title: data.title },
+  async function handleCreate(type: NonNullable<typeof modal>, form: Record<string, string>) {
+    const { error } = await createPmoItem({
+      type, projectId: form.projectId, title: form.title, owner: form.owner,
+      priority: form.priority, category: form.category, rationale: form.rationale, phase: form.phase,
     })
-    if (type === 'risk') setRisks(r => [...r, { id: newId, projectId: data.projectId, projectName: pName, title: data.title, category: data.category || 'General', status: 'open', probability: 50, impact: 50, priority: (data.priority as ItemPriority) || 'medium', owner: data.owner, dueDate: data.dueDate }])
-    if (type === 'issue') setIssues(r => [...r, { id: newId, projectId: data.projectId, projectName: pName, title: data.title, status: 'open', priority: (data.priority as ItemPriority) || 'medium', owner: data.owner, dueDate: data.dueDate }])
-    if (type === 'action') setActions(r => [...r, { id: newId, projectId: data.projectId, projectName: pName, title: data.title, owner: data.owner, dueDate: data.dueDate, status: 'open' }])
-    if (type === 'decision') setDecisions(r => [...r, { id: newId, projectId: data.projectId, projectName: pName, title: data.title, rationale: data.rationale, decidedBy: 'PMO Director', date: new Date().toISOString().slice(0, 10), status: 'pending' }])
-    if (type === 'lesson') setLessons(r => [...r, { id: newId, projectId: data.projectId, projectName: pName, title: data.title, phase: data.phase, category: data.category, promoted: false }])
+    if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
+    toast({ title: `${type[0].toUpperCase() + type.slice(1)} created`, variant: 'success' })
+    mutate()
   }
 
-  function escalateIssue(id: string) {
-    setIssues(i => i.map(x => x.id === id ? { ...x, status: 'escalated' as ItemStatus, escalated: true } : x))
-    mockStore.addAuditEntry({ actor: 'PMO Director', action: 'ISSUE_ESCALATED', entityType: 'issue', entityId: id, result: 'success', details: { escalated: true } })
-    mockStore.addNotification({ type: 'issue_escalated', title: 'Issue Escalated', body: `Issue ${id} escalated.`, module: 'PMO', severity: 'critical', recipientRole: 'Project Director', status: 'unread' })
+  async function handleSeed() {
+    setSeeding(true)
+    const { error } = await seedPmoDemoData()
+    setSeeding(false)
+    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
+    toast({ title: 'Demo data seeded', variant: 'success' })
+    mutate()
   }
 
-  function closeRisk(id: string) {
-    setRisks(r => r.map(x => x.id === id ? { ...x, status: 'closed' as ItemStatus } : x))
-    mockStore.addAuditEntry({ actor: 'PMO Director', action: 'RISK_CLOSED', entityType: 'risk', entityId: id, result: 'success', details: {} })
-  }
-
-  function promoteLesson(id: string) {
-    setLessons(l => l.map(x => x.id === id ? { ...x, promoted: true } : x))
-    mockStore.addAuditEntry({ actor: 'PMO Director', action: 'LESSON_PROMOTED', entityType: 'lesson', entityId: id, result: 'success', details: {} })
-  }
-
-  function approveDecision(id: string) {
-    setDecisions(d => d.map(x => x.id === id ? { ...x, status: 'approved' as const, decidedBy: 'PMO Director', date: new Date().toISOString().slice(0, 10) } : x))
-    mockStore.addAuditEntry({ actor: 'PMO Director', action: 'DECISION_APPROVED', entityType: 'decision', entityId: id, result: 'success', details: {} })
-  }
+  const risks = data?.risks ?? []
+  const issues = data?.issues ?? []
+  const actions = data?.actions ?? []
+  const decisions = data?.decisions ?? []
+  const lessons = data?.lessons ?? []
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-foreground">PMO Cockpit</h1>
-        <p className="text-sm text-slate-500 dark:text-muted-foreground mt-0.5">Portfolio-wide risk, issue, action, decision &amp; lesson tracking</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-foreground">PMO Cockpit</h1>
+          <p className="text-sm text-slate-500 dark:text-muted-foreground mt-0.5">Portfolio-wide risk, issue, action, decision &amp; lesson tracking</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw className="size-4" /></Button>
+          <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding} className="gap-1.5">
+            {seeding ? <Loader2 className="size-4 animate-spin" /> : null} Seed Demo
+          </Button>
+        </div>
       </div>
 
-      <KpiStrip />
+      <KpiStrip d={data} />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200 dark:border-border overflow-x-auto scrollbar-none">
@@ -415,94 +360,72 @@ export function PmoCockpit() {
       </div>
 
       {/* Tab panels */}
-      {tab === 'overview' && <PmoCharts />}
+      {tab === 'overview' && data && <PmoCharts d={data} />}
 
       {tab === 'risks' && (
         <RegisterTable
-          title="Risk Register" icon={AlertTriangle} items={risks}
+          title="Risk Register" icon={AlertTriangle} items={risks} loading={isLoading}
           onAdd={() => setModal('risk')} addLabel="Add Risk"
           columns={[
-            { key: 'id', label: 'ID', render: (r: RiskItem) => <span className="font-mono text-xs text-slate-400">{r.id}</span> },
-            { key: 'project', label: 'Project', render: (r: RiskItem) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{r.projectName}</span> },
-            { key: 'title', label: 'Title', render: (r: RiskItem) => <span className="text-slate-800 dark:text-foreground font-medium">{r.title}</span> },
-            { key: 'cat', label: 'Category', render: (r: RiskItem) => <span className="text-xs text-slate-500">{r.category}</span> },
-            { key: 'priority', label: 'Priority', render: (r: RiskItem) => <PBadge label={r.priority} color={PRIORITY_STYLE[r.priority]} /> },
-            { key: 'status', label: 'Status', render: (r: RiskItem) => <PBadge label={r.status} color={STATUS_STYLE[r.status]} /> },
-            { key: 'owner', label: 'Owner', render: (r: RiskItem) => <span className="text-xs">{r.owner}</span> },
-            { key: 'due', label: 'Due', render: (r: RiskItem) => <span className="text-xs text-slate-500">{r.dueDate}</span> },
-            { key: 'actions', label: '', render: (r: RiskItem) => r.status !== 'closed' ? (
-              <button onClick={() => closeRisk(r.id)} className="text-xs text-green-600 hover:underline">Close</button>
-            ) : null },
+            { key: 'project', label: 'Project', render: (r: PmoRisk) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{r.projectName}</span> },
+            { key: 'title', label: 'Title', render: (r: PmoRisk) => <span className="text-slate-800 dark:text-foreground font-medium">{r.title}</span> },
+            { key: 'cat', label: 'Category', render: (r: PmoRisk) => <span className="text-xs text-slate-500">{r.category}</span> },
+            { key: 'priority', label: 'Priority', render: (r: PmoRisk) => <PBadge label={r.priority} color={PRIORITY_STYLE[r.priority] ?? PRIORITY_STYLE.medium} /> },
+            { key: 'status', label: 'Status', render: (r: PmoRisk) => <PBadge label={r.status} color={statusStyle(r.status)} /> },
+            { key: 'owner', label: 'Owner', render: (r: PmoRisk) => <span className="text-xs">{r.owner}</span> },
           ]}
         />
       )}
 
       {tab === 'issues' && (
         <RegisterTable
-          title="Issue Register" icon={Flag} items={issues}
+          title="Issue Register" icon={Flag} items={issues} loading={isLoading}
           onAdd={() => setModal('issue')} addLabel="Add Issue"
           columns={[
-            { key: 'id', label: 'ID', render: (i: IssueItem) => <span className="font-mono text-xs text-slate-400">{i.id}</span> },
-            { key: 'project', label: 'Project', render: (i: IssueItem) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{i.projectName}</span> },
-            { key: 'title', label: 'Title', render: (i: IssueItem) => <span className="font-medium text-slate-800 dark:text-foreground">{i.title}</span> },
-            { key: 'priority', label: 'Priority', render: (i: IssueItem) => <PBadge label={i.priority} color={PRIORITY_STYLE[i.priority]} /> },
-            { key: 'status', label: 'Status', render: (i: IssueItem) => <PBadge label={i.status} color={STATUS_STYLE[i.status]} /> },
-            { key: 'owner', label: 'Owner', render: (i: IssueItem) => <span className="text-xs">{i.owner}</span> },
-            { key: 'due', label: 'Due', render: (i: IssueItem) => <span className="text-xs text-slate-500">{i.dueDate}</span> },
-            { key: 'act', label: '', render: (i: IssueItem) => i.status !== 'escalated' && i.status !== 'closed' ? (
-              <button onClick={() => escalateIssue(i.id)} className="text-xs text-red-600 hover:underline">Escalate</button>
-            ) : null },
+            { key: 'project', label: 'Project', render: (i: PmoTicketItem) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{i.projectName}</span> },
+            { key: 'title', label: 'Title', render: (i: PmoTicketItem) => <span className="font-medium text-slate-800 dark:text-foreground">{i.title}</span> },
+            { key: 'priority', label: 'Priority', render: (i: PmoTicketItem) => <PBadge label={i.priority} color={PRIORITY_STYLE[i.priority] ?? PRIORITY_STYLE.medium} /> },
+            { key: 'status', label: 'Status', render: (i: PmoTicketItem) => <PBadge label={i.status} color={statusStyle(i.status)} /> },
+            { key: 'owner', label: 'Owner', render: (i: PmoTicketItem) => <span className="text-xs">{i.owner}</span> },
           ]}
         />
       )}
 
       {tab === 'actions' && (
         <RegisterTable
-          title="Action Tracker" icon={ClipboardList} items={actions}
+          title="Action Tracker" icon={ClipboardList} items={actions} loading={isLoading}
           onAdd={() => setModal('action')} addLabel="Add Action"
           columns={[
-            { key: 'id', label: 'ID', render: (a: ActionItem) => <span className="font-mono text-xs text-slate-400">{a.id}</span> },
-            { key: 'project', label: 'Project', render: (a: ActionItem) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{a.projectName}</span> },
-            { key: 'title', label: 'Action', render: (a: ActionItem) => <span className="font-medium text-slate-800 dark:text-foreground">{a.title}</span> },
-            { key: 'status', label: 'Status', render: (a: ActionItem) => <PBadge label={a.status} color={STATUS_STYLE[a.status]} /> },
-            { key: 'owner', label: 'Owner', render: (a: ActionItem) => <span className="text-xs">{a.owner}</span> },
-            { key: 'due', label: 'Due', render: (a: ActionItem) => <span className="text-xs text-slate-500">{a.dueDate}</span> },
+            { key: 'project', label: 'Project', render: (a: PmoTicketItem) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{a.projectName}</span> },
+            { key: 'title', label: 'Action', render: (a: PmoTicketItem) => <span className="font-medium text-slate-800 dark:text-foreground">{a.title}</span> },
+            { key: 'status', label: 'Status', render: (a: PmoTicketItem) => <PBadge label={a.status} color={statusStyle(a.status)} /> },
+            { key: 'owner', label: 'Owner', render: (a: PmoTicketItem) => <span className="text-xs">{a.owner}</span> },
           ]}
         />
       )}
 
       {tab === 'decisions' && (
         <RegisterTable
-          title="Decision Log" icon={Target} items={decisions}
+          title="Decision Log" icon={Target} items={decisions} loading={isLoading}
           onAdd={() => setModal('decision')} addLabel="Log Decision"
           columns={[
-            { key: 'id', label: 'ID', render: (d: Decision) => <span className="font-mono text-xs text-slate-400">{d.id}</span> },
-            { key: 'project', label: 'Project', render: (d: Decision) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{d.projectName}</span> },
-            { key: 'title', label: 'Decision', render: (d: Decision) => <span className="font-medium text-slate-800 dark:text-foreground">{d.title}</span> },
-            { key: 'rationale', label: 'Rationale', render: (d: Decision) => <span className="text-xs text-slate-500 max-w-[200px] block truncate">{d.rationale}</span> },
-            { key: 'by', label: 'Decided By', render: (d: Decision) => <span className="text-xs">{d.decidedBy || '—'}</span> },
-            { key: 'status', label: 'Status', render: (d: Decision) => <PBadge label={d.status} color={d.status === 'approved' ? 'bg-green-100 text-green-700' : d.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'} /> },
-            { key: 'act', label: '', render: (d: Decision) => d.status === 'pending' ? (
-              <button onClick={() => approveDecision(d.id)} className="text-xs text-green-600 hover:underline">Approve</button>
-            ) : null },
+            { key: 'project', label: 'Project', render: (d: PmoDecision) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{d.projectName}</span> },
+            { key: 'title', label: 'Decision', render: (d: PmoDecision) => <span className="font-medium text-slate-800 dark:text-foreground">{d.title}</span> },
+            { key: 'rationale', label: 'Rationale', render: (d: PmoDecision) => <span className="text-xs text-slate-500 max-w-[200px] block truncate">{d.rationale}</span> },
+            { key: 'status', label: 'Status', render: (d: PmoDecision) => <PBadge label={d.status} color={statusStyle(d.status)} /> },
           ]}
         />
       )}
 
       {tab === 'lessons' && (
         <RegisterTable
-          title="Lessons Learned" icon={Lightbulb} items={lessons}
+          title="Lessons Learned" icon={Lightbulb} items={lessons} loading={isLoading}
           onAdd={() => setModal('lesson')} addLabel="Add Lesson"
           columns={[
-            { key: 'id', label: 'ID', render: (l: Lesson) => <span className="font-mono text-xs text-slate-400">{l.id}</span> },
-            { key: 'project', label: 'Project', render: (l: Lesson) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{l.projectName}</span> },
-            { key: 'title', label: 'Lesson', render: (l: Lesson) => <span className="font-medium text-slate-800 dark:text-foreground">{l.title}</span> },
-            { key: 'phase', label: 'Phase', render: (l: Lesson) => <span className="text-xs">{l.phase}</span> },
-            { key: 'cat', label: 'Category', render: (l: Lesson) => <span className="text-xs">{l.category}</span> },
-            { key: 'promoted', label: 'Promoted', render: (l: Lesson) => l.promoted ? <CheckCircle2 className="size-4 text-green-500" /> : <span className="text-slate-300">—</span> },
-            { key: 'act', label: '', render: (l: Lesson) => !l.promoted ? (
-              <button onClick={() => promoteLesson(l.id)} className="text-xs text-sky-600 hover:underline">Promote</button>
-            ) : null },
+            { key: 'project', label: 'Project', render: (l: PmoLesson) => <span className="text-xs text-slate-600 dark:text-muted-foreground">{l.projectName}</span> },
+            { key: 'title', label: 'Lesson', render: (l: PmoLesson) => <span className="font-medium text-slate-800 dark:text-foreground">{l.title}</span> },
+            { key: 'phase', label: 'Phase', render: (l: PmoLesson) => <span className="text-xs">{l.phase}</span> },
+            { key: 'cat', label: 'Category', render: (l: PmoLesson) => <span className="text-xs">{l.category}</span> },
           ]}
         />
       )}
@@ -510,6 +433,7 @@ export function PmoCockpit() {
       {modal && (
         <CreateModal
           type={modal}
+          projects={projects}
           onClose={() => setModal(null)}
           onCreate={(d) => handleCreate(modal, d)}
         />

@@ -1,89 +1,37 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Wrench, FileText, Upload, CheckCircle2, Clock, AlertTriangle, Plus, Search, Filter, Download, Eye, ChevronDown } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import useSWR from 'swr'
+import {
+  Wrench, FileText, CheckCircle2, AlertTriangle, Plus, Search, Download,
+  RefreshCw, Loader2, Layers, X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
+import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
-import { mockStore } from '@/lib/mock-store'
+import {
+  loadEngineeringDashboard, createRFI, closeRFI, seedEngineeringDemoData,
+} from '@/app/actions/engineering'
+import type { DrawingRecord, RFIRecord, IFCPackage } from '@/lib/types/action-types'
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// ── Status helpers (tolerant of free-text DB values) ────────────────────────
 
-type DrawingStatus = 'issued' | 'in-review' | 'approved' | 'superseded' | 'draft'
-type RFIStatus = 'open' | 'answered' | 'closed' | 'overdue'
-type SubmittalStatus = 'pending' | 'under-review' | 'approved' | 'rejected' | 'revise-resubmit'
-
-interface Drawing {
-  id: string; number: string; title: string; discipline: string
-  revision: string; status: DrawingStatus; issuedDate: string; projectId: string
+function statusStyle(status: string): string {
+  const s = status.toLowerCase()
+  if (s === 'approved') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+  if (s === 'issued') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+  if (s === 'in_review' || s === 'in-review' || s === 'under-review' || s === 'pending')
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  if (s === 'rejected' || s === 'overdue') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (s === 'superseded') return 'bg-muted text-muted-foreground'
+  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
 }
 
-interface RFI {
-  id: string; number: string; subject: string; raisedBy: string
-  status: RFIStatus; priority: 'high' | 'medium' | 'low'
-  raisedDate: string; dueDate: string; projectId: string
-}
-
-interface Submittal {
-  id: string; number: string; title: string; specSection: string
-  status: SubmittalStatus; submittedBy: string; submittedDate: string; projectId: string
-}
-
-// ── Mock data ──────────────────────────────────────────────────────────────
-
-const MOCK_DRAWINGS: Drawing[] = [
-  { id: 'd1', number: 'CIV-001', title: 'Site Layout Plan', discipline: 'Civil', revision: 'C', status: 'approved', issuedDate: '2026-05-10', projectId: 'p1' },
-  { id: 'd2', number: 'STR-002', title: 'Foundation Details', discipline: 'Structural', revision: 'B', status: 'in-review', issuedDate: '2026-06-01', projectId: 'p1' },
-  { id: 'd3', number: 'ELE-001', title: 'Single Line Diagram', discipline: 'Electrical', revision: 'A', status: 'issued', issuedDate: '2026-06-15', projectId: 'p2' },
-  { id: 'd4', number: 'MEC-003', title: 'HVAC Routing Plan', discipline: 'Mechanical', revision: 'D', status: 'approved', issuedDate: '2026-04-22', projectId: 'p2' },
-  { id: 'd5', number: 'CIV-002', title: 'Road Cross Sections', discipline: 'Civil', revision: 'A', status: 'draft', issuedDate: '2026-07-01', projectId: 'p1' },
-  { id: 'd6', number: 'STR-005', title: 'Steel Connection Details', discipline: 'Structural', revision: 'B', status: 'superseded', issuedDate: '2026-03-10', projectId: 'p1' },
-]
-
-const MOCK_RFIS: RFI[] = [
-  { id: 'r1', number: 'RFI-001', subject: 'Clarification on pile cap dimensions', raisedBy: 'Site Team', status: 'open', priority: 'high', raisedDate: '2026-07-01', dueDate: '2026-07-08', projectId: 'p1' },
-  { id: 'r2', number: 'RFI-002', subject: 'Cable tray routing conflict at grid A3', raisedBy: 'Electrical Sub', status: 'answered', priority: 'medium', raisedDate: '2026-06-20', dueDate: '2026-06-27', projectId: 'p1' },
-  { id: 'r3', number: 'RFI-003', subject: 'Soil bearing capacity assumption', raisedBy: 'Geotechnical', status: 'overdue', priority: 'high', raisedDate: '2026-06-15', dueDate: '2026-06-22', projectId: 'p2' },
-  { id: 'r4', number: 'RFI-004', subject: 'Bolt grade specification for anchor bolts', raisedBy: 'Site Team', status: 'closed', priority: 'low', raisedDate: '2026-07-05', dueDate: '2026-07-12', projectId: 'p2' },
-]
-
-const MOCK_SUBMITTALS: Submittal[] = [
-  { id: 's1', number: 'SUB-001', title: 'Concrete Mix Design', specSection: '03 30 00', status: 'approved', submittedBy: 'Concrete Sub', submittedDate: '2026-05-15', projectId: 'p1' },
-  { id: 's2', number: 'SUB-002', title: 'Structural Steel Shop Drawings', specSection: '05 12 00', status: 'under-review', submittedBy: 'Steel Fab', submittedDate: '2026-06-10', projectId: 'p1' },
-  { id: 's3', number: 'SUB-003', title: 'HV Cable Type Test Reports', specSection: '26 05 13', status: 'revise-resubmit', submittedBy: 'Electrical Sub', submittedDate: '2026-06-25', projectId: 'p2' },
-  { id: 's4', number: 'SUB-004', title: 'Generator Data Sheets', specSection: '26 32 13', status: 'pending', submittedBy: 'MEP Contractor', submittedDate: '2026-07-10', projectId: 'p2' },
-]
-
-// ── Status helpers ─────────────────────────────────────────────────────────
-
-const DRAWING_STATUS_STYLE: Record<DrawingStatus, string> = {
-  approved:    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  issued:      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  'in-review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  superseded:  'bg-muted text-muted-foreground',
-  draft:       'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
-}
-
-const RFI_STATUS_STYLE: Record<RFIStatus, string> = {
-  open:     'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  answered: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  closed:   'bg-muted text-muted-foreground',
-  overdue:  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-}
-
-const SUB_STATUS_STYLE: Record<SubmittalStatus, string> = {
-  pending:            'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-  'under-review':     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  approved:           'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  rejected:           'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  'revise-resubmit':  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
-}
-
-// ── KPI strip ──────────────────────────────────────────────────────────────
+// ── KPI strip ────────────────────────────────────────────────────────────────
 
 function KpiCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
@@ -95,19 +43,32 @@ function KpiCard({ label, value, sub, color }: { label: string; value: string | 
   )
 }
 
+function EmptyRow({ colSpan, loading }: { colSpan: number; loading: boolean }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-3 py-10 text-center text-sm text-muted-foreground">
+        {loading ? (
+          <span className="inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading…</span>
+        ) : (
+          'No records yet. Use “Seed Demo” to populate sample data.'
+        )}
+      </td>
+    </tr>
+  )
+}
+
 // ── Drawings tab ───────────────────────────────────────────────────────────
 
-function DrawingsTab() {
+function DrawingsTab({ drawings, loading }: { drawings: DrawingRecord[]; loading: boolean }) {
   const [search, setSearch] = useState('')
   const [discipline, setDiscipline] = useState('all')
 
-  const filtered = useMemo(() => MOCK_DRAWINGS.filter(d => {
+  const disciplines = useMemo(() => [...new Set(drawings.map(d => d.discipline))], [drawings])
+  const filtered = useMemo(() => drawings.filter(d => {
     if (discipline !== 'all' && d.discipline !== discipline) return false
-    if (search && !d.title.toLowerCase().includes(search.toLowerCase()) && !d.number.toLowerCase().includes(search.toLowerCase())) return false
+    if (search && !d.title.toLowerCase().includes(search.toLowerCase()) && !d.drawing_number.toLowerCase().includes(search.toLowerCase())) return false
     return true
-  }), [search, discipline])
-
-  const disciplines = [...new Set(MOCK_DRAWINGS.map(d => d.discipline))]
+  }), [drawings, search, discipline])
 
   return (
     <div className="space-y-4">
@@ -122,33 +83,27 @@ function DrawingsTab() {
           options={[{ value: 'all', label: 'All disciplines' }, ...disciplines.map(d => ({ value: d, label: d }))]}
           className="h-8 w-36 text-xs"
         />
-        <Button size="sm" className="h-8 text-xs gap-1.5"><Upload size={12} /> Issue Drawing</Button>
       </div>
       <div className="rounded-lg border border-border/60 bg-background overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 border-b border-border/60">
             <tr>
-              {['Number','Title','Discipline','Rev','Status','Issued Date',''].map(h => (
+              {['Number', 'Title', 'Discipline', 'Rev', 'Status', 'Created'].map(h => (
                 <th key={h} className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-border/40">
-            {filtered.map(d => (
+            {filtered.length === 0 ? <EmptyRow colSpan={6} loading={loading} /> : filtered.map(d => (
               <tr key={d.id} className="hover:bg-muted/30 transition-colors">
-                <td className="px-3 py-2.5 font-mono text-xs">{d.number}</td>
+                <td className="px-3 py-2.5 font-mono text-xs">{d.drawing_number}</td>
                 <td className="px-3 py-2.5 font-medium">{d.title}</td>
                 <td className="px-3 py-2.5 text-muted-foreground">{d.discipline}</td>
                 <td className="px-3 py-2.5 font-mono text-center">{d.revision}</td>
                 <td className="px-3 py-2.5">
-                  <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase', DRAWING_STATUS_STYLE[d.status])}>
-                    {d.status}
-                  </span>
+                  <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase', statusStyle(d.status))}>{d.status}</span>
                 </td>
-                <td className="px-3 py-2.5 text-muted-foreground text-xs">{d.issuedDate}</td>
-                <td className="px-3 py-2.5">
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><Eye size={12} /></Button>
-                </td>
+                <td className="px-3 py-2.5 text-muted-foreground text-xs">{new Date(d.created_at).toLocaleDateString()}</td>
               </tr>
             ))}
           </tbody>
@@ -160,85 +115,150 @@ function DrawingsTab() {
 
 // ── RFI tab ────────────────────────────────────────────────────────────────
 
-function RFITab() {
-  const [search, setSearch] = useState('')
-  const filtered = useMemo(() => MOCK_RFIS.filter(r =>
-    !search || r.subject.toLowerCase().includes(search.toLowerCase())
-  ), [search])
+function NewRFIModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+  const { toast } = useToast()
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState({ title: '', discipline: 'Civil', description: '' })
 
-  const PRIORITY_STYLE = { high: 'text-red-500', medium: 'text-amber-500', low: 'text-muted-foreground' }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.title) { toast({ title: 'Title required', variant: 'danger' }); return }
+    setLoading(true)
+    const { error } = await createRFI(form)
+    setLoading(false)
+    if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
+    toast({ title: 'RFI raised', variant: 'success' })
+    onCreated(); onClose()
+    setForm({ title: '', discipline: 'Civil', description: '' })
+  }
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <form onSubmit={submit} className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-foreground">New RFI</h2>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Subject *</label>
+          <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="h-9 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Discipline</label>
+          <select value={form.discipline} onChange={e => setForm(f => ({ ...f, discipline: e.target.value }))}
+            className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground">
+            {['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation'].map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
+          <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3}
+            className="w-full rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-foreground" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button type="submit" size="sm" disabled={loading}>{loading && <Loader2 className="size-3.5 animate-spin" />} Raise RFI</Button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function RFITab({ rfis, loading, onChanged }: { rfis: RFIRecord[]; loading: boolean; onChanged: () => void }) {
+  const { toast } = useToast()
+  const [search, setSearch] = useState('')
+  const [modal, setModal] = useState(false)
+  const filtered = useMemo(() => rfis.filter(r => !search || r.title.toLowerCase().includes(search.toLowerCase())), [rfis, search])
+
+  async function handleClose(id: string) {
+    const { error } = await closeRFI(id)
+    if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
+    toast({ title: 'RFI closed', variant: 'success' })
+    onChanged()
+  }
 
   return (
     <div className="space-y-4">
+      <NewRFIModal open={modal} onClose={() => setModal(false)} onCreated={onChanged} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1 min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search RFIs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
-        <Button size="sm" className="h-8 text-xs gap-1.5"><Plus size={12} /> New RFI</Button>
+        <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setModal(true)}><Plus size={12} /> New RFI</Button>
       </div>
-      <div className="space-y-2">
-        {filtered.map(r => (
-          <div key={r.id} className="rounded-lg border border-border/60 bg-card p-4 hover:bg-muted/30 transition-colors cursor-pointer">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-mono text-muted-foreground">{r.number}</span>
-                  <AlertTriangle size={12} className={PRIORITY_STYLE[r.priority]} />
-                  <span className="text-xs text-muted-foreground capitalize">{r.priority} priority</span>
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-border/60 bg-card p-10 text-center text-sm text-muted-foreground">
+          {loading ? <span className="inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading…</span> : 'No RFIs yet.'}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(r => (
+            <div key={r.id} className="rounded-lg border border-border/60 bg-card p-4 hover:bg-muted/30 transition-colors">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono text-muted-foreground">{r.ref}</span>
+                    {r.is_overdue && <AlertTriangle size={12} className="text-red-500" />}
+                    <span className="text-xs text-muted-foreground">{r.discipline} · open {r.days_open}d</span>
+                  </div>
+                  <p className="font-medium text-sm mt-0.5">{r.title}</p>
                 </div>
-                <p className="font-medium text-sm mt-0.5">{r.subject}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Raised by {r.raisedBy} · Due {r.dueDate}</p>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase', statusStyle(r.is_overdue ? 'overdue' : r.status))}>
+                    {r.is_overdue ? 'overdue' : r.status}
+                  </span>
+                  {r.status !== 'closed' && (
+                    <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => handleClose(r.id)}>Close</Button>
+                  )}
+                </div>
               </div>
-              <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase flex-shrink-0', RFI_STATUS_STYLE[r.status])}>
-                {r.status}
-              </span>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-// ── Submittals tab ─────────────────────────────────────────────────────────
+// ── IFC Packages tab (real engineering_packages) ─────────────────────────────
 
-function SubmittalsTab() {
+function PackagesTab({ packages, loading }: { packages: IFCPackage[]; loading: boolean }) {
   const [search, setSearch] = useState('')
-  const filtered = useMemo(() => MOCK_SUBMITTALS.filter(s =>
-    !search || s.title.toLowerCase().includes(search.toLowerCase())
-  ), [search])
+  const filtered = useMemo(() => packages.filter(p =>
+    !search || p.title.toLowerCase().includes(search.toLowerCase()) || p.package_number.toLowerCase().includes(search.toLowerCase())
+  ), [packages, search])
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 min-w-48">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search submittals..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
-        </div>
-        <Button size="sm" className="h-8 text-xs gap-1.5"><Plus size={12} /> New Submittal</Button>
+      <div className="relative min-w-48 max-w-sm">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input placeholder="Search packages..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
       </div>
       <div className="rounded-lg border border-border/60 bg-background overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 border-b border-border/60">
             <tr>
-              {['Number','Title','Spec Section','Submitted By','Date','Status'].map(h => (
+              {['Package', 'Title', 'Discipline', 'Rev', 'Status', 'Completion'].map(h => (
                 <th key={h} className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-border/40">
-            {filtered.map(s => (
-              <tr key={s.id} className="hover:bg-muted/30 transition-colors">
-                <td className="px-3 py-2.5 font-mono text-xs">{s.number}</td>
-                <td className="px-3 py-2.5 font-medium">{s.title}</td>
-                <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">{s.specSection}</td>
-                <td className="px-3 py-2.5 text-muted-foreground">{s.submittedBy}</td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">{s.submittedDate}</td>
+            {filtered.length === 0 ? <EmptyRow colSpan={6} loading={loading} /> : filtered.map(p => (
+              <tr key={p.id} className="hover:bg-muted/30 transition-colors">
+                <td className="px-3 py-2.5 font-mono text-xs">{p.package_number}</td>
+                <td className="px-3 py-2.5 font-medium">{p.title}</td>
+                <td className="px-3 py-2.5 text-muted-foreground">{p.discipline}</td>
+                <td className="px-3 py-2.5 font-mono text-center">{p.revision}</td>
                 <td className="px-3 py-2.5">
-                  <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase', SUB_STATUS_STYLE[s.status])}>
-                    {s.status}
-                  </span>
+                  <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase', statusStyle(p.status))}>{p.status}</span>
+                </td>
+                <td className="px-3 py-2.5 w-40">
+                  <div className="flex items-center gap-2">
+                    <Progress value={p.completion_pct} className="h-1.5 flex-1" />
+                    <span className="text-xs text-muted-foreground w-9 text-right">{p.completion_pct}%</span>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -251,36 +271,55 @@ function SubmittalsTab() {
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export type EngineeringTab = 'drawings' | 'rfis' | 'submittals'
+export type EngineeringTab = 'drawings' | 'rfis' | 'packages'
 
 export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: EngineeringTab }) {
-  const approvedDrawings = MOCK_DRAWINGS.filter(d => d.status === 'approved').length
-  const openRFIs = MOCK_RFIS.filter(r => r.status === 'open' || r.status === 'overdue').length
-  const overdueRFIs = MOCK_RFIS.filter(r => r.status === 'overdue').length
-  const pendingSubs = MOCK_SUBMITTALS.filter(s => s.status === 'pending' || s.status === 'under-review').length
+  const { toast } = useToast()
+  const { data, isLoading, mutate } = useSWR('engineering-dashboard', loadEngineeringDashboard, { revalidateOnFocus: true })
+  const [seeding, setSeeding] = useState(false)
+
+  const drawings = data?.drawings ?? []
+  const rfis = data?.rfis ?? []
+  const packages = data?.packages ?? []
+  const totalPackages = data?.totalPackages ?? 0
+  const approvedPackages = data?.approvedPackages ?? 0
+  const openRFIs = data?.openRFIs ?? 0
+  const overdueRFIs = data?.overdueRFIs ?? 0
+
+  async function handleSeed() {
+    setSeeding(true)
+    const { error } = await seedEngineeringDemoData()
+    setSeeding(false)
+    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
+    toast({ title: 'Demo data seeded', variant: 'success' })
+    mutate()
+  }
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Wrench size={20} className="text-primary" />
-          </div>
+          <div className="p-2 rounded-lg bg-primary/10"><Wrench size={20} className="text-primary" /></div>
           <div>
             <h1 className="text-xl font-semibold text-foreground">Engineering Cockpit</h1>
-            <p className="text-sm text-muted-foreground">Drawings, RFIs & Submittals</p>
+            <p className="text-sm text-muted-foreground">Drawings, RFIs & IFC Packages</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5"><Download size={14} /> Export Register</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw size={14} /></Button>
+          <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding} className="gap-1.5">
+            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Seed Demo
+          </Button>
+        </div>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI strip (real data) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard label="Total Drawings" value={MOCK_DRAWINGS.length} sub={`${approvedDrawings} approved`} />
-        <KpiCard label="Drawing Approval Rate" value={`${Math.round(approvedDrawings / MOCK_DRAWINGS.length * 100)}%`} color="text-green-600" />
+        <KpiCard label="IFC Packages" value={totalPackages} sub={`${approvedPackages} approved`} />
+        <KpiCard label="Package Approval Rate" value={totalPackages ? `${Math.round(approvedPackages / totalPackages * 100)}%` : '—'} color="text-green-600" />
         <KpiCard label="Open RFIs" value={openRFIs} sub={overdueRFIs > 0 ? `${overdueRFIs} overdue` : 'None overdue'} color={overdueRFIs > 0 ? 'text-red-500' : undefined} />
-        <KpiCard label="Pending Submittals" value={pendingSubs} sub="Awaiting review" />
+        <KpiCard label="Drawings" value={drawings.length} sub="In register" />
       </div>
 
       {/* Tabs */}
@@ -288,11 +327,11 @@ export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: E
         <TabsList className="w-fit">
           <TabsTrigger value="drawings" className="gap-1.5"><FileText size={13} /> Drawings</TabsTrigger>
           <TabsTrigger value="rfis" className="gap-1.5"><AlertTriangle size={13} /> RFIs</TabsTrigger>
-          <TabsTrigger value="submittals" className="gap-1.5"><CheckCircle2 size={13} /> Submittals</TabsTrigger>
+          <TabsTrigger value="packages" className="gap-1.5"><Layers size={13} /> IFC Packages</TabsTrigger>
         </TabsList>
-        <TabsContent value="drawings" className="mt-4"><DrawingsTab /></TabsContent>
-        <TabsContent value="rfis" className="mt-4"><RFITab /></TabsContent>
-        <TabsContent value="submittals" className="mt-4"><SubmittalsTab /></TabsContent>
+        <TabsContent value="drawings" className="mt-4"><DrawingsTab drawings={drawings} loading={isLoading} /></TabsContent>
+        <TabsContent value="rfis" className="mt-4"><RFITab rfis={rfis} loading={isLoading} onChanged={() => mutate()} /></TabsContent>
+        <TabsContent value="packages" className="mt-4"><PackagesTab packages={packages} loading={isLoading} /></TabsContent>
       </Tabs>
     </div>
   )
