@@ -129,7 +129,7 @@ export async function openGateReview(input: {
     metadata: { phase_gate_id: phaseGateId },
   })
 
-  revalidatePath('/team/signoffs')
+  revalidatePath('/team/gates')
   return {}
 }
 
@@ -147,7 +147,7 @@ export async function signGate(input: {
   // If the row has no assignee yet, the signer becomes the assignee.
   const { data: existing } = await admin
     .from('gate_signoffs')
-    .select('person_id')
+    .select('person_id, phase_gate_id, role_id')
     .eq('id', signoffId)
     .single()
 
@@ -160,6 +160,15 @@ export async function signGate(input: {
   const { error } = await admin.from('gate_signoffs').update(patch).eq('id', signoffId)
   if (error) return { error: error.message }
 
+  // Resolve the parallel approval_items inbox row for this gate+role.
+  if (existing?.phase_gate_id && existing?.role_id) {
+    await admin
+      .from('approval_items')
+      .update({ status: 'approved', resolved_at: new Date().toISOString() })
+      .eq('phase_gate_id', existing.phase_gate_id)
+      .eq('role_id', existing.role_id)
+  }
+
   await logEvent(admin, {
     transition: 'GATE_SIGN',
     actorId: actor.userId,
@@ -167,7 +176,7 @@ export async function signGate(input: {
     metadata: { signoff_id: signoffId },
   })
 
-  revalidatePath('/team/signoffs')
+  revalidatePath('/team/gates')
   return {}
 }
 
@@ -182,11 +191,26 @@ export async function unsignGate(input: {
   const actor = await getActor()
   const admin = createAdminClient()
 
+  const { data: existing } = await admin
+    .from('gate_signoffs')
+    .select('phase_gate_id, role_id')
+    .eq('id', signoffId)
+    .single()
+
   const { error } = await admin
     .from('gate_signoffs')
     .update({ status: 'pending', signed_at: null })
     .eq('id', signoffId)
   if (error) return { error: error.message }
+
+  // Re-open the parallel approval_items inbox row.
+  if (existing?.phase_gate_id && existing?.role_id) {
+    await admin
+      .from('approval_items')
+      .update({ status: 'pending', resolved_at: null })
+      .eq('phase_gate_id', existing.phase_gate_id)
+      .eq('role_id', existing.role_id)
+  }
 
   await logEvent(admin, {
     transition: 'GATE_UNSIGN',
@@ -195,7 +219,7 @@ export async function unsignGate(input: {
     metadata: { signoff_id: signoffId },
   })
 
-  revalidatePath('/team/signoffs')
+  revalidatePath('/team/gates')
   return {}
 }
 
@@ -233,7 +257,7 @@ export async function approveGate(input: {
     metadata: { phase_gate_id: phaseGateId },
   })
 
-  revalidatePath('/team/signoffs')
+  revalidatePath('/team/gates')
   return {}
 }
 

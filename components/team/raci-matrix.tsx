@@ -27,8 +27,11 @@ const LETTER_STYLE: Record<RaciLetter, { cell: string; label: string }> = {
 }
 
 const LETTER_ORDER: RaciLetter[] = ['A', 'A/R', 'R', 'C', 'I']
+// Editable letters exclude standalone 'A' (a lone Accountable is set via A/R or
+// cleared, never cycled to directly). Matches updateRaciCell's parameter type.
+type RaciLetterValue = 'R' | 'A/R' | 'C' | 'I'
 // Edit cycle per spec: empty → R → A/R → C → I → empty
-const CYCLE: (RaciLetter | null)[] = [null, 'R', 'A/R', 'C', 'I']
+const CYCLE: (RaciLetterValue | null)[] = [null, 'R', 'A/R', 'C', 'I']
 
 function cellKey(deliverableId: string, roleId: string) {
   return `${deliverableId}:${roleId}`
@@ -107,7 +110,8 @@ export function RaciMatrix({ gates, roles, deliverables, assignments, canEdit }:
     if (pending.has(key)) return
 
     const current = cells[key] ?? null
-    const idx = CYCLE.indexOf(current)
+    // A lone 'A' isn't in the cycle → indexOf returns -1 → starts at null.
+    const idx = CYCLE.indexOf(current as RaciLetterValue | null)
     const next = CYCLE[(idx + 1) % CYCLE.length]
     const prevCells = cells
 
