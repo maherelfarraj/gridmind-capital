@@ -38,6 +38,16 @@ function ganttPercent(start: string, end: string, minDate: Date, totalDays: numb
   return { left, width }
 }
 
+/** Position (0–100%) of a single date within the chart range; null if out of range. */
+function dateLeft(date: Date, minDate: Date, totalDays: number): number | null {
+  const d = (date.getTime() - minDate.getTime()) / 86400000
+  if (d < 0 || d > totalDays) return null
+  return (d / totalDays) * 100
+}
+
+// Gate band accent (calm slate/brand tones, kept within palette).
+const GATE_BAND_COLOR = '#334155'
+
 // ─── Add Milestone Modal ────────────────────────────────────────
 
 function AddMilestoneModal({ open, onClose, projectId, onCreated }: {
@@ -147,23 +157,96 @@ function GanttChart({ milestones }: { milestones: Milestone[] }) {
     cur.setMonth(cur.getMonth() + 1)
   }
 
+  // Today line position (only if today falls within the chart window).
+  const todayLeft = dateLeft(new Date(), minDate, totalDays)
+
+  // Derive per-gate summary bands: span from earliest start to latest end of the
+  // gate's milestones, with average completion. Sorted by gate number.
+  const gateBands = Array.from(
+    milestones.reduce((map, m) => {
+      const g = map.get(m.gate) ?? { gate: m.gate, starts: [] as number[], ends: [] as number[], prog: [] as number[] }
+      g.starts.push(new Date(m.planned_start).getTime())
+      g.ends.push(new Date(m.planned_end).getTime())
+      g.prog.push(m.progress_pct)
+      map.set(m.gate, g)
+      return map
+    }, new Map<number, { gate: number; starts: number[]; ends: number[]; prog: number[] }>()).values(),
+  )
+    .map((g) => {
+      const start = new Date(Math.min(...g.starts)).toISOString()
+      const end = new Date(Math.max(...g.ends)).toISOString()
+      const avg = Math.round(g.prog.reduce((s, p) => s + p, 0) / g.prog.length)
+      return { gate: g.gate, ...ganttPercent(start, end, minDate, totalDays), avg }
+    })
+    .sort((a, b) => a.gate - b.gate)
+
+  // A vertical today line rendered inside each track (stacks into a continuous line).
+  const TodayLine = () =>
+    todayLeft === null ? null : (
+      <div
+        className="absolute inset-y-0 z-20 w-px bg-[#ef4444]/70 pointer-events-none"
+        style={{ left: `${todayLeft}%` }}
+        aria-hidden
+      />
+    )
+
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[640px]">
-        {/* Month header */}
-        <div className="relative h-6 border-b border-border mb-1">
-          {months.map((m, i) => (
-            <span key={i} className="absolute text-[10px] text-muted-foreground font-medium"
-              style={{ left: `calc(${m.left}% + 8px)` }}>
-              {m.label}
-            </span>
+        {/* Month header + Today label */}
+        <div className="flex items-end gap-3 mb-1">
+          <div className="w-44 shrink-0" />
+          <div className="flex-1 relative h-6 border-b border-border">
+            {months.map((m, i) => (
+              <span key={i} className="absolute text-[10px] text-muted-foreground font-medium"
+                style={{ left: `calc(${m.left}% + 4px)` }}>
+                {m.label}
+              </span>
+            ))}
+            {todayLeft !== null && (
+              <span
+                className="absolute -top-0 text-[9px] font-semibold text-[#ef4444] -translate-x-1/2"
+                style={{ left: `${todayLeft}%` }}
+              >
+                Today
+              </span>
+            )}
+          </div>
+          <div className="w-14 shrink-0" />
+        </div>
+
+        {/* ── Gate summary bands ── */}
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 pl-1">Gates</p>
+        <div className="space-y-1.5 mb-3">
+          {gateBands.map((g) => (
+            <div key={`gate-${g.gate}`} className="flex items-center gap-3">
+              <div className="w-44 shrink-0 flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-foreground bg-muted rounded px-1.5 py-0.5">G{g.gate}</span>
+                <span className="text-xs text-muted-foreground truncate">Gate {g.gate}</span>
+              </div>
+              <div className="flex-1 relative h-5 rounded bg-muted/20">
+                <TodayLine />
+                <div
+                  className="absolute h-full rounded flex items-center"
+                  style={{ left: `${g.left}%`, width: `${g.width}%`, backgroundColor: GATE_BAND_COLOR, opacity: 0.85 }}
+                  title={`Gate ${g.gate} — ${g.avg}% complete`}
+                >
+                  <div className="h-full rounded-l bg-[#64ffda]" style={{ width: `${g.avg}%` }} />
+                </div>
+              </div>
+              <span className="w-14 shrink-0 text-[10px] text-muted-foreground text-right">{g.avg}%</span>
+            </div>
           ))}
         </div>
-        {/* Rows */}
+
+        {/* ── Deliverable bars + milestone diamonds ── */}
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 pl-1">Deliverables</p>
         <div className="space-y-1.5">
           {milestones.map((m) => {
             const { left, width } = ganttPercent(m.planned_start, m.planned_end, minDate, totalDays)
             const meta = STATUS_META[m.status] ?? STATUS_META.not_started
+            const diamondLeft = dateLeft(new Date(m.planned_end), minDate, totalDays)
+            const isPoint = m.planned_start === m.planned_end
             return (
               <div key={m.id} className="flex items-center gap-3 group">
                 {/* Label */}
@@ -175,31 +258,62 @@ function GanttChart({ milestones }: { milestones: Milestone[] }) {
                 </div>
                 {/* Bar track */}
                 <div className="flex-1 relative h-6 rounded bg-muted/20">
-                  <div
-                    className="absolute h-full rounded transition-all"
-                    style={{
-                      left:  `${left}%`,
-                      width: `${width}%`,
-                      backgroundColor: meta.color,
-                      opacity: m.status === 'not_started' ? 0.35 : 0.85,
-                    }}
-                    title={`${m.planned_start} → ${m.planned_end}`}
-                  >
-                    {/* Progress fill */}
-                    {m.progress_pct > 0 && m.progress_pct < 100 && (
-                      <div className="absolute inset-y-0 left-0 rounded"
-                        style={{ width: `${m.progress_pct}%`, backgroundColor: meta.color, opacity: 1 }} />
-                    )}
-                  </div>
+                  <TodayLine />
+                  {/* Deliverable bar (hidden for point milestones — those show only a diamond) */}
+                  {!isPoint && (
+                    <div
+                      className="absolute h-full rounded transition-all"
+                      style={{
+                        left:  `${left}%`,
+                        width: `${width}%`,
+                        backgroundColor: meta.color,
+                        opacity: m.status === 'not_started' ? 0.35 : 0.85,
+                      }}
+                      title={`${m.planned_start} → ${m.planned_end}`}
+                    >
+                      {m.progress_pct > 0 && m.progress_pct < 100 && (
+                        <div className="absolute inset-y-0 left-0 rounded"
+                          style={{ width: `${m.progress_pct}%`, backgroundColor: meta.color, opacity: 1 }} />
+                      )}
+                    </div>
+                  )}
+                  {/* Milestone diamond at the deliverable due (end) date */}
+                  {diamondLeft !== null && (
+                    <span
+                      className="absolute top-1/2 z-10 size-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border border-background shadow-sm"
+                      style={{ left: `${diamondLeft}%`, backgroundColor: meta.color }}
+                      title={`Milestone: ${m.name} due ${m.planned_end}`}
+                      aria-label={`Milestone ${m.name} due ${m.planned_end}`}
+                    />
+                  )}
                 </div>
                 {/* Status chip */}
-                <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium"
+                <span className="w-14 shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium text-center"
                   style={{ background: `${meta.color}20`, color: meta.color }}>
                   {m.progress_pct > 0 ? `${m.progress_pct}%` : meta.label}
                 </span>
               </div>
             )
           })}
+        </div>
+
+        {/* Legend */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 pt-3 border-t border-border/60 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-4 rounded" style={{ backgroundColor: GATE_BAND_COLOR, opacity: 0.85 }} /> Gate band
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-4 rounded bg-[#3b82f6]/85" /> Deliverable bar
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block size-2.5 rotate-45 bg-[#3b82f6]" /> Milestone (due date)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-px bg-[#ef4444]" /> Today
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#ef4444]" /> Critical path
+          </span>
         </div>
       </div>
     </div>

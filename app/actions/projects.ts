@@ -365,7 +365,7 @@ export interface ScheduleDashboard {
 export async function loadScheduleDashboard(projectId: string): Promise<ScheduleDashboard> {
   const supabase = createAdminClient()
   const { data } = await supabase
-    .from('phase_gates')
+    .from('schedule_milestones')
     .select('id, project_id, name, planned_start, planned_end, actual_start, actual_end, status, is_critical, gate_number, owner, progress_pct')
     .eq('tenant_id', DEMO_TENANT)
     .eq('project_id', projectId)
@@ -400,7 +400,7 @@ export async function createMilestone(data: {
   is_critical?: boolean; gate?: number; owner?: string
 }): Promise<{ error?: string }> {
   const supabase = createAdminClient()
-  const { error } = await supabase.from('phase_gates').insert({
+  const { error } = await supabase.from('schedule_milestones').insert({
     tenant_id:     DEMO_TENANT,
     project_id:    data.project_id,
     name:          data.name,
@@ -418,7 +418,7 @@ export async function createMilestone(data: {
 export async function updateMilestoneProgress(id: string, progress_pct: number, status: string): Promise<{ error?: string }> {
   const supabase = createAdminClient()
   const { error } = await supabase
-    .from('phase_gates')
+    .from('schedule_milestones')
     .update({ progress_pct, status, updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('tenant_id', DEMO_TENANT)
@@ -427,10 +427,12 @@ export async function updateMilestoneProgress(id: string, progress_pct: number, 
 
 export async function seedScheduleDemoData(projectId: string): Promise<{ error?: string }> {
   const supabase = createAdminClient()
-  const { data: ex } = await supabase.from('phase_gates').select('id').eq('project_id', projectId).limit(1)
+  const { data: ex } = await supabase.from('schedule_milestones').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
-  const base = new Date('2026-01-01')
+  // Anchor the schedule ~120 days before "now" so the Gantt spans today
+  // (today line + in-progress bars render meaningfully against live data).
+  const base = new Date(); base.setDate(base.getDate() - 120)
   const addDays = (d: Date, n: number) => {
     const r = new Date(d); r.setDate(r.getDate() + n); return r.toISOString().slice(0, 10)
   }
@@ -449,7 +451,7 @@ export async function seedScheduleDemoData(projectId: string): Promise<{ error?:
   ]
 
   for (const m of milestones) {
-    await supabase.from('phase_gates').insert({
+    await supabase.from('schedule_milestones').insert({
       tenant_id:     DEMO_TENANT,
       project_id:    projectId,
       name:          m.name,
