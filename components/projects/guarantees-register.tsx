@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+import { ExcelExportButton } from '@/components/shared/excel-export-button'
 import {
   loadGuarantees, upsertGuarantee, deleteGuarantee, setGuaranteeStatus, seedGuaranteesDemo,
   type GuaranteesData, type Guarantee, type GuaranteeType, type GuaranteeStatus,
@@ -178,6 +179,26 @@ export function GuaranteesRegister({ projectId }: { projectId: string }) {
             <Lock className="size-3" /> Read only
           </span>
         )}
+        <ExcelExportButton
+          projectId={projectId}
+          register="guarantees"
+          rowCount={guarantees.length}
+          disabled={guarantees.length === 0}
+          buildSheets={() => [{
+            name: 'Guarantees',
+            rows: guarantees,
+            columns: [
+              { header: 'Type', key: (g: Guarantee) => TYPE_LABEL[g.type], type: 'text', width: 26 },
+              { header: 'Bank', key: 'bank_name', type: 'text', width: 22 },
+              { header: 'Amount', key: 'amount', type: 'currency', width: 16 },
+              { header: 'Currency', key: 'currency', type: 'text', width: 10 },
+              { header: 'Issue Date', key: 'issue_date', type: 'date', width: 14 },
+              { header: 'Expiry Date', key: 'expiry_date', type: 'date', width: 14 },
+              { header: 'Days to Expiry', key: 'days_to_expiry', type: 'number', width: 14 },
+              { header: 'Status', key: (g: Guarantee) => STATUS_LABEL[g.status], type: 'text', width: 12 },
+            ],
+          }]}
+        />
         <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
           <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
         </Button>

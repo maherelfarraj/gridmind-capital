@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { getPortfolioStats, type PortfolioProject } from '@/app/actions/portfolio'
+import { ExcelExportButton } from '@/components/shared/excel-export-button'
 import { cn } from '@/lib/utils'
 
 // ─── Constants ────────────────────────────────────────────────
@@ -140,11 +141,36 @@ export function PortfolioDashboard() {
   return (
     <div className="p-6 space-y-6">
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Portfolio Overview</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Live view across all projects — {projects.length} project{projects.length !== 1 ? 's' : ''} total
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Portfolio Overview</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Live view across all projects — {projects.length} project{projects.length !== 1 ? 's' : ''} total
+          </p>
+        </div>
+        <ExcelExportButton
+          register="portfolio"
+          filters={{ search, gate: filterGate, status: filterStatus }}
+          rowCount={filtered.length}
+          disabled={filtered.length === 0}
+          buildSheets={() => [{
+            name: 'Portfolio',
+            rows: filtered,
+            columns: [
+              { header: 'Code', key: 'code', type: 'text', width: 14 },
+              { header: 'Name', key: 'name', type: 'text', width: 32 },
+              { header: 'Technology', key: 'technology', type: 'text', width: 16 },
+              { header: 'Capacity (MW)', key: 'capacity_mw', type: 'number', width: 14 },
+              { header: 'Gate', key: (p: PortfolioProject) => `G${p.current_phase ?? 0}`, type: 'text', width: 8 },
+              { header: 'Status', key: (p: PortfolioProject) => (p.status ?? '').replace('_', ' '), type: 'text', width: 14 },
+              { header: 'Health', key: (p: PortfolioProject) => p.health ?? 'green', type: 'text', width: 10 },
+              { header: 'Owner', key: (p: PortfolioProject) => p.project_manager ?? '', type: 'text', width: 22 },
+              { header: 'Progress %', key: (p: PortfolioProject) => Math.round(((p.current_phase ?? 0) / 6) * 100), type: 'number', width: 12 },
+              { header: 'Budget (USD)', key: 'budget_usd', type: 'currency', width: 16 },
+              { header: 'Target COD', key: 'target_completion', type: 'date', width: 14 },
+            ],
+          }]}
+        />
       </div>
 
       {/* KPI strip */}

@@ -16,6 +16,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+import { ExcelExportButton } from '@/components/shared/excel-export-button'
+import type { ExcelColumn } from '@/lib/excel/export'
 import {
   loadCostControl, saveCostEntry, addCostPeriod, logCostExport,
   COST_CATEGORIES, type CostCategory, type CostControlData,
@@ -183,6 +185,42 @@ export function CostControlDashboard({ projectId }: { projectId: string }) {
           <Button size="sm" variant="outline" onClick={handleExport} disabled={!data?.entries.length}>
             <Download className="size-3.5 mr-1.5" /> Export CSV
           </Button>
+          <ExcelExportButton
+            projectId={projectId}
+            register="cost-control"
+            filters={{ periods: 'all' }}
+            rowCount={data?.entries.length ?? 0}
+            disabled={!data || periods.length === 0}
+            buildSheets={() => {
+              const d = data!
+              const catRows = COST_CATEGORIES.map((c) => {
+                const cells: Record<string, { budgeted: number; actual: number }> = {}
+                for (const p of d.periods) {
+                  const e = d.entries.find((x) => x.period === p && x.category === c)
+                  cells[p] = { budgeted: e?.budgeted_amount ?? 0, actual: e?.actual_amount ?? 0 }
+                }
+                return { label: CATEGORY_LABEL[c], cells }
+              })
+              type Row = (typeof catRows)[number]
+              const columns: ExcelColumn<Row>[] = [
+                { header: 'Category', key: (r) => r.label, type: 'text', width: 18 },
+              ]
+              for (const p of d.periods) {
+                columns.push(
+                  { header: `${p} Budgeted`, key: (r) => r.cells[p].budgeted, type: 'currency', width: 14 },
+                  { header: `${p} Actual`, key: (r) => r.cells[p].actual, type: 'currency', width: 14 },
+                  { header: `${p} Variance`, key: (r) => r.cells[p].actual - r.cells[p].budgeted, type: 'currency', width: 14 },
+                )
+              }
+              const footer: (string | number | null)[] = ['Total']
+              for (const p of d.periods) {
+                const tb = catRows.reduce((s, r) => s + r.cells[p].budgeted, 0)
+                const ta = catRows.reduce((s, r) => s + r.cells[p].actual, 0)
+                footer.push(tb, ta, ta - tb)
+              }
+              return [{ name: 'Cost Control', rows: catRows, columns, footer }]
+            }}
+          />
           {canEdit ? (
             <>
               <Button size="sm" onClick={() => { setNewPeriod(defaultNewPeriod(periods)); setAddOpen(true) }}>

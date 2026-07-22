@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+import { ExcelExportButton } from '@/components/shared/excel-export-button'
 import {
   loadRetention, upsertRetention, deleteRetention, requestRelease, confirmRelease, requestReleaseAllHeld,
   type RetentionData, type RetentionRow, type RetentionStatus,
@@ -161,6 +162,24 @@ export function RetentionRegister({ projectId }: { projectId: string }) {
             <Lock className="size-3" /> Read only
           </span>
         )}
+        <ExcelExportButton
+          projectId={projectId}
+          register="retention"
+          rowCount={entries.length}
+          disabled={entries.length === 0}
+          buildSheets={() => [{
+            name: 'Retention',
+            rows: entries,
+            columns: [
+              { header: 'Invoice Ref', key: (r: RetentionRow) => r.invoice_ref ?? r.milestone_title, type: 'text', width: 28 },
+              { header: 'Invoice Amount', key: 'invoice_amount', type: 'currency', width: 16 },
+              { header: 'Retention %', key: 'retention_pct', type: 'number', width: 12 },
+              { header: 'Retention Amount', key: 'retention_amount', type: 'currency', width: 18 },
+              { header: 'Status', key: (r: RetentionRow) => STATUS_LABEL[r.status], type: 'text', width: 18 },
+              { header: 'Release Date', key: 'release_date', type: 'date', width: 14 },
+            ],
+          }]}
+        />
         <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
           <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
         </Button>

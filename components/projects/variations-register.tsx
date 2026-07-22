@@ -20,6 +20,7 @@ import {
   ORIGIN_LABELS, STATUS_LABELS, STATUS_COLORS,
   formatUsd, formatUsdCompact, formatDate,
 } from '@/lib/variation-orders/ui'
+import { ExcelExportButton } from '@/components/shared/excel-export-button'
 
 // ─── Create modal ─────────────────────────────────────────────
 
@@ -182,6 +183,27 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw className="size-3.5" /></Button>
+            <ExcelExportButton
+              projectId={projectId}
+              register="variation-orders"
+              rowCount={rows.length}
+              disabled={rows.length === 0}
+              buildSheets={() => [{
+                name: 'Variation Orders',
+                rows,
+                columns: [
+                  { header: 'VO Number', key: 'vo_number', type: 'text', width: 14 },
+                  { header: 'Title', key: 'title', type: 'text', width: 40 },
+                  { header: 'Origin', key: (r: (typeof rows)[number]) => ORIGIN_LABELS[r.origin], type: 'text', width: 18 },
+                  { header: 'Cost Impact', key: 'cost_impact', type: 'currency', width: 16 },
+                  { header: 'Time Impact (days)', key: 'time_impact_days', type: 'number', width: 18 },
+                  { header: 'Status', key: (r: (typeof rows)[number]) => STATUS_LABELS[r.status], type: 'text', width: 14 },
+                  { header: 'Submitted', key: 'submitted_at', type: 'date', width: 14 },
+                  { header: 'Decided', key: 'decided_at', type: 'date', width: 14 },
+                  { header: 'Baseline Updated', key: (r: (typeof rows)[number]) => (r.baseline_updated ? 'Yes' : 'No'), type: 'text', width: 16 },
+                ],
+              }]}
+            />
             <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
               {seeding ? <Loader2 className="size-3.5 animate-spin" /> : 'Seed Demo'}
             </Button>

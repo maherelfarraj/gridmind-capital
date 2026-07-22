@@ -16,6 +16,7 @@ import { getNcrs, createNcr, seedNcrDemo, type NcrSource } from '@/app/actions/n
 import {
   NCR_STATUS_LABEL, NCR_STATUS_BADGE, NCR_SOURCE_LABEL, formatDate,
 } from '@/lib/ncrs/ui'
+import { ExcelExportButton } from '@/components/shared/excel-export-button'
 import { AlertTriangle, Plus, ClipboardList, CheckCircle2, Clock } from 'lucide-react'
 
 const SOURCES: NcrSource[] = ['failed_inspection', 'audit', 'site_observation']
@@ -70,6 +71,27 @@ export function NcrRegister({ projectId }: { projectId: string }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <ExcelExportButton
+            projectId={projectId}
+            register="ncrs"
+            rowCount={rows.length}
+            disabled={rows.length === 0}
+            buildSheets={() => [{
+              name: 'NCRs',
+              rows,
+              columns: [
+                { header: 'NCR Number', key: 'ncr_number', type: 'text', width: 14 },
+                { header: 'Title', key: 'title', type: 'text', width: 40 },
+                { header: 'Source', key: (n: (typeof rows)[number]) => NCR_SOURCE_LABEL[n.source], type: 'text', width: 18 },
+                { header: 'Status', key: (n: (typeof rows)[number]) => NCR_STATUS_LABEL[n.status], type: 'text', width: 16 },
+                { header: 'Root Cause', key: 'root_cause', type: 'text', width: 40 },
+                { header: 'Corrective Action', key: 'corrective_action', type: 'text', width: 40 },
+                { header: 'Raised', key: 'raised_at', type: 'date', width: 14 },
+                { header: 'Closed', key: 'closed_at', type: 'date', width: 14 },
+                { header: 'Days Open', key: 'days_open', type: 'number', width: 12 },
+              ],
+            }]}
+          />
           {rows.length === 0 && (
             <Button variant="outline" size="sm" onClick={handleSeed} disabled={busy}>Seed demo</Button>
           )}

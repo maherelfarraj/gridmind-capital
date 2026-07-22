@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+import { ExcelExportButton } from '@/components/shared/excel-export-button'
 import {
   loadCashFlow, upsertMilestone, deleteMilestone, escalateMilestone, requestRetentionRelease,
   seedCashFlowDemo, ESCALATION_LADDER,
@@ -179,6 +180,29 @@ export function CashFlowTracker({ projectId }: { projectId: string }) {
               <Lock className="size-3" /> Read only
             </span>
           )}
+          <ExcelExportButton
+            projectId={projectId}
+            register="payment-milestones"
+            rowCount={milestones.length}
+            disabled={milestones.length === 0}
+            buildSheets={() => [{
+              name: 'Payment Milestones',
+              rows: milestones,
+              columns: [
+                { header: 'Milestone', key: 'title', type: 'text', width: 34 },
+                { header: 'Planned Date', key: 'planned_date', type: 'date', width: 14 },
+                { header: 'Planned Amount', key: 'planned_amount', type: 'currency', width: 16 },
+                { header: 'Invoiced Date', key: 'invoiced_at', type: 'date', width: 14 },
+                { header: 'Invoice Amount', key: 'invoice_amount', type: 'currency', width: 16 },
+                { header: 'Due Date', key: 'due_date', type: 'date', width: 14 },
+                { header: 'Paid Date', key: 'paid_at', type: 'date', width: 14 },
+                { header: 'Paid Amount', key: 'paid_amount', type: 'currency', width: 16 },
+                { header: 'Days Overdue', key: 'days_overdue', type: 'number', width: 14 },
+                { header: 'Status', key: (m: PaymentMilestone) => STATUS_LABEL[m.status], type: 'text', width: 12 },
+                { header: 'Escalation Level', key: 'escalation_level', type: 'number', width: 14 },
+              ],
+            }]}
+          />
           <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
             <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
           </Button>
