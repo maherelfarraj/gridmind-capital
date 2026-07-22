@@ -251,7 +251,9 @@ function SubmittalsTab() {
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export function EngineeringCockpit() {
+export type EngineeringTab = 'drawings' | 'rfis' | 'submittals'
+
+export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: EngineeringTab }) {
   const approvedDrawings = MOCK_DRAWINGS.filter(d => d.status === 'approved').length
   const openRFIs = MOCK_RFIS.filter(r => r.status === 'open' || r.status === 'overdue').length
   const overdueRFIs = MOCK_RFIS.filter(r => r.status === 'overdue').length
@@ -282,7 +284,7 @@ export function EngineeringCockpit() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="drawings">
+      <Tabs defaultValue={initialTab}>
         <TabsList className="w-fit">
           <TabsTrigger value="drawings" className="gap-1.5"><FileText size={13} /> Drawings</TabsTrigger>
           <TabsTrigger value="rfis" className="gap-1.5"><AlertTriangle size={13} /> RFIs</TabsTrigger>

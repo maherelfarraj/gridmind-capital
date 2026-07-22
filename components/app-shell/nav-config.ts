@@ -210,6 +210,11 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Engineering',
         href: '/engineering',
         icon: Wrench,
+        children: [
+          { id: 'eng-drawings',   label: 'Drawing Register',  href: '/engineering/drawings' },
+          { id: 'eng-rfis',       label: 'RFIs',              href: '/engineering/rfis' },
+          { id: 'eng-submittals', label: 'Submittals',        href: '/engineering/submittals' },
+        ],
       },
       {
         id: 'procurement',
