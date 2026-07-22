@@ -13,6 +13,7 @@ const TABS = [
   { href: '/team/tasks', label: 'Tasks' },
   { href: '/team/workload', label: 'Workload' },
   { href: '/team/inbox', label: 'Inbox' },
+  { href: '/team/approvers', label: 'Approvers' },
 ]
 
 export function TeamSubNav() {

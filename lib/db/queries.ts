@@ -362,3 +362,70 @@ export async function getInbox(tenantId: string): Promise<VInbox[]> {
   if (error) throw error
   return data ?? []
 }
+
+// ── Gate approver config (Phase 8) ───────────────────────────
+
+export interface GateApproverConfigRow {
+  gate_number: number
+  gate_code: string
+  gate_name: string
+  default_primary: string | null
+  default_secondary: string | null
+  override_primary: string | null
+  override_secondary: string | null
+  required_roles: string[]
+}
+
+/**
+ * Merge the tenant-wide gate approver defaults with any per-project
+ * overrides, plus the mandatory role requirements, into one row per gate.
+ * When projectId is omitted, only defaults are returned.
+ */
+export async function getGateApproverConfig(
+  projectId?: string,
+): Promise<GateApproverConfigRow[]> {
+  const admin = createAdminClient()
+
+  const [gatesRes, defaultsRes, reqsRes] = await Promise.all([
+    admin.from('gates').select('code, name, sort_order').order('sort_order'),
+    admin.from('gate_approver_defaults').select('gate_number, primary_role, secondary_role'),
+    admin.from('gate_role_requirements').select('gate_number, role_code'),
+  ])
+  if (gatesRes.error) throw gatesRes.error
+  if (defaultsRes.error) throw defaultsRes.error
+  if (reqsRes.error) throw reqsRes.error
+
+  let overrides: { gate_number: number; primary_role: string; secondary_role: string | null }[] = []
+  if (projectId) {
+    const { data, error } = await admin
+      .from('project_gate_approvers')
+      .select('gate_number, primary_role, secondary_role')
+      .eq('project_id', projectId)
+    if (error) throw error
+    overrides = data ?? []
+  }
+
+  const defByGate = new Map(defaultsRes.data?.map((d) => [d.gate_number, d]) ?? [])
+  const ovrByGate = new Map(overrides.map((o) => [o.gate_number, o]))
+  const reqByGate = new Map<number, string[]>()
+  for (const r of reqsRes.data ?? []) {
+    const list = reqByGate.get(r.gate_number) ?? []
+    list.push(r.role_code)
+    reqByGate.set(r.gate_number, list)
+  }
+
+  return (gatesRes.data ?? []).map((g) => {
+    const def = defByGate.get(g.sort_order)
+    const ovr = ovrByGate.get(g.sort_order)
+    return {
+      gate_number: g.sort_order,
+      gate_code: g.code,
+      gate_name: g.name,
+      default_primary: def?.primary_role ?? null,
+      default_secondary: def?.secondary_role ?? null,
+      override_primary: ovr?.primary_role ?? null,
+      override_secondary: ovr?.secondary_role ?? null,
+      required_roles: reqByGate.get(g.sort_order) ?? [],
+    }
+  })
+}

@@ -352,3 +352,70 @@ export async function addTaskComment(input: {
   revalidatePath('/team/tasks')
   return {}
 }
+
+// ── Gate approver config (Phase 8) ───────────────────────────
+
+/** Set (upsert) a per-project approver override for one gate. */
+export async function setProjectGateApprover(input: {
+  projectId: string
+  gateNumber: number
+  primaryRole: string
+  secondaryRole?: string | null
+}): Promise<ActionResult> {
+  const { projectId, gateNumber, primaryRole } = input
+  if (!projectId) return { error: 'Select a project first.' }
+  if (!primaryRole) return { error: 'A primary approver role is required.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { error } = await admin.from('project_gate_approvers').upsert(
+    {
+      project_id: projectId,
+      gate_number: gateNumber,
+      primary_role: primaryRole,
+      secondary_role: input.secondaryRole || null,
+    },
+    { onConflict: 'project_id,gate_number' },
+  )
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'GATE_APPROVER_OVERRIDE',
+    actorId: actor.userId,
+    projectId,
+    metadata: { gate_number: gateNumber, primary_role: primaryRole, secondary_role: input.secondaryRole || null },
+  })
+
+  revalidatePath('/team/approvers')
+  return {}
+}
+
+/** Remove a per-project override so the gate reverts to the tenant default. */
+export async function clearProjectGateApprover(input: {
+  projectId: string
+  gateNumber: number
+}): Promise<ActionResult> {
+  const { projectId, gateNumber } = input
+  if (!projectId) return { error: 'Select a project first.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { error } = await admin
+    .from('project_gate_approvers')
+    .delete()
+    .eq('project_id', projectId)
+    .eq('gate_number', gateNumber)
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'GATE_APPROVER_RESET',
+    actorId: actor.userId,
+    projectId,
+    metadata: { gate_number: gateNumber },
+  })
+
+  revalidatePath('/team/approvers')
+  return {}
+}
