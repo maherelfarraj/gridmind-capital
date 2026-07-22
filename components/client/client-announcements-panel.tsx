@@ -143,8 +143,8 @@ export function ClientAnnouncementsPanel({ projectId, isManager = false }: Props
                       <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{ann.body}</p>
                     )}
                     <p className="mt-1 text-xs text-muted-foreground/70">
-                      {formatDistanceToNow(new Date(ann.published_at), { addSuffix: true })}
-                      {ann.author_name ? ` · ${ann.author_name}` : ''}
+                      {formatDistanceToNow(new Date(ann.publishedAt), { addSuffix: true })}
+                      {ann.authorName ? ` · ${ann.authorName}` : ''}
                     </p>
                   </div>
                   {isManager && (

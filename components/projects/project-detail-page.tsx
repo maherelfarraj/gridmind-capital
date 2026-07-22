@@ -20,7 +20,6 @@ import {
   ClipboardCheck,
   Send,
   RefreshCw,
-  Megaphone,
 } from 'lucide-react'
 import { useRouter as useNextRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -31,6 +30,7 @@ import { ProjectCommandCenter, type ProjectData } from '@/components/project/pro
 import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-gate-stepper'
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
+import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
 import type {
   Project,
@@ -420,11 +420,6 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           bgColor: 'bg-violet-100 dark:bg-violet-900/30', count: 'Monthly PDF',
           ariaLabel: 'Open Client Report', href: `/projects/${projectId}/client-report`,
         },
-        {
-          label: 'Announcements', icon: Megaphone, iconColor: '#0891b2',
-          bgColor: 'bg-cyan-100 dark:bg-cyan-900/30', count: 'Client-facing',
-          ariaLabel: 'Manage client announcements', href: `/projects/${projectId}/announcements`,
-        },
       ]
     : QUICK_ACTIONS
   return (
@@ -747,6 +742,7 @@ export function ProjectDetailPage({
             onRequestChanges={onRequestChanges}
           />
           <ProjectInfoCard project={project} />
+          <ClientAnnouncementsPanel projectId={project.id} isManager />
           <RiskSummaryCard risks={risks as Risk[]} />
         </div>
       </div>

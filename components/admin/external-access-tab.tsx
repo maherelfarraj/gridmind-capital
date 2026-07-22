@@ -24,7 +24,8 @@ import {
 } from '@/app/actions/external-access'
 import { getProjects } from '@/app/actions/projects'
 import { seedPortalDemo } from '@/app/actions/portal'
-import { Database } from 'lucide-react'
+import { seedClientPortalDemo } from '@/app/actions/external-access'
+import { Database, Users } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -337,10 +338,15 @@ export function ExternalAccessTab() {
   const { data: allProjects } = useSWR('all-projects-list', () => getProjects())
 
   const [inviteOpen, setInviteOpen] = React.useState(false)
+  // Partner portal seed state
   const [seedOpen, setSeedOpen] = React.useState(false)
   const [seedProject, setSeedProject] = React.useState('')
   const [seedOrg, setSeedOrg] = React.useState('')
   const [seeding, setSeeding] = React.useState(false)
+  // Client portal seed state
+  const [clientSeedOpen, setClientSeedOpen] = React.useState(false)
+  const [clientSeedProject, setClientSeedProject] = React.useState('')
+  const [clientSeeding, setClientSeeding] = React.useState(false)
 
   const projects = (allProjects ?? []).map((p) => ({
     id: p.id, code: p.code, name: p.name,
@@ -363,6 +369,27 @@ export function ExternalAccessTab() {
         variant: 'success',
       })
       setSeedOpen(false); setSeedProject(''); setSeedOrg('')
+    }
+  }
+
+  const handleClientSeed = async () => {
+    if (!clientSeedProject) {
+      toast({ title: 'Select a project first', variant: 'warning' })
+      return
+    }
+    setClientSeeding(true)
+    const res = await seedClientPortalDemo(clientSeedProject)
+    setClientSeeding(false)
+    if (res.error) {
+      toast({ title: 'Seed failed', description: res.error, variant: 'danger' })
+    } else {
+      const f = res.flagged!
+      toast({
+        title: 'Client portal demo data ready',
+        description: `Flagged ${f.vos} VOs, ${f.milestones} milestones, ${f.documents} documents as client-visible. Added ${res.announcements} announcements.`,
+        variant: 'success',
+      })
+      setClientSeedOpen(false); setClientSeedProject('')
     }
   }
 
@@ -403,6 +430,9 @@ export function ExternalAccessTab() {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setSeedOpen(true)}>
             <Database className="size-4 mr-2" /> Seed portal demo
+          </Button>
+          <Button variant="outline" onClick={() => setClientSeedOpen(true)}>
+            <Users className="size-4 mr-2" /> Seed client portal
           </Button>
           <Button onClick={() => setInviteOpen(true)}>
             <UserPlus className="size-4 mr-2" /> Invite user
@@ -449,6 +479,43 @@ export function ExternalAccessTab() {
             <Button variant="outline" onClick={() => setSeedOpen(false)}>Cancel</Button>
             <Button onClick={handleSeed} disabled={seeding}>
               {seeding ? <RefreshCw className="size-4 animate-spin mr-2" /> : <Database className="size-4 mr-2" />}
+              Create demo data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Seed client portal dialog */}
+      <Dialog open={clientSeedOpen} onOpenChange={(o) => !o && setClientSeedOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              <span className="flex items-center gap-2">
+                <Users className="size-4 text-muted-foreground" />
+                Seed client portal demo data
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Flags existing VOs, payment milestones, and documents as client-visible,
+              and creates two sample announcements. Invite a client with role
+              &quot;Client Viewer&quot; and grant them this project to see the full portal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Project</Label>
+              <Select
+                value={clientSeedProject}
+                onValueChange={(v) => setClientSeedProject(v ?? '')}
+                options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
+                placeholder="Select a project…"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClientSeedOpen(false)}>Cancel</Button>
+            <Button onClick={handleClientSeed} disabled={clientSeeding}>
+              {clientSeeding ? <RefreshCw className="size-4 animate-spin mr-2" /> : <Users className="size-4 mr-2" />}
               Create demo data
             </Button>
           </DialogFooter>
