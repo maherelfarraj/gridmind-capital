@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getActor } from '@/lib/db/queries'
+import { getActor, getTaskComments } from '@/lib/db/queries'
 
 type ActionResult<T = void> = { data?: T; error?: string }
 
@@ -234,5 +234,121 @@ export async function approveGate(input: {
   })
 
   revalidatePath('/team/signoffs')
+  return {}
+}
+
+// ── Tasks (Phase 5) ──────────────────────────────────────────
+
+const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'done'] as const
+const TASK_PRIORITIES = ['low', 'medium', 'high'] as const
+
+export async function createTask(input: {
+  projectId: string
+  title: string
+  description?: string
+  assigneeRoleId?: string | null
+  assigneePersonId?: string | null
+  priority?: string
+  dueDate?: string | null
+  deliverableId?: string | null
+}): Promise<ActionResult> {
+  const { projectId, title } = input
+  if (!projectId) return { error: 'Select a project first.' }
+  if (!title?.trim()) return { error: 'Task title is required.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const priority = TASK_PRIORITIES.includes(input.priority as never)
+    ? input.priority
+    : 'medium'
+
+  const { error } = await admin.from('tasks').insert({
+    tenant_id: actor.tenantId,
+    project_id: projectId,
+    title: title.trim(),
+    description: input.description?.trim() || null,
+    assignee_role_id: input.assigneeRoleId || null,
+    assignee_person_id: input.assigneePersonId || null,
+    deliverable_id: input.deliverableId || null,
+    priority,
+    status: 'todo',
+    created_by: actor.userId,
+  })
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'TASK_CREATE',
+    actorId: actor.userId,
+    projectId,
+    metadata: { title: title.trim() },
+  })
+
+  revalidatePath('/team/tasks')
+  return {}
+}
+
+export async function updateTaskStatus(input: {
+  taskId: string
+  status: string
+  projectId: string
+}): Promise<ActionResult> {
+  const { taskId, status, projectId } = input
+  if (!TASK_STATUSES.includes(status as never)) return { error: 'Invalid status.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const patch: Record<string, unknown> = {
+    status,
+    updated_at: new Date().toISOString(),
+    completed_at: status === 'done' ? new Date().toISOString() : null,
+  }
+  const { error } = await admin.from('tasks').update(patch).eq('id', taskId)
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'TASK_STATUS',
+    actorId: actor.userId,
+    projectId,
+    metadata: { task_id: taskId, status },
+  })
+
+  revalidatePath('/team/tasks')
+  return {}
+}
+
+export async function listTaskComments(
+  taskId: string,
+): Promise<{ id: string; body: string; author_name: string | null; created_at: string }[]> {
+  return getTaskComments(taskId)
+}
+
+export async function addTaskComment(input: {
+  taskId: string
+  body: string
+  projectId: string
+}): Promise<ActionResult> {
+  const { taskId, body, projectId } = input
+  if (!body?.trim()) return { error: 'Comment cannot be empty.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { error } = await admin.from('task_comments').insert({
+    task_id: taskId,
+    author_id: actor.userId,
+    body: body.trim(),
+  })
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'TASK_COMMENT',
+    actorId: actor.userId,
+    projectId,
+    metadata: { task_id: taskId },
+  })
+
+  revalidatePath('/team/tasks')
   return {}
 }

@@ -93,76 +93,40 @@ export async function advanceProjectGate(
 
   const nowIso = new Date().toISOString()
 
-  // Mark the just-completed gate approved, and the newly-active gate in_review.
-  // This drives the WorkflowTimeline (derived in getProjectTimeline).
-  await supabase
-    .from('phase_gates')
-    .update({ status: 'approved', reviewed_by: reviewerId, reviewed_at: nowIso, updated_at: nowIso })
-    .eq('project_id', projectId)
-    .eq('phase_number', current)
-
-  await supabase
-    .from('phase_gates')
-    .update({ status: 'in_review', updated_at: nowIso })
-    .eq('project_id', projectId)
-    .eq('phase_number', next)
+  // NOTE: This G0-G6 stepper is intentionally decoupled from the phase_gates
+  // table, which is now owned exclusively by the /team gate sign-off flow
+  // (its triggers spawn sign-offs / enforce approval on any phase_gates write).
+  // The stepper's UI derives entirely from projects.current_phase; the gate
+  // transition is recorded to workflow_events so it still surfaces on the
+  // project timeline (via getModuleEvents) without touching phase_gates.
+  await supabase.from('workflow_events').insert({
+    instance_id: null,
+    from_state: GATE_ORDER[current],
+    to_state: GATE_ORDER[next],
+    transition_code: 'GATE_ADVANCE',
+    actor_id: reviewerId,
+    comment: `${GATE_ORDER[current]} approved → ${GATE_ORDER[next]} opened`,
+    metadata: { module: 'gate', project_id: projectId, gate_from: GATE_ORDER[current], gate_to: GATE_ORDER[next] },
+    created_at: nowIso,
+  })
 
   return { newGate: GATE_ORDER[next] }
 }
 
 /**
- * Derive a project's workflow timeline from its phase_gates rows.
- * Each approved/in_review gate transition becomes a WorkflowTimeline entry.
- * No separate events table needed — phase_gates is the single source of truth.
+ * Derive a project's workflow timeline from workflow_events.
+ *
+ * Gate transitions (from advanceProjectGate), module events (VO/NCR/finance/…),
+ * and electronic signatures are all merged here. This function no longer reads
+ * phase_gates — that table is owned exclusively by the /team gate sign-off flow.
  */
 export async function getProjectTimeline(projectId: string): Promise<WorkflowLogEntry[]> {
   const supabase = createAdminClient()
 
-  const { data } = await supabase
-    .from('phase_gates')
-    .select('id, phase_number, phase_name, status, reviewed_by, created_at, updated_at')
-    .eq('project_id', projectId)
-    .order('updated_at', { ascending: false })
-
-  const rows = data ?? []
   const logs: WorkflowLogEntry[] = []
 
-  for (const g of rows) {
-    const gateCode = `G${g.phase_number}`
-    if (g.status === 'approved') {
-      logs.push({
-        id: `${g.id}-approve`,
-        action: 'workflow.approve',
-        object_type: 'gate',
-        object_id: g.id,
-        object_code: `${gateCode} · ${g.phase_name}`,
-        actor_name: g.reviewed_by ? 'Gate Reviewer' : 'System',
-        actor_role: 'Project Manager',
-        before_state: 'in_review',
-        after_state: 'approved',
-        decision_reason: null,
-        metadata: null,
-        created_at: g.updated_at ?? g.created_at,
-      })
-    } else if (g.status === 'in_review') {
-      logs.push({
-        id: `${g.id}-submit`,
-        action: 'workflow.submit',
-        object_type: 'gate',
-        object_id: g.id,
-        object_code: `${gateCode} · ${g.phase_name}`,
-        actor_name: 'System',
-        actor_role: null,
-        before_state: 'pending',
-        after_state: 'in_review',
-        decision_reason: null,
-        metadata: null,
-        created_at: g.updated_at ?? g.created_at,
-      })
-    }
-  }
-
-  // Merge real module events (VO, NCR, cost control, cash flow, retention, guarantees, …)
+  // Merge real module events (VO, NCR, cost control, cash flow, retention, guarantees,
+  // and gate advances) recorded in workflow_events with metadata.project_id === projectId.
   // recorded in workflow_events with metadata.project_id === projectId.
   const moduleLogs = await getModuleEvents(supabase, projectId)
   logs.push(...moduleLogs)
@@ -181,6 +145,7 @@ export async function getProjectTimeline(projectId: string): Promise<WorkflowLog
 // ─────────────────────────────────────────────────────────────
 
 const MODULE_META: Record<string, { objectType: string; label: string }> = {
+  gate:       { objectType: 'gate',     label: 'Gate' },
   cash_flow:  { objectType: 'finance',  label: 'Payment Milestone' },
   retention:  { objectType: 'finance',  label: 'Retention' },
   guarantees: { objectType: 'finance',  label: 'Guarantee' },
@@ -193,6 +158,7 @@ const MODULE_META: Record<string, { objectType: string; label: string }> = {
 /** Map a raw transition_code + module to a known WorkflowTimeline action key. */
 function actionFor(transition: string | null, moduleKey: string): string {
   const t = (transition ?? '').toUpperCase()
+  if (t.includes('ADVANCE')) return 'workflow.approve'
   if (t.includes('APPROV')) return 'workflow.approve'
   if (t.includes('REJECT')) return 'workflow.reject'
   if (t.includes('ESCALAT')) return 'workflow.escalate'

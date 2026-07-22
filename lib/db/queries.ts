@@ -251,6 +251,85 @@ export async function getGateSignoffs(phaseGateId: string): Promise<SignoffRow[]
   })
 }
 
+// ── Tasks (Phase 5) ──────────────────────────────────────────
+
+export interface TaskRow {
+  id: string
+  project_id: string
+  deliverable_id: string | null
+  deliverable_title: string | null
+  title: string
+  description: string | null
+  assignee_role_id: string | null
+  assignee_role_code: string | null
+  assignee_person_id: string | null
+  assignee_person_name: string | null
+  status: string
+  priority: string
+  due_date: string | null
+  comment_count: number
+  created_at: string
+}
+
+export async function getTasksForProject(projectId: string): Promise<TaskRow[]> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('tasks')
+    .select(
+      'id, project_id, deliverable_id, title, description, assignee_role_id, assignee_person_id, status, priority, due_date, created_at, ' +
+        'raci_deliverables!tasks_deliverable_id_fkey(title), roles!tasks_assignee_role_id_fkey(code), profiles!tasks_assignee_person_id_fkey(full_name), task_comments(count)',
+    )
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  // Supabase can't infer a row type across four embedded relations, so treat
+  // the rows as loosely-typed records and map into our explicit TaskRow shape.
+  const rows = (data ?? []) as unknown as Record<string, unknown>[]
+  return rows.map((r) => {
+    const deliverable = r.raci_deliverables as { title: string } | null
+    const role = r.roles as { code: string } | null
+    const person = r.profiles as { full_name: string } | null
+    const commentAgg = r.task_comments as { count: number }[] | null
+    return {
+      id: r.id as string,
+      project_id: r.project_id as string,
+      deliverable_id: (r.deliverable_id as string) ?? null,
+      deliverable_title: deliverable?.title ?? null,
+      title: r.title as string,
+      description: (r.description as string) ?? null,
+      assignee_role_id: (r.assignee_role_id as string) ?? null,
+      assignee_role_code: role?.code ?? null,
+      assignee_person_id: (r.assignee_person_id as string) ?? null,
+      assignee_person_name: person?.full_name ?? null,
+      status: r.status as string,
+      priority: r.priority as string,
+      due_date: (r.due_date as string) ?? null,
+      comment_count: commentAgg?.[0]?.count ?? 0,
+      created_at: r.created_at as string,
+    }
+  })
+}
+
+export async function getTaskComments(
+  taskId: string,
+): Promise<{ id: string; body: string; author_name: string | null; created_at: string }[]> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('task_comments')
+    .select('id, body, created_at, profiles!task_comments_author_id_fkey(full_name)')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    body: r.body as string,
+    author_name:
+      (r.profiles as unknown as { full_name: string } | null)?.full_name ?? null,
+    created_at: r.created_at as string,
+  }))
+}
+
 // ── Workload dashboards (Phase 6) ────────────────────────────
 
 export async function getPersonWorkload(projectId?: string): Promise<VPersonWorkload[]> {
