@@ -285,7 +285,7 @@ type TabId = 'overview' | 'risks' | 'issues' | 'actions' | 'decisions' | 'lesson
 export function PmoCockpit() {
   const { toast } = useToast()
   const { data, isLoading, mutate } = useSWR('pmo-dashboard', loadPmoDashboard, { revalidateOnFocus: true })
-  const { data: projectList } = useSWR('pmo-projects', getProjects)
+  const { data: projectList } = useSWR('pmo-projects', () => getProjects())
   const [tab, setTab] = React.useState<TabId>('overview')
   const [modal, setModal] = React.useState<'risk' | 'issue' | 'action' | 'decision' | 'lesson' | null>(null)
   const [seeding, setSeeding] = React.useState(false)
