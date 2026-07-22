@@ -10,6 +10,7 @@ export interface NotificationPrefs {
   email_on_vo: boolean
   email_on_escalation: boolean
   email_on_mention: boolean
+  email_weekly_digest: boolean
 }
 
 const DEFAULT_PREFS: NotificationPrefs = {
@@ -18,6 +19,7 @@ const DEFAULT_PREFS: NotificationPrefs = {
   email_on_vo: true,
   email_on_escalation: true,
   email_on_mention: true,
+  email_weekly_digest: true,
 }
 
 /** Load the current user's email notification preferences (defaults to all-on). */
@@ -28,7 +30,7 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
 
   const { data } = await supabase
     .from('notification_prefs')
-    .select('email_on_approval, email_on_ncr, email_on_vo, email_on_escalation, email_on_mention')
+    .select('email_on_approval, email_on_ncr, email_on_vo, email_on_escalation, email_on_mention, email_weekly_digest')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -39,6 +41,7 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
     email_on_vo: data.email_on_vo ?? true,
     email_on_escalation: data.email_on_escalation ?? true,
     email_on_mention: data.email_on_mention ?? true,
+    email_weekly_digest: (data as { email_weekly_digest?: boolean }).email_weekly_digest ?? true,
   }
 }
 

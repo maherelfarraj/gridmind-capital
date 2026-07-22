@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import useSWR from 'swr'
-import { CheckSquare, FileWarning, GitPullRequestArrow, AlarmClock, AtSign, Loader2 } from 'lucide-react'
+import { CheckSquare, FileWarning, GitPullRequestArrow, AlarmClock, AtSign, CalendarClock, Loader2 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import {
@@ -24,6 +24,7 @@ const EMAIL_TYPES: {
   { id: 'email_on_vo',         label: 'Variation orders',              desc: 'When a VO is submitted, approved, rejected or updated.',           icon: GitPullRequestArrow },
   { id: 'email_on_escalation', label: 'Payment escalations',           desc: 'When an overdue payment milestone is escalated (L1–L4).',          icon: AlarmClock },
   { id: 'email_on_mention',    label: 'Mentions',                      desc: 'When someone @mentions you in a comment.',                        icon: AtSign },
+  { id: 'email_weekly_digest', label: 'Weekly digest',                 desc: 'A Monday-morning summary of your projects’ status and actions.',  icon: CalendarClock },
 ]
 
 const DEFAULT_PREFS: NotificationPrefs = {
@@ -32,6 +33,7 @@ const DEFAULT_PREFS: NotificationPrefs = {
   email_on_vo: true,
   email_on_escalation: true,
   email_on_mention: true,
+  email_weekly_digest: true,
 }
 
 export function NotificationsTab({ onSave }: { onSave: () => void }) {

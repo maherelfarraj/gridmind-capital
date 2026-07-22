@@ -27,13 +27,14 @@ export type EmailType =
   | 'general'
 
 // Maps an email type to the notification_prefs column that gates it.
-// Types not present here (digest, general) are always sent.
+// Types not present here (general) are always sent.
 const TYPE_TO_PREF: Partial<Record<EmailType, string>> = {
   approval: 'email_on_approval',
   ncr: 'email_on_ncr',
   vo: 'email_on_vo',
   escalation: 'email_on_escalation',
   mention: 'email_on_mention',
+  digest: 'email_weekly_digest',
 }
 
 // ─── Central primitive ────────────────────────────────────────
@@ -45,12 +46,14 @@ export async function sendEmail(opts: {
   type: EmailType
   /** Recipient profile id — enables prefs check + per-user email_log. */
   userId?: string | null
+  /** Skip the notification_prefs opt-out check (e.g. an explicit test send). */
+  ignorePrefs?: boolean
 }): Promise<{ status: 'sent' | 'failed' | 'skipped'; error?: string }> {
   const admin = createAdminClient()
 
   // 1. Preference gate (only when we know the recipient + the type is gated).
   const prefColumn = TYPE_TO_PREF[opts.type]
-  if (opts.userId && prefColumn) {
+  if (opts.userId && prefColumn && !opts.ignorePrefs) {
     try {
       const { data: prefs } = await admin
         .from('notification_prefs')
