@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendVoEmail } from '@/lib/email/send'
 import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -118,10 +119,11 @@ async function logEvent(admin: ReturnType<typeof createAdminClient>, args: {
 async function notifyStakeholders(admin: ReturnType<typeof createAdminClient>, args: {
   tenantId: string; projectId: string; voId: string; voNumber: string
   title: string; body: string; type?: string
+  voTitle?: string; status?: string; costImpact?: number
 }) {
   const { data: recipients } = await admin
     .from('profiles')
-    .select('id')
+    .select('id, email, full_name')
     .eq('tenant_id', args.tenantId)
     .eq('is_active', true)
     .in('role', [...new Set([...PM_ROLES, ...FINANCE_ROLES])])
@@ -138,6 +140,26 @@ async function notifyStakeholders(admin: ReturnType<typeof createAdminClient>, a
       link: `/projects/${args.projectId}/variations/${args.voId}`,
     })),
   )
+
+  // Email each recipient (prefs-aware, logged) — fire-and-forget.
+  const { data: proj } = await admin.from('projects').select('code').eq('id', args.projectId).maybeSingle()
+  const projectCode = proj?.code ?? 'PROJECT'
+  void Promise.all(
+    recipients
+      .filter((r) => r.email)
+      .map((r) =>
+        sendVoEmail({
+          to: r.email as string,
+          userId: r.id,
+          voNumber: args.voNumber,
+          title: args.voTitle ?? args.body,
+          status: args.status ?? args.title,
+          costImpact: args.costImpact ?? 0,
+          projectCode,
+          projectId: args.projectId,
+        }),
+      ),
+  ).catch((e) => console.error('[vo] email failed:', e))
 }
 
 function mapRow(r: any): VariationOrder {
@@ -317,6 +339,7 @@ export async function submitVariationOrder(id: string): Promise<ActionResult<Var
     title: `${vo.vo_number} submitted to client`,
     body: `"${vo.title}" was submitted — cost impact ${formatUsd(vo.cost_impact)}, ${vo.time_impact_days} day(s).`,
     type: 'approval',
+    voTitle: vo.title, status: 'Submitted', costImpact: vo.cost_impact ?? 0,
   })
   revalidate(vo.project_id)
   return { data: mapRow(data) }
@@ -350,6 +373,7 @@ export async function decideVariationOrder(
     title: `${vo.vo_number} ${decision}`,
     body: `"${vo.title}" was ${decision}${comment ? `: ${comment}` : ''}.`,
     type: decision === 'approved' ? 'approval' : 'alert',
+    voTitle: vo.title, status: decision.charAt(0).toUpperCase() + decision.slice(1), costImpact: vo.cost_impact ?? 0,
   })
   revalidate(vo.project_id)
   return { data: mapRow(data) }

@@ -1,8 +1,59 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { sendMentionEmail } from '@/lib/email/send'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+
+/** Build the deep-link for a comment thread based on its entity. */
+function commentLink(entityType: string, entityId: string): string {
+  if (entityType === 'project') return `/projects/${entityId}`
+  return `/projects/${entityId}`
+}
+
+/**
+ * Resolve @mention tokens to active tenant profiles and email them.
+ * Tokens match a profile's email local-part (before @) or a normalized full name.
+ */
+async function emailMentions(opts: {
+  mentions: string[]
+  mentionedBy: string
+  snippet: string
+  entityType: string
+  entityId: string
+}) {
+  if (opts.mentions.length === 0) return
+  const admin = createAdminClient()
+  const { data: profiles } = await admin
+    .from('profiles')
+    .select('id, email, full_name')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('is_active', true)
+  if (!profiles?.length) return
+
+  const wanted = new Set(opts.mentions.map((m) => m.toLowerCase()))
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '.')
+  const matched = profiles.filter((p) => {
+    if (!p.email) return false
+    const local = (p.email as string).split('@')[0].toLowerCase()
+    const name = p.full_name ? norm(p.full_name) : ''
+    return wanted.has(local) || (name && wanted.has(name))
+  })
+
+  const link = commentLink(opts.entityType, opts.entityId)
+  await Promise.all(
+    matched.map((p) =>
+      sendMentionEmail({
+        to: p.email as string,
+        userId: p.id,
+        mentionedBy: opts.mentionedBy,
+        snippet: opts.snippet.length > 160 ? `${opts.snippet.slice(0, 157)}…` : opts.snippet,
+        link,
+      }),
+    ),
+  )
+}
 
 export interface Comment {
   id: string
@@ -93,6 +144,19 @@ export async function addComment(input: {
     .single()
 
   if (error || !data) return { error: error?.message ?? 'Failed to add comment' }
+
+  // Email mentioned users (prefs-aware, logged) — fire-and-forget.
+  const mentions = parseMentions(input.body)
+  if (mentions.length > 0) {
+    void emailMentions({
+      mentions,
+      mentionedBy: authorName,
+      snippet: input.body,
+      entityType: input.entityType,
+      entityId: input.entityId,
+    }).catch((e) => console.error('[comments] mention email failed:', e))
+  }
+
   return { comment: mapRow(data as CommentRow) }
 }
 

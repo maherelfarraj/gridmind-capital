@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendEscalationEmail } from '@/lib/email/send'
 import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -524,6 +525,33 @@ export async function escalateMilestone(args: {
     body: `"${m.title}" escalated to level ${args.toLevel} — ${step.label}.`,
     roles,
   })
+
+  // Email the escalation cohort (prefs-aware, logged) — fire-and-forget.
+  void (async () => {
+    const [{ data: emailRecipients }, { data: proj }] = await Promise.all([
+      admin.from('profiles').select('id, email')
+        .eq('tenant_id', actor.tenantId).eq('is_active', true).in('role', [...new Set(roles)]),
+      admin.from('projects').select('code').eq('id', args.projectId).maybeSingle(),
+    ])
+    const outstanding = num(m.invoice_amount) - num(m.paid_amount)
+    const daysOverdue = m.due_date
+      ? Math.max(0, Math.floor((Date.now() - new Date(m.due_date).getTime()) / 86400000))
+      : 0
+    await Promise.all(
+      (emailRecipients ?? []).filter((r) => r.email).map((r) =>
+        sendEscalationEmail({
+          to: r.email as string,
+          userId: r.id,
+          milestoneTitle: m.title,
+          amount: outstanding,
+          daysOverdue,
+          level: args.toLevel,
+          projectCode: proj?.code ?? 'PROJECT',
+          projectId: args.projectId,
+        }),
+      ),
+    )
+  })().catch((e) => console.error('[cash-flow] escalation email failed:', e))
 
   revalidate(args.projectId)
   return { data: { escalation_level: args.toLevel } }

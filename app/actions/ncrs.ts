@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendNcrEmail } from '@/lib/email/send'
 import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -125,11 +126,11 @@ async function logEvent(admin: ReturnType<typeof createAdminClient>, args: {
 
 async function notifyStakeholders(admin: ReturnType<typeof createAdminClient>, args: {
   tenantId: string; projectId: string; ncrId: string; ncrNumber: string
-  title: string; body: string; type?: string
+  title: string; body: string; type?: string; ncrTitle?: string; status?: string
 }) {
   const { data: recipients } = await admin
     .from('profiles')
-    .select('id')
+    .select('id, email, full_name')
     .eq('tenant_id', args.tenantId)
     .eq('is_active', true)
     .in('role', [...new Set([...PM_ROLES, ...QAQC_ROLES])])
@@ -146,6 +147,26 @@ async function notifyStakeholders(admin: ReturnType<typeof createAdminClient>, a
       link: `/projects/${args.projectId}/ncrs/${args.ncrId}`,
     })),
   )
+
+  // Email each recipient (prefs-aware, logged) — fire-and-forget.
+  const { data: proj } = await admin.from('projects').select('code').eq('id', args.projectId).maybeSingle()
+  const projectCode = proj?.code ?? 'PROJECT'
+  void Promise.all(
+    recipients
+      .filter((r) => r.email)
+      .map((r) =>
+        sendNcrEmail({
+          to: r.email as string,
+          userId: r.id,
+          ncrNumber: args.ncrNumber,
+          title: args.ncrTitle ?? args.body,
+          status: args.status ?? args.title,
+          projectCode,
+          projectId: args.projectId,
+          ncrId: args.ncrId,
+        }),
+      ),
+  ).catch((e) => console.error('[ncr] email failed:', e))
 }
 
 function mapRow(r: any): Ncr {
@@ -302,6 +323,8 @@ export async function createNcr(input: {
     title: `${ncr.ncr_number} raised`,
     body: `New non-conformance "${ncr.title}" raised (${input.source.replace('_', ' ')}).`,
     type: 'alert',
+    ncrTitle: ncr.title,
+    status: 'Raised',
   })
   revalidate(input.project_id)
   return { data: ncr }
@@ -453,6 +476,8 @@ async function notifyChange(admin: ReturnType<typeof createAdminClient>, ncr: Nc
     title: `${ncr.ncr_number} ${phrase}`,
     body: `"${ncr.title}" ${phrase}.`,
     type: 'alert',
+    ncrTitle: ncr.title,
+    status: phrase,
   })
 }
 

@@ -7,6 +7,26 @@ import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 // Roles that see every approval regardless of routing rules.
 const ADMIN_APPROVER_ROLES = ['Super Admin', 'Tenant Admin', 'Executive Sponsor', 'PMO Director']
 
+// profiles.role enum values that action approvals (used to resolve email recipients).
+const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
+const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+
+/** Resolve the active approver profiles (id + email + name) for a tenant. */
+async function resolveApprovers(
+  admin: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+): Promise<{ id: string; email: string; name: string }[]> {
+  const { data } = await admin
+    .from('profiles')
+    .select('id, email, full_name, role, is_active')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+    .in('role', APPROVER_ENUM_ROLES)
+  return (data ?? [])
+    .filter((p) => p.email)
+    .map((p) => ({ id: p.id, email: p.email as string, name: p.full_name ?? 'Approver' }))
+}
+
 /**
  * Fetch approvals for the inbox.
  * @param approverRole  Human-readable role label (e.g. "Project Manager"). When provided
@@ -62,6 +82,7 @@ export async function createApproval(opts: {
   objectType?: string
   priority?: 'critical' | 'high' | 'normal' | 'low'
   approverEmail?: string
+  approverUserId?: string
   approverName?: string
   requestedBy?: string
   projectCode?: string
@@ -85,18 +106,36 @@ export async function createApproval(opts: {
 
   if (error || !data) return { error: error?.message ?? 'Failed to create approval' }
 
-  // Notify approver — fire-and-forget
-  if (opts.approverEmail) {
-    sendApprovalRequestEmail({
-      to: opts.approverEmail,
-      approverName: opts.approverName ?? 'Approver',
-      title: opts.title,
-      requestedBy: opts.requestedBy ?? 'System',
-      projectCode: opts.projectCode ?? 'N/A',
-      projectName: opts.projectName ?? opts.title,
-      approvalId: data.id,
-    }).catch(() => {})
-  }
+  // Notify approvers — fire-and-forget, prefs-aware, logged to email_log.
+  void (async () => {
+    // Explicit recipient wins; otherwise notify all active approver profiles.
+    if (opts.approverEmail) {
+      await sendApprovalRequestEmail({
+        to: opts.approverEmail,
+        userId: opts.approverUserId ?? null,
+        approverName: opts.approverName ?? 'Approver',
+        title: opts.title,
+        requestedBy: opts.requestedBy ?? 'System',
+        projectCode: opts.projectCode ?? 'N/A',
+        projectName: opts.projectName ?? opts.title,
+        approvalId: data.id,
+      })
+      return
+    }
+    const approvers = await resolveApprovers(supabase, DEMO_TENANT)
+    for (const a of approvers) {
+      await sendApprovalRequestEmail({
+        to: a.email,
+        userId: a.id,
+        approverName: a.name,
+        title: opts.title,
+        requestedBy: opts.requestedBy ?? 'System',
+        projectCode: opts.projectCode ?? 'N/A',
+        projectName: opts.projectName ?? opts.title,
+        approvalId: data.id,
+      })
+    }
+  })().catch((e) => console.error('[approvals] notify failed:', e))
 
   return { id: data.id }
 }

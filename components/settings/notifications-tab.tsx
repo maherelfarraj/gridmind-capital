@@ -1,154 +1,112 @@
 'use client'
 
 import * as React from 'react'
-import { Bell, Mail, Smartphone, Hash, Clock } from 'lucide-react'
+import useSWR from 'swr'
+import { CheckSquare, FileWarning, GitPullRequestArrow, AlarmClock, AtSign, Loader2 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import {
+  getNotificationPrefs,
+  updateNotificationPrefs,
+  type NotificationPrefs,
+} from '@/app/actions/notification-prefs'
 
-type Channel = 'inapp' | 'email' | 'push' | 'slack'
-type Category = 'approvals' | 'tasks' | 'documents' | 'mentions' | 'budget' | 'system'
-type Digest = 'realtime' | 'hourly' | 'daily' | 'weekly'
+type PrefKey = keyof NotificationPrefs
 
-const CHANNELS: { id: Channel; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'inapp', label: 'In-app', icon: Bell },
-  { id: 'email', label: 'Email',  icon: Mail },
-  { id: 'push',  label: 'Push',   icon: Smartphone },
-  { id: 'slack', label: 'Slack',  icon: Hash },
+const EMAIL_TYPES: {
+  id: PrefKey
+  label: string
+  desc: string
+  icon: React.ComponentType<{ className?: string }>
+}[] = [
+  { id: 'email_on_approval',   label: 'Approval requests & decisions', desc: 'When your approval is requested or a request you made is decided.', icon: CheckSquare },
+  { id: 'email_on_ncr',        label: 'Non-conformance reports',       desc: 'When an NCR is raised or changes status on your projects.',        icon: FileWarning },
+  { id: 'email_on_vo',         label: 'Variation orders',              desc: 'When a VO is submitted, approved, rejected or updated.',           icon: GitPullRequestArrow },
+  { id: 'email_on_escalation', label: 'Payment escalations',           desc: 'When an overdue payment milestone is escalated (L1–L4).',          icon: AlarmClock },
+  { id: 'email_on_mention',    label: 'Mentions',                      desc: 'When someone @mentions you in a comment.',                        icon: AtSign },
 ]
 
-const CATEGORIES: { id: Category; label: string; desc: string }[] = [
-  { id: 'approvals',  label: 'Approvals',     desc: 'Gate reviews, approval requests, decisions' },
-  { id: 'tasks',      label: 'Tasks',         desc: 'Assignments, due dates, completions' },
-  { id: 'documents',  label: 'Documents',     desc: 'Uploads, reviews, transmittals' },
-  { id: 'mentions',   label: 'Mentions',      desc: 'When someone @mentions you' },
-  { id: 'budget',     label: 'Budget Alerts', desc: 'Cost overruns, forecast changes' },
-  { id: 'system',     label: 'System',        desc: 'Platform updates, maintenance windows' },
-]
-
-const DIGEST_OPTIONS: { id: Digest; label: string }[] = [
-  { id: 'realtime', label: 'Real-time' },
-  { id: 'hourly',   label: 'Hourly digest' },
-  { id: 'daily',    label: 'Daily digest' },
-  { id: 'weekly',   label: 'Weekly digest' },
-]
-
-type Settings = Record<Category, Record<Channel, boolean>>
-
-const DEFAULT_SETTINGS: Settings = {
-  approvals:  { inapp: true,  email: true,  push: true,  slack: true  },
-  tasks:      { inapp: true,  email: true,  push: false, slack: false },
-  documents:  { inapp: true,  email: false, push: false, slack: false },
-  mentions:   { inapp: true,  email: true,  push: true,  slack: true  },
-  budget:     { inapp: true,  email: true,  push: true,  slack: false },
-  system:     { inapp: true,  email: true,  push: false, slack: false },
+const DEFAULT_PREFS: NotificationPrefs = {
+  email_on_approval: true,
+  email_on_ncr: true,
+  email_on_vo: true,
+  email_on_escalation: true,
+  email_on_mention: true,
 }
 
 export function NotificationsTab({ onSave }: { onSave: () => void }) {
-  const [settings, setSettings] = React.useState<Settings>(DEFAULT_SETTINGS)
-  const [digest, setDigest]     = React.useState<Digest>('realtime')
-  const [quietFrom, setQuietFrom] = React.useState('22:00')
-  const [quietTo, setQuietTo]     = React.useState('07:00')
-  const [quietEnabled, setQuietEnabled] = React.useState(true)
+  const { data, isLoading, mutate } = useSWR('notification-prefs', () => getNotificationPrefs())
+  const [prefs, setPrefs] = React.useState<NotificationPrefs>(DEFAULT_PREFS)
+  const [saving, setSaving] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
 
-  function toggle(cat: Category, ch: Channel) {
-    setSettings((s) => ({ ...s, [cat]: { ...s[cat], [ch]: !s[cat][ch] } }))
+  React.useEffect(() => {
+    if (data) setPrefs(data)
+  }, [data])
+
+  function toggle(key: PrefKey) {
+    setPrefs((p) => ({ ...p, [key]: !p[key] }))
+    setDirty(true)
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    const res = await updateNotificationPrefs(prefs)
+    setSaving(false)
+    if (!res.error) {
+      setDirty(false)
+      await mutate(prefs, { revalidate: false })
+      onSave()
+    }
   }
 
   return (
     <div className="space-y-6">
-      {/* Matrix */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-5 pt-5 pb-3">
-          <h3 className="text-sm font-semibold text-foreground">Notification Channels</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Choose how you receive each category of notification.</p>
+        <div className="px-5 pt-5 pb-3 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">Email Notifications</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Choose which events send you an email. In-app notifications are always delivered.
+          </p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-widest text-muted-foreground w-48">Category</th>
-                {CHANNELS.map((ch) => (
-                  <th key={ch.id} className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                    <div className="flex flex-col items-center gap-1">
-                      <ch.icon className="size-3.5 text-muted-foreground" />
-                      <span>{ch.label}</span>
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {CATEGORIES.map((cat, i) => (
-                <tr key={cat.id} className={cn('border-b border-border last:border-0', i % 2 === 0 ? 'bg-card' : 'bg-muted/5')}>
-                  <td className="px-5 py-3">
-                    <p className="text-sm font-medium text-foreground">{cat.label}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{cat.desc}</p>
-                  </td>
-                  {CHANNELS.map((ch) => (
-                    <td key={ch.id} className="px-4 py-3 text-center">
-                      <div className="flex justify-center">
-                        <Switch
-                          checked={settings[cat.id][ch.id]}
-                          onCheckedChange={() => toggle(cat.id, ch.id)}
-                          aria-label={`${cat.label} ${ch.label}`}
-                        />
-                      </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      {/* Digest frequency */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Digest Frequency</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">How often email digests are bundled and sent.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {DIGEST_OPTIONS.map((d) => (
-            <button key={d.id} onClick={() => setDigest(d.id)}
-              className={cn('px-4 py-2 rounded-lg border text-sm font-medium transition-all',
-                digest === d.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background text-foreground hover:bg-muted/40')}>
-              {d.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Quiet hours */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Clock className="size-4 text-muted-foreground" /> Quiet Hours
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Mute push and Slack notifications during these hours.</p>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16 text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" />
           </div>
-          <Switch checked={quietEnabled} onCheckedChange={setQuietEnabled} />
-        </div>
-        {quietEnabled && (
-          <div className="flex items-center gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">From</label>
-              <input type="time" value={quietFrom} onChange={(e) => setQuietFrom(e.target.value)}
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring/50" />
-            </div>
-            <div className="mt-5 text-muted-foreground text-sm">to</div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">To</label>
-              <input type="time" value={quietTo} onChange={(e) => setQuietTo(e.target.value)}
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring/50" />
-            </div>
-          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {EMAIL_TYPES.map((t) => (
+              <li key={t.id} className="flex items-center gap-4 px-5 py-4">
+                <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted/50">
+                  <t.icon className="size-4 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground">{t.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t.desc}</p>
+                </div>
+                <Switch
+                  checked={prefs[t.id]}
+                  onCheckedChange={() => toggle(t.id)}
+                  aria-label={t.label}
+                />
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
-      <div className="flex justify-end pt-2 border-t border-border">
-        <button onClick={onSave} className="px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+      <div className="flex items-center justify-end gap-3 pt-2 border-t border-border">
+        {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        <button
+          onClick={handleSave}
+          disabled={saving || isLoading || !dirty}
+          className={cn(
+            'px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-primary-foreground transition-colors',
+            'hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2',
+          )}
+        >
+          {saving && <Loader2 className="size-3.5 animate-spin" />}
           Save Preferences
         </button>
       </div>
