@@ -318,6 +318,7 @@ export const NAV_SECTIONS: NavSection[] = [
           { id: 'admin-console', label: 'Admin Console',     href: '/admin',         roles: ['admin'] },
           { id: 'admin-users',   label: 'Users & Roles',     href: '/admin/users',   roles: ['admin'] },
           { id: 'admin-tenant',  label: 'Tenant Settings',   href: '/admin/tenant',  roles: ['admin'] },
+          { id: 'admin-gates',   label: 'Gate Templates',    href: '/admin/gate-templates', roles: ['admin'] },
           { id: 'admin-audit',   label: 'Audit Log',         href: '/admin/audit',   roles: ['admin'] },
           { id: 'api-docs',      label: 'API Reference',     href: '/api-docs',      roles: ['admin'] },
         ],

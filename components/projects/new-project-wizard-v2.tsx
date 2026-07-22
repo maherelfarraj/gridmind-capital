@@ -7,10 +7,12 @@ import {
   Building2, MapPin, DollarSign, Calendar, Users, Flag, FileCheck,
   AlertTriangle, Zap,
 } from 'lucide-react'
+import useSWR from 'swr'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { mockStore, MOCK_USERS, type GmcProject } from '@/lib/mock-store'
 import { createProject } from '@/app/actions/projects'
+import { getGateTemplates } from '@/app/actions/gate-templates'
 
 /* ─── Types ─────────────────────────────────────────────────── */
 interface WizardData {
@@ -53,7 +55,7 @@ const INITIAL: WizardData = {
   mwac: '', mwp: '', mwh: '', gridVoltage: '', codTarget: '', ppaType: '',
   currency: 'USD', capex: '', equityPct: '30', debtPct: '70', targetIrr: '', tariffAssumption: '',
   projectDirector: '', pmoLead: '', engineeringLead: '', procurementLead: '', constructionManager: '', financeLead: '',
-  g1TargetDate: '', stageGateTemplate: 'Solar EPC Default',
+  g1TargetDate: '', stageGateTemplate: 'GSI Energy Project',
 }
 
 const STEPS = [
@@ -123,6 +125,29 @@ function NativeSelect({ value, onChange, options }: { value: string; onChange: (
       <option value="">Select...</option>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
+  )
+}
+
+/* ─── Owner-role label chip ───────────────────────────────────── */
+const ROLE_STYLES: Record<string, string> = {
+  Engineering:        'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',
+  Construction:       'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300',
+  'Supply Chain':     'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+  Financial:          'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+  Legal:              'bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300',
+  'QA/QC':            'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
+  HSE:                'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',
+  Commercial:         'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
+  PM:                 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+  'Document Control': 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:text-fuchsia-300',
+}
+
+function RoleChip({ role }: { role: string }) {
+  const style = ROLE_STYLES[role] ?? 'bg-slate-100 text-slate-600 dark:bg-muted dark:text-muted-foreground'
+  return (
+    <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium shrink-0', style)}>
+      {role}
+    </span>
   )
 }
 
@@ -251,6 +276,13 @@ export function NewProjectWizardV2() {
   const [submitting, setSubmitting] = React.useState(false)
   const [provisioning, setProvisioning] = React.useState(false)
   const [created, setCreated] = React.useState<string | null>(null)
+
+  /* Live stage-gate templates (Admin → Gate Templates) */
+  const { data: templates } = useSWR('gate-templates-wizard', () => getGateTemplates(true))
+  const selectedTemplate = React.useMemo(
+    () => (templates ?? []).find((t) => t.name === data.stageGateTemplate),
+    [templates, data.stageGateTemplate],
+  )
 
   /* Autosave draft */
   React.useEffect(() => {
@@ -426,37 +458,78 @@ export function NewProjectWizardV2() {
         </div>
       )
 
-      case 5: return (
-        <div className="space-y-6">
-          <Field label="Stage-Gate Template">
-            <NativeSelect value={data.stageGateTemplate} onChange={v => set('stageGateTemplate', v)}
-              options={['Solar EPC Default', 'Wind EPC Default', 'BESS Fast-Track', 'Custom'].map(x => ({ value: x, label: x }))} />
-          </Field>
-          <Field label="G1 Target Date" required error={errors.g1TargetDate}>
-            <TextInput value={data.g1TargetDate} onChange={v => set('g1TargetDate', v)} placeholder="YYYY-MM-DD" />
-          </Field>
-          {/* Gate preview */}
-          <div className="rounded-xl border border-slate-200 dark:border-border p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-muted-foreground mb-3">Gate Preview — {data.stageGateTemplate}</p>
-            <div className="flex items-center gap-1 flex-wrap">
-              {GATES.map((g, i) => (
-                <React.Fragment key={g}>
-                  <div className={cn('flex flex-col items-center gap-1')}>
-                    <div className={cn('size-8 rounded-full flex items-center justify-center text-xs font-bold',
-                      g === 'G0' ? 'bg-[#0a192f] text-white dark:bg-[#64ffda] dark:text-[#0a192f]' : 'bg-slate-100 dark:bg-muted text-slate-600 dark:text-muted-foreground')}>
-                      {g}
+      case 5: {
+        const templateOpts = (templates ?? []).map(t => ({ value: t.name, label: t.is_default ? `${t.name} (default)` : t.name }))
+        return (
+          <div className="space-y-6">
+            <Field label="Stage-Gate Template">
+              <NativeSelect value={data.stageGateTemplate} onChange={v => set('stageGateTemplate', v)}
+                options={templateOpts.length ? templateOpts : [{ value: data.stageGateTemplate, label: data.stageGateTemplate }]} />
+              {selectedTemplate?.description && (
+                <p className="text-xs text-slate-500 dark:text-muted-foreground mt-1.5">{selectedTemplate.description}</p>
+              )}
+            </Field>
+            <Field label="G1 Target Date" required error={errors.g1TargetDate}>
+              <TextInput value={data.g1TargetDate} onChange={v => set('g1TargetDate', v)} placeholder="YYYY-MM-DD" />
+            </Field>
+
+            {/* Deliverable checklist preview — from the selected live template */}
+            {selectedTemplate ? (
+              <div className="rounded-xl border border-slate-200 dark:border-border overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-border bg-slate-50 dark:bg-muted/30">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-muted-foreground">
+                    Deliverable Checklist — {selectedTemplate.name}
+                  </p>
+                  <span className="text-xs text-slate-400 dark:text-muted-foreground">
+                    {selectedTemplate.gates.length} gates · {selectedTemplate.deliverable_count} deliverables
+                  </span>
+                </div>
+                <div className="divide-y divide-slate-100 dark:divide-border max-h-80 overflow-y-auto">
+                  {selectedTemplate.gates.map(gate => (
+                    <div key={gate.gate} className="p-4">
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="inline-flex items-center justify-center size-6 rounded-full bg-[#0a192f] dark:bg-[#64ffda] text-white dark:text-[#0a192f] text-[11px] font-bold shrink-0">
+                          {gate.gate}
+                        </span>
+                        <h4 className="text-sm font-semibold text-slate-800 dark:text-foreground">{gate.title}</h4>
+                      </div>
+                      <ul className="space-y-1.5">
+                        {gate.deliverables.map((d, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <FileCheck className="size-4 text-slate-300 dark:text-muted-foreground mt-0.5 shrink-0" />
+                            <span className="text-sm text-slate-700 dark:text-foreground flex-1">{d.name}</span>
+                            <RoleChip role={d.owner_role} />
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <span className="text-[10px] text-slate-400 dark:text-muted-foreground whitespace-nowrap">
-                      {['Initiate', 'Development', 'Design', 'Procure', 'Construct', 'Commission', 'Test', 'Handover', 'O&M'][i]}
-                    </span>
-                  </div>
-                  {i < GATES.length - 1 && <div className="flex-1 h-0.5 bg-slate-200 dark:bg-border mb-4 min-w-[8px]" />}
-                </React.Fragment>
-              ))}
-            </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200 dark:border-border p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-muted-foreground mb-3">Gate Preview</p>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {GATES.map((g, i) => (
+                    <React.Fragment key={g}>
+                      <div className={cn('flex flex-col items-center gap-1')}>
+                        <div className={cn('size-8 rounded-full flex items-center justify-center text-xs font-bold',
+                          g === 'G0' ? 'bg-[#0a192f] text-white dark:bg-[#64ffda] dark:text-[#0a192f]' : 'bg-slate-100 dark:bg-muted text-slate-600 dark:text-muted-foreground')}>
+                          {g}
+                        </div>
+                        <span className="text-[10px] text-slate-400 dark:text-muted-foreground whitespace-nowrap">
+                          {['Initiate', 'Development', 'Design', 'Procure', 'Construct', 'Commission', 'Test', 'Handover', 'O&M'][i]}
+                        </span>
+                      </div>
+                      {i < GATES.length - 1 && <div className="flex-1 h-0.5 bg-slate-200 dark:bg-border mb-4 min-w-[8px]" />}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )
+        )
+      }
 
       case 6: {
         const checks = [
