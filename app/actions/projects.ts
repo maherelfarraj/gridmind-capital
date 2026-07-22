@@ -195,6 +195,33 @@ export async function createProject(payload: {
   return { id: data.id }
 }
 
+export async function archiveProject(id: string): Promise<{ error?: string }> {
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('projects')
+    .update({ status: 'cancelled' })
+    .eq('id', id)
+    .eq('tenant_id', DEMO_TENANT)
+  return error ? { error: error.message } : {}
+}
+
+export async function duplicateProject(id: string): Promise<{ id?: string; error?: string }> {
+  const supabase = createAdminClient()
+  const { data: src, error: fetchErr } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (fetchErr || !src) return { error: fetchErr?.message ?? 'Not found' }
+  const newCode = `${src.code}-COPY-${Date.now().toString().slice(-4)}`
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({ ...src, id: undefined, code: newCode, name: `${src.name} (Copy)`, status: 'draft', created_at: undefined, updated_at: undefined })
+    .select('id')
+    .single()
+  return error ? { error: error.message } : { id: data?.id }
+}
+
 // ─── S09: Commercial Charter ──────────────────────────────────────────────────
 
 export interface CommercialRecord {

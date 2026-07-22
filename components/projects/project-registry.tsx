@@ -6,10 +6,52 @@ import {
   Plus, Search, SlidersHorizontal, MoreVertical, Archive, Copy, ExternalLink,
   FolderKanban, CheckCircle2, AlertTriangle, XCircle, Loader2, X
 } from 'lucide-react'
+import useSWR from 'swr'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { mockStore, type GmcProject } from '@/lib/mock-store'
+import { getProjects, archiveProject, duplicateProject } from '@/app/actions/projects'
+import type { Project } from '@/components/projects/projects-list-page'
+
+/** Map a live DB row to the display shape used by the registry UI. */
+function toGmcProject(p: Project): GmcProject {
+  const phaseToType: Record<string, GmcProject['type']> = {
+    solar: 'PV', pv: 'PV', wind: 'Wind', bess: 'BESS', storage: 'BESS',
+  }
+  const tok = (p.client_name ?? '').toLowerCase()
+  const type = Object.entries(phaseToType).find(([k]) => tok.includes(k))?.[1] ?? 'PV'
+  const statusMap: Record<string, GmcProject['status']> = {
+    active: 'active', draft: 'draft', 'on-hold': 'on-hold', completed: 'completed',
+    cancelled: 'archived', archived: 'archived',
+  }
+  return {
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    type,
+    country: 'N/A',
+    region: 'N/A',
+    siteCoordinates: 'N/A',
+    developerSpv: p.client_name ?? 'N/A',
+    mwac: 0,
+    mwp: 0,
+    gridVoltage: 'N/A',
+    codTarget: p.target_cod ?? '',
+    ppaType: 'PPA',
+    capex: p.budget_amount ?? 0,
+    currency: 'USD',
+    equityPct: 0,
+    debtPct: 0,
+    targetIrr: 0,
+    tariffAssumption: 'N/A',
+    team: { projectDirector: '', pmoLead: '', engineeringLead: '', procurementLead: '', constructionManager: '', financeLead: '' },
+    currentGate: p.gate ?? 'G0',
+    health: 'green',
+    status: statusMap[p.status] ?? 'active',
+    createdAt: new Date().toISOString(),
+  }
+}
 
 /* ─── Types ─────────────────────────────────────────────────── */
 type HealthColor = 'green' | 'amber' | 'red'
@@ -142,7 +184,6 @@ function useToast() {
 export function ProjectRegistry() {
   const router = useRouter()
   const { toasts, show } = useToast()
-  const [projects, setProjects] = React.useState<GmcProject[]>(() => mockStore.getProjects().filter(p => p.status !== 'archived'))
   const [search, setSearch] = React.useState('')
   const [filterType, setFilterType] = React.useState<string>('All')
   const [filterGate, setFilterGate] = React.useState<string>('All')
@@ -150,12 +191,20 @@ export function ProjectRegistry() {
   const [filterOpen, setFilterOpen] = React.useState(false)
   const [archiveTarget, setArchiveTarget] = React.useState<GmcProject | null>(null)
 
-  /* Refresh from store when window regains focus */
-  React.useEffect(() => {
-    const refresh = () => setProjects(mockStore.getProjects().filter(p => p.status !== 'archived'))
-    window.addEventListener('focus', refresh)
-    return () => window.removeEventListener('focus', refresh)
-  }, [])
+  // Live data — SWR fetches from real DB; falls back to mock when empty
+  const { data: liveRows, mutate } = useSWR<Project[]>(
+    'project-registry-live',
+    () => getProjects({ status: null }),
+    { revalidateOnFocus: true },
+  )
+  const projects: GmcProject[] = React.useMemo(() => {
+    if (liveRows && liveRows.length > 0) {
+      return liveRows
+        .filter(p => p.status !== 'cancelled' && p.status !== 'archived')
+        .map(toGmcProject)
+    }
+    return mockStore.getProjects().filter(p => p.status !== 'archived')
+  }, [liveRows])
 
   const filtered = React.useMemo(() => {
     return projects.filter(p => {
@@ -174,21 +223,25 @@ export function ProjectRegistry() {
     router.push(`/projects/${p.id}`)
   }
 
-  function handleClone(p: GmcProject) {
-    const newId = `GMC-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`
-    const clone: GmcProject = { ...p, id: newId, code: newId, name: `${p.name} (Draft Copy)`, status: 'draft', createdAt: new Date().toISOString() }
-    mockStore.addProject(clone)
-    mockStore.addAuditEntry({ actor: 'PMO Director', action: 'PROJECT_CLONED', entityType: 'project', entityId: newId, projectId: newId, result: 'success', details: { clonedFrom: p.id } })
-    setProjects(mockStore.getProjects().filter(x => x.status !== 'archived'))
-    show(`Cloned "${p.name}" as a new draft (${newId})`, 'info')
+  async function handleClone(p: GmcProject) {
+    const result = await duplicateProject(p.id)
+    if ('error' in result && result.error) {
+      show(`Clone failed: ${result.error}`, 'error')
+      return
+    }
+    mutate()
+    show(`Cloned "${p.name}" as a new draft`, 'info')
   }
 
-  function handleArchive(p: GmcProject) {
-    mockStore.archiveProject(p.id)
-    mockStore.addAuditEntry({ actor: 'PMO Director', action: 'PROJECT_ARCHIVED', entityType: 'project', entityId: p.id, projectId: p.id, result: 'success', details: { name: p.name } })
-    setProjects(mockStore.getProjects().filter(x => x.status !== 'archived'))
+  async function handleArchive(p: GmcProject) {
+    const result = await archiveProject(p.id)
+    if (result.error) {
+      show(`Archive failed: ${result.error}`, 'error')
+      return
+    }
+    mutate()
     setArchiveTarget(null)
-    show(`"${p.name}" archived and audit entry written`, 'warning')
+    show(`"${p.name}" archived`, 'warning')
   }
 
   return (
