@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import useSWR from 'swr'
 import Link from 'next/link'
-import { CheckCircle2, ShieldAlert, Loader2 } from 'lucide-react'
+import { CheckCircle2, ShieldAlert, Loader2, Landmark } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { getOpenNcrsForProject } from '@/app/actions/ncrs'
 import { advanceProjectGate } from '@/app/actions/phase-gates'
+import { getPerformanceBonds, startPerformanceBondDischarge } from '@/app/actions/guarantees'
 
 /**
  * "Submit for Gate Approval" button + dialog for G5 (PAC).
@@ -22,6 +23,8 @@ export function G5GateApprovalButton({ projectId }: { projectId: string }) {
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [dischargeOpen, setDischargeOpen] = useState(false)
+  const [bonds, setBonds] = useState<{ id: string; bank_name: string | null; amount: number }[]>([])
 
   const { data, isLoading, mutate } = useSWR(
     open ? `g5-open-ncrs-${projectId}` : null,
@@ -42,7 +45,25 @@ export function G5GateApprovalButton({ projectId }: { projectId: string }) {
     }
     toast({ title: 'G5 approved', description: `Project advanced to ${res.newGate}.`, variant: 'success' })
     setOpen(false)
+
+    // PAC reached — offer to start the performance-bond discharge process.
+    const active = await getPerformanceBonds(projectId)
+    if (active.length > 0) {
+      setBonds(active.map((b) => ({ id: b.id, bank_name: b.bank_name, amount: b.amount })))
+      setDischargeOpen(true)
+    }
   }
+
+  async function handleDischarge() {
+    setBusy(true)
+    const res = await startPerformanceBondDischarge(projectId)
+    setBusy(false)
+    setDischargeOpen(false)
+    if (res.error) { toast({ title: 'Could not start discharge', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Performance bond discharge started', description: `${res.data?.discharged ?? 0} bond(s) marked for release.`, variant: 'success' })
+  }
+
+  const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 
   return (
     <>
@@ -111,6 +132,37 @@ export function G5GateApprovalButton({ projectId }: { projectId: string }) {
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={handleSubmit} disabled={busy || isLoading || blocking}>
               {busy ? 'Submitting…' : 'Approve G5'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Performance-bond discharge prompt (shown after PAC/G5 approval) */}
+      <Dialog open={dischargeOpen} onOpenChange={setDischargeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Landmark className="size-4 text-[#64ffda]" /> Start performance-bond discharge?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              Provisional Acceptance (PAC) has been reached. You can start the discharge process for the
+              active performance bond(s) below. This marks them released and notifies Finance &amp; PM.
+            </p>
+            <ul className="space-y-1.5">
+              {bonds.map((b) => (
+                <li key={b.id} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+                  <span className="text-foreground">{b.bank_name ?? 'Performance bond'}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{fmt(b.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDischargeOpen(false)}>Not now</Button>
+            <Button onClick={handleDischarge} disabled={busy}>
+              {busy ? 'Starting…' : 'Start discharge'}
             </Button>
           </DialogFooter>
         </DialogContent>

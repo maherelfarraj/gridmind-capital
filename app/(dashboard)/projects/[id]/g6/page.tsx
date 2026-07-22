@@ -13,6 +13,7 @@ import { EnergizationTab }  from '@/components/g6/energization-tab'
 import { FailuresTab }      from '@/components/g6/failures-tab'
 import { TrainingTab }      from '@/components/g6/training-tab'
 import { DocumentationTab } from '@/components/g6/documentation-tab'
+import { GuaranteesCloseoutCard } from '@/components/g6/guarantees-closeout-card'
 
 import {
   MOCK_TEST_PACKAGES,
@@ -114,6 +115,9 @@ export default function G6Page() {
 
           {/* Stats bar */}
           <StatsBar />
+
+          {/* Financial closeout: bank guarantee discharge gate */}
+          <GuaranteesCloseoutCard projectId={id} />
 
           {/* Tab navigation */}
           <div className="flex gap-0 border-b border-slate-200 mb-6 overflow-x-auto">

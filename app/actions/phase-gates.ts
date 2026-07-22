@@ -162,6 +162,90 @@ export async function getProjectTimeline(projectId: string): Promise<WorkflowLog
     }
   }
 
+  // Merge real module events (VO, NCR, cost control, cash flow, retention, guarantees, …)
+  // recorded in workflow_events with metadata.project_id === projectId.
+  const moduleLogs = await getModuleEvents(supabase, projectId)
+  logs.push(...moduleLogs)
+
   // Newest first
   return logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }
+
+// ─────────────────────────────────────────────────────────────
+// Module events → timeline entries
+// ─────────────────────────────────────────────────────────────
+
+const MODULE_META: Record<string, { objectType: string; label: string }> = {
+  cash_flow:  { objectType: 'finance',  label: 'Payment Milestone' },
+  retention:  { objectType: 'finance',  label: 'Retention' },
+  guarantees: { objectType: 'finance',  label: 'Guarantee' },
+  cost_control: { objectType: 'finance', label: 'Cost Entry' },
+  variation_order: { objectType: 'approval', label: 'Variation Order' },
+  vo: { objectType: 'approval', label: 'Variation Order' },
+  ncr: { objectType: 'hse', label: 'NCR' },
+}
+
+/** Map a raw transition_code + module to a known WorkflowTimeline action key. */
+function actionFor(transition: string | null, moduleKey: string): string {
+  const t = (transition ?? '').toUpperCase()
+  if (t.includes('APPROV')) return 'workflow.approve'
+  if (t.includes('REJECT')) return 'workflow.reject'
+  if (t.includes('ESCALAT')) return 'workflow.escalate'
+  if (t.includes('RELEAS') || t.includes('DISCHARG') || t.includes('CLOSE')) return 'workflow.approve'
+  if (t.includes('SUBMIT') || t.includes('RAISE') || t.includes('REQUEST')) return 'workflow.submit'
+  if (moduleKey === 'cash_flow' || moduleKey === 'retention' || moduleKey === 'guarantees' || moduleKey === 'cost_control') {
+    return 'finance.budget_update'
+  }
+  return 'activity'
+}
+
+async function getModuleEvents(
+  supabase: ReturnType<typeof createAdminClient>,
+  projectId: string,
+): Promise<WorkflowLogEntry[]> {
+  let rows: any[] = []
+  // Try with actor profile join; fall back to a plain query if the FK alias differs.
+  const joined = await supabase
+    .from('workflow_events')
+    .select('id, from_state, to_state, transition_code, actor_id, comment, metadata, created_at, profiles!workflow_events_actor_id_fkey (full_name, role)')
+    .eq('metadata->>project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  if (joined.error) {
+    const plain = await supabase
+      .from('workflow_events')
+      .select('id, from_state, to_state, transition_code, actor_id, comment, metadata, created_at')
+      .eq('metadata->>project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    rows = plain.data ?? []
+  } else {
+    rows = joined.data ?? []
+  }
+
+  return rows.map((r): WorkflowLogEntry => {
+    const meta = (r.metadata ?? {}) as Record<string, unknown>
+    const moduleKey = String(meta.module ?? '')
+    const cfg = MODULE_META[moduleKey] ?? { objectType: moduleKey || 'activity', label: moduleKey || 'Activity' }
+    const code =
+      (meta.vo_number as string) ||
+      (meta.ncr_number as string) ||
+      (r.comment as string) ||
+      cfg.label
+    return {
+      id: r.id,
+      action: actionFor(r.transition_code, moduleKey),
+      object_type: cfg.objectType,
+      object_id: (meta.milestone_id as string) || (meta.guarantee_id as string) || (meta.retention_id as string) || r.id,
+      object_code: `${cfg.label} · ${code}`,
+      actor_name: r.profiles?.full_name ?? null,
+      actor_role: r.profiles?.role ?? null,
+      before_state: r.from_state,
+      after_state: r.to_state,
+      decision_reason: r.comment ?? null,
+      metadata: r.metadata,
+      created_at: r.created_at,
+    }
+  })
 }
