@@ -20,6 +20,8 @@ export type AppRole =
   | 'finance_controller'
   | 'client_pmc'
   | 'viewer'
+  | 'subcontractor'
+  | 'client_viewer'
 
 export type AppPermission =
   | 'project.read'
@@ -95,6 +97,8 @@ export const ROLE_LABELS: Record<AppRole, string> = {
   finance_controller: 'Finance Controller',
   client_pmc: 'Client / PMC',
   viewer: 'Viewer',
+  subcontractor: 'Subcontractor',
+  client_viewer: 'Client Viewer',
 }
 
 /** Returns true if session has the given permission */
@@ -117,6 +121,8 @@ export function toNavRole(session: AppSession): import('@/components/app-shell/n
   if (session.isSuperAdmin) return 'admin'
   const role = session.roles[0]
   if (role === 'super_admin' || role === 'tenant_admin') return 'admin'
+  if (role === 'subcontractor') return 'subcontractor'
+  if (role === 'client_viewer') return 'client_viewer'
   if (role === 'viewer') return 'viewer'
   if (role === 'engineering_manager') return 'engineer'
   if (role === 'project_manager' || role === 'pmo_director') return 'pm'

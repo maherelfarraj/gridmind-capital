@@ -30,7 +30,36 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────
 
-export type UserRole = 'admin' | 'pm' | 'engineer' | 'viewer'
+export type UserRole = 'admin' | 'pm' | 'engineer' | 'viewer' | 'subcontractor' | 'client_viewer'
+
+/** External roles that receive a stripped-down navigation. */
+export const EXTERNAL_ROLES: UserRole[] = ['subcontractor', 'client_viewer']
+
+/**
+ * Minimal navigation for external users (subcontractor / client_viewer).
+ * They see only the projects list and their own portal page.
+ * No portfolio, finance, admin, cost-control, or audit.
+ */
+export const EXTERNAL_NAV_SECTIONS: NavSection[] = [
+  {
+    id: 'portal',
+    label: 'PORTAL',
+    items: [
+      {
+        id: 'projects',
+        label: 'My Projects',
+        href: '/projects',
+        icon: FolderKanban,
+      },
+      {
+        id: 'documents',
+        label: 'Documents',
+        href: '/documents',
+        icon: FileText,
+      },
+    ],
+  },
+]
 
 export interface NavChild {
   id: string

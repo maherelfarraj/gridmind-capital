@@ -22,6 +22,7 @@ export interface StoredDocument {
   storagePath: string
   publicUrl: string | null
   createdAt: string
+  visibleToClient: boolean
 }
 
 /** Ensure the documents bucket exists (idempotent). */
@@ -160,10 +161,25 @@ export async function listDocuments(projectCode?: string): Promise<StoredDocumen
     projectId:    d.project_id,
     projectCode:  d.project_code,
     uploadedBy:   d.uploaded_by ?? 'Unknown',
-    storagePath:  d.storage_path,
-    publicUrl:    null,
-    createdAt:    d.created_at,
+    storagePath:     d.storage_path,
+    publicUrl:       null,
+    createdAt:       d.created_at,
+    visibleToClient: d.visible_to_client ?? false,
   }))
+}
+
+/** Toggle the client-visible flag on a document file. PM/admin only (enforced in UI). */
+export async function toggleDocumentFileVisibility(
+  id: string,
+  visibleToClient: boolean,
+): Promise<{ error: string | null }> {
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('document_files')
+    .update({ visible_to_client: visibleToClient })
+    .eq('id', id)
+  revalidatePath('/documents')
+  return { error: error?.message ?? null }
 }
 
 /** Delete a document from storage + the DB record. */

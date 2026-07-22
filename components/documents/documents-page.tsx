@@ -9,6 +9,7 @@ import {
   Search,
   Filter,
   Eye,
+  EyeOff,
   AlertCircle,
   FileImage,
   FileSpreadsheet,
@@ -26,7 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import { DocumentUploadModal } from './document-upload-modal'
-import { listDocuments, getDownloadUrl, deleteDocument } from '@/app/actions/storage'
+import { listDocuments, getDownloadUrl, deleteDocument, toggleDocumentFileVisibility } from '@/app/actions/storage'
 import type { StoredDocument } from '@/app/actions/storage'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -75,10 +76,11 @@ const CATEGORIES: { id: DocCategory; label: string; icon: React.ElementType }[] 
 
 // ─── Document row ─────────────────────────────────────────────
 
-function DocumentRow({ doc, onDownload, onDelete }: {
+function DocumentRow({ doc, onDownload, onDelete, onToggleVisibility }: {
   doc: StoredDocument
   onDownload: (storagePath: string, name: string) => void
   onDelete: (id: string, storagePath: string) => void
+  onToggleVisibility: (id: string, current: boolean) => void
 }) {
   const fileType = extToFileType(doc.name)
   const IconComp = TYPE_ICON[fileType]
@@ -118,6 +120,22 @@ function DocumentRow({ doc, onDownload, onDelete }: {
       {/* Actions */}
       <td className="px-4 py-3 text-right">
         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Client-visible toggle */}
+          <button
+            aria-label={doc.visibleToClient ? `Hide ${doc.title} from clients` : `Share ${doc.title} with clients`}
+            onClick={() => onToggleVisibility(doc.id, doc.visibleToClient)}
+            title={doc.visibleToClient ? 'Visible to clients — click to hide' : 'Hidden from clients — click to share'}
+            className={`p-1.5 rounded transition-colors ${
+              doc.visibleToClient
+                ? 'text-[#64ffda] hover:bg-[#64ffda]/10'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            {doc.visibleToClient
+              ? <Eye className="size-3.5" aria-hidden />
+              : <EyeOff className="size-3.5" aria-hidden />
+            }
+          </button>
           <button
             aria-label={`Download ${doc.title}`}
             onClick={() => onDownload(doc.storagePath, doc.name)}
@@ -194,6 +212,19 @@ export function DocumentsPage({ projectCode }: { projectCode?: string }) {
       addToast({ title: 'Delete failed', description: error, variant: 'danger' })
     } else {
       addToast({ title: 'Document deleted', variant: 'success' })
+      mutate()
+    }
+  }
+
+  async function handleToggleVisibility(id: string, currentlyVisible: boolean) {
+    const { error } = await toggleDocumentFileVisibility(id, !currentlyVisible)
+    if (error) {
+      addToast({ title: 'Toggle failed', description: error, variant: 'danger' })
+    } else {
+      addToast({
+        title: currentlyVisible ? 'Hidden from clients' : 'Visible to clients',
+        variant: 'success',
+      })
       mutate()
     }
   }
@@ -349,7 +380,7 @@ export function DocumentsPage({ projectCode }: { projectCode?: string }) {
                   </thead>
                   <tbody>
                     {filtered.map((doc) => (
-                      <DocumentRow key={doc.id} doc={doc} onDownload={handleDownload} onDelete={handleDelete} />
+                      <DocumentRow key={doc.id} doc={doc} onDownload={handleDownload} onDelete={handleDelete} onToggleVisibility={handleToggleVisibility} />
                     ))}
                   </tbody>
                 </table>

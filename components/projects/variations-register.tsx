@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import {
   ArrowLeft, Plus, RefreshCw, Loader2, X, FileText,
-  CheckCircle2, Clock, DollarSign, ClipboardList,
+  CheckCircle2, Clock, DollarSign, ClipboardList, Eye, EyeOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
   getVariationOrders, createVariationOrder, seedVariationDemo,
   type VoOrigin,
 } from '@/app/actions/variation-orders'
+import { toggleVoClientVisible } from '@/app/actions/external-access'
 import {
   ORIGIN_LABELS, STATUS_LABELS, STATUS_COLORS,
   formatUsd, formatUsdCompact, formatDate,
