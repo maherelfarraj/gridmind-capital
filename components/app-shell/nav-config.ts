@@ -61,23 +61,20 @@ export interface NavItem {
 
 export type PhaseKey =
   | 'g0' | 'g1' | 'g2' | 'g3' | 'g4'
-  | 'g5' | 'g6' | 'g7' | 'g8' | 'g9'
+  | 'g5' | 'g6'
 
 // ─────────────────────────────────────────────────────────────
 // Phase metadata
 // ─────────────────────────────────────────────────────────────
 
 export const PHASE_META: Record<PhaseKey, { label: string; color: string }> = {
-  g0: { label: 'G0 · Intake',          color: '#64748b' },
-  g1: { label: 'G1 · Development',     color: '#3b82f6' },
-  g2: { label: 'G2 · Commercial',      color: '#6366f1' },
-  g3: { label: 'G3 · Engineering',     color: '#8b5cf6' },
-  g4: { label: 'G4 · Procurement',     color: '#a855f7' },
-  g5: { label: 'G5 · Construction',    color: '#f97316' },
-  g6: { label: 'G6 · Commissioning',   color: '#14b8a6' },
-  g7: { label: 'G7 · O&M',             color: '#22c55e' },
-  g8: { label: 'G8 · Finance',         color: '#10b981' },
-  g9: { label: 'G9 · AI Analytics',    color: '#06b6d4' },
+  g0: { label: 'G0 · Intake',             color: '#64748b' },
+  g1: { label: 'G1 · Development',        color: '#3b82f6' },
+  g2: { label: 'G2 · Commercial',         color: '#6366f1' },
+  g3: { label: 'G3 · Engineering',        color: '#8b5cf6' },
+  g4: { label: 'G4 · Procurement',        color: '#a855f7' },
+  g5: { label: 'G5 · Construction',       color: '#f97316' },
+  g6: { label: 'G6 · Handover & O&M',     color: '#22c55e' },
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -132,16 +129,15 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/projects',
         icon: FolderKanban,
         children: [
-          { id: 'g0', label: 'G0 · Intake',         href: '/projects?gate=G0', phase: 'g0' },
-          { id: 'g1', label: 'G1 · Development',    href: '/projects?gate=G1', phase: 'g1' },
-          { id: 'g2', label: 'G2 · Commercial',     href: '/projects?gate=G2', phase: 'g2' },
-          { id: 'g3', label: 'G3 · Engineering',    href: '/projects?gate=G3', phase: 'g3' },
-          { id: 'g4', label: 'G4 · Procurement',    href: '/projects?gate=G4', phase: 'g4' },
-          { id: 'g5', label: 'G5 · Construction',   href: '/projects?gate=G5', phase: 'g5' },
-          { id: 'g6', label: 'G6 · Commissioning',  href: '/projects?gate=G6', phase: 'g6' },
-          { id: 'g7', label: 'G7 · O&M',            href: '/projects?gate=G7', phase: 'g7' },
-          { id: 'g8', label: 'G8 · Finance',        href: '/projects?gate=G8', phase: 'g8' },
-          { id: 'g9', label: 'G9 · Analytics',      href: '/projects?gate=G9', phase: 'g9' },
+          { id: 'g0', label: 'G0 · Intake',            href: '/projects?gate=G0', phase: 'g0' },
+          { id: 'g1', label: 'G1 · Development',     href: '/projects?gate=G1', phase: 'g1' },
+          { id: 'g2', label: 'G2 · Commercial',      href: '/projects?gate=G2', phase: 'g2' },
+          { id: 'g3', label: 'G3 · Engineering',     href: '/projects?gate=G3', phase: 'g3' },
+          { id: 'g4', label: 'G4 · Procurement',     href: '/projects?gate=G4', phase: 'g4' },
+          { id: 'g5', label: 'G5 · Construction',    href: '/projects?gate=G5', phase: 'g5' },
+          { id: 'g6', label: 'G6 · Handover & O&M',  href: '/projects?gate=G6', phase: 'g6' },
+          { id: 'g6-closeout',    label: 'Closeout Checklist', href: '/projects?gate=G6&tab=closeout', phase: 'g6' },
+          { id: 'g6-om-transition', label: 'O&M Transition',  href: '/projects?gate=G6&tab=om-transition', phase: 'g6' },
         ],
       },
       {

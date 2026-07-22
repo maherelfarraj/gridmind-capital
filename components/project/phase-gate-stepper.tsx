@@ -114,50 +114,14 @@ export const GATE_DEFINITIONS: GateDef[] = [
   {
     id: 6,
     code: 'G6',
-    shortName: 'Commissioning Completion',
-    fullName: 'G6 — Commissioning Completion',
-    purpose: 'Confirms all systems have been tested, commissioned, and are operating within specification. Enables commercial operation declaration.',
-    phase: 'Commissioning',
-    phaseColor: '#14b8a6',
-    keyDeliverables: ['Commissioning Test Reports', 'Performance Test Certificate', 'O&M Manuals Issued', 'Training Records'],
-    typicalDuration: '3–6 weeks',
-    approvers: ['Commissioning Manager', 'Grid Authority', 'Independent Engineer'],
-  },
-  {
-    id: 7,
-    code: 'G7',
-    shortName: 'Handover & Warranty Start',
-    fullName: 'G7 — Handover and Warranty Start',
-    purpose: 'Formal transfer of the asset to the Owner/Operator. Warranty period commences and defects liability clock starts.',
-    phase: 'Handover',
+    shortName: 'Handover, Ops & Closeout',
+    fullName: 'G6 — Handover, Operations & Closeout',
+    purpose: 'Formal transfer of the asset to the Owner/Operator, O&M transition, warranty start, and final project closeout. Covers COD, as-built package, lessons learned, and final accounts.',
+    phase: 'Handover & O&M',
     phaseColor: '#22c55e',
-    keyDeliverables: ['Taking-Over Certificate', 'Final As-Built Package', 'Warranty Schedule', 'Asset Register'],
-    typicalDuration: '1–2 weeks',
-    approvers: ['Project Director', 'Asset Owner', 'Financial Lenders'],
-  },
-  {
-    id: 8,
-    code: 'G8',
-    shortName: 'Operations Performance Review',
-    fullName: 'G8 — Operations Performance Review',
-    purpose: 'Formal review of operational performance against contractual KPIs after 12 months of operation. Triggers final account settlement.',
-    phase: 'O&M',
-    phaseColor: '#10b981',
-    keyDeliverables: ['Performance Report (Year 1)', 'KPI Scorecard', 'Final Account Statement', 'Lessons Learned Register'],
-    typicalDuration: '4 weeks',
-    approvers: ['O&M Director', 'Lenders Technical Advisor', 'Asset Management Board'],
-  },
-  {
-    id: 9,
-    code: 'G9',
-    shortName: 'AI/Enterprise Optimization',
-    fullName: 'G9 — AI & Enterprise Optimization',
-    purpose: 'Continuous improvement gate driven by GridMind AI analytics. Evaluates operational data to optimise yield, reduce OPEX, and surface portfolio insights.',
-    phase: 'AI & Analytics',
-    phaseColor: '#06b6d4',
-    keyDeliverables: ['AI Analytics Dashboard', 'Optimisation Recommendations', 'OPEX Reduction Plan', 'Digital Twin Baseline'],
-    typicalDuration: 'Ongoing (quarterly review)',
-    approvers: ['Chief Digital Officer', 'Asset Performance Team', 'GridMind AI Governance Board'],
+    keyDeliverables: ['Taking-Over Certificate', 'O&M Transition Package', 'Final As-Built Drawings', 'Closeout Checklist', 'Lessons Learned Register', 'Final Account Statement'],
+    typicalDuration: '4–8 weeks',
+    approvers: ['Project Director', 'Asset Owner', 'Financial Lenders', 'O&M Director'],
   },
 ]
 
@@ -309,7 +273,7 @@ function GateNode({
                 'w-64 rounded-xl border border-border bg-popover p-3.5 shadow-xl',
                 'animate-[fade-in_0.12s_ease-out]',
                 // Align to edges for first/last gates
-                gate.id <= 1 ? 'left-0' : gate.id >= 8 ? 'right-0' : '-translate-x-1/2 left-1/2',
+                gate.id <= 1 ? 'left-0' : gate.id >= 5 ? 'right-0' : '-translate-x-1/2 left-1/2',
               )}
             >
               <div className="flex items-start gap-2 mb-2">
@@ -337,7 +301,7 @@ function GateNode({
               <div
                 className={cn(
                   'absolute top-full w-2 h-2 border-b border-r border-border bg-popover rotate-45 -mt-1',
-                  gate.id <= 1 ? 'left-4' : gate.id >= 8 ? 'right-4' : 'left-1/2 -translate-x-1/2',
+                  gate.id <= 1 ? 'left-4' : gate.id >= 5 ? 'right-4' : 'left-1/2 -translate-x-1/2',
                 )}
                 aria-hidden="true"
               />

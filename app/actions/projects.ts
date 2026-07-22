@@ -126,7 +126,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   const gate = data.current_phase ?? 0
   const PHASE_KEY_MAP: Record<number, ProjectData['phase']> = {
     0: 'g0', 1: 'g1', 2: 'g2', 3: 'g3', 4: 'g4',
-    5: 'g5', 6: 'g6', 7: 'g7', 8: 'g8', 9: 'g9',
+    5: 'g5', 6: 'g6', 7: 'g6', 8: 'g6', 9: 'g6',
   }
 
   return {

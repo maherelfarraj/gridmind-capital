@@ -64,8 +64,8 @@ const STEP_TYPES: StepType[] = ['action', 'approval', 'condition', 'notification
 
 const MOCK_DEFINITIONS: WorkflowDefinition[] = [
   {
-    id: 'WF-SG-001', name: 'G0→G8 Stage Gate', category: 'stage-gate',
-    description: 'Standard EPC stage-gate process covering G0 initiation through G8 O&M handover',
+    id: 'WF-SG-001', name: 'G0→G6 Stage Gate', category: 'stage-gate',
+    description: 'Standard EPC stage-gate process covering G0 initiation through G6 Handover & O&M closeout',
     steps: [
       { id: 's1', label: 'G0 Screening & Charter', type: 'approval', assignedRole: 'PMO Director', slaHours: 48, status: 'done', completedAt: '2026-04-01T09:00:00Z' },
       { id: 's2', label: 'G1 Development Approval', type: 'approval', assignedRole: 'Investment Committee', slaHours: 72, status: 'done', completedAt: '2026-05-15T14:00:00Z' },
@@ -120,7 +120,7 @@ const MOCK_DEFINITIONS: WorkflowDefinition[] = [
 ]
 
 const MOCK_INSTANCES: WorkflowInstance[] = [
-  { id: 'WFI-001', definitionId: 'WF-SG-001', definitionName: 'G0→G8 Stage Gate', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', currentStep: 2, status: 'active', startedAt: '2026-04-01T09:00:00Z', steps: MOCK_DEFINITIONS[0].steps },
+  { id: 'WFI-001', definitionId: 'WF-SG-001', definitionName: 'G0→G6 Stage Gate', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', currentStep: 2, status: 'active', startedAt: '2026-04-01T09:00:00Z', steps: MOCK_DEFINITIONS[0].steps },
   { id: 'WFI-002', definitionId: 'WF-RFQ-001', definitionName: 'RFQ → PO Procurement', projectId: 'GMC-2026-001', projectName: 'Al Dhafra Solar PV – Phase 2', currentStep: 3, status: 'active', startedAt: '2026-06-01T09:00:00Z', steps: MOCK_DEFINITIONS[1].steps },
   { id: 'WFI-003', definitionId: 'WF-CHNG-001', definitionName: 'Design Change Control', projectId: 'GMC-2026-002', projectName: 'Neom Green Hydrogen Wind', currentStep: 2, status: 'active', startedAt: '2026-07-05T09:00:00Z', steps: MOCK_DEFINITIONS[2].steps },
 ]

@@ -123,10 +123,7 @@ Each gate requires specific deliverables and approvals before a project can adva
 • G3 – Procurement Award
 • G4 – Construction Mobilization
 • G5 – Mechanical Completion
-• G6 – Commissioning Completion
-• G7 – Handover & Warranty
-• G8 – Operations Performance Review
-• G9 – AI/Enterprise Optimization
+• G6 – Handover, Operations & Closeout
 
 > Segregation of duty rules apply — the creator of a workflow cannot be the sole approver.`,
     tags: ['gates', 'approvals', 'workflow'],

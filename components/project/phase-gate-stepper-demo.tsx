@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button'
 
 const PRESETS = [
   { label: 'G0 — New Opportunity',  currentGate: 'G0', completedGates: [] as string[] },
-  { label: 'G4 — In Construction',  currentGate: 'G4', completedGates: ['G0','G1','G2','G3'] },
-  { label: 'G6 — Commissioning',    currentGate: 'G6', completedGates: ['G0','G1','G2','G3','G4','G5'] },
-  { label: 'G9 — AI Optimisation',  currentGate: 'G9', completedGates: ['G0','G1','G2','G3','G4','G5','G6','G7','G8'] },
+  { label: 'G3 — Procurement',      currentGate: 'G3', completedGates: ['G0','G1','G2'] },
+  { label: 'G5 — Construction',     currentGate: 'G5', completedGates: ['G0','G1','G2','G3','G4'] },
+  { label: 'G6 — Handover & Close', currentGate: 'G6', completedGates: ['G0','G1','G2','G3','G4','G5'] },
 ]
 
 export function PhaseGateStepperDemo() {

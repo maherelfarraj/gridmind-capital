@@ -163,16 +163,6 @@ const GATES: GateMeta[] = [
       { id: 'g6d2', title: 'Systems Hand-Over Package',         owner: 'T. Müller', status: 'not-started', isMandatory: true },
     ],
   },
-  {
-    gate: 7, phase: 'O&M', shortName: 'G7', fullName: 'Commercial Operations Declaration',
-    purpose: 'Declare Commercial Operations Date (COD) and hand over to O&M team.',
-    color: '#22c55e', icon: Leaf, status: 'locked',
-    reviewers: [],
-    deliverables: [
-      { id: 'g7d1', title: 'COD Certificate', owner: 'A. Carter', status: 'not-started', isMandatory: true },
-      { id: 'g7d2', title: 'O&M Handover Pack', owner: 'T. Müller', status: 'not-started', isMandatory: true },
-    ],
-  },
 ]
 
 // ─── Deliverable status icon ──────────────────────────────────
@@ -439,7 +429,7 @@ export function StageGateReviewPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Stage Gate Control</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            G0–G7 lifecycle governance — <span className="font-mono text-[#64ffda]">SRS-400</span> Sirius 400MW Solar Farm
+            G0–G6 lifecycle governance — <span className="font-mono text-[#64ffda]">SRS-400</span> Sirius 400MW Solar Farm
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">

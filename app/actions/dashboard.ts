@@ -68,7 +68,7 @@ export async function getDashboardProjects(): Promise<DashboardProject[]> {
 
   const PHASE_GATE_MAP: Record<number, string> = {
     0: 'g0', 1: 'g1', 2: 'g2', 3: 'g3', 4: 'g4',
-    5: 'g5', 6: 'g6', 7: 'g7', 8: 'g8',
+    5: 'g5', 6: 'g6', 7: 'g6', 8: 'g6',
   }
 
   return data.map((p) => {

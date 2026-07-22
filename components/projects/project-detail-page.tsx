@@ -656,8 +656,7 @@ export function ProjectDetailPage({
     G3: `/projects/${project.id}/g3`,
     G4: `/projects/${project.id}/g4`,
     G5: `/projects/${project.id}/g5`,
-    G6: `/projects/${project.id}/g6`,
-    G7: `/projects/${project.id}/g7`,
+    G6: `/projects/${project.id}/g6/om-transition`,
   }
 
   const handleGateClick = React.useCallback(

@@ -67,12 +67,12 @@ const STEPS = [
 const COUNTRIES = ['UAE', 'Saudi Arabia', 'UK', 'Australia', 'Egypt', 'Morocco', 'India', 'Spain', 'USA', 'Germany', 'Japan', 'Brazil', 'South Africa', 'Other']
 const GRID_VOLTAGES = ['11kV', '33kV', '66kV', '132kV', '220kV', '275kV', '400kV', '765kV']
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'SAR', 'AED', 'AUD', 'INR']
-const GATES = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8']
+const GATES = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']
 
 /* ─── Provisioning items ──────────────────────────────────────── */
 const PROVISION_ITEMS = [
   'Creating project folder structure',
-  'Initialising G0–G8 gate checklists',
+  'Initialising G0–G6 gate checklists',
   'Provisioning cockpit shells (PMO, Engineering, Procurement, Construction, Commissioning)',
   'Setting up default workflows (Stage Gate, RFQ→PO)',
   'Configuring approval routing rules',

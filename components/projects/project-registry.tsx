@@ -32,8 +32,7 @@ function GateBadge({ gate }: { gate: string }) {
     G0: 'bg-slate-100 text-slate-700', G1: 'bg-sky-100 text-sky-700',
     G2: 'bg-blue-100 text-blue-700',   G3: 'bg-indigo-100 text-indigo-700',
     G4: 'bg-violet-100 text-violet-700', G5: 'bg-purple-100 text-purple-700',
-    G6: 'bg-amber-100 text-amber-700', G7: 'bg-green-100 text-green-700',
-    G8: 'bg-teal-100 text-teal-700',
+    G6: 'bg-green-100 text-green-700',
   }
   return (
     <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold', colors[gate] ?? 'bg-slate-100 text-slate-700')}>
@@ -228,7 +227,7 @@ export function ProjectRegistry() {
             <div className="absolute right-0 top-full mt-2 z-30 w-64 bg-white dark:bg-card border border-slate-200 dark:border-border rounded-xl shadow-xl p-4 space-y-4">
               {[
                 { label: 'Type', value: filterType, set: setFilterType, opts: ['All', 'PV', 'PV+BESS', 'Wind', 'Wind+BESS', 'BESS'] },
-                { label: 'Gate', value: filterGate, set: setFilterGate, opts: ['All', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'] },
+                { label: 'Gate', value: filterGate, set: setFilterGate, opts: ['All', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'] },
                 { label: 'Health', value: filterHealth, set: setFilterHealth, opts: ['All', 'Green', 'Amber', 'Red'] },
               ].map(f => (
                 <div key={f.label}>
