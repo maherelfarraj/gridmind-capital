@@ -419,3 +419,72 @@ export async function clearProjectGateApprover(input: {
   revalidatePath('/team/approvers')
   return {}
 }
+
+// ── RACI matrix editing (Phase 3) ────────────────────────────
+
+type RaciLetterValue = 'R' | 'A/R' | 'C' | 'I'
+
+/**
+ * Set (or clear) a RACI cell for a deliverable × role. `letter: null` removes
+ * the assignment. Writes an audit_logs row on every change. Catches the
+ * one-Accountable partial-unique violation (23505 on
+ * `one_accountable_per_deliverable`) and surfaces a friendly message so the UI
+ * can roll back the optimistic update.
+ */
+export async function updateRaciCell(input: {
+  deliverableId: string
+  roleId: string
+  letter: RaciLetterValue | null
+}): Promise<ActionResult<{ letter: RaciLetterValue | null }>> {
+  const { deliverableId, roleId, letter } = input
+  if (!deliverableId || !roleId) return { error: 'Missing deliverable or role.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  // Capture prior state for the audit trail.
+  const { data: existing } = await admin
+    .from('raci_assignments')
+    .select('id, letter')
+    .eq('deliverable_id', deliverableId)
+    .eq('role_id', roleId)
+    .maybeSingle()
+
+  const oldData = existing
+    ? { deliverable_id: deliverableId, role_id: roleId, letter: existing.letter }
+    : null
+
+  if (letter === null) {
+    if (existing) {
+      const { error } = await admin.from('raci_assignments').delete().eq('id', existing.id)
+      if (error) return { error: error.message }
+    }
+  } else {
+    const { error } = await admin
+      .from('raci_assignments')
+      .upsert(
+        { deliverable_id: deliverableId, role_id: roleId, letter },
+        { onConflict: 'deliverable_id,role_id' },
+      )
+    if (error) {
+      if (error.code === '23505' && /one_accountable/i.test(error.message)) {
+        return { error: 'Deliverable already has an Accountable — reassign first.' }
+      }
+      return { error: error.message }
+    }
+  }
+
+  await admin.from('audit_logs').insert({
+    tenant_id: actor.tenantId,
+    actor_id: actor.userId,
+    action: 'update',
+    entity_type: 'raci_assignments',
+    entity_id: deliverableId,
+    old_data: oldData,
+    new_data:
+      letter === null ? null : { deliverable_id: deliverableId, role_id: roleId, letter },
+  })
+
+  revalidatePath('/team/raci')
+  return { data: { letter } }
+}

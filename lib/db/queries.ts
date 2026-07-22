@@ -246,6 +246,29 @@ export async function getRaciMatrixForGate(gateId: string): Promise<{
   return { deliverables: deliverables ?? [], assignments: assignments ?? [] }
 }
 
+/** Full RACI matrix: every gate, every deliverable, every assignment. */
+export async function getRaciMatrix(): Promise<{
+  gates: Gate[]
+  deliverables: RaciDeliverable[]
+  assignments: RaciAssignment[]
+}> {
+  const admin = createAdminClient()
+  const [{ data: gates, error: gErr }, { data: deliverables, error: dErr }, { data: assignments, error: aErr }] =
+    await Promise.all([
+      admin.from('gates').select('*').order('sort_order'),
+      admin.from('raci_deliverables').select('*').order('sort_order'),
+      admin.from('raci_assignments').select('*'),
+    ])
+  if (gErr) throw gErr
+  if (dErr) throw dErr
+  if (aErr) throw aErr
+  return {
+    gates: gates ?? [],
+    deliverables: deliverables ?? [],
+    assignments: assignments ?? [],
+  }
+}
+
 // ── Project staffing (Phase 2) ───────────────────────────────
 
 export async function getProjectStaffing(): Promise<VProjectStaffing[]> {

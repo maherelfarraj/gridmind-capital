@@ -1,0 +1,62 @@
+/**
+ * RBAC map: EPC delivery role code → the sidebar nav item ids that role may see.
+ *
+ * The delivery role comes from `profiles.home_role_id` (→ roles.code); platform
+ * access (admin console visibility) comes from `profiles.role`. This file maps
+ * only the DELIVERY role's menu scope. The roles themselves are DB-driven — this
+ * is pure config, keyed by the canonical role codes.
+ *
+ * PD and PM see everything. '*' = all nav items.
+ */
+
+export type MenuScope = string[] | '*'
+
+/** Nav item ids (mirrors components/app-shell/nav-config.ts). */
+export const MENU_PERMISSIONS: Record<string, MenuScope> = {
+  // Leadership — full visibility
+  PD: '*',
+  PM: '*',
+
+  // Development / commercial origination
+  DEV: ['dashboard', 'portfolio', 'opportunities', 'projects', 'documents', 'risks', 'esg', 'team'],
+  PER: ['dashboard', 'projects', 'documents', 'risks', 'team'],
+  GCM: ['dashboard', 'projects', 'engineering', 'documents', 'team'],
+
+  // Engineering & design
+  DM: ['dashboard', 'projects', 'engineering', 'documents', 'team'],
+  BSE: ['dashboard', 'projects', 'engineering', 'commissioning', 'team'],
+  ELE: ['dashboard', 'projects', 'engineering', 'team'],
+  GSE: ['dashboard', 'projects', 'engineering', 'team'],
+  SCE: ['dashboard', 'projects', 'engineering', 'commissioning', 'team'],
+
+  // Procurement & construction
+  PRC: ['dashboard', 'projects', 'procurement', 'commercial', 'team'],
+  CM: ['dashboard', 'projects', 'construction', 'handover', 'team'],
+  QAQC: ['dashboard', 'projects', 'construction', 'team'],
+  HSE: ['dashboard', 'projects', 'construction', 'team'],
+
+  // Commissioning & operations
+  CXM: ['dashboard', 'projects', 'commissioning', 'handover', 'team'],
+  OMM: ['dashboard', 'projects', 'om', 'handover', 'team'],
+
+  // Support functions
+  FIN: ['dashboard', 'portfolio', 'finance', 'commercial', 'team'],
+  LEG: ['dashboard', 'projects', 'commercial', 'documents', 'team'],
+  DCL: ['dashboard', 'projects', 'documents', 'team'],
+}
+
+/** True if a delivery role code may see a given nav item id. */
+export function canSeeMenu(roleCode: string | null | undefined, navItemId: string): boolean {
+  if (!roleCode) return true // dev / unknown → permissive (matches getActor null-role convention)
+  const scope = MENU_PERMISSIONS[roleCode]
+  if (!scope) return true
+  if (scope === '*') return true
+  return scope.includes(navItemId)
+}
+
+/** Platform-access roles that unlock the /admin area. */
+export const ADMIN_PLATFORM_ROLES = ['system_admin', 'tenant_admin'] as const
+
+export function isPlatformAdmin(platformRole: string | null | undefined): boolean {
+  return !!platformRole && (ADMIN_PLATFORM_ROLES as readonly string[]).includes(platformRole)
+}

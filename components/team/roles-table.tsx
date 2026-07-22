@@ -6,20 +6,25 @@ import { Zap, Search, ChevronRight } from 'lucide-react'
 import type { Department } from '@/lib/db/types'
 import type { RoleWithCounts } from '@/lib/db/queries'
 
+type RoleRow = RoleWithCounts & { assigned_person: string | null }
+
 interface RolesTableProps {
-  roles: RoleWithCounts[]
+  roles: RoleRow[]
   departments: Department[]
+  projectSelected: boolean
 }
 
-export function RolesTable({ roles, departments }: RolesTableProps) {
+export function RolesTable({ roles, departments, projectSelected }: RolesTableProps) {
   const [query, setQuery] = React.useState('')
   const [dept, setDept] = React.useState('all')
   const [bessOnly, setBessOnly] = React.useState(false)
+  const [unassignedOnly, setUnassignedOnly] = React.useState(false)
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase()
     return roles.filter((r) => {
       if (bessOnly && !r.is_bess_critical) return false
+      if (unassignedOnly && r.assigned_person) return false
       if (dept !== 'all' && r.department_code !== dept) return false
       if (!q) return true
       return (
@@ -28,7 +33,7 @@ export function RolesTable({ roles, departments }: RolesTableProps) {
         r.department_name.toLowerCase().includes(q)
       )
     })
-  }, [roles, query, dept, bessOnly])
+  }, [roles, query, dept, bessOnly, unassignedOnly])
 
   return (
     <div className="flex flex-col gap-4">
@@ -73,7 +78,21 @@ export function RolesTable({ roles, departments }: RolesTableProps) {
               onChange={(e) => setBessOnly(e.target.checked)}
               className="h-4 w-4 rounded border-border accent-primary"
             />
-            BESS-critical only
+            BESS-critical
+          </label>
+          <label
+            className="flex cursor-pointer items-center gap-2 text-muted-foreground data-[disabled=true]:opacity-40"
+            data-disabled={!projectSelected}
+            title={projectSelected ? undefined : 'Select a project to filter by assignment'}
+          >
+            <input
+              type="checkbox"
+              checked={unassignedOnly}
+              disabled={!projectSelected}
+              onChange={(e) => setUnassignedOnly(e.target.checked)}
+              className="h-4 w-4 rounded border-border accent-primary"
+            />
+            Unassigned only
           </label>
           <span className="text-muted-foreground">
             {filtered.length} / {roles.length}
@@ -83,12 +102,13 @@ export function RolesTable({ roles, departments }: RolesTableProps) {
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[640px] border-collapse text-sm">
+        <table className="w-full min-w-[760px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th scope="col" className="px-4 py-3 font-medium">Code</th>
               <th scope="col" className="px-4 py-3 font-medium">Role</th>
               <th scope="col" className="px-4 py-3 font-medium">Department</th>
+              <th scope="col" className="px-4 py-3 font-medium">Assigned</th>
               <th scope="col" className="px-4 py-3 text-center font-medium">A</th>
               <th scope="col" className="px-4 py-3 text-center font-medium">R</th>
               <th scope="col" className="px-4 py-3 text-center font-medium">C</th>
@@ -99,7 +119,7 @@ export function RolesTable({ roles, departments }: RolesTableProps) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">
                   No roles match your filters.
                 </td>
               </tr>
@@ -140,6 +160,15 @@ export function RolesTable({ roles, departments }: RolesTableProps) {
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{role.department_name}</td>
+                  <td className="px-4 py-3">
+                    {role.assigned_person ? (
+                      <span className="text-foreground">{role.assigned_person}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/70">
+                        {projectSelected ? 'Unassigned' : '—'}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center font-medium text-foreground">{role.a_count}</td>
                   <td className="px-4 py-3 text-center font-medium text-foreground">{role.r_count}</td>
                   <td className="px-4 py-3 text-center text-muted-foreground">{role.c_count}</td>

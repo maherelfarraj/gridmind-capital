@@ -5,15 +5,13 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 const TABS = [
-  { href: '/team', label: 'Overview', exact: true },
   { href: '/team/roles', label: 'Roles' },
-  { href: '/team/staffing', label: 'Staffing' },
-  { href: '/team/raci', label: 'RACI Matrix' },
-  { href: '/team/signoffs', label: 'Gate Sign-offs' },
-  { href: '/team/tasks', label: 'Tasks' },
+  { href: '/team/org-chart', label: 'Org Chart' },
+  { href: '/team/raci', label: 'RACI' },
+  { href: '/team/gates', label: 'Gate Sign-offs' },
+  { href: '/team', label: 'Team', exact: true },
+  { href: '/team/tasks', label: 'Daily Tasks' },
   { href: '/team/workload', label: 'Workload' },
-  { href: '/team/inbox', label: 'Inbox' },
-  { href: '/team/approvers', label: 'Approvers' },
 ]
 
 export function TeamSubNav() {
