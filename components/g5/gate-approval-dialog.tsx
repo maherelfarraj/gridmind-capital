@@ -141,8 +141,10 @@ export function G5GateApprovalButton({ projectId }: { projectId: string }) {
       <Dialog open={dischargeOpen} onOpenChange={setDischargeOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Landmark className="size-4 text-[#64ffda]" /> Start performance-bond discharge?
+            <DialogTitle>
+              <span className="flex items-center gap-2">
+                <Landmark className="size-4 text-[#64ffda]" /> Start performance-bond discharge?
+              </span>
             </DialogTitle>
           </DialogHeader>
           <div className="py-2 space-y-3 text-sm">
