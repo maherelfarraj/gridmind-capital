@@ -326,6 +326,54 @@ export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
   return {}
 }
 
+/**
+ * Apply a decision that may carry an approver comment. Used by both the
+ * mobile swipe/thumb inbox and the offline-queue sync path. The comment
+ * is appended to the approval description so it is preserved in the audit
+ * trail (mirrors decideApproval's rationale handling).
+ */
+export async function syncQueuedApproval(opts: {
+  id: string
+  decision: 'approved' | 'rejected'
+  comment: string
+}): Promise<{ error: string | null }> {
+  const supabase = createAdminClient()
+
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('title, description, object_type')
+    .eq('id', opts.id)
+    .single()
+
+  const description = opts.comment
+    ? [
+        approval?.description ?? '',
+        `\n\n[${opts.decision === 'approved' ? 'Approved' : 'Rejected'} via mobile]`,
+        `\nComment: ${opts.comment}`,
+      ].join('')
+    : approval?.description ?? null
+
+  const { error } = await supabase
+    .from('approvals')
+    .update({ status: opts.decision, description, updated_at: new Date().toISOString() })
+    .eq('id', opts.id)
+
+  if (!error && approval) {
+    sendApprovalDecisionEmail({
+      to: 'admin@gridmind.capital',
+      requesterName: 'Team',
+      title: approval.title ?? opts.id,
+      decision: opts.decision,
+      decisionBy: 'Mobile',
+      projectCode: approval.object_type ?? 'N/A',
+      approvalId: opts.id,
+      reason: opts.comment || undefined,
+    }).catch(() => {})
+  }
+
+  return { error: error?.message ?? null }
+}
+
 export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
   const supabase = createAdminClient()
 
