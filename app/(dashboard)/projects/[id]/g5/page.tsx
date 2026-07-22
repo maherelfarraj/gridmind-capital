@@ -111,7 +111,7 @@ export default function G5MechanicalCompletionPage() {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'inspections' && <InspectionsTab    inspections={MOCK_INSPECTIONS} />}
+          {activeTab === 'inspections' && <InspectionsTab    inspections={MOCK_INSPECTIONS} projectId={projectId} />}
           {activeTab === 'punch'       && <PunchListTab      items={MOCK_PUNCH_ITEMS}        />}
           {activeTab === 'ncr'         && <NcrTab            ncrs={MOCK_NCRS}                />}
           {activeTab === 'testplans'   && <TestPlansTab      plans={MOCK_TEST_PLANS}         />}

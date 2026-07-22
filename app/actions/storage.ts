@@ -196,3 +196,126 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+// ─────────────────────────────────────────────────────────────
+// Field photos (mobile camera capture)
+// Stored in the same `documents` bucket under a `field-photos/`
+// prefix, categorised so they can be filtered out of the formal
+// document register. Client compresses before upload; this action
+// receives an already-compressed JPEG data URL.
+// ─────────────────────────────────────────────────────────────
+
+export interface FieldPhoto {
+  id: string
+  url: string
+  storagePath: string
+  createdAt: string
+  uploadedBy: string
+}
+
+/**
+ * Upload a field photo captured on a mobile device.
+ * @param dataUrl  a compressed JPEG as a base64 data URL (image/jpeg)
+ * @param linkType e.g. 'ncr' | 'inspection'
+ * @param linkId   the id of the NCR / inspection it documents
+ */
+export async function uploadFieldPhoto(opts: {
+  dataUrl: string
+  projectId: string
+  linkType: string
+  linkId: string
+  uploadedBy: string
+}): Promise<{ photo: FieldPhoto } | { error: string }> {
+  await ensureStorageBucket()
+  const supabase = createAdminClient()
+
+  // Decode the data URL → binary
+  const match = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(opts.dataUrl)
+  if (!match) return { error: 'Invalid image data' }
+  const mimeType = match[1]
+  const buffer = Buffer.from(match[2], 'base64')
+  if (buffer.byteLength > 8 * 1024 * 1024) {
+    return { error: 'Photo too large after compression (max 8 MB)' }
+  }
+
+  // Resolve project code for a readable path
+  const { data: proj } = await supabase
+    .from('projects').select('code').eq('id', opts.projectId).maybeSingle()
+  const projectCode = proj?.code ?? 'GEN'
+
+  const stamp = Date.now()
+  const fileName = `${opts.linkType}-${opts.linkId}-${stamp}.jpg`
+  const storagePath = `field-photos/${DEMO_TENANT}/${projectCode}/${fileName}`
+
+  const { error: upErr } = await supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, buffer, { contentType: mimeType, upsert: false })
+  if (upErr) return { error: upErr.message }
+
+  // Register in document_files so it appears in the document layer + audit
+  const { data, error } = await supabase
+    .from('document_files')
+    .insert({
+      tenant_id:    DEMO_TENANT,
+      project_id:   opts.projectId,
+      project_code: projectCode,
+      storage_path: storagePath,
+      file_name:    fileName,
+      title:        `Field photo · ${opts.linkType.toUpperCase()} ${opts.linkId.slice(0, 8)}`,
+      code:         `FP-${stamp.toString(36).toUpperCase()}`,
+      category:     'field-photo',
+      size_bytes:   buffer.byteLength,
+      mime_type:    mimeType,
+      uploaded_by:  opts.uploadedBy,
+      status:       'draft',
+    })
+    .select('id, created_at')
+    .single()
+  if (error) return { error: error.message }
+
+  const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 3600)
+
+  revalidatePath('/documents')
+  return {
+    photo: {
+      id: data.id,
+      url: signed?.signedUrl ?? '',
+      storagePath,
+      createdAt: data.created_at,
+      uploadedBy: opts.uploadedBy,
+    },
+  }
+}
+
+/** List field photos attached to a given NCR / inspection. */
+export async function listFieldPhotos(opts: {
+  projectId: string
+  linkType: string
+  linkId: string
+}): Promise<FieldPhoto[]> {
+  const supabase = createAdminClient()
+  const prefixMatch = `${opts.linkType}-${opts.linkId}-`
+
+  const { data, error } = await supabase
+    .from('document_files')
+    .select('id, storage_path, created_at, uploaded_by, file_name')
+    .eq('project_id', opts.projectId)
+    .eq('category', 'field-photo')
+    .like('file_name', `${prefixMatch}%`)
+    .order('created_at', { ascending: false })
+  if (error || !data) return []
+
+  const photos = await Promise.all(
+    data.map(async (d) => {
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(d.storage_path, 3600)
+      return {
+        id: d.id,
+        url: signed?.signedUrl ?? '',
+        storagePath: d.storage_path,
+        createdAt: d.created_at,
+        uploadedBy: d.uploaded_by ?? 'Field',
+      }
+    }),
+  )
+  return photos
+}

@@ -9,8 +9,9 @@ import {
 import { type Inspection, type InspectionStatus } from './types'
 import { INSP_STATUS, DISC_COLORS } from './data'
 import { StatusBadge } from './shared'
+import { CameraCapture } from '@/components/pwa/camera-capture'
 
-export function InspectionsTab({ inspections }: { inspections: Inspection[] }) {
+export function InspectionsTab({ inspections, projectId }: { inspections: Inspection[]; projectId: string }) {
   const [search, setSearch] = React.useState('')
   const [discF, setDiscF]   = React.useState('All')
   const [statF, setStatF]   = React.useState<InspectionStatus | 'All'>('All')
@@ -197,6 +198,10 @@ export function InspectionsTab({ inspections }: { inspections: Inspection[] }) {
                   <p className="text-sm text-foreground leading-relaxed">{detail.result_notes}</p>
                 </div>
               )}
+              {/* Field photos for this inspection deliverable */}
+              <div className="border-t border-border pt-4">
+                <CameraCapture projectId={projectId} linkType="inspection" linkId={detail.id} />
+              </div>
               <div className="flex gap-2 pt-2">
                 <button type="button" className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
                   <Download className="size-3.5" /> Download ITP

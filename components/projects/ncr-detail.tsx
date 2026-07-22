@@ -21,6 +21,7 @@ import {
 import {
   ArrowLeft, Check, AlertTriangle, RotateCcw, Wrench, ClipboardCheck, Save,
 } from 'lucide-react'
+import { CameraCapture } from '@/components/pwa/camera-capture'
 
 export function NcrDetail({ projectId, ncrId }: { projectId: string; ncrId: string }) {
   const { toast } = useToast()
@@ -163,6 +164,11 @@ function DetailsAndActions({ ncr, onChanged }: { ncr: Ncr; onChanged: () => void
           <p className="text-sm text-muted-foreground whitespace-pre-wrap">{ncr.description}</p>
         </Card>
       )}
+
+      {/* Field photos — mobile camera capture */}
+      <Card className="p-5">
+        <CameraCapture projectId={ncr.project_id} linkType="ncr" linkId={ncr.id} />
+      </Card>
 
       {/* Root cause + corrective action */}
       <Card className="p-5 space-y-4">
