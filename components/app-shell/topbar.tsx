@@ -2,8 +2,9 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Menu, Bell, Search, ChevronRight, Command, Sun, Moon } from 'lucide-react'
+import { Menu, Bell, Search, ChevronRight, ChevronLeft, Command, Sun, Moon } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { useLocale } from 'next-intl'
 import { LanguageSwitcher } from '@/components/i18n/language-switcher'
 import { cn } from '@/lib/utils'
 
@@ -144,6 +145,8 @@ function NotificationBell({ count = 0, onClick }: { count?: number; onClick?: ()
 // ─────────────────────────────────────────────────────────────
 
 function Breadcrumbs({ items }: { items: Breadcrumb[] }) {
+  const locale = useLocale()
+  const isRtl = locale === 'ar'
   if (!items.length) return null
   return (
     <nav aria-label="Breadcrumb" className="hidden items-center gap-1 sm:flex">
@@ -153,7 +156,9 @@ function Breadcrumbs({ items }: { items: Breadcrumb[] }) {
           return (
             <li key={i} className="flex items-center gap-1">
               {i > 0 && (
-                <ChevronRight size={11} className="text-muted-foreground/40" aria-hidden="true" />
+                isRtl
+                  ? <ChevronLeft size={11} className="text-muted-foreground/40" aria-hidden="true" />
+                  : <ChevronRight size={11} className="text-muted-foreground/40" aria-hidden="true" />
               )}
               {isLast || !crumb.href ? (
                 <span

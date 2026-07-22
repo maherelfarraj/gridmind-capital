@@ -17,6 +17,7 @@ import {
   Clock,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useTranslations, useLocale } from 'next-intl'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -124,6 +125,43 @@ export const GATE_DEFINITIONS: GateDef[] = [
     approvers: ['Project Director', 'Asset Owner', 'Financial Lenders', 'O&M Director'],
   },
 ]
+
+// ─────────────────────────────────────────────────────────────
+// Translation hook — overlays catalog strings onto static GATE_DEFINITIONS
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns GATE_DEFINITIONS with shortName/fullName/purpose/phase
+ * replaced by the active locale's translations.  Falls back to the
+ * static English values if the catalog key is missing.
+ */
+export function useTranslatedGates(): GateDef[] {
+  // next-intl useTranslations() must be called at the top of a component/hook.
+  // We use a try/catch so the stepper still works in non-next-intl contexts.
+  let t: ReturnType<typeof useTranslations> | null = null
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    t = useTranslations('gates')
+  } catch {
+    // Outside NextIntlClientProvider — return static definitions as-is.
+    return GATE_DEFINITIONS
+  }
+
+  return GATE_DEFINITIONS.map((gate) => {
+    const code = gate.code as 'G0' | 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6'
+    try {
+      return {
+        ...gate,
+        shortName: t(`${code}.short`),
+        fullName:  t(`${code}.full`),
+        purpose:   t(`${code}.purpose`),
+        phase:     t(`${code}.phase`),
+      }
+    } catch {
+      return gate
+    }
+  })
+}
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -639,6 +677,13 @@ export function PhaseGateStepper({
   const [activePanel, setActivePanel] = React.useState<{ gate: GateDef; state: GateState } | null>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
+  // Translated gate definitions (names/purpose/phase in active locale)
+  const translatedGates = useTranslatedGates()
+  // RTL: render gate list in reverse so G0 is on the right
+  const locale = useLocale()
+  const isRtl = locale === 'ar'
+  const orderedGates = isRtl ? [...translatedGates].reverse() : translatedGates
+
   const handleGateClick = React.useCallback((gate: GateDef, state: GateState) => {
     // Locked/future gates show a tooltip only — do not open the full detail panel
     if (state === 'locked' || state === 'future') {
@@ -711,7 +756,7 @@ export function PhaseGateStepper({
             className="flex items-start px-4 py-5 gap-0 min-w-max sm:min-w-0 sm:w-full"
             role="list"
           >
-            {GATE_DEFINITIONS.map((gate, idx) => {
+            {orderedGates.map((gate, idx) => {
               const state = getGateState(gate.code, currentGate, completedGates)
               return (
                 <div

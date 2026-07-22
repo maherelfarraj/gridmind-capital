@@ -164,9 +164,10 @@ export function AppShell({
       <div
         className={cn(
           'flex min-w-0 flex-1 flex-col overflow-hidden',
-          // Desktop: margin matches sidebar width with same transition
-          'md:transition-[margin-left] md:duration-200 md:ease-out',
-          collapsed ? 'md:ml-16' : 'md:ml-64',
+          // Use logical margin-inline-start so the column shifts away from the
+          // sidebar whether it is on the left (LTR) or the right (RTL).
+          'md:transition-[margin-inline-start] md:duration-200 md:ease-out',
+          collapsed ? 'md:ms-16' : 'md:ms-64',
         )}
       >
         {/* Top bar */}

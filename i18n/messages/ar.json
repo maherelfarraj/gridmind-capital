@@ -1,79 +1,483 @@
 {
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "confirm": "تأكيد",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "view": "عرض",
+    "close": "إغلاق",
+    "back": "رجوع",
+    "next": "التالي",
+    "submit": "إرسال",
+    "loading": "جارٍ التحميل…",
+    "saving": "جارٍ الحفظ…",
+    "error": "حدث خطأ. يرجى المحاولة مرة أخرى.",
+    "success": "تم الحفظ بنجاح.",
+    "noData": "لا توجد بيانات متاحة.",
+    "noResults": "لا توجد نتائج.",
+    "search": "بحث",
+    "filter": "تصفية",
+    "clearFilters": "مسح التصفية",
+    "export": "تصدير",
+    "download": "تنزيل",
+    "upload": "رفع",
+    "add": "إضافة",
+    "remove": "إزالة",
+    "all": "الكل",
+    "none": "لا شيء",
+    "yes": "نعم",
+    "no": "لا",
+    "required": "مطلوب",
+    "optional": "اختياري",
+    "from": "من",
+    "to": "إلى",
+    "date": "التاريخ",
+    "amount": "المبلغ",
+    "percentage": "{value}٪",
+    "pagination": "الصفحة {current} من {total}",
+    "rowsPerPage": "صفوف في الصفحة",
+    "showingResults": "عرض {from}–{to} من {count} نتيجة",
+    "lastUpdated": "آخر تحديث {date}",
+    "createdAt": "أُنشئ في {date}",
+    "comingSoon": "قريبًا",
+    "seeAll": "عرض الكل",
+    "collapse": "طي",
+    "expand": "توسيع",
+    "refresh": "تحديث",
+    "seedDemo": "تحميل بيانات تجريبية",
+    "liveData": "مباشر",
+    "illustrativeData": "توضيحي",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "hold": "تعليق",
+    "proceed": "المضي قدمًا",
+    "issue": "إصدار",
+    "sign": "توقيع",
+    "print": "طباعة"
+  },
+
   "nav": {
+    "home": "الرئيسية",
     "dashboard": "لوحة التحكم",
     "projects": "المشاريع",
-    "documents": "المستندات",
+    "portfolio": "المحفظة",
     "approvals": "الموافقات",
+    "documents": "المستندات",
+    "notifications": "الإشعارات",
+    "settings": "الإعدادات",
+    "admin": "الإدارة",
+    "help": "المساعدة",
+    "signOut": "تسجيل الخروج",
     "stageGates": "بوابات المراحل",
     "finance": "المالية",
-    "settings": "الإعدادات"
+    "commercial": "التجاري",
+    "engineering": "الهندسة",
+    "hse": "الصحة والسلامة والبيئة",
+    "procurement": "المشتريات",
+    "construction": "الإنشاء",
+    "testing": "الاختبار والتشغيل",
+    "warehouse": "المستودع",
+    "om": "التشغيل والصيانة",
+    "esg": "الحوكمة البيئية والاجتماعية",
+    "reports": "التقارير",
+    "more": "المزيد",
+    "auditLog": "سجل التدقيق",
+    "signatureAudit": "سجل التوقيعات",
+    "users": "المستخدمون"
   },
+
+  "gates": {
+    "G0": {
+      "code": "G0",
+      "short": "قبول الفرصة",
+      "full": "البوابة 0 — قبول الفرصة",
+      "purpose": "الفحص الأولي والموافقة على المضي في تقييم الفرصة",
+      "phase": "ما قبل الدراسة الأمامية"
+    },
+    "G1": {
+      "code": "G1",
+      "short": "العرض والقرار المبدئي",
+      "full": "البوابة 1 — العرض والقرار المبدئي",
+      "purpose": "تقييم العرض واتخاذ قرار الاستثمار المبدئي",
+      "phase": "الدراسة الأمامية"
+    },
+    "G2": {
+      "code": "G2",
+      "short": "التقديم والترسية",
+      "full": "البوابة 2 — التقديم والترسية",
+      "purpose": "الموافقة على تقديم العطاء والتفويض بترسية العقد",
+      "phase": "المناقصة"
+    },
+    "G3": {
+      "code": "G3",
+      "short": "العقد والتعبئة",
+      "full": "البوابة 3 — العقد والتعبئة",
+      "purpose": "إبرام العقد والتفويض بالتعبئة الكاملة للمشروع",
+      "phase": "التعبئة"
+    },
+    "G4": {
+      "code": "G4",
+      "short": "الهندسة والتوريد والتنفيذ",
+      "full": "البوابة 4 — الهندسة والتوريد والتنفيذ",
+      "purpose": "التحقق من اكتمال الهندسة وحالة المشتريات وتقدم الإنشاء",
+      "phase": "التنفيذ"
+    },
+    "G5": {
+      "code": "G5",
+      "short": "الفحص والاختبار والتشغيل والقبول المبدئي",
+      "full": "البوابة 5 — الفحص والاختبار والتشغيل والقبول المبدئي",
+      "purpose": "التحقق من اكتمال التركيب الميكانيكي والاختبارات وإصدار شهادة القبول المبدئي",
+      "phase": "التشغيل"
+    },
+    "G6": {
+      "code": "G6",
+      "short": "فترة الضمان والقبول النهائي والإقفال",
+      "full": "البوابة 6 — فترة الضمان والقبول النهائي والإقفال",
+      "purpose": "إنهاء فترة ضمان العيوب وإصدار شهادة القبول النهائي وإغلاق المشروع",
+      "phase": "الإقفال"
+    }
+  },
+
+  "statuses": {
+    "pending": "معلق",
+    "approved": "موافق عليه",
+    "rejected": "مرفوض",
+    "in_review": "قيد المراجعة",
+    "draft": "مسودة",
+    "issued": "صادر",
+    "open": "مفتوح",
+    "closed": "مغلق",
+    "active": "نشط",
+    "inactive": "غير نشط",
+    "completed": "مكتمل",
+    "in_progress": "قيد التنفيذ",
+    "on_hold": "موقوف",
+    "cancelled": "ملغى",
+    "overdue": "متأخر",
+    "planned": "مخطط",
+    "invoiced": "مُفاتَر",
+    "paid": "مدفوع",
+    "submitted": "مقدَّم",
+    "proceed": "المضي قدمًا",
+    "conditional_proceed": "موافقة مشروطة",
+    "in_rectification": "قيد التصحيح",
+    "re_inspection": "إعادة الفحص",
+    "release_requested": "طلب إفراج",
+    "released": "مُفرَج عنه",
+    "held": "محتجز",
+    "expired": "منتهي الصلاحية",
+    "called": "مطالب به",
+    "signed": "موقَّع",
+    "passed": "اجتاز",
+    "failed": "رُفض",
+    "at_risk": "في خطر",
+    "on_track": "على المسار"
+  },
+
+  "approvals": {
+    "title": "الموافقات",
+    "inbox": "صندوق الموافقات",
+    "pending": "الموافقات المعلقة",
+    "history": "سجل القرارات",
+    "noApprovals": "لا توجد موافقات تنتظر إجراءك.",
+    "allClear": "أنت محدَّث بالكامل.",
+    "columns": {
+      "title": "العنوان",
+      "type": "النوع",
+      "submittedBy": "مقدَّم من",
+      "dueDate": "تاريخ الاستحقاق",
+      "priority": "الأولوية",
+      "status": "الحالة"
+    },
+    "decision": {
+      "proceed": "المضي قدمًا",
+      "conditional_proceed": "موافقة مشروطة",
+      "hold": "تعليق",
+      "reject": "رفض"
+    },
+    "rationale": "المبرر",
+    "conditions": "الشروط",
+    "signatureRequired": "مطلوب توقيع إلكتروني للموافقة",
+    "signToAuthorize": "وقِّع لتفويض هذا القرار",
+    "reSig": "إعادة التوقيع",
+    "recordedSignatures": "التوقيعات المسجَّلة",
+    "swipeApprove": "اسحب يسارًا للموافقة",
+    "swipeReject": "اسحب يمينًا للرفض",
+    "addComment": "أضف تعليقًا…",
+    "queued": "تم تأجيل القرار — سيُزامَن عند الاتصال",
+    "synced": "تمت مزامنة القرارات غير المتصلة بنجاح"
+  },
+
+  "projects": {
+    "title": "المشاريع",
+    "register": "سجل المشاريع",
+    "newProject": "مشروع جديد",
+    "noProjects": "لا توجد مشاريع.",
+    "search": "البحث في المشاريع…",
+    "allPhases": "جميع المراحل",
+    "columns": {
+      "code": "الرمز",
+      "name": "الاسم",
+      "technology": "التقنية",
+      "capacity": "الطاقة (ميغاواط)",
+      "location": "الموقع",
+      "budget": "الميزانية",
+      "status": "الحالة",
+      "gate": "البوابة الحالية",
+      "progress": "التقدم",
+      "completion": "الإنجاز المستهدف"
+    },
+    "kpis": {
+      "totalBudget": "إجمالي الميزانية",
+      "activeProjects": "المشاريع النشطة",
+      "gatesApproved": "البوابات المعتمدة",
+      "openNcrs": "تقارير عدم المطابقة المفتوحة"
+    },
+    "filters": {
+      "technology": "التقنية",
+      "status": "الحالة",
+      "country": "الدولة"
+    },
+    "phases": {
+      "pre_feed": "ما قبل الدراسة الأمامية",
+      "feed": "الدراسة الأمامية",
+      "tender": "المناقصة",
+      "execution": "التنفيذ",
+      "commissioning": "التشغيل",
+      "closeout": "الإقفال"
+    }
+  },
+
   "dashboard": {
-    "title": "لوحة التحكم",
-    "welcome": "مرحباً بعودتك",
+    "welcome": "مرحبًا بعودتك، {name}",
+    "portfolioOverview": "نظرة عامة على المحفظة",
+    "recentActivity": "النشاط الأخير",
+    "pendingActions": "الإجراءات المعلقة",
+    "quickActions": "الإجراءات السريعة",
     "totalProjects": "إجمالي المشاريع",
     "activeProjects": "المشاريع النشطة",
     "pendingApprovals": "الموافقات المعلقة",
     "totalBudget": "إجمالي الميزانية",
-    "recentProjects": "المشاريع الأخيرة",
-    "pendingApprovalsTitle": "الموافقات المعلقة",
-    "viewAll": "عرض الكل"
+    "viewAll": "عرض الكل",
+    "kpis": {
+      "totalCapacity": "إجمالي الطاقة",
+      "totalInvestment": "إجمالي الاستثمار",
+      "projectsOnTrack": "على المسار",
+      "projectsAtRisk": "في خطر"
+    },
+    "charts": {
+      "projectsByGate": "المشاريع حسب البوابة",
+      "budgetUtilisation": "استخدام الميزانية",
+      "timelineProgress": "تقدم الجدول الزمني"
+    },
+    "timeline": {
+      "title": "سجل الأنشطة",
+      "noEvents": "لا يوجد نشاط حديث."
+    }
   },
-  "projects": {
-    "title": "المشاريع",
-    "newProject": "مشروع جديد",
-    "search": "البحث في المشاريع…",
-    "allPhases": "جميع المراحل",
-    "noResults": "لا توجد مشاريع",
-    "budget": "الميزانية",
-    "phase": "المرحلة",
-    "technology": "التقنية",
-    "location": "الموقع",
-    "capacity": "الطاقة"
-  },
+
   "auth": {
     "signIn": "تسجيل الدخول",
+    "signUp": "إنشاء حساب",
     "signOut": "تسجيل الخروج",
+    "signingIn": "جارٍ تسجيل الدخول…",
     "email": "البريد الإلكتروني",
     "password": "كلمة المرور",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "fullName": "الاسم الكامل",
     "forgotPassword": "نسيت كلمة المرور؟",
-    "signingIn": "جارٍ تسجيل الدخول…"
+    "resetPassword": "إعادة تعيين كلمة المرور",
+    "sendResetLink": "إرسال رابط الإعادة",
+    "createAccount": "إنشاء حساب",
+    "alreadyHaveAccount": "لديك حساب بالفعل؟",
+    "noAccount": "ليس لديك حساب؟",
+    "errors": {
+      "invalidEmail": "يرجى إدخال عنوان بريد إلكتروني صحيح.",
+      "passwordTooShort": "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+      "passwordMismatch": "كلمتا المرور غير متطابقتين.",
+      "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+      "emailInUse": "هذا البريد الإلكتروني مسجَّل بالفعل.",
+      "generic": "حدث خطأ. يرجى المحاولة مرة أخرى."
+    }
   },
-  "common": {
-    "save": "حفظ",
-    "cancel": "إلغاء",
-    "delete": "حذف",
-    "edit": "تعديل",
-    "close": "إغلاق",
-    "loading": "جارٍ التحميل…",
-    "error": "حدث خطأ",
-    "success": "نجاح",
-    "confirm": "تأكيد",
-    "back": "رجوع",
-    "next": "التالي",
-    "submit": "إرسال",
-    "search": "بحث",
-    "filter": "تصفية",
-    "upload": "رفع",
-    "download": "تنزيل"
-  },
+
   "documents": {
     "title": "المستندات",
     "upload": "رفع مستند",
-    "noDocuments": "لا توجد مستندات بعد",
+    "noDocuments": "لم يُرفع أي مستند بعد.",
     "uploadFirst": "ارفع مستندك الأول",
     "dragDrop": "اسحب الملفات وأفلتها هنا",
-    "browse": "استعراض الملفات"
+    "browse": "استعراض الملفات",
+    "visibleToClient": "مرئي للعميل",
+    "categories": {
+      "technical": "تقني",
+      "commercial": "تجاري",
+      "legal": "قانوني",
+      "hse": "الصحة والسلامة والبيئة",
+      "field_photo": "صورة ميدانية",
+      "certificate": "شهادة",
+      "report": "تقرير",
+      "correspondence": "مراسلات"
+    },
+    "columns": {
+      "title": "العنوان",
+      "code": "رمز المستند",
+      "category": "الفئة",
+      "version": "الإصدار",
+      "status": "الحالة",
+      "uploadedBy": "رُفع بواسطة",
+      "uploadedAt": "تاريخ الرفع"
+    }
   },
+
+  "finance": {
+    "variationOrders": "أوامر التغيير",
+    "costControl": "ضبط التكاليف",
+    "cashFlow": "التدفق النقدي",
+    "retention": "الاحتجاز المالي",
+    "guarantees": "الضمانات",
+    "columns": {
+      "voNumber": "رقم أمر التغيير",
+      "description": "الوصف",
+      "type": "النوع",
+      "amount": "المبلغ",
+      "status": "الحالة",
+      "submittedBy": "مقدَّم من",
+      "approvedBy": "معتمد من"
+    },
+    "kpis": {
+      "contractValue": "قيمة العقد",
+      "invoiced": "المُفاتَر",
+      "received": "المستلَم",
+      "overdue": "المتأخر",
+      "retentionHeld": "الاحتجاز المحتفظ به",
+      "forecast90d": "التوقعات للـ 90 يومًا"
+    }
+  },
+
+  "ncrs": {
+    "title": "تقارير عدم المطابقة",
+    "newNcr": "رفع تقرير عدم مطابقة",
+    "noNcrs": "لم يُرفع أي تقرير.",
+    "columns": {
+      "number": "رقم التقرير",
+      "title": "العنوان",
+      "source": "المصدر",
+      "status": "الحالة",
+      "cycle": "الدورة",
+      "raisedBy": "رُفع بواسطة",
+      "date": "التاريخ"
+    },
+    "statuses": {
+      "open": "مفتوح",
+      "in_rectification": "قيد التصحيح",
+      "re_inspection": "إعادة الفحص",
+      "closed": "مغلق"
+    },
+    "sources": {
+      "failed_inspection": "فحص فاشل",
+      "audit": "تدقيق",
+      "site_observation": "ملاحظة موقعية"
+    },
+    "fieldPhotos": "صور ميدانية",
+    "addPhoto": "إضافة صورة",
+    "photoAdded": "تمت إضافة الصورة"
+  },
+
+  "settings": {
+    "title": "الإعدادات",
+    "profile": "الملف الشخصي",
+    "notifications": "الإشعارات",
+    "language": "اللغة والمنطقة",
+    "languageLabel": "لغة العرض",
+    "digitStyleLabel": "تنسيق الأرقام",
+    "digitStyles": {
+      "western": "أرقام غربية (1 2 3)",
+      "arabic_indic": "أرقام عربية هندية (١ ٢ ٣)"
+    },
+    "locales": {
+      "en": "English",
+      "ar": "العربية"
+    },
+    "saved": "تم حفظ التفضيلات."
+  },
+
+  "emails": {
+    "approvalRequest": {
+      "subject": "إجراء مطلوب: {title}",
+      "greeting": "عزيزي {name}،",
+      "body": "لديك طلب موافقة جديد ينتظر مراجعتك.",
+      "projectLabel": "المشروع",
+      "typeLabel": "النوع",
+      "submittedByLabel": "مقدَّم من",
+      "actionButton": "مراجعة الطلب",
+      "footer": "هذه رسالة آلية من منصة GridMind Capital."
+    },
+    "approvalDecision": {
+      "subject": "تم تسجيل القرار: {title}",
+      "greeting": "عزيزي {name}،",
+      "body": "تم تسجيل قرار بشأن طلبك.",
+      "decisionLabel": "القرار",
+      "decisionByLabel": "صدر القرار من",
+      "reasonLabel": "السبب",
+      "footer": "هذه رسالة آلية من منصة GridMind Capital."
+    },
+    "weeklyDigest": {
+      "subject": "الملخص الأسبوعي للمحفظة — {date}",
+      "greeting": "فيما يلي ملخصك الأسبوعي لأسبوع منتهٍ بتاريخ {date}.",
+      "pendingApprovalsLabel": "الموافقات المعلقة",
+      "overdueLabel": "البنود المتأخرة",
+      "openNcrsLabel": "تقارير عدم المطابقة المفتوحة",
+      "gatesLabel": "حالة البوابات",
+      "actionButton": "فتح المحفظة",
+      "footer": "تتلقى هذه الرسالة لأنك أحد أصحاب المصلحة في محفظة GridMind Capital."
+    }
+  },
+
+  "pdf": {
+    "gatePack": {
+      "cover": "حزمة مراجعة البوابة",
+      "project": "المشروع",
+      "gate": "البوابة",
+      "preparedBy": "أعدَّه",
+      "reviewDate": "تاريخ المراجعة",
+      "confidential": "سري",
+      "signoffTitle": "الموقِّعون المخوَّلون"
+    },
+    "certificate": {
+      "title": "شهادة إتمام البوابة",
+      "issuedTo": "صادرة إلى",
+      "verificationId": "رقم التحقق",
+      "deliverables": "المخرجات",
+      "authorizedSignature": "التوقيع المعتمد",
+      "issuedOn": "صدرت بتاريخ",
+      "watermarkDraft": "مسودة",
+      "watermarkIssued": "صادرة"
+    }
+  },
+
+  "signature": {
+    "draw": "رسم",
+    "type": "كتابة",
+    "typePlaceholder": "اكتب اسمك الكامل",
+    "clear": "مسح",
+    "undo": "تراجع",
+    "consent": "أؤكد أن هذا توقيعي الإلكتروني الملزم",
+    "saveAndSign": "حفظ وتوقيع",
+    "signing": "جارٍ التوقيع…",
+    "signedBy": "وقَّعه",
+    "signedOn": "تاريخ التوقيع",
+    "ipAddress": "عنوان IP"
+  },
+
   "stageGates": {
     "title": "بوابات المراحل",
-    "g0": "G0 — استقبال الاستثمار",
-    "g1": "G1 — موافقة التطوير",
-    "g2": "G2 — إذن الهندسة",
-    "g3": "G3 — إذن المشتريات",
     "convene": "عقد المراجعة",
     "approve": "موافقة",
     "reject": "رفض",
-    "hold": "تعليق"
+    "hold": "تعليق",
+    "controlCenter": "مركز التحكم في البوابات",
+    "packExport": "تصدير حزمة البوابة"
   }
 }

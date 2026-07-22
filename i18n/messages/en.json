@@ -1,79 +1,483 @@
 {
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "error": "Something went wrong. Please try again.",
+    "success": "Saved successfully.",
+    "noData": "No data available.",
+    "noResults": "No results found.",
+    "search": "Search",
+    "filter": "Filter",
+    "clearFilters": "Clear filters",
+    "export": "Export",
+    "download": "Download",
+    "upload": "Upload",
+    "add": "Add",
+    "remove": "Remove",
+    "all": "All",
+    "none": "None",
+    "yes": "Yes",
+    "no": "No",
+    "required": "Required",
+    "optional": "Optional",
+    "from": "From",
+    "to": "To",
+    "date": "Date",
+    "amount": "Amount",
+    "percentage": "{value}%",
+    "pagination": "Page {current} of {total}",
+    "rowsPerPage": "Rows per page",
+    "showingResults": "Showing {from}–{to} of {count} results",
+    "lastUpdated": "Last updated {date}",
+    "createdAt": "Created {date}",
+    "comingSoon": "Coming soon",
+    "seeAll": "See all",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "refresh": "Refresh",
+    "seedDemo": "Seed demo data",
+    "liveData": "Live",
+    "illustrativeData": "Illustrative",
+    "approve": "Approve",
+    "reject": "Reject",
+    "hold": "Hold",
+    "proceed": "Proceed",
+    "issue": "Issue",
+    "sign": "Sign",
+    "print": "Print"
+  },
+
   "nav": {
+    "home": "Home",
     "dashboard": "Dashboard",
     "projects": "Projects",
-    "documents": "Documents",
+    "portfolio": "Portfolio",
     "approvals": "Approvals",
+    "documents": "Documents",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "admin": "Admin",
+    "help": "Help",
+    "signOut": "Sign out",
     "stageGates": "Stage Gates",
     "finance": "Finance",
-    "settings": "Settings"
+    "commercial": "Commercial",
+    "engineering": "Engineering",
+    "hse": "HSE",
+    "procurement": "Procurement",
+    "construction": "Construction",
+    "testing": "Testing & Commissioning",
+    "warehouse": "Warehouse",
+    "om": "O&M",
+    "esg": "ESG",
+    "reports": "Reports",
+    "more": "More",
+    "auditLog": "Audit Log",
+    "signatureAudit": "Signature Audit",
+    "users": "Users"
   },
+
+  "gates": {
+    "G0": {
+      "code": "G0",
+      "short": "Opportunity Accepted",
+      "full": "Gate 0 — Opportunity Accepted",
+      "purpose": "Initial screening and approval to proceed with opportunity assessment",
+      "phase": "Pre-FEED"
+    },
+    "G1": {
+      "code": "G1",
+      "short": "Proposal & Initial Decision",
+      "full": "Gate 1 — Proposal & Initial Decision",
+      "purpose": "Evaluate the proposal and take the initial go/no-go investment decision",
+      "phase": "FEED"
+    },
+    "G2": {
+      "code": "G2",
+      "short": "Submission & Award",
+      "full": "Gate 2 — Submission & Award",
+      "purpose": "Approve tender submission and authorise contract award",
+      "phase": "Tender"
+    },
+    "G3": {
+      "code": "G3",
+      "short": "Contract & Mobilization",
+      "full": "Gate 3 — Contract & Mobilization",
+      "purpose": "Execute the contract and authorise full project mobilisation",
+      "phase": "Mobilisation"
+    },
+    "G4": {
+      "code": "G4",
+      "short": "Engineering, Supply & Execution",
+      "full": "Gate 4 — Engineering, Supply & Execution",
+      "purpose": "Confirm engineering completion, procurement status, and construction progress",
+      "phase": "Execution"
+    },
+    "G5": {
+      "code": "G5",
+      "short": "Inspection, Testing & PAC",
+      "full": "Gate 5 — Inspection, Testing & PAC",
+      "purpose": "Confirm mechanical completion, testing sign-off, and issue Provisional Acceptance Certificate",
+      "phase": "Commissioning"
+    },
+    "G6": {
+      "code": "G6",
+      "short": "DLP, FAC & Closeout",
+      "full": "Gate 6 — DLP, FAC & Closeout",
+      "purpose": "Conclude the Defects Liability Period, issue Final Acceptance Certificate, and close the project",
+      "phase": "Closeout"
+    }
+  },
+
+  "statuses": {
+    "pending": "Pending",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "in_review": "In Review",
+    "draft": "Draft",
+    "issued": "Issued",
+    "open": "Open",
+    "closed": "Closed",
+    "active": "Active",
+    "inactive": "Inactive",
+    "completed": "Completed",
+    "in_progress": "In Progress",
+    "on_hold": "On Hold",
+    "cancelled": "Cancelled",
+    "overdue": "Overdue",
+    "planned": "Planned",
+    "invoiced": "Invoiced",
+    "paid": "Paid",
+    "submitted": "Submitted",
+    "proceed": "Proceed",
+    "conditional_proceed": "Conditional Proceed",
+    "in_rectification": "In Rectification",
+    "re_inspection": "Re-Inspection",
+    "release_requested": "Release Requested",
+    "released": "Released",
+    "held": "Held",
+    "expired": "Expired",
+    "called": "Called",
+    "signed": "Signed",
+    "passed": "Passed",
+    "failed": "Failed",
+    "at_risk": "At Risk",
+    "on_track": "On Track"
+  },
+
+  "approvals": {
+    "title": "Approvals",
+    "inbox": "Approval Inbox",
+    "pending": "Pending Approvals",
+    "history": "Decision History",
+    "noApprovals": "No approvals waiting for your action.",
+    "allClear": "You're all caught up.",
+    "columns": {
+      "title": "Title",
+      "type": "Type",
+      "submittedBy": "Submitted by",
+      "dueDate": "Due date",
+      "priority": "Priority",
+      "status": "Status"
+    },
+    "decision": {
+      "proceed": "Proceed",
+      "conditional_proceed": "Conditional Proceed",
+      "hold": "Hold",
+      "reject": "Reject"
+    },
+    "rationale": "Rationale",
+    "conditions": "Conditions",
+    "signatureRequired": "Electronic signature required to approve",
+    "signToAuthorize": "Sign to authorize this decision",
+    "reSig": "Re-sign",
+    "recordedSignatures": "Recorded signatures",
+    "swipeApprove": "Swipe right to approve",
+    "swipeReject": "Swipe left to reject",
+    "addComment": "Add a comment…",
+    "queued": "Decision queued — will sync when online",
+    "synced": "Offline decisions synced successfully"
+  },
+
+  "projects": {
+    "title": "Projects",
+    "register": "Project Register",
+    "newProject": "New Project",
+    "noProjects": "No projects found.",
+    "search": "Search projects…",
+    "allPhases": "All Phases",
+    "columns": {
+      "code": "Code",
+      "name": "Name",
+      "technology": "Technology",
+      "capacity": "Capacity (MW)",
+      "location": "Location",
+      "budget": "Budget",
+      "status": "Status",
+      "gate": "Current Gate",
+      "progress": "Progress",
+      "completion": "Target Completion"
+    },
+    "kpis": {
+      "totalBudget": "Total Budget",
+      "activeProjects": "Active Projects",
+      "gatesApproved": "Gates Approved",
+      "openNcrs": "Open NCRs"
+    },
+    "filters": {
+      "technology": "Technology",
+      "status": "Status",
+      "country": "Country"
+    },
+    "phases": {
+      "pre_feed": "Pre-FEED",
+      "feed": "FEED",
+      "tender": "Tender",
+      "execution": "Execution",
+      "commissioning": "Commissioning",
+      "closeout": "Closeout"
+    }
+  },
+
   "dashboard": {
-    "title": "Dashboard",
-    "welcome": "Welcome back",
+    "welcome": "Welcome back, {name}",
+    "portfolioOverview": "Portfolio Overview",
+    "recentActivity": "Recent Activity",
+    "pendingActions": "Pending Actions",
+    "quickActions": "Quick Actions",
     "totalProjects": "Total Projects",
     "activeProjects": "Active Projects",
     "pendingApprovals": "Pending Approvals",
     "totalBudget": "Total Budget",
-    "recentProjects": "Recent Projects",
-    "pendingApprovalsTitle": "Pending Approvals",
-    "viewAll": "View all"
+    "viewAll": "View all",
+    "kpis": {
+      "totalCapacity": "Total Capacity",
+      "totalInvestment": "Total Investment",
+      "projectsOnTrack": "On Track",
+      "projectsAtRisk": "At Risk"
+    },
+    "charts": {
+      "projectsByGate": "Projects by Gate",
+      "budgetUtilisation": "Budget Utilisation",
+      "timelineProgress": "Timeline Progress"
+    },
+    "timeline": {
+      "title": "Activity Timeline",
+      "noEvents": "No recent activity."
+    }
   },
-  "projects": {
-    "title": "Projects",
-    "newProject": "New Project",
-    "search": "Search projects…",
-    "allPhases": "All Phases",
-    "noResults": "No projects found",
-    "budget": "Budget",
-    "phase": "Phase",
-    "technology": "Technology",
-    "location": "Location",
-    "capacity": "Capacity"
-  },
+
   "auth": {
     "signIn": "Sign In",
+    "signUp": "Sign Up",
     "signOut": "Sign Out",
+    "signingIn": "Signing in…",
     "email": "Email address",
     "password": "Password",
+    "confirmPassword": "Confirm password",
+    "fullName": "Full name",
     "forgotPassword": "Forgot password?",
-    "signingIn": "Signing in…"
+    "resetPassword": "Reset password",
+    "sendResetLink": "Send reset link",
+    "createAccount": "Create account",
+    "alreadyHaveAccount": "Already have an account?",
+    "noAccount": "Don't have an account?",
+    "errors": {
+      "invalidEmail": "Please enter a valid email address.",
+      "passwordTooShort": "Password must be at least 8 characters.",
+      "passwordMismatch": "Passwords do not match.",
+      "invalidCredentials": "Invalid email or password.",
+      "emailInUse": "This email is already registered.",
+      "generic": "An error occurred. Please try again."
+    }
   },
-  "common": {
-    "save": "Save",
-    "cancel": "Cancel",
-    "delete": "Delete",
-    "edit": "Edit",
-    "close": "Close",
-    "loading": "Loading…",
-    "error": "An error occurred",
-    "success": "Success",
-    "confirm": "Confirm",
-    "back": "Back",
-    "next": "Next",
-    "submit": "Submit",
-    "search": "Search",
-    "filter": "Filter",
-    "upload": "Upload",
-    "download": "Download"
-  },
+
   "documents": {
     "title": "Documents",
-    "upload": "Upload Document",
-    "noDocuments": "No documents yet",
+    "upload": "Upload document",
+    "noDocuments": "No documents uploaded yet.",
     "uploadFirst": "Upload your first document",
     "dragDrop": "Drag and drop files here",
-    "browse": "Browse files"
+    "browse": "Browse files",
+    "visibleToClient": "Visible to client",
+    "categories": {
+      "technical": "Technical",
+      "commercial": "Commercial",
+      "legal": "Legal",
+      "hse": "HSE",
+      "field_photo": "Field Photo",
+      "certificate": "Certificate",
+      "report": "Report",
+      "correspondence": "Correspondence"
+    },
+    "columns": {
+      "title": "Title",
+      "code": "Document Code",
+      "category": "Category",
+      "version": "Version",
+      "status": "Status",
+      "uploadedBy": "Uploaded by",
+      "uploadedAt": "Uploaded"
+    }
   },
+
+  "finance": {
+    "variationOrders": "Variation Orders",
+    "costControl": "Cost Control",
+    "cashFlow": "Cash Flow",
+    "retention": "Retention",
+    "guarantees": "Guarantees",
+    "columns": {
+      "voNumber": "VO No.",
+      "description": "Description",
+      "type": "Type",
+      "amount": "Amount",
+      "status": "Status",
+      "submittedBy": "Submitted by",
+      "approvedBy": "Approved by"
+    },
+    "kpis": {
+      "contractValue": "Contract Value",
+      "invoiced": "Invoiced",
+      "received": "Received",
+      "overdue": "Overdue",
+      "retentionHeld": "Retention Held",
+      "forecast90d": "90-Day Forecast"
+    }
+  },
+
+  "ncrs": {
+    "title": "Non-Conformance Reports",
+    "newNcr": "Raise NCR",
+    "noNcrs": "No NCRs raised.",
+    "columns": {
+      "number": "NCR No.",
+      "title": "Title",
+      "source": "Source",
+      "status": "Status",
+      "cycle": "Cycle",
+      "raisedBy": "Raised by",
+      "date": "Date"
+    },
+    "statuses": {
+      "open": "Open",
+      "in_rectification": "In Rectification",
+      "re_inspection": "Re-Inspection",
+      "closed": "Closed"
+    },
+    "sources": {
+      "failed_inspection": "Failed Inspection",
+      "audit": "Audit",
+      "site_observation": "Site Observation"
+    },
+    "fieldPhotos": "Field Photos",
+    "addPhoto": "Add photo",
+    "photoAdded": "Photo added"
+  },
+
+  "settings": {
+    "title": "Settings",
+    "profile": "Profile",
+    "notifications": "Notifications",
+    "language": "Language & Region",
+    "languageLabel": "Display language",
+    "digitStyleLabel": "Number format",
+    "digitStyles": {
+      "western": "Western digits (1 2 3)",
+      "arabic_indic": "Arabic-Indic digits (\u0661 \u0662 \u0663)"
+    },
+    "locales": {
+      "en": "English",
+      "ar": "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
+    },
+    "saved": "Preferences saved."
+  },
+
+  "emails": {
+    "approvalRequest": {
+      "subject": "Action Required: {title}",
+      "greeting": "Dear {name},",
+      "body": "You have a new approval request waiting for your review.",
+      "projectLabel": "Project",
+      "typeLabel": "Type",
+      "submittedByLabel": "Submitted by",
+      "actionButton": "Review Approval",
+      "footer": "This is an automated message from GridMind Capital."
+    },
+    "approvalDecision": {
+      "subject": "Decision recorded: {title}",
+      "greeting": "Dear {name},",
+      "body": "A decision has been recorded on your request.",
+      "decisionLabel": "Decision",
+      "decisionByLabel": "Decided by",
+      "reasonLabel": "Reason",
+      "footer": "This is an automated message from GridMind Capital."
+    },
+    "weeklyDigest": {
+      "subject": "Weekly Portfolio Digest — {date}",
+      "greeting": "Here is your weekly summary for the week ending {date}.",
+      "pendingApprovalsLabel": "Pending approvals",
+      "overdueLabel": "Overdue items",
+      "openNcrsLabel": "Open NCRs",
+      "gatesLabel": "Gate status",
+      "actionButton": "Open Portfolio",
+      "footer": "You are receiving this because you are a portfolio stakeholder on GridMind Capital."
+    }
+  },
+
+  "pdf": {
+    "gatePack": {
+      "cover": "Gate Review Pack",
+      "project": "Project",
+      "gate": "Gate",
+      "preparedBy": "Prepared by",
+      "reviewDate": "Review Date",
+      "confidential": "CONFIDENTIAL",
+      "signoffTitle": "Authorised Signatories"
+    },
+    "certificate": {
+      "title": "Gate Completion Certificate",
+      "issuedTo": "Issued to",
+      "verificationId": "Verification ID",
+      "deliverables": "Deliverables",
+      "authorizedSignature": "Authorized Signature",
+      "issuedOn": "Issued on",
+      "watermarkDraft": "DRAFT",
+      "watermarkIssued": "ISSUED"
+    }
+  },
+
+  "signature": {
+    "draw": "Draw",
+    "type": "Type",
+    "typePlaceholder": "Type your full name",
+    "clear": "Clear",
+    "undo": "Undo",
+    "consent": "I confirm this is my binding electronic signature",
+    "saveAndSign": "Save & Sign",
+    "signing": "Signing…",
+    "signedBy": "Signed by",
+    "signedOn": "Signed on",
+    "ipAddress": "IP address"
+  },
+
   "stageGates": {
     "title": "Stage Gates",
-    "g0": "G0 — Investment Intake",
-    "g1": "G1 — Development Approval",
-    "g2": "G2 — Engineering Authorization",
-    "g3": "G3 — Procurement Authorization",
     "convene": "Convene Review",
     "approve": "Approve",
     "reject": "Reject",
-    "hold": "Hold"
+    "hold": "Hold",
+    "controlCenter": "Gate Control Center",
+    "packExport": "Export Gate Pack"
   }
 }

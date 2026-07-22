@@ -1,8 +1,9 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Inter, JetBrains_Mono, Dancing_Script } from 'next/font/google'
+import { Inter, JetBrains_Mono, Dancing_Script, Noto_Sans_Arabic } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
-import { LocaleProvider } from '@/lib/i18n/locale-context'
+import { NextIntlClientProvider } from 'next-intl'
+import { getLocale, getMessages } from 'next-intl/server'
 import { ChunkErrorWatcher } from '@/components/chunk-error-watcher'
 import './globals.css'
 
@@ -23,6 +24,15 @@ const dancingScript = Dancing_Script({
   subsets: ['latin'],
   weight: ['600', '700'],
   variable: '--font-signature',
+  display: 'swap',
+})
+
+// Arabic body font — loaded via next/font so it is available for both
+// the live UI (via CSS variable) and the PDF export injection.
+const notoSansArabic = Noto_Sans_Arabic({
+  subsets: ['arabic'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-arabic',
   display: 'swap',
 })
 
@@ -91,13 +101,22 @@ export const viewport: Viewport = {
   userScalable: false,
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const locale = await getLocale()
+  const messages = await getMessages()
+  const dir = locale === 'ar' ? 'rtl' : 'ltr'
+
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${dancingScript.variable} bg-background`} suppressHydrationWarning>
+    <html
+      lang={locale}
+      dir={dir}
+      className={`${inter.variable} ${jetbrainsMono.variable} ${dancingScript.variable} ${notoSansArabic.variable} bg-background`}
+      suppressHydrationWarning
+    >
       {/* suppressHydrationWarning on <head> prevents React from erroring on the
           v0 sandbox script (window.__V0_SANDBOX_ID__) that is injected into
           <head> server-side but differs on the client. */}
@@ -105,9 +124,9 @@ export default function RootLayout({
       <body className="antialiased font-sans">
         <ChunkErrorWatcher />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <LocaleProvider>
+          <NextIntlClientProvider locale={locale} messages={messages}>
             {children}
-          </LocaleProvider>
+          </NextIntlClientProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
