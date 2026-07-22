@@ -496,7 +496,7 @@ export function NewProjectWizardV2() {
                       <ul className="space-y-1.5">
                         {gate.deliverables.map((d, i) => (
                           <li key={i} className="flex items-start gap-2">
-                            <FileCheck className="size-4 text-slate-300 dark:text-muted-foreground mt-0.5 shrink-0" />
+                            <span aria-hidden className="mt-1.5 size-1.5 rounded-full bg-slate-300 dark:bg-muted-foreground shrink-0" />
                             <span className="text-sm text-slate-700 dark:text-foreground flex-1">{d.name}</span>
                             <RoleChip role={d.owner_role} />
                           </li>
