@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 
 const TABS = [
   { href: '/team', label: 'Overview', exact: true },
-  { href: '/team/org', label: 'Org & Roles' },
+  { href: '/team/roles', label: 'Roles' },
   { href: '/team/staffing', label: 'Staffing' },
   { href: '/team/raci', label: 'RACI Matrix' },
   { href: '/team/signoffs', label: 'Gate Sign-offs' },

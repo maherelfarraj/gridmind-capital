@@ -1,7 +1,6 @@
-import { getDepartments, getRoles } from '@/lib/db/queries'
-import { OrgDirectory } from '@/components/team/org-directory'
+import { redirect } from 'next/navigation'
 
-export default async function OrgPage() {
-  const [departments, roles] = await Promise.all([getDepartments(), getRoles()])
-  return <OrgDirectory departments={departments} roles={roles} />
+// The org directory was consolidated into the Roles table at /team/roles.
+export default function OrgPage() {
+  redirect('/team/roles')
 }

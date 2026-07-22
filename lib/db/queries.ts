@@ -86,6 +86,133 @@ export async function getRoleWorkload(): Promise<VRoleWorkload[]> {
   return data ?? []
 }
 
+export interface RoleWithCounts extends Role {
+  department_code: string
+  department_name: string
+  a_count: number
+  r_count: number
+  c_count: number
+  i_count: number
+}
+
+/**
+ * All roles with their department and RACI accountability counts.
+ * A = letters 'A' or 'A/R'; R = letters 'R' or 'A/R' (A/R counts as both).
+ */
+export async function getRolesWithRaciCounts(): Promise<RoleWithCounts[]> {
+  const admin = createAdminClient()
+  const [rolesRes, assignRes] = await Promise.all([
+    admin.from('roles').select('*, departments!inner(code, name)').order('sort_order'),
+    admin.from('raci_assignments').select('role_id, letter'),
+  ])
+  if (rolesRes.error) throw rolesRes.error
+  if (assignRes.error) throw assignRes.error
+
+  const counts = new Map<string, { a: number; r: number; c: number; i: number }>()
+  for (const a of assignRes.data ?? []) {
+    const key = a.role_id as string
+    const c = counts.get(key) ?? { a: 0, r: 0, c: 0, i: 0 }
+    const letter = a.letter as string
+    if (letter === 'A' || letter === 'A/R') c.a += 1
+    if (letter === 'R' || letter === 'A/R') c.r += 1
+    if (letter === 'C') c.c += 1
+    if (letter === 'I') c.i += 1
+    counts.set(key, c)
+  }
+
+  return (rolesRes.data ?? []).map((r) => {
+    const dept = (r as unknown as { departments: { code: string; name: string } | null }).departments
+    const c = counts.get((r as Role).id) ?? { a: 0, r: 0, c: 0, i: 0 }
+    return {
+      ...(r as Role),
+      department_code: dept?.code ?? '',
+      department_name: dept?.name ?? '',
+      a_count: c.a,
+      r_count: c.r,
+      c_count: c.c,
+      i_count: c.i,
+    }
+  })
+}
+
+export async function getRoleByCode(
+  code: string,
+): Promise<(Role & { department_code: string; department_name: string }) | null> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('roles')
+    .select('*, departments!inner(code, name)')
+    .eq('code', code)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const dept = (data as unknown as { departments: { code: string; name: string } | null }).departments
+  return {
+    ...(data as Role),
+    department_code: dept?.code ?? '',
+    department_name: dept?.name ?? '',
+  }
+}
+
+export interface RoleSignoffDuty {
+  gate_code: string
+  gate_name: string
+  sort_order: number
+  is_approver: boolean
+  letter: string
+}
+
+/** The gate sign-off duties a role holds, ordered by gate. */
+export async function getRoleSignoffDuties(roleId: string): Promise<RoleSignoffDuty[]> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('gate_signoff_templates')
+    .select('is_approver, letter, gates!inner(code, name, sort_order)')
+    .eq('role_id', roleId)
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Record<string, unknown>[]
+  return rows
+    .map((r) => {
+      const gate = r.gates as { code: string; name: string; sort_order: number } | null
+      return {
+        gate_code: gate?.code ?? '',
+        gate_name: gate?.name ?? '',
+        sort_order: gate?.sort_order ?? 0,
+        is_approver: Boolean(r.is_approver),
+        letter: (r.letter as string) ?? 'C',
+      }
+    })
+    .sort((a, b) => a.sort_order - b.sort_order)
+}
+
+/** RACI duties a role holds, grouped for the role detail page. */
+export async function getRoleRaciDuties(
+  roleId: string,
+): Promise<{ gate_code: string; deliverable_title: string; letter: string; sort_order: number }[]> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('raci_assignments')
+    .select('letter, raci_deliverables!inner(title, sort_order, gates!inner(code, sort_order))')
+    .eq('role_id', roleId)
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Record<string, unknown>[]
+  return rows
+    .map((r) => {
+      const d = r.raci_deliverables as {
+        title: string
+        sort_order: number
+        gates: { code: string; sort_order: number } | null
+      } | null
+      return {
+        gate_code: d?.gates?.code ?? '',
+        deliverable_title: d?.title ?? '',
+        letter: (r.letter as string) ?? 'I',
+        sort_order: (d?.gates?.sort_order ?? 0) * 100 + (d?.sort_order ?? 0),
+      }
+    })
+    .sort((a, b) => a.sort_order - b.sort_order)
+}
+
 // ── Gates & RACI (Phase 3) ───────────────────────────────────
 
 export async function getGates(): Promise<Gate[]> {
