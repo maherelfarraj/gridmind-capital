@@ -59,6 +59,20 @@ export async function advanceProjectGate(
   if (current >= 6) return { error: 'Project is already at the final gate (G6)' }
   const next = current + 1
 
+  // Gate G5 (phase 5, PAC) cannot be approved while any NCR on the project is not Closed.
+  if (current === 5) {
+    const { data: openNcrs } = await supabase
+      .from('ncrs')
+      .select('ncr_number')
+      .eq('project_id', projectId)
+      .neq('status', 'closed')
+      .order('ncr_number', { ascending: true })
+    if (openNcrs && openNcrs.length > 0) {
+      const list = openNcrs.map((n: { ncr_number: string }) => n.ncr_number).join(', ')
+      return { error: `Gate G5 cannot be approved: ${openNcrs.length} NCR(s) are not Closed (${list}). Close all NCRs before submitting for gate approval.` }
+    }
+  }
+
   const { error } = await supabase
     .from('projects')
     .update({ current_phase: next })

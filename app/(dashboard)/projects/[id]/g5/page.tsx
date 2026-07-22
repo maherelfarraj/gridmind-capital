@@ -2,12 +2,15 @@
 
 import React from 'react'
 import Link from 'next/link'
+import useSWR from 'swr'
 import { useParams } from 'next/navigation'
 import {
   ChevronRight, Plus, FileText, Download,
   Eye, ClipboardList, AlertCircle, CheckSquare, Award, FolderOpen, BarChart2,
 } from 'lucide-react'
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
+import { G5GateApprovalButton } from '@/components/g5/gate-approval-dialog'
+import { getNcrs } from '@/app/actions/ncrs'
 
 import { Tab, KpiCard } from '@/components/g5/shared'
 import { InspectionsTab }   from '@/components/g5/inspections-tab'
@@ -40,9 +43,13 @@ export default function G5MechanicalCompletionPage() {
   const projectId = Array.isArray(params?.id) ? params.id[0] : (params?.id ?? 'demo')
   const [activeTab, setActiveTab] = React.useState<TabId>('inspections')
 
+  // Live NCRs drive the gate-approval guard + the Open NCRs KPI.
+  const { data: ncrData } = useSWR(`g5-ncrs-${projectId}`, () => getNcrs(projectId))
+  const liveOpenNcrs = ncrData?.kpis.open
+
   const totalMC     = Math.round(MC_PROGRESS.reduce((s, r) => s + r.pct, 0) / MC_PROGRESS.length)
   const openPunchA  = MOCK_PUNCH_ITEMS.filter((p) => p.category === 'A' && p.status !== 'closed').length
-  const openNcrs    = MOCK_NCRS.filter((n) => n.status !== 'closed').length
+  const openNcrs    = liveOpenNcrs ?? MOCK_NCRS.filter((n) => n.status !== 'closed').length
   const issuedCerts = MOCK_MC_CERTS.filter((c) => c.status === 'issued').length
 
   return (
@@ -79,9 +86,10 @@ export default function G5MechanicalCompletionPage() {
               <Download className="size-4" /> Export Report
             </button>
             <button type="button"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#64ffda]/10 border border-[#64ffda]/30 text-sm font-medium text-[#64ffda] hover:bg-[#64ffda]/20 transition-colors">
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <Plus className="size-4" /> New Inspection
             </button>
+            <G5GateApprovalButton projectId={projectId} />
           </div>
         </div>
 
@@ -89,7 +97,7 @@ export default function G5MechanicalCompletionPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <KpiCard label="Overall MC %"     value={`${totalMC}%`}   color="#64ffda"  sub="across all systems"    />
           <KpiCard label="Open Cat-A Punch" value={openPunchA}       color="#ef4444"  sub="blocks MC certificate"  />
-          <KpiCard label="Open NCRs"        value={openNcrs}         color="#f59e0b"  sub={`${MOCK_NCRS.filter((n) => n.severity === 'critical').length} critical`} />
+          <KpiCard label="Open NCRs"        value={openNcrs}         color="#f59e0b"  sub={openNcrs > 0 ? 'blocks G5 approval' : 'none — G5 clear'} />
           <KpiCard label="MC Certs Issued"  value={`${issuedCerts}/${MOCK_MC_CERTS.length}`} color="#22c55e" sub="systems certified" />
         </div>
 
