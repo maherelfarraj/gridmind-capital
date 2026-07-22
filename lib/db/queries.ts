@@ -278,6 +278,62 @@ export async function getProjectStaffing(): Promise<VProjectStaffing[]> {
   return data ?? []
 }
 
+export interface StaffingRadar {
+  currentPhase: number
+  targetGate: number
+  targetGateCode: string
+  missingRoles: { code: string; title: string; is_bess_critical: boolean }[]
+  staffingPct: number
+}
+
+/**
+ * Staffing readiness for the NEXT gate. Reads gate_role_requirements for
+ * current_phase + 1 and flags required roles that have no project_team row.
+ */
+export async function getStaffingRadar(projectId: string): Promise<StaffingRadar | null> {
+  const admin = createAdminClient()
+  const { data: proj } = await admin
+    .from('projects')
+    .select('current_phase')
+    .eq('id', projectId)
+    .maybeSingle()
+  if (!proj) return null
+
+  const currentPhase = typeof proj.current_phase === 'number' ? proj.current_phase : 0
+  const targetGate = Math.min(currentPhase + 1, 8)
+
+  const [{ data: reqs }, { data: team }, { data: allRoles }, { data: staffing }] = await Promise.all([
+    admin.from('gate_role_requirements').select('role_code').eq('gate_number', targetGate),
+    admin.from('project_team').select('role_id').eq('project_id', projectId),
+    admin.from('roles').select('id, code, title, is_bess_critical'),
+    admin.from('v_project_staffing').select('staffing_pct').eq('project_id', projectId).maybeSingle(),
+  ])
+
+  const roleById = new Map((allRoles ?? []).map((r) => [r.id as string, r]))
+  const assignedCodes = new Set(
+    (team ?? []).map((t) => roleById.get(t.role_id as string)?.code).filter(Boolean) as string[],
+  )
+  const missingRoles = (reqs ?? [])
+    .map((r) => r.role_code as string)
+    .filter((code) => !assignedCodes.has(code))
+    .map((code) => {
+      const role = (allRoles ?? []).find((r) => r.code === code)
+      return {
+        code,
+        title: role?.title ?? code,
+        is_bess_critical: Boolean(role?.is_bess_critical),
+      }
+    })
+
+  return {
+    currentPhase,
+    targetGate,
+    targetGateCode: `G${targetGate}`,
+    missingRoles,
+    staffingPct: Number(staffing?.staffing_pct ?? 0),
+  }
+}
+
 export async function getProjectsLite(): Promise<{ id: string; code: string; name: string }[]> {
   const admin = createAdminClient()
   const { data, error } = await admin.from('projects').select('id, code, name').order('code')

@@ -106,7 +106,7 @@ export function ProjectWizard({
         toast({ title: res.error, variant: 'danger' })
       } else {
         toast({ title: 'Project created — G1 sign-offs sent', variant: 'success' })
-        router.push('/dashboard')
+        router.push(`/projects/${res.id}`)
       }
     })
   }

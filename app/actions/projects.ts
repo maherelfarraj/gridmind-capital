@@ -213,6 +213,164 @@ export async function createProject(payload: {
   return { id: data.id }
 }
 
+// ── Phase 6: transactional wizard create ─────────────────────
+
+// Exact G1–G8 phase names (must equal gates.name so spawn_gate_signoffs joins).
+const WIZARD_PHASE_NAMES: string[] = [
+  'Origination & Feasibility',
+  'Permitting & Grid Application',
+  'Commercial & Financial Close (RTB)',
+  'Detailed Design (IFC)',
+  'Procurement & Manufacturing',
+  'Construction & Installation',
+  'Commissioning & Grid Tests',
+  'Handover & O&M',
+]
+
+export interface CreateProjectFullInput {
+  name: string
+  codeHint: string
+  technology: string
+  capacity_mw: number
+  bess_mwh: number
+  location: string
+  country: string
+  target_completion: string | null
+  pdPersonId: string
+  pmPersonId: string
+  approvers: { gate_number: number; primary_role: string | null; secondary_role: string | null }[]
+}
+
+/**
+ * Create a project with PD+PM staffing, 8 gate-approver rows, and 8 phase_gates
+ * (G1 `in_review` → trigger spawns G1 sign-offs; the wizard inserts none itself).
+ * No true SQL transaction is available via the JS client, so any failure after
+ * the project row triggers a compensating delete (children cascade) — giving
+ * all-or-nothing semantics.
+ */
+export async function createProjectFull(
+  input: CreateProjectFullInput,
+): Promise<{ id: string } | { error: string }> {
+  const { getActor } = await import('@/lib/db/queries')
+  const actor = await getActor()
+  const admin = createAdminClient()
+  const tenantId = actor.tenantId ?? DEMO_TENANT
+
+  if (!input.name?.trim()) return { error: 'Project name is required.' }
+  if (!input.pdPersonId || !input.pmPersonId) return { error: 'PD and PM are required.' }
+
+  // Resolve PD/PM role ids.
+  const { data: roleRows, error: roleErr } = await admin
+    .from('roles')
+    .select('id, code')
+    .in('code', ['PD', 'PM'])
+  if (roleErr) return { error: roleErr.message }
+  const pdRoleId = roleRows?.find((r) => r.code === 'PD')?.id
+  const pmRoleId = roleRows?.find((r) => r.code === 'PM')?.id
+  if (!pdRoleId || !pmRoleId) return { error: 'PD/PM roles missing from catalog.' }
+
+  const isDate = (d: string | null) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d)
+
+  // Ensure a unique code (retry with a suffix on collision).
+  let code = input.codeHint?.trim() || `PRJ-${new Date().getFullYear()}-001`
+
+  // 1) Project.
+  let projectId = ''
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await admin
+      .from('projects')
+      .insert({
+        tenant_id: tenantId,
+        code,
+        name: input.name.trim(),
+        technology: input.technology,
+        capacity_mw: Number.isFinite(input.capacity_mw) ? input.capacity_mw : null,
+        bess_mwh: Number.isFinite(input.bess_mwh) ? input.bess_mwh : null,
+        location: input.location || null,
+        country: input.country || null,
+        target_completion: isDate(input.target_completion) ? input.target_completion : null,
+        status: 'active',
+        current_phase: 0,
+        health: 'green',
+        project_manager: input.pmPersonId,
+        created_by: actor.userId,
+      })
+      .select('id')
+      .single()
+    if (!error && data) {
+      projectId = data.id as string
+      break
+    }
+    if (error?.code === '23505') {
+      code = `${input.codeHint}-${Math.floor(10 + Math.random() * 89)}`
+      continue
+    }
+    return { error: error?.message ?? 'Failed to create project.' }
+  }
+  if (!projectId) return { error: `Could not allocate a unique code near "${input.codeHint}".` }
+
+  const rollback = async (msg: string): Promise<{ error: string }> => {
+    await admin.from('projects').delete().eq('id', projectId)
+    return { error: msg }
+  }
+
+  // 2) Team: PD + PM (inserted BEFORE gates so the spawn trigger finds assignees).
+  const { error: teamErr } = await admin.from('project_team').insert([
+    { tenant_id: tenantId, project_id: projectId, role_id: pdRoleId, person_id: input.pdPersonId, assigned_by: actor.userId },
+    { tenant_id: tenantId, project_id: projectId, role_id: pmRoleId, person_id: input.pmPersonId, assigned_by: actor.userId },
+  ])
+  if (teamErr) return rollback(`Staffing failed: ${teamErr.message}`)
+
+  // 3) Gate approvers (8 rows).
+  const approverRows = WIZARD_PHASE_NAMES.map((_, i) => {
+    const n = i + 1
+    const supplied = input.approvers.find((a) => a.gate_number === n)
+    return {
+      project_id: projectId,
+      gate_number: n,
+      primary_role: supplied?.primary_role || 'PD',
+      secondary_role: supplied?.secondary_role || null,
+    }
+  })
+  const { error: apprErr } = await admin
+    .from('project_gate_approvers')
+    .upsert(approverRows, { onConflict: 'project_id,gate_number' })
+  if (apprErr) return rollback(`Gate approvers failed: ${apprErr.message}`)
+
+  // 4) phase_gates: G1 in_review (spawns sign-offs), G2–G8 pending.
+  // NOTE: phase_gates has NO tenant_id column.
+  const gateRows = WIZARD_PHASE_NAMES.map((phaseName, i) => ({
+    project_id: projectId,
+    phase_number: i + 1,
+    phase_name: phaseName,
+    status: i === 0 ? 'in_review' : 'pending',
+  }))
+  const { error: gateErr } = await admin.from('phase_gates').insert(gateRows)
+  if (gateErr) return rollback(`Gate seeding failed: ${gateErr.message}`)
+
+  // 5) Audit.
+  await admin.from('audit_logs').insert({
+    tenant_id: tenantId,
+    actor_id: actor.userId,
+    action: 'insert',
+    entity_type: 'projects',
+    entity_id: projectId,
+    new_data: { code, name: input.name, pd: input.pdPersonId, pm: input.pmPersonId },
+  })
+
+  sendProjectCreatedEmail({
+    to: 'admin@gridmind.capital',
+    recipientName: 'GridMind Team',
+    projectCode: code,
+    projectName: input.name,
+    technology: input.technology,
+    budgetUsd: 0,
+    projectId,
+  }).catch(() => {})
+
+  return { id: projectId }
+}
+
 export async function archiveProject(id: string): Promise<{ error?: string }> {
   const supabase = createAdminClient()
   const { error } = await supabase

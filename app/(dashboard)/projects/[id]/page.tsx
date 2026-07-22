@@ -5,8 +5,10 @@ import { useRouter, useParams } from 'next/navigation'
 import useSWR from 'swr'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
 import { CommentThread } from '@/components/comments/comment-thread'
+import { StaffingRadar } from '@/components/projects/staffing-radar'
 import { getProject } from '@/app/actions/projects'
 import { getProjectTimeline } from '@/app/actions/phase-gates'
+import { loadStaffingRadar } from '@/app/actions/team'
 
 // ─────────────────────────────────────────────────────────────
 // Page
@@ -25,6 +27,11 @@ export default function ProjectDetailRoute() {
   const { data: timelineLogs } = useSWR(
     id ? `project-timeline-${id}` : null,
     () => getProjectTimeline(id),
+  )
+
+  const { data: staffingRadar } = useSWR(
+    id ? `staffing-radar-${id}` : null,
+    () => loadStaffingRadar(id),
   )
 
   const [activePanel, setActivePanel] = React.useState<'comments' | 'documents' | 'edit' | null>(null)
@@ -68,6 +75,11 @@ export default function ProjectDetailRoute() {
 
   return (
     <>
+      {staffingRadar && (
+        <div className="mb-4">
+          <StaffingRadar projectId={project.id} data={staffingRadar} />
+        </div>
+      )}
       <ProjectDetailPage
         project={{
           id: project.id,

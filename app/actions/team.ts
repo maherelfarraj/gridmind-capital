@@ -2,9 +2,16 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getActor, getTaskComments } from '@/lib/db/queries'
+import { getActor, getTaskComments, getStaffingRadar } from '@/lib/db/queries'
+import type { StaffingRadar } from '@/lib/db/queries'
 
 type ActionResult<T = void> = { data?: T; error?: string }
+
+/** Client-callable loader for the Command Center staffing radar panel. */
+export async function loadStaffingRadar(projectId: string): Promise<StaffingRadar | null> {
+  if (!projectId) return null
+  return getStaffingRadar(projectId)
+}
 
 async function logEvent(
   admin: ReturnType<typeof createAdminClient>,
