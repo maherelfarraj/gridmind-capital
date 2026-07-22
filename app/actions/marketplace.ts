@@ -143,6 +143,7 @@ export async function seedMarketplaceDemoData(): Promise<{ error?: string }> {
   if ((ex?.length ?? 0) > 0) return {}
 
   const demos = [
+    { name: 'TomKimi AI Copilot',         category: 'analytics',    description: 'AI copilot for project risk, schedule and portfolio intelligence.',                           integration_type: 'api',         status: 'connected', rating: 4.9, review_count: 58  },
     { name: 'SolarEdge Monitoring API',  category: 'data_feed',    description: 'Real-time inverter telemetry, string-level data and fault alerts.',                        integration_type: 'api',         status: 'connected', rating: 4.7, review_count: 312 },
     { name: 'Meteomatics Weather',        category: 'data_feed',    description: 'High-resolution solar irradiance, wind and weather forecasts.',                            integration_type: 'api',         status: 'available', rating: 4.5, review_count: 189 },
     { name: 'DNV GL Energy Analytics',    category: 'analytics',    description: 'P50/P90 energy yield assessment, performance benchmarking and degradation analysis.',       integration_type: 'oauth',       status: 'available', rating: 4.8, review_count: 94  },

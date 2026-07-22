@@ -560,6 +560,7 @@ export function MarketplacePage() {
 // ── Illustrative fallback data ────────────────────────────────────────────────
 
 const ILLUSTRATIVE_PROVIDERS: MarketplaceProvider[] = [
+  { id: 'p0', tenant_id: '', name: 'TomKimi AI Copilot',         category: 'analytics',    description: 'AI copilot for project risk, schedule and portfolio intelligence.', logo_url: null, integration_type: 'api',         status: 'connected', rating: 4.9, review_count: 58,  created_at: '' },
   { id: 'p1', tenant_id: '', name: 'SolarEdge Monitoring API',  category: 'data_feed',    description: 'Real-time inverter telemetry and fault alerts.',              logo_url: null, integration_type: 'api',         status: 'connected', rating: 4.7, review_count: 312, created_at: '' },
   { id: 'p2', tenant_id: '', name: 'Meteomatics Weather',        category: 'data_feed',    description: 'High-resolution irradiance and weather forecasts.',            logo_url: null, integration_type: 'api',         status: 'available', rating: 4.5, review_count: 189, created_at: '' },
   { id: 'p3', tenant_id: '', name: 'DNV GL Energy Analytics',    category: 'analytics',    description: 'P50/P90 yield assessment and performance benchmarking.',        logo_url: null, integration_type: 'oauth',       status: 'available', rating: 4.8, review_count: 94,  created_at: '' },
