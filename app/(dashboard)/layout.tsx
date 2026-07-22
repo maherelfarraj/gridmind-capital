@@ -100,6 +100,10 @@ export default async function DashboardLayout({
 
   const session = await getSession()
 
+  // External roles never see the internal dashboard — bounce to their portal.
+  if (session.roles.includes('client_viewer')) redirect('/client')
+  if (session.roles.includes('subcontractor')) redirect('/portal')
+
   // Count pending approvals scoped to this tenant
   const { count: approvalCount } = await supabase
     .from('approvals')

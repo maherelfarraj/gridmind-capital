@@ -35,6 +35,7 @@ export interface VariationOrder {
   created_at: string
   updated_at: string
   client_visible: boolean
+  client_cost_visible: boolean
 }
 
 export interface VoKpis {
@@ -185,6 +186,7 @@ function mapRow(r: any): VariationOrder {
     created_at: r.created_at,
     updated_at: r.updated_at,
     client_visible: r.client_visible ?? false,
+    client_cost_visible: r.client_cost_visible ?? false,
   }
 }
 
