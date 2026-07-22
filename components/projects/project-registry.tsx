@@ -226,7 +226,7 @@ export function ProjectRegistry() {
   async function handleClone(p: GmcProject) {
     const result = await duplicateProject(p.id)
     if ('error' in result && result.error) {
-      show(`Clone failed: ${result.error}`, 'error')
+      show(`Clone failed: ${result.error}`, 'warning')
       return
     }
     mutate()
@@ -236,7 +236,7 @@ export function ProjectRegistry() {
   async function handleArchive(p: GmcProject) {
     const result = await archiveProject(p.id)
     if (result.error) {
-      show(`Archive failed: ${result.error}`, 'error')
+      show(`Archive failed: ${result.error}`, 'warning')
       return
     }
     mutate()
