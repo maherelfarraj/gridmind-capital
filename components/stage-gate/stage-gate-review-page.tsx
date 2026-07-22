@@ -31,7 +31,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import { GatePackExportButton } from '@/components/stage-gate/gate-pack-export'
 import { GatePackSignoffBlock } from '@/components/signatures/signoff-block'
-import { getProject } from '@/app/actions/projects'
+import { getProjects } from '@/app/actions/projects'
 import useSWR from 'swr'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -426,6 +426,11 @@ export function StageGateReviewPage() {
   const passedCount = GATES.filter((g) => g.status === 'passed').length
   const activeGate  = GATES.find((g) => g.status === 'active')
 
+  // Resolve a real project so recorded signatures can be shown + exported in the Gate Pack.
+  const { data: projects } = useSWR('stage-gate-projects', () => getProjects())
+  const linkedProject =
+    projects?.find((p) => p.code === 'SRS-400') ?? projects?.[0] ?? null
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -473,6 +478,12 @@ export function StageGateReviewPage() {
         {/* Detail panel — id used by GatePackExportButton */}
         <div id="gate-pack-printable">
           <GateDetailPanel gate={gate} />
+          {linkedProject && (
+            <GatePackSignoffBlock
+              projectId={linkedProject.id}
+              gateCode={`G${gate.gate}`}
+            />
+          )}
         </div>
       </div>
     </div>

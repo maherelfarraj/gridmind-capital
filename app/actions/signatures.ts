@@ -215,3 +215,51 @@ export async function getProjectSignatureAudit(projectId: string): Promise<Signa
   if (!data) return []
   return toRecords(supabase, data)
 }
+
+export interface SignatureAuditRow extends SignatureRecord {
+  projectName: string
+  projectCode: string
+  entityLabel: string
+}
+
+const ENTITY_LABEL: Record<string, string> = {
+  gate_approval: 'Gate Approval',
+  vo_approval: 'Variation Order',
+  client_report: 'Client Report',
+  certificate: 'Gate Certificate',
+}
+
+/**
+ * Tenant-wide signature audit trail for the admin console: who signed what,
+ * when, and from which IP — enriched with project name/code and entity label.
+ */
+export async function getSignatureAudit(): Promise<SignatureAuditRow[]> {
+  const actor = await getActor()
+  const supabase = createAdminClient()
+
+  const { data } = await supabase
+    .from('signatures')
+    .select('*')
+    .eq('tenant_id', actor.tenantId)
+    .order('signed_at', { ascending: false })
+    .limit(500)
+  if (!data) return []
+
+  // Resolve project name/code in one round-trip.
+  const projectIds = Array.from(new Set(data.map((d) => d.project_id).filter(Boolean)))
+  const { data: projects } = projectIds.length
+    ? await supabase.from('projects').select('id, name, code').in('id', projectIds)
+    : { data: [] as { id: string; name: string; code: string }[] }
+  const projMap = new Map((projects ?? []).map((p) => [p.id, p]))
+
+  const records = await toRecords(supabase, data)
+  return records.map((rec, i) => {
+    const proj = projMap.get(data[i].project_id as string)
+    return {
+      ...rec,
+      projectName: proj?.name ?? '—',
+      projectCode: proj?.code ?? '—',
+      entityLabel: ENTITY_LABEL[rec.entityType] ?? rec.entityType,
+    }
+  })
+}
