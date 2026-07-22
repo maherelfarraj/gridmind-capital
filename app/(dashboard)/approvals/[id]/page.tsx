@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { G0ApprovalReview } from '@/components/approvals/g0-approval-review'
 import { decideApproval, delegateApproval, getApprovalById } from '@/app/actions/approvals'
+import { getSignaturesForEntity } from '@/app/actions/signatures'
 import type { UserProfile } from '@/components/approvals/g0-approval-review'
 import type { G0FormData } from '@/app/actions/gate-submissions'
 
@@ -27,6 +28,12 @@ export default function ApprovalDetailPage() {
   const { data: approval, error, isLoading } = useSWR(
     id ? `approval-detail-${id}` : null,
     () => getApprovalById(id),
+    { revalidateOnFocus: false },
+  )
+
+  const { data: signatures = [] } = useSWR(
+    id ? `approval-signatures-${id}` : null,
+    () => getSignaturesForEntity('gate_approval', id),
     { revalidateOnFocus: false },
   )
 
@@ -115,8 +122,9 @@ export default function ApprovalDetailPage() {
     decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject',
     rationale: string,
     conditions?: string,
+    signatureId?: string,
   ) {
-    const { error } = await decideApproval({ id, decision, rationale, conditions })
+    const { error } = await decideApproval({ id, decision, rationale, conditions, signatureId })
     if (error) throw new Error(error)
   }
 
@@ -137,6 +145,9 @@ export default function ApprovalDetailPage() {
       onDecide={handleDecide}
       onDelegate={handleDelegate}
       onRequestInfo={handleRequestInfo}
+      projectId={(approval as { project_id?: string | null }).project_id ?? null}
+      projectName={opportunity.opportunityName}
+      existingSignatures={signatures}
     />
   )
 }

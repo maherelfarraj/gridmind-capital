@@ -18,6 +18,8 @@ import { PunchListTab }     from '@/components/g5/punch-tab'
 import { NcrTab }           from '@/components/g5/ncr-tab'
 import { TestPlansTab }     from '@/components/g5/test-plans-tab'
 import { MCCertificatesTab } from '@/components/g5/certs-tab'
+import { GateCertificatePanel } from '@/components/stage-gate/gate-certificate'
+import { getProject } from '@/app/actions/projects'
 import { AnalyticsTab }     from '@/components/g5/analytics-tab'
 import { AsBuiltsTab }      from '@/components/g5/as-builts-tab'
 import {
@@ -46,6 +48,13 @@ export default function G5MechanicalCompletionPage() {
   // Live NCRs drive the gate-approval guard + the Open NCRs KPI.
   const { data: ncrData } = useSWR(`g5-ncrs-${projectId}`, () => getNcrs(projectId))
   const liveOpenNcrs = ncrData?.kpis.open
+
+  // Project name for the completion certificate.
+  const { data: project } = useSWR(`project-${projectId}`, () => getProject(projectId))
+  const certDeliverables = MC_PROGRESS.map((m) => ({
+    label: m.system,
+    status: m.pct >= 100 ? 'Complete' : `${m.pct}%`,
+  }))
 
   const totalMC     = Math.round(MC_PROGRESS.reduce((s, r) => s + r.pct, 0) / MC_PROGRESS.length)
   const openPunchA  = MOCK_PUNCH_ITEMS.filter((p) => p.category === 'A' && p.status !== 'closed').length
@@ -115,7 +124,18 @@ export default function G5MechanicalCompletionPage() {
           {activeTab === 'punch'       && <PunchListTab      items={MOCK_PUNCH_ITEMS}        />}
           {activeTab === 'ncr'         && <NcrTab            ncrs={MOCK_NCRS}                />}
           {activeTab === 'testplans'   && <TestPlansTab      plans={MOCK_TEST_PLANS}         />}
-          {activeTab === 'certs'       && <MCCertificatesTab certs={MOCK_MC_CERTS}           />}
+          {activeTab === 'certs'       && (
+            <div className="space-y-6">
+              <GateCertificatePanel
+                projectId={projectId}
+                projectName={project?.name ?? projectId}
+                gateCode="G5"
+                gateName="Mechanical Completion"
+                deliverables={certDeliverables}
+              />
+              <MCCertificatesTab certs={MOCK_MC_CERTS} />
+            </div>
+          )}
           {activeTab === 'asbuilts'    && <AsBuiltsTab       drawings={MOCK_AS_BUILTS}       />}
           {activeTab === 'analytics'   && <AnalyticsTab                                      />}
         </div>

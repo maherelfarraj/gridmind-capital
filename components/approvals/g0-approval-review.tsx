@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   ChevronRight, FileText, Info, User, Clock, CheckCircle,
   AlertCircle, PauseCircle, XCircle, MessageSquare, Users,
-  Flame, Mail, Download, Gavel, X,
+  Flame, Mail, Download, Gavel, X, PenLine,
 } from 'lucide-react'
 import type { G0FormData, G0RiskRow, G0StakeholderRow } from '@/app/actions/gate-submissions'
 import { SignaturePad } from '@/components/signatures/signature-pad'
@@ -314,7 +314,10 @@ export function G0ApprovalReview({
 
   const minChars    = MIN_CHARS[decision]
   const charCount   = rationale.length
-  const canSubmit   = charCount >= minChars && !submitting && !isSubmitting
+  // Approving decisions require a captured electronic signature.
+  const needsSignature = decision === 'proceed' || decision === 'conditional_proceed'
+  const signatureReady = !needsSignature || signature !== null
+  const canSubmit   = charCount >= minChars && signatureReady && !submitting && !isSubmitting
   const cfg         = DECISION_CONFIG[decision]
   const submitted   = timeAgo(approval.created_at)
 
@@ -326,7 +329,12 @@ export function G0ApprovalReview({
     setError(null)
     setSubmitting(true)
     try {
-      await onDecide(decision, rationale, decision === 'conditional_proceed' ? conditions : undefined)
+      await onDecide(
+        decision,
+        rationale,
+        decision === 'conditional_proceed' ? conditions : undefined,
+        signature?.id,
+      )
       setDone(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to submit decision')
@@ -629,7 +637,7 @@ export function G0ApprovalReview({
                       name="decision"
                       value={d}
                       checked={selected}
-                      onChange={() => setDecision(d)}
+                      onChange={() => { setDecision(d); setSignature(null); setShowSig(false) }}
                       className="mt-0.5 accent-current"
                     />
                     <div className="flex-1 min-w-0">
@@ -683,6 +691,60 @@ export function G0ApprovalReview({
                   Minimum {minChars} characters for {cfg.label}.
                 </p>
               </div>
+
+              {/* Previously captured signatures for this approval */}
+              {existingSignatures.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Recorded signatures
+                  </p>
+                  {existingSignatures.map((sig) => (
+                    <SignatureDisplay key={sig.id} signature={sig} />
+                  ))}
+                </div>
+              )}
+
+              {/* Electronic signature — required to approve */}
+              {needsSignature && (
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Electronic Signature <span className="text-red-500">*</span>
+                    </label>
+                    {signature && (
+                      <button
+                        type="button"
+                        onClick={() => { setSignature(null); setShowSig(true) }}
+                        className="text-xs font-medium text-sky-600 hover:underline"
+                      >
+                        Re-sign
+                      </button>
+                    )}
+                  </div>
+
+                  {signature ? (
+                    <SignatureDisplay signature={signature} />
+                  ) : showSig ? (
+                    <SignaturePad
+                      entityType="gate_approval"
+                      entityId={approval.id}
+                      projectId={projectId ?? null}
+                      statement={`I, as the authorized approver, endorse the "${cfg.label}" decision for ${approval.title}${projectName ? ` (${projectName})` : ''}. This electronic signature is legally binding.`}
+                      onSigned={(rec) => { setSignature(rec); setShowSig(false) }}
+                      onCancel={() => setShowSig(false)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowSig(true)}
+                      className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 py-4 text-sm font-medium text-slate-600 dark:text-slate-300 hover:border-sky-400 hover:text-sky-600 transition-colors"
+                    >
+                      <PenLine className="w-4 h-4" aria-hidden />
+                      Sign to authorize this decision
+                    </button>
+                  )}
+                </div>
+              )}
 
               {error && (
                 <p role="alert" className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">

@@ -30,6 +30,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import { GatePackExportButton } from '@/components/stage-gate/gate-pack-export'
+import { GatePackSignoffBlock } from '@/components/signatures/signoff-block'
+import { getProject } from '@/app/actions/projects'
+import useSWR from 'swr'
 
 // ─── Types ────────────────────────────────────────────────────
 
