@@ -97,6 +97,10 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Portfolio',
         href: '/portfolio',
         icon: BarChart3,
+        children: [
+          { id: 'portfolio-overview',  label: 'Overview',   href: '/portfolio' },
+          { id: 'portfolio-cash-flow', label: 'Cash Flow',  href: '/portfolio/cash-flow' },
+        ],
       },
       {
         id: 'stage-gates',
