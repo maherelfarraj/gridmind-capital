@@ -466,7 +466,7 @@ export async function getPortalFileUrl(storagePath: string): Promise<{ url: stri
 
 // ─────────────────────────────────────────────────────────────
 // Invoices
-// ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────��
 
 export async function getPortalInvoices(): Promise<PortalInvoice[]> {
   const actor = await getPortalActor()
@@ -789,4 +789,86 @@ export async function submitRfqResponse(args: {
 export async function getPortalPoOptions(): Promise<{ id: string; po_number: string; project_code: string }[]> {
   const pos = await getPortalPurchaseOrders()
   return pos.map((p) => ({ id: p.id, po_number: p.po_number, project_code: p.project_code }))
+}
+
+// ─────────────────────────────────────────────────────────────
+// Demo seeding (internal admin only) — creates POs + RFQs for an
+// organization on a project so an invited partner sees live data.
+// ─────────────────────────────────────────────────────────────
+
+export async function seedPortalDemo(args: {
+  projectId: string
+  organizationName: string
+}): Promise<{ error?: string; pos?: number; rfqs?: number }> {
+  // Internal-only guard.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authorized' }
+  const admin = createAdminClient()
+  const { data: profile } = await admin
+    .from('profiles').select('role, tenant_id').eq('id', user.id).maybeSingle()
+  const role = profile?.role ?? null
+  const INTERNAL = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']
+  if (role && !INTERNAL.includes(role)) return { error: 'Only internal managers can seed demo data' }
+
+  const tenantId = profile?.tenant_id ?? DEMO_TENANT
+  const org = args.organizationName.trim()
+  if (!org) return { error: 'Organization name is required' }
+
+  const stamp = Date.now().toString().slice(-4)
+
+  // Purchase orders + line items.
+  const poSeeds = [
+    { num: `PO-${stamp}-001`, status: 'issued',       amount: 480000, desc: 'MV switchgear supply — 33kV package', addr: 'Site laydown yard, Gate 2, Sirius Solar Park' },
+    { num: `PO-${stamp}-002`, status: 'acknowledged', amount: 215000, desc: 'DC combiner boxes and string cabling', addr: 'Warehouse B, Sirius Solar Park' },
+  ]
+  let poCount = 0
+  for (const s of poSeeds) {
+    const { data: po } = await admin.from('purchase_orders').insert({
+      tenant_id: tenantId,
+      project_id: args.projectId,
+      po_number: s.num,
+      vendor_name: org,
+      organization_name: org,
+      status: s.status,
+      amount: s.amount,
+      currency: 'USD',
+      issue_date: new Date().toISOString().slice(0, 10),
+      delivery_date: new Date(Date.now() + 45 * 864e5).toISOString().slice(0, 10),
+      description: s.desc,
+      delivery_address: s.addr,
+      acknowledged_at: s.status === 'acknowledged' ? new Date().toISOString() : null,
+    }).select('id').single()
+    if (po) {
+      poCount++
+      await admin.from('purchase_order_lines').insert([
+        { po_id: po.id, line_no: 1, description: s.desc, quantity: 1, unit: 'lot', unit_price: s.amount * 0.7, amount: s.amount * 0.7 },
+        { po_id: po.id, line_no: 2, description: 'Installation & commissioning support', quantity: 10, unit: 'day', unit_price: (s.amount * 0.3) / 10, amount: s.amount * 0.3 },
+      ])
+    }
+  }
+
+  // RFQs.
+  const rfqSeeds = [
+    { num: `RFQ-${stamp}-001`, title: 'Balance of plant civil works', scope: 'Access roads, foundations, and drainage for the 400MW array.' },
+    { num: `RFQ-${stamp}-002`, title: 'HV cable termination services', scope: 'Termination and testing of 33kV cables at the substation interface.' },
+  ]
+  let rfqCount = 0
+  for (const r of rfqSeeds) {
+    const { data: rfq } = await admin.from('rfqs').insert({
+      tenant_id: tenantId,
+      project_id: args.projectId,
+      rfq_number: r.num,
+      title: r.title,
+      organization_name: org,
+      scope_summary: r.scope,
+      status: 'open',
+      issue_date: new Date().toISOString().slice(0, 10),
+      close_date: new Date(Date.now() + 21 * 864e5).toISOString().slice(0, 10),
+    }).select('id').single()
+    if (rfq) rfqCount++
+  }
+
+  revalidatePath('/portal')
+  return { pos: poCount, rfqs: rfqCount }
 }

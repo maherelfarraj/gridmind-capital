@@ -25,7 +25,7 @@ export function PortalPoDetail({
   deliveryDocs: PortalDeliveryDoc[]
 }) {
   const router = useRouter()
-  const { addToast } = useToast()
+  const { toast: addToast } = useToast()
   const [acking, setAcking] = React.useState(false)
 
   // Delivery upload state

@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
 import {
@@ -23,6 +23,8 @@ import {
   assignProjectAccess, type ExternalUser, type ExternalRole,
 } from '@/app/actions/external-access'
 import { getProjects } from '@/app/actions/projects'
+import { seedPortalDemo } from '@/app/actions/portal'
+import { Database } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -335,10 +337,34 @@ export function ExternalAccessTab() {
   const { data: allProjects } = useSWR('all-projects-list', () => getProjects())
 
   const [inviteOpen, setInviteOpen] = React.useState(false)
+  const [seedOpen, setSeedOpen] = React.useState(false)
+  const [seedProject, setSeedProject] = React.useState('')
+  const [seedOrg, setSeedOrg] = React.useState('')
+  const [seeding, setSeeding] = React.useState(false)
 
   const projects = (allProjects ?? []).map((p) => ({
     id: p.id, code: p.code, name: p.name,
   }))
+
+  const handleSeed = async () => {
+    if (!seedProject || !seedOrg.trim()) {
+      toast({ title: 'Project and organization are required', variant: 'warning' })
+      return
+    }
+    setSeeding(true)
+    const res = await seedPortalDemo({ projectId: seedProject, organizationName: seedOrg.trim() })
+    setSeeding(false)
+    if (res.error) {
+      toast({ title: 'Seed failed', description: res.error, variant: 'danger' })
+    } else {
+      toast({
+        title: 'Portal demo data created',
+        description: `${res.pos} purchase orders and ${res.rfqs} RFQs for ${seedOrg.trim()}.`,
+        variant: 'success',
+      })
+      setSeedOpen(false); setSeedProject(''); setSeedOrg('')
+    }
+  }
 
   const handleRevoke = async (userId: string, projectId: string) => {
     const res = await revokeProjectAccess({ userId, projectId })
@@ -374,10 +400,60 @@ export function ExternalAccessTab() {
             Invite subcontractors and client viewers. They see only what you explicitly share.
           </p>
         </div>
-        <Button onClick={() => setInviteOpen(true)}>
-          <UserPlus className="size-4 mr-2" /> Invite user
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setSeedOpen(true)}>
+            <Database className="size-4 mr-2" /> Seed portal demo
+          </Button>
+          <Button onClick={() => setInviteOpen(true)}>
+            <UserPlus className="size-4 mr-2" /> Invite user
+          </Button>
+        </div>
       </div>
+
+      {/* Seed portal demo dialog */}
+      <Dialog open={seedOpen} onOpenChange={(o) => !o && setSeedOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              <span className="flex items-center gap-2">
+                <Database className="size-4 text-muted-foreground" />
+                Seed partner portal demo data
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Creates sample purchase orders and RFQs for an organization on a project.
+              Invite a subcontractor with the same organization name and grant them this
+              project so they see the data in their portal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Project</Label>
+              <Select
+                value={seedProject}
+                onValueChange={(v) => setSeedProject(v ?? '')}
+                options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
+                placeholder="Select a project…"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Organization name</Label>
+              <Input
+                value={seedOrg}
+                onChange={(e) => setSeedOrg(e.target.value)}
+                placeholder="e.g. Meridian Civils Ltd"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSeedOpen(false)}>Cancel</Button>
+            <Button onClick={handleSeed} disabled={seeding}>
+              {seeding ? <RefreshCw className="size-4 animate-spin mr-2" /> : <Database className="size-4 mr-2" />}
+              Create demo data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

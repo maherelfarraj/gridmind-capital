@@ -14,7 +14,7 @@ import {
 import { uploadPortalFile, fmtMoney, fmtDate, StatusPill, INVOICE_STATUS_STYLES } from './portal-utils'
 
 export function PortalInvoices() {
-  const { addToast } = useToast()
+  const { toast: addToast } = useToast()
   const { data: invoices, mutate } = useSWR('portal-invoices', getPortalInvoices)
   const { data: poOptions } = useSWR('portal-po-options', getPortalPoOptions)
 
