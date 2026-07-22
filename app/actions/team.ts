@@ -98,3 +98,141 @@ export async function unassignRole(input: {
   revalidatePath('/team')
   return {}
 }
+
+// ── Gate sign-off lifecycle (Phase 4) ────────────────────────
+
+/**
+ * Move a gate into review. The DB trigger `spawn_gate_signoffs` then
+ * creates one gate_signoff + approval_item per template role, resolving
+ * the assignee from project_team.
+ */
+export async function openGateReview(input: {
+  phaseGateId: string
+  projectId: string
+}): Promise<ActionResult> {
+  const { phaseGateId, projectId } = input
+  if (!phaseGateId) return { error: 'Missing gate id.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { error } = await admin
+    .from('phase_gates')
+    .update({ status: 'in_review' })
+    .eq('id', phaseGateId)
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'GATE_OPEN_REVIEW',
+    actorId: actor.userId,
+    projectId,
+    metadata: { phase_gate_id: phaseGateId },
+  })
+
+  revalidatePath('/team/signoffs')
+  return {}
+}
+
+/** Sign one sign-off row. Records the signer + timestamp. */
+export async function signGate(input: {
+  signoffId: string
+  projectId: string
+}): Promise<ActionResult> {
+  const { signoffId, projectId } = input
+  if (!signoffId) return { error: 'Missing sign-off id.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  // If the row has no assignee yet, the signer becomes the assignee.
+  const { data: existing } = await admin
+    .from('gate_signoffs')
+    .select('person_id')
+    .eq('id', signoffId)
+    .single()
+
+  const patch: Record<string, unknown> = {
+    status: 'signed',
+    signed_at: new Date().toISOString(),
+  }
+  if (existing && !existing.person_id && actor.userId) patch.person_id = actor.userId
+
+  const { error } = await admin.from('gate_signoffs').update(patch).eq('id', signoffId)
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'GATE_SIGN',
+    actorId: actor.userId,
+    projectId,
+    metadata: { signoff_id: signoffId },
+  })
+
+  revalidatePath('/team/signoffs')
+  return {}
+}
+
+/** Undo a signature (revert to pending). */
+export async function unsignGate(input: {
+  signoffId: string
+  projectId: string
+}): Promise<ActionResult> {
+  const { signoffId, projectId } = input
+  if (!signoffId) return { error: 'Missing sign-off id.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { error } = await admin
+    .from('gate_signoffs')
+    .update({ status: 'pending', signed_at: null })
+    .eq('id', signoffId)
+  if (error) return { error: error.message }
+
+  await logEvent(admin, {
+    transition: 'GATE_UNSIGN',
+    actorId: actor.userId,
+    projectId,
+    metadata: { signoff_id: signoffId },
+  })
+
+  revalidatePath('/team/signoffs')
+  return {}
+}
+
+/**
+ * Approve a gate. The DB trigger `enforce_gate_approval` blocks this
+ * unless every sign-off is signed — we surface that as a clean error.
+ */
+export async function approveGate(input: {
+  phaseGateId: string
+  projectId: string
+}): Promise<ActionResult> {
+  const { phaseGateId, projectId } = input
+  if (!phaseGateId) return { error: 'Missing gate id.' }
+
+  const actor = await getActor()
+  const admin = createAdminClient()
+
+  const { error } = await admin
+    .from('phase_gates')
+    .update({ status: 'approved', reviewed_by: actor.userId, reviewed_at: new Date().toISOString() })
+    .eq('id', phaseGateId)
+
+  if (error) {
+    // The enforce_gate_approval trigger raises when sign-offs are incomplete.
+    const friendly = /sign|approv|pending/i.test(error.message)
+      ? 'All sign-offs must be completed before this gate can be approved.'
+      : error.message
+    return { error: friendly }
+  }
+
+  await logEvent(admin, {
+    transition: 'GATE_APPROVE',
+    actorId: actor.userId,
+    projectId,
+    metadata: { phase_gate_id: phaseGateId },
+  })
+
+  revalidatePath('/team/signoffs')
+  return {}
+}

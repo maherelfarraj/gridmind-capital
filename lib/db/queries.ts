@@ -176,6 +176,81 @@ export async function getGateProgress(projectId: string): Promise<VGateProgress[
   return data ?? []
 }
 
+export interface SignoffRow {
+  id: string
+  role_id: string
+  role_code: string
+  role_title: string
+  person_id: string | null
+  person_name: string | null
+  is_approver: boolean
+  letter: string
+  status: string
+  signed_at: string | null
+}
+
+/** All sign-off rows for one phase_gate, enriched with role + template flags. */
+export async function getGateSignoffs(phaseGateId: string): Promise<SignoffRow[]> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('gate_signoffs')
+    .select(
+      'id, role_id, person_id, status, signed_at, roles(code, title), profiles!gate_signoffs_person_id_fkey(full_name)',
+    )
+    .eq('phase_gate_id', phaseGateId)
+  if (error) throw error
+
+  // Fetch template flags (is_approver, letter) for this gate's roles.
+  const rows = data ?? []
+  const roleIds = rows.map((r) => r.role_id as string)
+  const tmplByRole = new Map<string, { is_approver: boolean; letter: string }>()
+  if (roleIds.length) {
+    // phase_gate -> gate catalog id, to scope templates
+    const { data: pg } = await admin
+      .from('phase_gates')
+      .select('phase_number, phase_name')
+      .eq('id', phaseGateId)
+      .single()
+    if (pg) {
+      const { data: gate } = await admin
+        .from('gates')
+        .select('id')
+        .eq('sort_order', pg.phase_number)
+        .eq('name', pg.phase_name)
+        .single()
+      if (gate) {
+        const { data: tmpls } = await admin
+          .from('gate_signoff_templates')
+          .select('role_id, is_approver, letter')
+          .eq('gate_id', gate.id)
+        for (const t of tmpls ?? [])
+          tmplByRole.set(t.role_id as string, {
+            is_approver: t.is_approver as boolean,
+            letter: t.letter as string,
+          })
+      }
+    }
+  }
+
+  return rows.map((r) => {
+    const role = r.roles as unknown as { code: string; title: string } | null
+    const person = r.profiles as unknown as { full_name: string } | null
+    const tmpl = tmplByRole.get(r.role_id as string)
+    return {
+      id: r.id as string,
+      role_id: r.role_id as string,
+      role_code: role?.code ?? '',
+      role_title: role?.title ?? '',
+      person_id: (r.person_id as string) ?? null,
+      person_name: person?.full_name ?? null,
+      is_approver: tmpl?.is_approver ?? false,
+      letter: tmpl?.letter ?? 'C',
+      status: r.status as string,
+      signed_at: (r.signed_at as string) ?? null,
+    }
+  })
+}
+
 // ── Workload dashboards (Phase 6) ────────────────────────────
 
 export async function getPersonWorkload(projectId?: string): Promise<VPersonWorkload[]> {
