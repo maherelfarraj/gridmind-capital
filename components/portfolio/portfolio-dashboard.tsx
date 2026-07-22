@@ -191,7 +191,7 @@ export function PortfolioDashboard() {
               <Tooltip
                 contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 13 }}
                 formatter={(v) => [`${v} project${Number(v) !== 1 ? 's' : ''}`, '']}
-                labelFormatter={(l) => `${l} — ${l === 'G6' ? 'Handover & O&M' : `Gate ${l.replace('G', '')}`}`}
+                labelFormatter={(l) => { const g = String(l); return `${g} — ${g === 'G6' ? 'Handover & O&M' : `Gate ${g.replace('G', '')}`}` }}
               />
               <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={22}>
                 {gateChartData.map((entry) => (

@@ -1,8 +1,10 @@
 'use client'
 
 import * as React from 'react'
+import useSWR from 'swr'
 import { Command } from 'cmdk'
 import { useRouter } from 'next/navigation'
+import { getProjects } from '@/app/actions/projects'
 import {
   Search, X, Folder, Shield, CheckSquare, FileText, Users,
   ArrowRight, Clock, Zap, ChevronRight, Keyboard,
@@ -216,9 +218,35 @@ export function GlobalCommandPalette({ open, onClose }: GlobalCommandPaletteProp
     return () => window.removeEventListener('keydown', onKey)
   }, [open, isCommandMode])
 
-  // Filtered results
+  // Live project index — fetched from the real DB, merged ahead of the mock rows
+  const { data: liveProjects } = useSWR(
+    open ? 'palette-projects' : null,
+    () => getProjects({ status: null }),
+    { revalidateOnFocus: false },
+  )
+  const liveProjectResults = React.useMemo<ResultItem[]>(() => {
+    if (!liveProjects || liveProjects.length === 0) return []
+    const statusColor: Record<string, string> = {
+      active: '#22c55e', draft: '#6b7280', 'on-hold': '#f59e0b',
+      completed: '#3b82f6', cancelled: '#ef4444',
+    }
+    return liveProjects.map((p) => ({
+      id: `live-${p.id}`,
+      type: 'projects' as FilterTab,
+      title: p.name,
+      subtitle: p.client_name,
+      meta: `${p.gate} — ${p.status}`,
+      href: `/projects/${p.id}`,
+      badge: { label: p.status, color: statusColor[p.status] ?? '#6b7280' },
+      status: { color: statusColor[p.status] ?? '#6b7280' },
+    }))
+  }, [liveProjects])
+
+  // Filtered results — live projects first, then non-project mock rows
   const results = React.useMemo(() => {
-    const base = filter === 'all' ? MOCK_RESULTS : MOCK_RESULTS.filter((r) => r.type === filter)
+    const mockNonProjects = MOCK_RESULTS.filter((r) => r.type !== 'projects')
+    const pool = [...liveProjectResults, ...(liveProjectResults.length ? mockNonProjects : MOCK_RESULTS)]
+    const base = filter === 'all' ? pool : pool.filter((r) => r.type === filter)
     if (!searchQuery) return base
     const q = searchQuery.toLowerCase()
     return base.filter((r) =>
@@ -226,7 +254,7 @@ export function GlobalCommandPalette({ open, onClose }: GlobalCommandPaletteProp
       r.subtitle?.toLowerCase().includes(q) ||
       r.meta?.toLowerCase().includes(q)
     )
-  }, [searchQuery, filter])
+  }, [searchQuery, filter, liveProjectResults])
 
   // Filtered commands
   const commands = React.useMemo(() => {

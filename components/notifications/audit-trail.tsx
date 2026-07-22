@@ -119,7 +119,7 @@ export function AuditTrail() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
   // Debounce search
-  const debounceRef = React.useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   function handleSearch(v: string) {
     setSearch(v)
     clearTimeout(debounceRef.current)

@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import useSWR from 'swr'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
+import { CommentThread } from '@/components/comments/comment-thread'
 import { getProject } from '@/app/actions/projects'
 
 // ─────────────────────────────────────────────────────────────
@@ -135,9 +136,16 @@ export default function ProjectDetailRoute() {
               &times;
             </button>
           </div>
-          <div className="p-5 text-sm text-muted-foreground">
+          <div className="p-4 text-sm text-muted-foreground">
             {activePanel === 'edit' && 'Edit panel — form fields coming soon.'}
-            {activePanel === 'comments' && 'Comments panel — coming soon.'}
+            {activePanel === 'comments' && (
+              <CommentThread
+                entityType="project"
+                entityId={project.id}
+                title="Project Discussion"
+                className="border-0 shadow-none"
+              />
+            )}
             {activePanel === 'documents' && 'Documents panel — coming soon.'}
           </div>
         </aside>

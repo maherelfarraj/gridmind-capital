@@ -275,15 +275,18 @@ export function NewProjectWizardV2() {
     setSubmitting(true)
     try {
       const result = await createProject({
-        code:          data.code,
-        name:          data.name,
-        status:        'draft',
-        client_name:   data.developerSpv || undefined,
-        budget_amount: Number(data.capex) * 1_000_000 || undefined,
-        target_cod:    data.codTarget || undefined,
-        description:   `${data.type} project — ${data.country}${data.region ? ', ' + data.region : ''}`,
+        code:              data.code,
+        name:              data.name,
+        technology:        data.type,
+        capacity_mw:       Number(data.mwac) || 0,
+        location:          data.region || data.country,
+        country:           data.country,
+        budget_usd:        Number(data.capex) * 1_000_000 || 0,
+        start_date:        '',
+        target_completion: data.codTarget || '',
+        description:       `${data.type} project — ${data.developerSpv || 'SPV'}`,
       })
-      if (result.error) {
+      if ('error' in result) {
         // Fall back to mock if DB write fails (e.g. missing RLS / anon user)
         const project: GmcProject = {
           id: data.code, code: data.code, name: data.name,
