@@ -13,6 +13,7 @@
  * the originating action.
  */
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildEmail, getUserLocale, heading, para, kvTable, btn } from '@/lib/email/render'
 
 const FROM = 'GridMind Capital <notifications@gridmind.capital>'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gridmind-gules.vercel.app'
@@ -48,6 +49,12 @@ export async function sendEmail(opts: {
   userId?: string | null
   /** Skip the notification_prefs opt-out check (e.g. an explicit test send). */
   ignorePrefs?: boolean
+  /**
+   * BCP-47 locale of the recipient ('en' | 'ar').
+   * Stored in email_log for per-locale metrics. The html passed here must
+   * already have been built with buildEmail() when locale !== 'en'.
+   */
+  locale?: string
 }): Promise<{ status: 'sent' | 'failed' | 'skipped'; error?: string }> {
   const admin = createAdminClient()
 
@@ -105,78 +112,72 @@ export async function sendEmail(opts: {
 }
 
 // ─── Shared HTML wrapper ──────────────────────────────────────
+// wrapHtml is kept for backwards compat with existing callers.
+// For locale-aware HTML use buildEmail() from lib/email/render.ts directly.
 
-export function wrapHtml(content: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GridMind Capital</title>
-</head>
-<body style="margin:0;padding:0;background:#0a192f;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-    <tr>
-      <td align="center" style="padding:32px 16px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="background:#112240;border-radius:12px;overflow:hidden;border:1px solid #1e3a5f;">
-          <!-- Header -->
-          <tr>
-            <td style="background:#0a192f;padding:20px 32px;border-bottom:1px solid #1e3a5f;">
-              <span style="font-size:18px;font-weight:700;color:#64ffda;letter-spacing:-0.5px;">GridMind Capital</span>
-              <span style="font-size:12px;color:#8892b0;margin-left:8px;">EPC Project Platform</span>
-            </td>
-          </tr>
-          <!-- Body -->
-          <tr>
-            <td style="padding:28px 32px;">
-              ${content}
-            </td>
-          </tr>
-          <!-- Footer -->
-          <tr>
-            <td style="padding:20px 32px;border-top:1px solid #1e3a5f;background:#0a192f;">
-              <p style="margin:0;font-size:11px;color:#495670;">
-                This is an automated notification from GridMind Capital.
-                <a href="${BASE_URL}" style="color:#64ffda;text-decoration:none;">Open Platform</a>
-                &nbsp;·&nbsp;
-                <a href="${BASE_URL}/settings" style="color:#495670;text-decoration:none;">Manage email preferences</a>
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`
+export function wrapHtml(content: string, locale = 'en'): string {
+  return buildEmail({ locale, body: content })
 }
 
-export function btn(text: string, href: string): string {
-  return `<a href="${href}" style="display:inline-block;margin-top:20px;padding:10px 22px;background:#64ffda;color:#0a192f;font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">${text}</a>`
-}
-
-export function heading(text: string): string {
-  return `<h1 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#e6f1ff;">${text}</h1>`
-}
-
-export function para(text: string): string {
-  return `<p style="margin:8px 0;font-size:14px;color:#8892b0;line-height:1.6;">${text}</p>`
-}
-
-export function kvTable(rows: [string, string][]): string {
-  const cells = rows.map(([k, v]) =>
-    `<tr>
-       <td style="padding:6px 0;font-size:12px;color:#495670;width:140px;vertical-align:top;">${k}</td>
-       <td style="padding:6px 0;font-size:12px;color:#e6f1ff;font-weight:500;">${v}</td>
-     </tr>`
-  ).join('')
-  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;border-radius:8px;background:#0a192f;padding:12px 16px;width:100%"><tbody>${cells}</tbody></table>`
-}
+// Re-export the locale-aware helpers from render.ts so callers
+// that import from send.ts don't need to change their imports.
+export { heading, para, kvTable, btn } from '@/lib/email/render'
 
 const fmtUsd = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
 // ─── Typed senders ────────────────────────────────────────────
+
+// ─── Locale labels used in typed senders ─────────────────────
+
+const L: Record<string, Record<string, string>> = {
+  en: {
+    approvalRequest:   'Approval Request',
+    hi:                'Hi',
+    yourApproval:      'your approval is required.',
+    reviewAndDecide:   'Review & Decide',
+    actionRequired:    'Action Required',
+    title:             'Title',
+    requestedBy:       'Requested by',
+    project:           'Project',
+    due:               'Due',
+    asap:              'As soon as possible',
+    approvalApproved:  'Approval Approved',
+    approvalRejected:  'Approval Rejected',
+    requestApproved:   'your request has been',
+    approved:          'approved',
+    rejected:          'rejected',
+    decision:          'Decision',
+    decidedBy:         'Decided by',
+    reason:            'Reason',
+    viewDetails:       'View Details',
+  },
+  ar: {
+    approvalRequest:   'طلب اعتماد',
+    hi:                'مرحباً',
+    yourApproval:      'يلزم اعتمادك على هذا الطلب.',
+    reviewAndDecide:   'مراجعة واتخاذ قرار',
+    actionRequired:    'إجراء مطلوب',
+    title:             'العنوان',
+    requestedBy:       'مقدَّم من',
+    project:           'المشروع',
+    due:               'الموعد النهائي',
+    asap:              'في أقرب وقت ممكن',
+    approvalApproved:  'تمت الموافقة',
+    approvalRejected:  'تم الرفض',
+    requestApproved:   'تمت معالجة طلبك:',
+    approved:          'موافق عليه',
+    rejected:          'مرفوض',
+    decision:          'القرار',
+    decidedBy:         'القرار من قِبَل',
+    reason:            'السبب',
+    viewDetails:       'عرض التفاصيل',
+  },
+}
+
+function l(locale: string, key: string): string {
+  return (L[locale] ?? L['en'])[key] ?? (L['en'][key] ?? key)
+}
 
 export async function sendApprovalRequestEmail(opts: {
   to: string
@@ -189,23 +190,26 @@ export async function sendApprovalRequestEmail(opts: {
   dueDate?: string
   approvalId: string
 }) {
+  const locale = opts.userId ? await getUserLocale(opts.userId) : 'en'
   const approvalUrl = `${BASE_URL}/approvals?id=${opts.approvalId}`
-  const html = wrapHtml(`
-    ${heading('Approval Request')}
-    ${para(`Hi ${opts.approverName}, your approval is required.`)}
-    ${kvTable([
-      ['Title', opts.title],
-      ['Requested by', opts.requestedBy],
-      ['Project', `${opts.projectCode} — ${opts.projectName}`],
-      ['Due', opts.dueDate ?? 'As soon as possible'],
-    ])}
-    ${btn('Review & Decide', approvalUrl)}
-  `)
+  const body = [
+    heading(l(locale, 'approvalRequest'), locale),
+    para(`${l(locale, 'hi')} ${opts.approverName}، ${l(locale, 'yourApproval')}`, locale),
+    kvTable([
+      [l(locale, 'title'),       opts.title],
+      [l(locale, 'requestedBy'), opts.requestedBy],
+      [l(locale, 'project'),     `${opts.projectCode} — ${opts.projectName}`],
+      [l(locale, 'due'),         opts.dueDate ?? l(locale, 'asap')],
+    ], locale),
+    btn(l(locale, 'reviewAndDecide'), approvalUrl),
+  ].join('\n')
+  const html = buildEmail({ locale, subject: `${l(locale, 'actionRequired')}: ${opts.title}`, body })
   return sendEmail({
     to: opts.to,
     userId: opts.userId,
     type: 'approval',
-    subject: `Action Required: ${opts.title} — ${opts.projectCode}`,
+    locale,
+    subject: `${l(locale, 'actionRequired')}: ${opts.title} — ${opts.projectCode}`,
     html,
   })
 }
@@ -221,25 +225,31 @@ export async function sendApprovalDecisionEmail(opts: {
   reason?: string
   approvalId: string
 }) {
+  const locale = opts.userId ? await getUserLocale(opts.userId) : 'en'
   const projectUrl = `${BASE_URL}/approvals?id=${opts.approvalId}`
   const isApproved = opts.decision === 'approved'
-  const html = wrapHtml(`
-    ${heading(`Approval ${isApproved ? 'Approved' : 'Rejected'}`)}
-    ${para(`Hi ${opts.requesterName}, your request has been <strong style="color:${isApproved ? '#64ffda' : '#ef4444'}">${opts.decision}</strong>.`)}
-    ${kvTable([
-      ['Title', opts.title],
-      ['Decision', opts.decision.toUpperCase()],
-      ['Decided by', opts.decisionBy],
-      ['Project', opts.projectCode],
-      ...(opts.reason ? [['Reason', opts.reason] as [string, string]] : []),
-    ])}
-    ${btn('View Details', projectUrl)}
-  `)
+  const decisionLabel = isApproved ? l(locale, 'approved') : l(locale, 'rejected')
+  const subjectBase  = isApproved ? l(locale, 'approvalApproved') : l(locale, 'approvalRejected')
+  const statusColor  = isApproved ? '#64ffda' : '#ef4444'
+  const body = [
+    heading(subjectBase, locale),
+    para(`${l(locale, 'hi')} ${opts.requesterName}، ${l(locale, 'requestApproved')} <strong style="color:${statusColor}">${decisionLabel}</strong>.`, locale),
+    kvTable([
+      [l(locale, 'title'),     opts.title],
+      [l(locale, 'decision'),  decisionLabel.toUpperCase()],
+      [l(locale, 'decidedBy'), opts.decisionBy],
+      [l(locale, 'project'),   opts.projectCode],
+      ...(opts.reason ? [[l(locale, 'reason'), opts.reason] as [string, string]] : []),
+    ], locale),
+    btn(l(locale, 'viewDetails'), projectUrl),
+  ].join('\n')
+  const html = buildEmail({ locale, subject: `${subjectBase}: ${opts.title}`, body })
   return sendEmail({
     to: opts.to,
     userId: opts.userId,
     type: 'approval',
-    subject: `Approval ${isApproved ? 'Approved' : 'Rejected'}: ${opts.title}`,
+    locale,
+    subject: `${subjectBase}: ${opts.title} — ${opts.projectCode}`,
     html,
   })
 }

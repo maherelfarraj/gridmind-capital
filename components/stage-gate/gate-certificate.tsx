@@ -16,6 +16,7 @@ import {
   type GateCertificate,
 } from '@/app/actions/gate-certificates'
 import { elementToPdf } from '@/lib/pdf/element-to-pdf'
+import { useLocale } from 'next-intl'
 
 interface GateCertificatePanelProps {
   projectId: string
@@ -29,6 +30,7 @@ export function GateCertificatePanel({
   projectId, projectName, gateCode, gateName, deliverables,
 }: GateCertificatePanelProps) {
   const { toast } = useToast()
+  const locale = useLocale()
   const printRef = React.useRef<HTMLDivElement | null>(null)
 
   const { data: certificates = [], mutate } = useSWR(
@@ -66,6 +68,7 @@ export function GateCertificatePanel({
       const pdf = await elementToPdf(printRef.current, {
         headerTitle: `Gate Completion Certificate — ${gateCode}`,
         headerSubtitle: `${projectName} · Verification ${cert.verificationId}`,
+        locale,
       })
       const dataUrl = pdf.output('datauristring')
       const res = await attachCertificatePdf({ certificateId: cert.id, projectId, dataUrl })

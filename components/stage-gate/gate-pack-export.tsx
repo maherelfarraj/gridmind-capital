@@ -4,6 +4,8 @@ import * as React from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useLocale } from 'next-intl'
+import { elementToPdf } from '@/lib/pdf/element-to-pdf'
 
 interface GatePackExportProps {
   /** The DOM element id containing the gate pack content to export */
@@ -17,81 +19,42 @@ interface GatePackExportProps {
 
 /**
  * Client-side Gate Pack PDF export.
- * Captures the element with the given `targetId` via html2canvas,
- * then writes it into a jsPDF document and triggers download.
+ *
+ * Delegates to the shared elementToPdf helper, which handles multi-page
+ * slicing and — when the active locale is 'ar' — applies direction:rtl plus
+ * the Noto Sans Arabic font (loaded via next/font) before html2canvas capture
+ * so Arabic text is correctly shaped in the exported PDF.
  */
 export function GatePackExportButton({ targetId, gateCode, projectName, className }: GatePackExportProps) {
   const [loading, setLoading] = React.useState(false)
+  const locale = useLocale()
 
   async function handleExport() {
     setLoading(true)
     try {
       const el = document.getElementById(targetId)
       if (!el) {
-        console.error('[v0] GatePackExport: element not found:', targetId)
         setLoading(false)
         return
       }
 
-      // Dynamic imports — only loaded when user clicks
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
+      const isRtl   = locale === 'ar'
+      const now     = new Date().toLocaleString(locale === 'ar' ? 'ar-u-nu-latn' : 'en-GB', {
+        dateStyle: 'long',
+        timeStyle: 'short',
       })
+      const title   = isRtl
+        ? `حزمة البوابة — ${gateCode}${projectName ? ` — ${projectName}` : ''}`
+        : `Gate Pack — ${gateCode}${projectName ? ` — ${projectName}` : ''}`
+      const subtitle = isRtl
+        ? `تاريخ التصدير: ${now}   |   منصة GridMind Capital EPC`
+        : `Exported: ${now}   |   GridMind Capital EPC Platform`
 
-      const imgData = canvas.toDataURL('image/png')
-      const pdf     = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-
-      const pageWidth  = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const imgRatio   = canvas.height / canvas.width
-      const imgWidth   = pageWidth - 20
-      const imgHeight  = imgWidth * imgRatio
-
-      // Header metadata
-      const now   = new Date().toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short' })
-      const title = `Gate Pack — ${gateCode}${projectName ? ` — ${projectName}` : ''}`
-      pdf.setFontSize(11)
-      pdf.setFont('helvetica', 'bold')
-      pdf.text(title, 10, 12)
-      pdf.setFontSize(8)
-      pdf.setFont('helvetica', 'normal')
-      pdf.setTextColor(120)
-      pdf.text(`Exported: ${now}   |   GridMind Capital EPC Platform`, 10, 18)
-      pdf.setTextColor(0)
-
-      // If content spans multiple pages
-      let yPos = 24
-      let remaining = imgHeight
-
-      while (remaining > 0) {
-        const sliceHeight = Math.min(remaining, pageHeight - yPos - 10)
-        const srcY        = (imgHeight - remaining) / imgHeight * canvas.height
-        const srcH        = sliceHeight / imgHeight * canvas.height
-
-        // Crop the slice from canvas
-        const sliceCanvas           = document.createElement('canvas')
-        sliceCanvas.width           = canvas.width
-        sliceCanvas.height          = srcH
-        const ctx                   = sliceCanvas.getContext('2d')!
-        ctx.drawImage(canvas, 0, -srcY)
-        const sliceData             = sliceCanvas.toDataURL('image/png')
-
-        pdf.addImage(sliceData, 'PNG', 10, yPos, imgWidth, sliceHeight)
-        remaining -= sliceHeight
-
-        if (remaining > 0) {
-          pdf.addPage()
-          yPos = 10
-        }
-      }
+      const pdf = await elementToPdf(el, {
+        headerTitle:    title,
+        headerSubtitle: subtitle,
+        locale,
+      })
 
       const filename = `gate-pack-${gateCode}-${Date.now()}.pdf`
       pdf.save(filename)
@@ -102,6 +65,9 @@ export function GatePackExportButton({ targetId, gateCode, projectName, classNam
     }
   }
 
+  const exportLabel = locale === 'ar' ? 'تصدير حزمة البوابة' : 'Export Gate Pack'
+  const loadingLabel = locale === 'ar' ? 'جارٍ التوليد…' : 'Generating PDF…'
+
   return (
     <Button
       variant="outline"
@@ -111,10 +77,10 @@ export function GatePackExportButton({ targetId, gateCode, projectName, classNam
       className={cn(className)}
     >
       {loading
-        ? <Loader2 size={14} className="mr-1.5 animate-spin" />
-        : <Download size={14} className="mr-1.5" />
+        ? <Loader2 size={14} className="me-1.5 animate-spin" aria-hidden />
+        : <Download size={14} className="me-1.5" aria-hidden />
       }
-      {loading ? 'Generating PDF…' : 'Export Gate Pack'}
+      {loading ? loadingLabel : exportLabel}
     </Button>
   )
 }
