@@ -315,19 +315,60 @@ export async function createTask(input: {
     ? input.priority
     : 'medium'
 
-  const { error } = await admin.from('tasks').insert({
-    tenant_id: actor.tenantId,
-    project_id: projectId,
-    title: title.trim(),
-    description: input.description?.trim() || null,
-    assignee_role_id: input.assigneeRoleId || null,
-    assignee_person_id: input.assigneePersonId || null,
-    deliverable_id: input.deliverableId || null,
-    priority,
-    status: 'todo',
-    created_by: actor.userId,
-  })
+  // RACI smart-default: if a deliverable is picked and no explicit assignee was
+  // supplied, derive the role from the deliverable's Responsible/Accountable
+  // (letter IN 'R','A/R') and the person from that role's project_team seat.
+  let roleId = input.assigneeRoleId || null
+  let personId = input.assigneePersonId || null
+  if (input.deliverableId && !roleId) {
+    const { data: raci } = await admin
+      .from('raci_assignments')
+      .select('role_id, letter')
+      .eq('deliverable_id', input.deliverableId)
+      .in('letter', ['R', 'A/R'])
+    // Prefer the Responsible; fall back to Accountable/Responsible.
+    const chosen = raci?.find((r) => r.letter === 'R') ?? raci?.[0]
+    if (chosen) {
+      roleId = chosen.role_id as string
+      if (!personId) {
+        const { data: seat } = await admin
+          .from('project_team')
+          .select('person_id')
+          .eq('project_id', projectId)
+          .eq('role_id', roleId)
+          .maybeSingle()
+        if (seat?.person_id) personId = seat.person_id as string
+      }
+    }
+  }
+
+  const { data: created, error } = await admin
+    .from('tasks')
+    .insert({
+      tenant_id: actor.tenantId,
+      project_id: projectId,
+      title: title.trim(),
+      description: input.description?.trim() || null,
+      assignee_role_id: roleId,
+      assignee_person_id: personId,
+      deliverable_id: input.deliverableId || null,
+      priority,
+      status: 'todo',
+      due_date: input.dueDate || null,
+      created_by: actor.userId,
+    })
+    .select('id')
+    .single()
   if (error) return { error: error.message }
+
+  await admin.from('audit_logs').insert({
+    tenant_id: actor.tenantId,
+    actor_id: actor.userId,
+    action: 'create',
+    entity_type: 'tasks',
+    entity_id: created.id,
+    new_data: { title: title.trim(), assignee_role_id: roleId, assignee_person_id: personId, deliverable_id: input.deliverableId || null },
+  })
 
   await logEvent(admin, {
     transition: 'TASK_CREATE',
@@ -351,6 +392,19 @@ export async function updateTaskStatus(input: {
   const actor = await getActor()
   const admin = createAdminClient()
 
+  // Moving to "blocked" requires an explanatory comment to already exist.
+  if (status === 'blocked') {
+    const { count } = await admin
+      .from('task_comments')
+      .select('id', { count: 'exact', head: true })
+      .eq('task_id', taskId)
+    if (!count) {
+      return { error: 'Add a comment explaining the blocker before marking this task blocked.' }
+    }
+  }
+
+  const { data: prior } = await admin.from('tasks').select('status').eq('id', taskId).maybeSingle()
+
   const patch: Record<string, unknown> = {
     status,
     updated_at: new Date().toISOString(),
@@ -358,6 +412,16 @@ export async function updateTaskStatus(input: {
   }
   const { error } = await admin.from('tasks').update(patch).eq('id', taskId)
   if (error) return { error: error.message }
+
+  await admin.from('audit_logs').insert({
+    tenant_id: actor.tenantId,
+    actor_id: actor.userId,
+    action: 'update',
+    entity_type: 'tasks',
+    entity_id: taskId,
+    old_data: prior ? { status: prior.status } : null,
+    new_data: { status },
+  })
 
   await logEvent(admin, {
     transition: 'TASK_STATUS',
@@ -368,6 +432,35 @@ export async function updateTaskStatus(input: {
 
   revalidatePath('/team/tasks')
   return {}
+}
+
+/** Live RACI smart-default preview for the Assign/new-task UI. */
+export async function resolveTaskSmartDefault(input: {
+  projectId: string
+  deliverableId: string
+}): Promise<{ roleId: string | null; roleCode: string | null; personId: string | null; personName: string | null }> {
+  const admin = createAdminClient()
+  const { data: raci } = await admin
+    .from('raci_assignments')
+    .select('role_id, letter, roles(code)')
+    .eq('deliverable_id', input.deliverableId)
+    .in('letter', ['R', 'A/R'])
+  const chosen = raci?.find((r) => r.letter === 'R') ?? raci?.[0]
+  if (!chosen) return { roleId: null, roleCode: null, personId: null, personName: null }
+  const roleId = chosen.role_id as string
+  const roleCode = (chosen.roles as unknown as { code: string } | null)?.code ?? null
+  const { data: seat } = await admin
+    .from('project_team')
+    .select('person_id, profiles(full_name)')
+    .eq('project_id', input.projectId)
+    .eq('role_id', roleId)
+    .maybeSingle()
+  return {
+    roleId,
+    roleCode,
+    personId: (seat?.person_id as string) ?? null,
+    personName: (seat?.profiles as unknown as { full_name: string } | null)?.full_name ?? null,
+  }
 }
 
 export async function listTaskComments(

@@ -60,3 +60,23 @@ export const ADMIN_PLATFORM_ROLES = ['system_admin', 'tenant_admin'] as const
 export function isPlatformAdmin(platformRole: string | null | undefined): boolean {
   return !!platformRole && (ADMIN_PLATFORM_ROLES as readonly string[]).includes(platformRole)
 }
+
+/**
+ * Roles allowed to perform team-management writes (staffing, assigning tasks,
+ * editing RACI). Accepts EITHER a delivery role code (PD/PM) OR a platform role
+ * (project_director/project_manager/*_admin). A null role is permissive to
+ * match the getActor dev-fallback convention used across the app.
+ */
+const TEAM_WRITE_ROLES = new Set<string>([
+  'PD',
+  'PM',
+  'project_director',
+  'project_manager',
+  'system_admin',
+  'tenant_admin',
+])
+
+export function canWriteTeam(role: string | null | undefined): boolean {
+  if (!role) return true
+  return TEAM_WRITE_ROLES.has(role)
+}

@@ -3,11 +3,13 @@ import {
   getPersonTaskLoad,
   getPersonWorkload,
   getProjectsLite,
+  getProjectStaffing,
 } from '@/lib/db/queries'
 import { WorkloadDashboard } from '@/components/team/workload-dashboard'
 import { ProjectPicker } from '@/components/team/project-picker'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Workload — GridMind Capital' }
 
 export default async function TeamWorkloadPage({
   searchParams,
@@ -18,13 +20,22 @@ export default async function TeamWorkloadPage({
   const projects = await getProjectsLite()
   const selectedId = project || projects[0]?.id
 
-  const [roleWorkload, taskLoad, personWorkload] = await Promise.all([
+  const [roleWorkload, taskLoad, personWorkload, staffing] = await Promise.all([
     getRoleWorkload(),
     getPersonTaskLoad(selectedId),
     getPersonWorkload(selectedId),
+    selectedId ? getProjectStaffing(selectedId) : Promise.resolve([]),
   ])
 
   const selected = projects.find((p) => p.id === selectedId) ?? projects[0]
+
+  // Staffed/unstaffed among the 18 staffing roles for the selected project.
+  const staffingRoles = roleWorkload.filter((r) => r.counts_toward_staffing)
+  const staffedRoleIds = new Set(
+    staffing.filter((s) => s.person_id).map((s) => s.role_id),
+  )
+  const staffedCount = staffingRoles.filter((r) => staffedRoleIds.has(r.role_id)).length
+  const unstaffedCount = staffingRoles.length - staffedCount
 
   return (
     <div className="flex flex-col gap-6">
@@ -45,6 +56,8 @@ export default async function TeamWorkloadPage({
         roleWorkload={roleWorkload}
         taskLoad={taskLoad}
         personWorkload={personWorkload}
+        staffedCount={staffedCount}
+        unstaffedCount={unstaffedCount}
       />
     </div>
   )

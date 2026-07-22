@@ -79,11 +79,25 @@ export async function getRoles(): Promise<(Role & { department_name: string; dep
   })
 }
 
-export async function getRoleWorkload(): Promise<VRoleWorkload[]> {
+export interface RoleWorkloadRow extends VRoleWorkload {
+  is_bess_critical: boolean
+  counts_toward_staffing: boolean
+}
+
+export async function getRoleWorkload(): Promise<RoleWorkloadRow[]> {
   const admin = createAdminClient()
-  const { data, error } = await admin.from('v_role_workload').select('*').order('a_count', { ascending: false })
+  const [{ data, error }, { data: roles, error: rErr }] = await Promise.all([
+    admin.from('v_role_workload').select('*').order('a_count', { ascending: false }),
+    admin.from('roles').select('id, is_bess_critical, counts_toward_staffing'),
+  ])
   if (error) throw error
-  return data ?? []
+  if (rErr) throw rErr
+  const flags = new Map((roles ?? []).map((r) => [r.id as string, r]))
+  return (data ?? []).map((r) => ({
+    ...r,
+    is_bess_critical: Boolean(flags.get(r.role_id)?.is_bess_critical),
+    counts_toward_staffing: Boolean(flags.get(r.role_id)?.counts_toward_staffing),
+  }))
 }
 
 export interface RoleWithCounts extends Role {
@@ -276,6 +290,19 @@ export async function getProjectStaffing(): Promise<VProjectStaffing[]> {
   const { data, error } = await admin.from('v_project_staffing').select('*').order('staffing_pct')
   if (error) throw error
   return data ?? []
+}
+
+/** Role ids that have a person seated on a given project (from project_team). */
+export async function getProjectStaffedRoleIds(projectId: string): Promise<string[]> {
+  if (!projectId) return []
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('project_team')
+    .select('role_id')
+    .eq('project_id', projectId)
+    .not('person_id', 'is', null)
+  if (error) throw error
+  return (data ?? []).map((r) => r.role_id as string)
 }
 
 export interface StaffingRadar {
@@ -495,7 +522,7 @@ export async function getTasksForProject(projectId: string): Promise<TaskRow[]> 
     .from('tasks')
     .select(
       'id, project_id, deliverable_id, title, description, assignee_role_id, assignee_person_id, status, priority, due_date, created_at, ' +
-        'raci_deliverables!tasks_deliverable_id_fkey(title), roles!tasks_assignee_role_id_fkey(code), profiles!tasks_assignee_person_id_fkey(full_name), task_comments(count)',
+        'raci_deliverables!tasks_deliverable_id_fkey(name), roles!tasks_assignee_role_id_fkey(code), profiles!tasks_assignee_person_id_fkey(full_name), task_comments(count)',
     )
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
@@ -505,7 +532,7 @@ export async function getTasksForProject(projectId: string): Promise<TaskRow[]> 
   // the rows as loosely-typed records and map into our explicit TaskRow shape.
   const rows = (data ?? []) as unknown as Record<string, unknown>[]
   return rows.map((r) => {
-    const deliverable = r.raci_deliverables as { title: string } | null
+    const deliverable = r.raci_deliverables as { name: string } | null
     const role = r.roles as { code: string } | null
     const person = r.profiles as { full_name: string } | null
     const commentAgg = r.task_comments as { count: number }[] | null
@@ -513,7 +540,7 @@ export async function getTasksForProject(projectId: string): Promise<TaskRow[]> 
       id: r.id as string,
       project_id: r.project_id as string,
       deliverable_id: (r.deliverable_id as string) ?? null,
-      deliverable_title: deliverable?.title ?? null,
+      deliverable_title: deliverable?.name ?? null,
       title: r.title as string,
       description: (r.description as string) ?? null,
       assignee_role_id: (r.assignee_role_id as string) ?? null,
@@ -525,6 +552,63 @@ export async function getTasksForProject(projectId: string): Promise<TaskRow[]> 
       due_date: (r.due_date as string) ?? null,
       comment_count: commentAgg?.[0]?.count ?? 0,
       created_at: r.created_at as string,
+    }
+  })
+}
+
+export interface MyTaskRow extends TaskRow {
+  project_code: string | null
+  project_name: string | null
+  deliverable_gate: number | null
+}
+
+/**
+ * The current actor's open (not done) tasks across all projects, enriched with
+ * project + deliverable-gate context for the MY TASKS grouped view.
+ */
+export async function getMyTasks(): Promise<MyTaskRow[]> {
+  const actor = await getActor()
+  if (!actor.userId) return []
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('tasks')
+    .select(
+      'id, project_id, deliverable_id, title, description, assignee_role_id, assignee_person_id, status, priority, due_date, created_at, ' +
+        'raci_deliverables!tasks_deliverable_id_fkey(name, gate_id, gates(sort_order)), ' +
+        'roles!tasks_assignee_role_id_fkey(code), profiles!tasks_assignee_person_id_fkey(full_name), ' +
+        'projects!tasks_project_id_fkey(code, name), task_comments(count)',
+    )
+    .eq('assignee_person_id', actor.userId)
+    .neq('status', 'done')
+    .order('due_date', { ascending: true, nullsFirst: false })
+  if (error) throw error
+
+  const rows = (data ?? []) as unknown as Record<string, unknown>[]
+  return rows.map((r) => {
+    const deliverable = r.raci_deliverables as { name: string; gates: { sort_order: number } | null } | null
+    const role = r.roles as { code: string } | null
+    const person = r.profiles as { full_name: string } | null
+    const project = r.projects as { code: string; name: string } | null
+    const commentAgg = r.task_comments as { count: number }[] | null
+    return {
+      id: r.id as string,
+      project_id: r.project_id as string,
+      deliverable_id: (r.deliverable_id as string) ?? null,
+      deliverable_title: deliverable?.name ?? null,
+      deliverable_gate: deliverable?.gates?.sort_order ?? null,
+      title: r.title as string,
+      description: (r.description as string) ?? null,
+      assignee_role_id: (r.assignee_role_id as string) ?? null,
+      assignee_role_code: role?.code ?? null,
+      assignee_person_id: (r.assignee_person_id as string) ?? null,
+      assignee_person_name: person?.full_name ?? null,
+      status: r.status as string,
+      priority: r.priority as string,
+      due_date: (r.due_date as string) ?? null,
+      comment_count: commentAgg?.[0]?.count ?? 0,
+      created_at: r.created_at as string,
+      project_code: project?.code ?? null,
+      project_name: project?.name ?? null,
     }
   })
 }
