@@ -16,7 +16,7 @@ import {
   getVariationOrders, createVariationOrder, seedVariationDemo,
   type VoOrigin,
 } from '@/app/actions/variation-orders'
-import { toggleVoClientVisible } from '@/app/actions/external-access'
+import { toggleVoClientVisible, toggleVoCostVisible } from '@/app/actions/external-access'
 import {
   ORIGIN_LABELS, STATUS_LABELS, STATUS_COLORS,
   formatUsd, formatUsdCompact, formatDate,
@@ -261,7 +261,7 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      {['VO #', 'Title', 'Origin', 'Cost Impact', 'Time', 'Status', 'Client', 'Decision Date'].map((h) => (
+                      {['VO #', 'Title', 'Origin', 'Cost Impact', 'Time', 'Status', 'Client', 'Cost $', 'Decision Date'].map((h) => (
                         <th key={h} className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -282,6 +282,7 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
                         <td className="py-2.5 px-3 text-foreground font-semibold font-mono whitespace-nowrap">{formatUsd(r.cost_impact)}</td>
                         <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">{r.time_impact_days == null ? '—' : `${r.time_impact_days}d`}</td>
                         <td className="py-2.5 px-3"><StatusBadge status={r.status} /></td>
+                        {/* Client visibility toggle */}
                         <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
@@ -301,6 +302,30 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
                               ? <Eye className="size-3.5" aria-hidden />
                               : <EyeOff className="size-3.5" aria-hidden />
                             }
+                          </button>
+                        </td>
+                        {/* Cost disclosure toggle — only active when client_visible */}
+                        <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            disabled={!r.client_visible}
+                            title={
+                              !r.client_visible
+                                ? 'Enable client visibility first'
+                                : (r.client_cost_visible ? 'Cost visible to client — click to hide' : 'Cost hidden from client — click to disclose')
+                            }
+                            aria-label={r.client_cost_visible ? 'Hide cost from client' : 'Disclose cost to client'}
+                            onClick={async () => {
+                              await toggleVoCostVisible(r.id, !r.client_cost_visible)
+                              mutate()
+                            }}
+                            className={`p-1 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                              r.client_cost_visible
+                                ? 'text-amber-400 hover:bg-amber-400/10'
+                                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
+                          >
+                            <DollarSign className="size-3.5" aria-hidden />
                           </button>
                         </td>
                         <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">{formatDate(r.decided_at)}</td>

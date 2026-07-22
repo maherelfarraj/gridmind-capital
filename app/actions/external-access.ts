@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -213,7 +214,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
 
 // ─────────────────────────────────────────────────────────────
 // Grant / Revoke
-// ───────────────────────────────────────────────────��─────────
+// ─────────────────────────────────���─────────────────��─────────
 
 export async function assignProjectAccess(args: {
   userId: string
@@ -342,4 +343,135 @@ export async function toggleMilestoneClientVisible(
     .eq('id', milestoneId)
   if (error) return { error: error.message }
   return {}
+}
+
+/** Toggle whether the cost impact is disclosed to the client on a specific VO.
+ *  Only meaningful when client_visible is already true. */
+export async function toggleVoCostVisible(
+  voId: string,
+  clientCostVisible: boolean,
+): Promise<{ error?: string }> {
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('variation_orders')
+    .update({ client_cost_visible: clientCostVisible })
+    .eq('id', voId)
+  if (error) return { error: error.message }
+  revalidatePath('/commercial/variations')
+  return {}
+}
+
+// ─── Seed client portal demo data ────────────────────────────────────────────
+// Internal managers only. Flags existing VOs, milestones, and documents as
+// client-visible, and inserts sample announcements so the client portal is
+// immediately demonstrable after inviting a client_viewer.
+
+export async function seedClientPortalDemo(projectId: string): Promise<{
+  error?: string
+  flagged?: { vos: number; milestones: number; documents: number }
+  announcements?: number
+}> {
+  // Resolve caller — must be internal manager.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('role, tenant_id, full_name')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const ALLOWED = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
+  if (!profile || !ALLOWED.includes(profile.role)) {
+    return { error: 'Only project managers and above can seed demo data' }
+  }
+
+  const tenantId = profile.tenant_id ?? DEMO_TENANT
+
+  // Flag up to 4 approved/submitted VOs as client-visible.
+  const { data: vos } = await admin
+    .from('variation_orders')
+    .select('id')
+    .eq('project_id', projectId)
+    .in('status', ['approved', 'submitted'])
+    .limit(4)
+
+  let voCount = 0
+  if (vos?.length) {
+    await admin
+      .from('variation_orders')
+      .update({ client_visible: true })
+      .in('id', vos.map((v) => v.id))
+    voCount = vos.length
+  }
+
+  // Flag up to 5 payment milestones as client-visible.
+  const { data: milestones } = await admin
+    .from('payment_milestones')
+    .select('id')
+    .eq('project_id', projectId)
+    .limit(5)
+
+  let msCount = 0
+  if (milestones?.length) {
+    await admin
+      .from('payment_milestones')
+      .update({ client_visible: true })
+      .in('id', milestones.map((m) => m.id))
+    msCount = milestones.length
+  }
+
+  // Flag up to 4 documents as visible to client.
+  const { data: docs } = await admin
+    .from('document_files')
+    .select('id')
+    .eq('project_id', projectId)
+    .limit(4)
+
+  let docCount = 0
+  if (docs?.length) {
+    await admin
+      .from('document_files')
+      .update({ visible_to_client: true })
+      .in('id', docs.map((d) => d.id))
+    docCount = docs.length
+  }
+
+  // Insert 2 sample announcements (skip if any already exist).
+  const { count: existingAnns } = await admin
+    .from('client_announcements')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+
+  let annCount = 0
+  if ((existingAnns ?? 0) === 0) {
+    const { data: inserted } = await admin.from('client_announcements').insert([
+      {
+        tenant_id: tenantId,
+        project_id: projectId,
+        author_id: user.id,
+        title: 'Procurement milestone achieved — all major equipment ordered',
+        body: 'All major equipment purchase orders have been placed and confirmed. Delivery is on schedule for the construction phase. No impact to the programme.',
+        published_at: new Date(Date.now() - 7 * 864e5).toISOString(),
+      },
+      {
+        tenant_id: tenantId,
+        project_id: projectId,
+        author_id: user.id,
+        title: 'Monthly report issued — see Reports tab',
+        body: 'The latest monthly client report has been issued and is available for download in the Reports section of this portal.',
+        published_at: new Date().toISOString(),
+      },
+    ]).select('id')
+    annCount = inserted?.length ?? 0
+  }
+
+  revalidatePath('/client')
+  revalidatePath(`/projects/${projectId}`)
+  return {
+    flagged: { vos: voCount, milestones: msCount, documents: docCount },
+    announcements: annCount,
+  }
 }

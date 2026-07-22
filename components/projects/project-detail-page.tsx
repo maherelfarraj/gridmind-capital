@@ -20,6 +20,7 @@ import {
   ClipboardCheck,
   Send,
   RefreshCw,
+  Megaphone,
 } from 'lucide-react'
 import { useRouter as useNextRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -418,6 +419,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           label: 'Client Report', icon: FileText, iconColor: '#7c3aed',
           bgColor: 'bg-violet-100 dark:bg-violet-900/30', count: 'Monthly PDF',
           ariaLabel: 'Open Client Report', href: `/projects/${projectId}/client-report`,
+        },
+        {
+          label: 'Announcements', icon: Megaphone, iconColor: '#0891b2',
+          bgColor: 'bg-cyan-100 dark:bg-cyan-900/30', count: 'Client-facing',
+          ariaLabel: 'Manage client announcements', href: `/projects/${projectId}/announcements`,
         },
       ]
     : QUICK_ACTIONS
