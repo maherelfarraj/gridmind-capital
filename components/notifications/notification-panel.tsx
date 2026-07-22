@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import {
   Sheet,
@@ -17,6 +18,13 @@ import {
   Zap, Building2, CheckSquare, DollarSign, Send,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  getNotificationsAction,
+  markNotificationReadAction,
+  markAllReadAction,
+  seedNotificationsAction,
+  type LiveNotification,
+} from '@/app/actions/notifications'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -93,7 +101,7 @@ const MOCK_MENTIONS: Mention[] = [
   { id: 'm3', from: 'Aisha Al-Rashidi',fromInitials: 'AA', fromColor: '#f59e0b', thread: 'IPA-03 Payment Application',        project: 'Lyra Grid',    excerpt: '@you The IPA has been submitted. Your approval is needed before end of week for payment to proceed.',        timestamp: '2d ago',  replied: false },
 ]
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────���─────────────────
 
 const TYPE_META: Record<NotifType, { icon: React.ElementType; color: string; border: string; bg: string }> = {
   urgent:   { icon: AlertCircle,  color: '#ef4444', border: 'border-l-red-500',   bg: 'bg-red-500/8'   },
@@ -504,29 +512,78 @@ export interface NotificationPanelProps {
   unreadCount: number
 }
 
+// ─── DB row → panel Notification mapper ──────────────────────────────────────
+
+function dbToNotif(n: LiveNotification): Notification {
+  const typeMap: Record<string, NotifType> = {
+    urgent: 'urgent', alert: 'urgent', approval: 'approval',
+    document: 'document', mention: 'mention', budget: 'budget', task: 'task',
+  }
+  const now = Date.now()
+  const created = new Date(n.created_at).getTime()
+  const diffH = (now - created) / 3_600_000
+  const date: Notification['date'] = diffH < 24 ? 'today' : diffH < 48 ? 'yesterday' : 'earlier'
+  const diffM = (now - created) / 60_000
+  const timestamp =
+    diffM < 1   ? 'just now'
+    : diffM < 60 ? `${Math.round(diffM)}m ago`
+    : diffH < 24 ? `${Math.round(diffH)}h ago`
+    : `${Math.round(diffH / 24)}d ago`
+  return {
+    id: n.id,
+    type: typeMap[n.type] ?? 'task',
+    status: n.is_read ? 'read' : 'unread',
+    title: n.title,
+    description: n.body ?? '',
+    project: 'GridMind Capital',
+    projectId: '',
+    timestamp,
+    date,
+    href: n.link ?? '/notifications',
+  }
+}
+
 export function NotificationPanel({ open, onClose, unreadCount }: NotificationPanelProps) {
   const router = useRouter()
-  const [notifications, setNotifications] = React.useState<Notification[]>(MOCK_NOTIFICATIONS)
-  const [showSettings, setShowSettings]   = React.useState(false)
+  const [showSettings, setShowSettings] = React.useState(false)
+  const [dismissed, setDismissed]       = React.useState<Set<string>>(new Set())
 
-  function handleDismiss(id: string) {
-    setNotifications((prev) => prev.filter((n) => n.id !== id))
+  // Live fetch — refresh every 30s while panel is open
+  const { data, mutate } = useSWR(
+    open ? 'notifications-live' : null,
+    () => getNotificationsAction(),
+    { refreshInterval: 30_000, revalidateOnFocus: true },
+  )
+
+  // Map live rows → panel type; merge with mock fallback when DB is empty
+  const liveItems: Notification[] = data?.items.length
+    ? data.items.map(dbToNotif)
+    : MOCK_NOTIFICATIONS
+
+  const notifications = liveItems.filter(n => !dismissed.has(n.id))
+
+  async function handleDismiss(id: string) {
+    setDismissed(prev => new Set([...prev, id]))
+    // optimistically mark read in DB
+    await markNotificationReadAction(id).catch(() => {})
+    mutate()
   }
 
-  function handleView(n: Notification) {
-    setNotifications((prev) =>
-      prev.map((item) => item.id === n.id ? { ...item, status: 'read' } : item)
-    )
+  async function handleView(n: Notification) {
+    setDismissed(prev => new Set([...prev, n.id]))
+    await markNotificationReadAction(n.id).catch(() => {})
+    mutate()
     router.push(n.href)
     onClose()
   }
 
-  function handleMarkAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, status: 'read' as NotifStatus })))
+  async function handleMarkAllRead() {
+    await markAllReadAction().catch(() => {})
+    mutate()
   }
 
-  const liveUnread = notifications.filter((n) => n.status === 'unread').length
-  const mentionUnread = MOCK_MENTIONS.filter((m) => !m.replied).length
+  const liveUnread = notifications.filter(n => n.status === 'unread').length
+  const mentionUnread = MOCK_MENTIONS.filter(m => !m.replied).length
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>

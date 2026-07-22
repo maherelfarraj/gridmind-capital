@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { SessionProvider } from '@/lib/session-context'
 import { createClient } from '@/lib/supabase/server'
+import { getUnreadCountAction } from '@/app/actions/notifications'
 import {
   type AppSession,
   type AppRole,
@@ -102,9 +103,12 @@ export default async function DashboardLayout({
     .eq('tenant_id', session.tenantId)
     .eq('status', 'pending')
 
+  // Live unread notification count for the bell badge
+  const notificationCount = await getUnreadCountAction()
+
   return (
     <SessionProvider session={session}>
-      <AppShell approvalCount={approvalCount ?? 0}>
+      <AppShell approvalCount={approvalCount ?? 0} notificationCount={notificationCount}>
         {children}
       </AppShell>
     </SessionProvider>
