@@ -75,7 +75,7 @@ export default function G5MechanicalCompletionPage() {
         </nav>
 
         {/* Phase gate stepper */}
-        <PhaseGateStepper currentGate="G5" completedGates={['G0', 'G1', 'G2', 'G3', 'G4']} />
+        <PhaseGateStepper currentGate="G5" completedGates={['G0', 'G1', 'G2', 'G3', 'G4']} projectId={projectId} />
 
         {/* Page header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -86,6 +86,10 @@ export default function G5MechanicalCompletionPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link href={`/stage-gates/${projectId}/gate/5`}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+              <ClipboardList className="size-4" /> Gate Submission Form
+            </Link>
             <button type="button"
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <FileText className="size-4" /> ITP Register

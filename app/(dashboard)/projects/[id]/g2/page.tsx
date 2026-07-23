@@ -1095,7 +1095,7 @@ export default function G2EngineeringPage() {
       </nav>
 
       {/* Title + badges */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-foreground">G2: Engineering IFC Release</h1>
@@ -1104,10 +1104,14 @@ export default function G2EngineeringPage() {
           </div>
           <p className="text-sm text-muted-foreground mt-1">Issued For Construction drawings and specifications</p>
         </div>
+        <Link href={`/stage-gates/${projectId}/gate/2`}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+          <FileText className="size-4" /> Gate Submission Form
+        </Link>
       </div>
 
       {/* Phase Gate Stepper */}
-      <PhaseGateStepper currentGate="G2" completedGates={['G0', 'G1']} />
+      <PhaseGateStepper currentGate="G2" completedGates={['G0', 'G1']} projectId={projectId} />
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

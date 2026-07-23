@@ -279,3 +279,20 @@ export async function submitG6FormAction(formData: G6FormData, projectId: string
 export async function submitG7FormAction(formData: G7FormData, projectId: string, projectName: string) {
   return submitGateForm(7, formData, projectId, projectName)
 }
+
+// ─── Reads ────────────────────────────────────────────────────
+
+/**
+ * Returns the gate numbers that already have a saved submission for a project.
+ * Used to label entry points as "Edit submission" vs "Start submission".
+ */
+export async function getSubmittedGateNumbers(projectId: string): Promise<number[]> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('gate_submissions')
+    .select('gate_number')
+    .eq('project_id', projectId)
+
+  if (error || !data) return []
+  return data.map((r) => r.gate_number as number)
+}

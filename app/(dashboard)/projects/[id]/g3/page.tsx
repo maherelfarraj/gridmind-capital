@@ -1373,13 +1373,16 @@ export default function G3ProcurementPage() {
           <p className="text-sm text-muted-foreground ml-16">RFQ management · Vendor scorecards · Bid evaluation · PO lifecycle · Contracts</p>
         </div>
         <div className="flex gap-2">
+          <Link href={`/stage-gates/${id}/gate/3`}>
+            <Button variant="outline" size="sm"><FileText className="size-3.5" /> Gate Submission Form</Button>
+          </Link>
           <Button variant="outline" size="sm"><Download className="size-3.5" /> Export</Button>
           <Button size="sm"><Plus className="size-4" /> Issue RFQ</Button>
         </div>
       </div>
 
       {/* Phase gate stepper */}
-      <PhaseGateStepper currentGate="G3" completedGates={['G0', 'G1', 'G2']} />
+      <PhaseGateStepper currentGate="G3" completedGates={['G0', 'G1', 'G2']} projectId={id} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

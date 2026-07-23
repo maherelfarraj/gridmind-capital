@@ -2,7 +2,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ChevronRight, Plus, TrendingUp, Zap, AlertTriangle, FlaskConical, CheckCircle } from 'lucide-react'
+import { ChevronRight, Plus, TrendingUp, Zap, AlertTriangle, FlaskConical, CheckCircle, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
 import type { GateDef, GateState } from '@/components/project/phase-gate-stepper'
@@ -89,6 +89,10 @@ export default function G6Page() {
               <p className="text-sm text-slate-500 mt-1">Commissioning test packages, performance testing, and system energization</p>
             </div>
             <div className="flex gap-2 flex-wrap justify-end">
+              <Link href={`/stage-gates/${id}/gate/6`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-medium transition-colors">
+                <FileText size={14} /> Gate Submission Form
+              </Link>
               <button type="button" className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500 hover:bg-teal-600 text-white text-xs font-semibold transition-colors shadow-sm">
                 <Plus size={14} /> New Test Package
               </button>

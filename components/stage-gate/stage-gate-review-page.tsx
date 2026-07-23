@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   GitMerge,
   CheckCircle2,
@@ -23,6 +24,8 @@ import {
   HardHat,
   Settings,
   Leaf,
+  Pencil,
+  FilePlus2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -31,6 +34,7 @@ import { useToast } from '@/components/ui/toast'
 import { GatePackExportButton } from '@/components/stage-gate/gate-pack-export'
 import { GatePackSignoffBlock } from '@/components/signatures/signoff-block'
 import { getProjects } from '@/app/actions/projects'
+import { getSubmittedGateNumbers } from '@/app/actions/gate-submissions'
 import useSWR from 'swr'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -179,54 +183,80 @@ function DeliverableIcon({ status }: { status: GateDeliverable['status'] }) {
 
 // ─── Gate card ────────────────────────────────────────────────
 
-function GateCard({ gate, isSelected, onSelect }: {
+function GateCard({ gate, isSelected, onSelect, projectId, hasSubmission }: {
   gate: GateMeta; isSelected: boolean; onSelect: () => void
+  projectId?: string | null; hasSubmission?: boolean
 }) {
   const Icon = gate.icon
   const completed = gate.deliverables.filter((d) => d.status === 'complete' || d.status === 'waived').length
   const total = gate.deliverables.length
 
   return (
-    <button
-      onClick={onSelect}
-      aria-pressed={isSelected}
-      className={cn(
-        'relative flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all duration-150 w-full',
-        isSelected
-          ? 'bg-card border-[#64ffda]/60 shadow-lg'
-          : 'bg-card/60 border-border hover:border-border/80 hover:bg-card',
-        gate.status === 'locked' && 'opacity-50',
-      )}
-    >
-      {/* Status indicator */}
-      <div
-        className="size-9 rounded-full flex items-center justify-center shrink-0"
-        style={{ backgroundColor: `${gate.color}20` }}
+    <div className="flex flex-col gap-1.5">
+      <button
+        onClick={onSelect}
+        aria-pressed={isSelected}
+        className={cn(
+          'relative flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all duration-150 w-full',
+          isSelected
+            ? 'bg-card border-[#64ffda]/60 shadow-lg'
+            : 'bg-card/60 border-border hover:border-border/80 hover:bg-card',
+          gate.status === 'locked' && 'opacity-50',
+        )}
       >
-        {gate.status === 'passed' ? (
-          <CheckCircle2 className="size-5 text-[#22c55e]" aria-hidden />
-        ) : gate.status === 'active' ? (
-          <Icon className="size-5" style={{ color: gate.color }} aria-hidden />
-        ) : (
-          <Lock className="size-4 text-muted-foreground/50" aria-hidden />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="font-mono text-xs font-bold" style={{ color: gate.color }}>{gate.shortName}</span>
-          <span className="text-xs text-foreground font-medium truncate">{gate.phase}</span>
+        {/* Status indicator */}
+        <div
+          className="size-9 rounded-full flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${gate.color}20` }}
+        >
+          {gate.status === 'passed' ? (
+            <CheckCircle2 className="size-5 text-[#22c55e]" aria-hidden />
+          ) : gate.status === 'active' ? (
+            <Icon className="size-5" style={{ color: gate.color }} aria-hidden />
+          ) : (
+            <Lock className="size-4 text-muted-foreground/50" aria-hidden />
+          )}
         </div>
-        {gate.status !== 'locked' && (
-          <div className="mt-1 h-1 bg-muted rounded-full w-full">
-            <div
-              className="h-1 rounded-full transition-all"
-              style={{ width: `${total > 0 ? Math.round((completed / total) * 100) : 0}%`, backgroundColor: gate.color }}
-            />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-xs font-bold" style={{ color: gate.color }}>{gate.shortName}</span>
+            <span className="text-xs text-foreground font-medium truncate">{gate.phase}</span>
           </div>
-        )}
-      </div>
-      {isSelected && <ChevronRight className="size-4 text-[#64ffda] shrink-0" aria-hidden />}
-    </button>
+          {gate.status !== 'locked' && (
+            <div className="mt-1 h-1 bg-muted rounded-full w-full">
+              <div
+                className="h-1 rounded-full transition-all"
+                style={{ width: `${total > 0 ? Math.round((completed / total) * 100) : 0}%`, backgroundColor: gate.color }}
+              />
+            </div>
+          )}
+        </div>
+        {isSelected && <ChevronRight className="size-4 text-[#64ffda] shrink-0" aria-hidden />}
+      </button>
+
+      {/* Open gate form action — links to the gate submission form */}
+      {projectId && (
+        <Link
+          href={`/stage-gates/${projectId}/gate/${gate.gate}`}
+          className={cn(
+            'flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+            hasSubmission
+              ? 'border-[#64ffda]/40 text-[#64ffda] hover:bg-[#64ffda]/10'
+              : 'border-border text-muted-foreground hover:text-foreground hover:bg-muted/40',
+          )}
+        >
+          {hasSubmission ? (
+            <>
+              <Pencil className="size-3" aria-hidden /> Edit submission
+            </>
+          ) : (
+            <>
+              <FilePlus2 className="size-3" aria-hidden /> Start submission
+            </>
+          )}
+        </Link>
+      )}
+    </div>
   )
 }
 
@@ -430,6 +460,13 @@ export function StageGateReviewPage() {
   const linkedProject =
     projects?.find((p) => p.code === 'SRS-400') ?? projects?.[0] ?? null
 
+  // Which gates already have a saved submission (drives Edit/Start labels).
+  const { data: submittedGates } = useSWR(
+    linkedProject ? `submitted-gates-${linkedProject.id}` : null,
+    () => getSubmittedGateNumbers(linkedProject!.id),
+  )
+  const submittedSet = React.useMemo(() => new Set(submittedGates ?? []), [submittedGates])
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -469,6 +506,8 @@ export function StageGateReviewPage() {
                 gate={g}
                 isSelected={selectedGate === g.gate}
                 onSelect={() => setSelectedGate(g.gate)}
+                projectId={linkedProject?.id ?? null}
+                hasSubmission={submittedSet.has(g.gate)}
               />
             </div>
           ))}

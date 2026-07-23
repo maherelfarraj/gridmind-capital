@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   Check,
   Lock,
@@ -15,6 +16,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Pencil,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslations, useLocale } from 'next-intl'
@@ -176,6 +178,12 @@ export interface PhaseGateStepperProps {
   completedGates?: string[]
   className?: string
   onGateClick?: (gate: GateDef, state: GateState) => void
+  /**
+   * When provided, each gate node becomes a link to
+   * `/stage-gates/{projectId}/gate/{gateNumber}` (the gate submission form)
+   * instead of opening the in-place detail drawer.
+   */
+  projectId?: string
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -209,6 +217,8 @@ interface GateNodeProps {
   onMouseEnter: () => void
   onMouseLeave: () => void
   isActive: boolean
+  /** When set, the node renders as a link to the gate submission form. */
+  href?: string | null
 }
 
 function GateNode({
@@ -220,9 +230,69 @@ function GateNode({
   onMouseEnter,
   onMouseLeave,
   isActive,
+  href,
 }: GateNodeProps) {
+  // Shared classes so the <button> and the <Link> variant look identical.
+  const nodeClasses = cn(
+    'relative flex items-center justify-center rounded-full',
+    'size-10 shrink-0 overflow-visible',
+    'border-2 transition-all duration-200',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+    // State styles
+    state === 'completed' && [
+      'bg-[#22c55e] border-[#22c55e]',
+      'hover:scale-110 cursor-pointer shadow-[0_0_0_3px_rgba(34,197,94,0.15)]',
+    ],
+    state === 'current' && [
+      'bg-[#0a192f] border-[#64ffda]',
+      'cursor-pointer scale-110',
+      'shadow-[0_0_0_4px_rgba(100,255,218,0.15),0_0_16px_rgba(100,255,218,0.1)]',
+      'dark:bg-[#112240] dark:border-[#64ffda]',
+    ],
+    state === 'locked' && [
+      'bg-muted border-border',
+      'cursor-pointer hover:border-muted-foreground/50',
+    ],
+    state === 'future' && [
+      'bg-background border-border',
+      'cursor-pointer hover:border-muted-foreground hover:bg-muted/30',
+    ],
+    isActive && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
+  )
+
+  // Inner content of the node — identical for both link and button variants.
+  const nodeInner = (
+    <>
+      {/* Pulse ring for current — rendered outside button clip via overflow-visible */}
+      {state === 'current' && (
+        <span
+          className="absolute -inset-1.5 rounded-full animate-ping bg-[#64ffda]/25 pointer-events-none"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Icon / number */}
+      {state === 'completed' && (
+        <Check className="size-4 text-white" strokeWidth={3} aria-hidden="true" />
+      )}
+      {state === 'current' && (
+        <span className="relative z-10 text-[#64ffda] font-mono font-bold text-xs leading-none tracking-tight">
+          {gate.code}
+        </span>
+      )}
+      {state === 'locked' && (
+        <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
+      )}
+      {state === 'future' && (
+        <span className="text-muted-foreground font-mono font-semibold text-sm leading-none">
+          {gate.id}
+        </span>
+      )}
+    </>
+  )
+
   return (
-    <div className="flex flex-col items-center relative">
+    <div className="group flex flex-col items-center relative">
       {/* Node + connector row */}
       <div className="flex items-center">
         {/* Connector line (before node, except first) */}
@@ -239,69 +309,51 @@ function GateNode({
 
         {/* Clickable node */}
         <div className="relative flex flex-col items-center" style={{ position: 'relative' }}>
-          <button
-            type="button"
-            onClick={onClick}
-            onMouseEnter={onMouseEnter}
-            onMouseLeave={onMouseLeave}
-            onFocus={onMouseEnter}
-            onBlur={onMouseLeave}
-            aria-label={`${gate.fullName} — ${state}`}
-            aria-pressed={isActive}
-            aria-current={state === 'current' ? 'step' : undefined}
-            className={cn(
-              'relative flex items-center justify-center rounded-full',
-              'size-10 shrink-0 overflow-visible',
-              'border-2 transition-all duration-200',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              // State styles
-              state === 'completed' && [
-                'bg-[#22c55e] border-[#22c55e]',
-                'hover:scale-110 cursor-pointer shadow-[0_0_0_3px_rgba(34,197,94,0.15)]',
-              ],
-              state === 'current' && [
-                'bg-[#0a192f] border-[#64ffda]',
-                'cursor-pointer scale-110',
-                'shadow-[0_0_0_4px_rgba(100,255,218,0.15),0_0_16px_rgba(100,255,218,0.1)]',
-                'dark:bg-[#112240] dark:border-[#64ffda]',
-              ],
-              state === 'locked' && [
-                'bg-muted border-border',
-                'cursor-pointer hover:border-muted-foreground/50',
-              ],
-              state === 'future' && [
-                'bg-background border-border',
-                'cursor-pointer hover:border-muted-foreground hover:bg-muted/30',
-              ],
-              isActive && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
-            )}
-          >
-            {/* Pulse ring for current — rendered outside button clip via overflow-visible */}
-            {state === 'current' && (
-              <span
-                className="absolute -inset-1.5 rounded-full animate-ping bg-[#64ffda]/25 pointer-events-none"
-                aria-hidden="true"
-              />
-            )}
+          {href ? (
+            <Link
+              href={href}
+              onMouseEnter={onMouseEnter}
+              onMouseLeave={onMouseLeave}
+              onFocus={onMouseEnter}
+              onBlur={onMouseLeave}
+              aria-label={`Open ${gate.fullName} submission form`}
+              aria-current={state === 'current' ? 'step' : undefined}
+              className={nodeClasses}
+            >
+              {nodeInner}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={onClick}
+              onMouseEnter={onMouseEnter}
+              onMouseLeave={onMouseLeave}
+              onFocus={onMouseEnter}
+              onBlur={onMouseLeave}
+              aria-label={`${gate.fullName} — ${state}`}
+              aria-pressed={isActive}
+              aria-current={state === 'current' ? 'step' : undefined}
+              className={nodeClasses}
+            >
+              {nodeInner}
+            </button>
+          )}
 
-            {/* Icon / number */}
-            {state === 'completed' && (
-              <Check className="size-4 text-white" strokeWidth={3} aria-hidden="true" />
-            )}
-            {state === 'current' && (
-              <span className="relative z-10 text-[#64ffda] font-mono font-bold text-xs leading-none tracking-tight">
-                {gate.code}
-              </span>
-            )}
-            {state === 'locked' && (
-              <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
-            )}
-            {state === 'future' && (
-              <span className="text-muted-foreground font-mono font-semibold text-sm leading-none">
-                {gate.id}
-              </span>
-            )}
-          </button>
+          {/* "Open form" affordance for the active gate when it links to the form */}
+          {href && state === 'current' && (
+            <span
+              className={cn(
+                'absolute -top-1.5 -right-1.5 z-20 flex size-4 items-center justify-center rounded-full',
+                'bg-[#64ffda] text-[#0a192f] shadow',
+                'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity',
+                'pointer-events-none',
+              )}
+              aria-hidden="true"
+              title="Open form"
+            >
+              <Pencil className="size-2.5" strokeWidth={2.5} />
+            </span>
+          )}
 
           {/* Tooltip */}
           {tooltipVisible && (
@@ -380,6 +432,7 @@ function GateNode({
             state === 'completed' && 'text-foreground/70',
             state === 'current' && 'text-foreground font-medium',
             (state === 'locked' || state === 'future') && 'text-muted-foreground/60',
+            href && 'group-hover:underline group-focus-within:underline underline-offset-2 decoration-[#64ffda]',
           )}
           style={{ maxWidth: '56px' }}
         >
@@ -683,6 +736,7 @@ export function PhaseGateStepper({
   completedGates = [],
   className,
   onGateClick,
+  projectId,
 }: PhaseGateStepperProps) {
   const [activeTooltip, setActiveTooltip] = React.useState<number | null>(null)
   const [activePanel, setActivePanel] = React.useState<{ gate: GateDef; state: GateState } | null>(null)
@@ -796,6 +850,7 @@ export function PhaseGateStepper({
                     onMouseEnter={() => setActiveTooltip(gate.id)}
                     onMouseLeave={() => setActiveTooltip(null)}
                     isActive={activePanel?.gate.code === gate.code}
+                    href={projectId ? `/stage-gates/${projectId}/gate/${gate.id}` : null}
                   />
                 </div>
               )

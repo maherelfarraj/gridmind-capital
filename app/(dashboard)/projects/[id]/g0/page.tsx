@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, FileText, Users, AlertTriangle, CheckSquare, BarChart2, ClipboardList, Send, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -60,6 +61,10 @@ export default function G0Page() {
             <p className="text-sm text-muted-foreground mt-0.5">{charter.technology} · {charter.capacity_mw} MWp · {charter.location}</p>
           </div>
           <div className="flex gap-2">
+            <Link href={`/stage-gates/${id}/gate/0`}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+              <ClipboardList className="size-4" /> Gate Submission Form
+            </Link>
             <button type="button" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <Download className="size-4" /> Export PDF
             </button>
