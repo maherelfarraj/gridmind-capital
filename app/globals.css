@@ -348,3 +348,77 @@
     right: auto;
   }
 }
+
+/* ─── Lender report: print-to-PDF via the browser print dialog ───────────────── */
+@media print {
+  /* A4 with comfortable margins; the fixed header/footer live in the margin box. */
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm 16mm;
+  }
+
+  /* Hide the entire app (sidebar, header, tab bar, controls) then reveal only the
+     printable report subtree — robust regardless of the app-shell structure. */
+  body.printing-lender-report * {
+    visibility: hidden;
+  }
+  body.printing-lender-report #lender-report-printable,
+  body.printing-lender-report #lender-report-printable * {
+    visibility: visible;
+  }
+  body.printing-lender-report #lender-report-printable {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+  }
+
+  /* Anything explicitly marked screen-only is removed from the print flow. */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Page-break helpers. */
+  .print-break-after { break-after: page; page-break-after: always; }
+  .print-break-before { break-before: page; page-break-before: always; }
+  .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Keep table rows and headers together; repeat headers across page breaks. */
+  #lender-report-printable table { break-inside: auto; }
+  #lender-report-printable thead { display: table-header-group; }
+  #lender-report-printable tr, #lender-report-printable img, #lender-report-printable .recharts-wrapper {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Fixed running header/footer printed in every page margin. */
+  .print-running-header,
+  .print-running-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    display: block !important;
+    visibility: visible !important;
+    font-size: 9px;
+    color: #555;
+    letter-spacing: 0.02em;
+  }
+  .print-running-header { top: 0; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .print-running-footer { bottom: 0; border-top: 1px solid #ddd; padding-top: 4px; }
+
+  /* Force accurate colors for KPI chips / status pills in the printed doc. */
+  #lender-report-printable * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Running header/footer are print-only. */
+.print-running-header,
+.print-running-footer {
+  display: none;
+}

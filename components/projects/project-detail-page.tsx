@@ -15,6 +15,7 @@ import {
   ArrowRight,
   GitBranch,
   Receipt,
+  Landmark,
   Info,
   Activity,
   Zap,
@@ -434,6 +435,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           label: 'Client Report', icon: FileText, iconColor: '#7c3aed',
           bgColor: 'bg-violet-100 dark:bg-violet-900/30', count: 'Monthly PDF',
           ariaLabel: 'Open Client Report', href: `/projects/${projectId}/client-report`,
+        },
+        {
+          label: 'Lender Report', icon: Landmark, iconColor: '#0f766e',
+          bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'Print PDF',
+          ariaLabel: 'Open Lender Progress Report', href: `/projects/${projectId}/lender-report`,
         },
       ]
     : QUICK_ACTIONS
