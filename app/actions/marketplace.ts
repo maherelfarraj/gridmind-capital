@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { MarketplaceProvider } from '@/lib/types/action-types'
 export type { MarketplaceProvider }

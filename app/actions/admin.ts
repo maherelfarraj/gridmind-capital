@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireAdmin } from '@/lib/auth/guard'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
@@ -49,6 +50,9 @@ export async function getTenant(): Promise<TenantData | null> {
 }
 
 export async function updateTenant(payload: Partial<Pick<TenantData, 'name' | 'settings'>>): Promise<{ error?: string }> {
+  const gate = await requireAdmin()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const { error } = await supabase
@@ -88,6 +92,9 @@ export async function getUsers(): Promise<UserProfile[]> {
 }
 
 export async function updateUserRole(userId: string, role: string): Promise<{ error?: string }> {
+  const gate = await requireAdmin()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const { error } = await supabase
@@ -101,6 +108,9 @@ export async function updateUserRole(userId: string, role: string): Promise<{ er
 }
 
 export async function deactivateUser(userId: string): Promise<{ error?: string }> {
+  const gate = await requireAdmin()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Soft-delete: set role to 'viewer' and clear department

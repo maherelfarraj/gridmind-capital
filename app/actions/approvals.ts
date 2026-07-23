@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter, requireApprover } from '@/lib/auth/guard'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 
@@ -89,6 +90,9 @@ export async function createApproval(opts: {
   projectName?: string
   amount?: number
 }): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -148,6 +152,9 @@ export async function decideApproval(opts: {
   /** Id of the electronic signature captured for this decision (gate approvals). */
   signatureId?: string
 }): Promise<{ error: string | null }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const statusMap = {
@@ -200,6 +207,9 @@ export async function delegateApproval(opts: {
   delegateId: string
   reason: string
 }): Promise<{ error: string | null }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('approvals')
@@ -293,6 +303,9 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
 }
 
 export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('approvals').select('id').limit(1)
   if ((ex?.length ?? 0) > 0) return {}
@@ -340,6 +353,9 @@ export async function syncQueuedApproval(opts: {
   decision: 'approved' | 'rejected'
   comment: string
 }): Promise<{ error: string | null }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const { data: approval } = await supabase
@@ -378,6 +394,9 @@ export async function syncQueuedApproval(opts: {
 }
 
 export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Fetch the approval first so we can include context in the email

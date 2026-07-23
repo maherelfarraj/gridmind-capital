@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { FinanceRecord, CashFlowRecord, FinanceEvmDashboard } from '@/lib/types/action-types'
 
@@ -59,6 +60,9 @@ export async function loadFinanceEvmDashboard(): Promise<FinanceEvmDashboard> {
 }
 
 export async function seedFinanceEvmDemoAction() {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const sb = createAdminClient()
   const { data: existing } = await sb.from('finance_records').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
   if (existing && existing.length > 0) return { seeded: false }

@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import type { Opportunity, OpportunitiesDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -86,6 +87,9 @@ export async function createOpportunity(data: {
   budget_usd: number
   description: string
 }): Promise<{ id?: string; error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // 1. Insert project at G0/draft
@@ -127,6 +131,9 @@ export async function createOpportunity(data: {
 }
 
 export async function submitOpportunityForReview(projectId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('projects')
@@ -137,6 +144,9 @@ export async function submitOpportunityForReview(projectId: string): Promise<{ e
 }
 
 export async function seedOpportunitiesDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Idempotent: check if demo opportunities already exist

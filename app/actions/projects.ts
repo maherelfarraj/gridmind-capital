@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { sendProjectCreatedEmail } from '@/lib/email/send'
 import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
@@ -167,6 +168,9 @@ export async function createProject(payload: {
   target_completion: string
   description?: string
 }): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Guard: Postgres DATE columns reject empty strings — convert to null
@@ -251,6 +255,9 @@ export interface CreateProjectFullInput {
 export async function createProjectFull(
   input: CreateProjectFullInput,
 ): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const { getActor } = await import('@/lib/db/queries')
   const actor = await getActor()
   const admin = createAdminClient()
@@ -372,6 +379,9 @@ export async function createProjectFull(
 }
 
 export async function archiveProject(id: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('projects')
@@ -382,6 +392,9 @@ export async function archiveProject(id: string): Promise<{ error?: string }> {
 }
 
 export async function duplicateProject(id: string): Promise<{ id?: string; error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: src, error: fetchErr } = await supabase
     .from('projects')
@@ -458,6 +471,9 @@ export async function createCommercialRecord(data: {
   project_id: string; type: 'budget' | 'contract' | 'cashflow'
   category: string; description: string; amount: number; status?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('finance_records').insert({
     tenant_id: DEMO_TENANT,
@@ -473,6 +489,9 @@ export async function createCommercialRecord(data: {
 }
 
 export async function seedCommercialDemoData(projectId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('finance_records').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
@@ -557,6 +576,9 @@ export async function createMilestone(data: {
   project_id: string; name: string; planned_start: string; planned_end: string
   is_critical?: boolean; gate?: number; owner?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('schedule_milestones').insert({
     tenant_id:     DEMO_TENANT,
@@ -574,6 +596,9 @@ export async function createMilestone(data: {
 }
 
 export async function updateMilestoneProgress(id: string, progress_pct: number, status: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('schedule_milestones')
@@ -584,6 +609,9 @@ export async function updateMilestoneProgress(id: string, progress_pct: number, 
 }
 
 export async function seedScheduleDemoData(projectId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('schedule_milestones').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
@@ -706,6 +734,9 @@ export async function createStakeholder(data: {
   project_id: string; name: string; organisation: string; role: string
   influence: number; interest: number; engagement: string; notes?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('project_members').insert({
     tenant_id:    DEMO_TENANT,
@@ -722,6 +753,9 @@ export async function createStakeholder(data: {
 }
 
 export async function seedStakeholdersDemoData(projectId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('project_members').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}

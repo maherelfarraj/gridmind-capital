@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { sendApprovalRequestEmail } from '@/lib/email/send'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -102,6 +103,9 @@ export async function submitG0FormAction(
   formData: G0FormData,
   projectId: string,
 ): Promise<{ error: string | null }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('gate_submissions').upsert(
     {
@@ -135,6 +139,9 @@ export async function submitG1FormAction(
   formData: G1FormData,
   projectId: string,
 ): Promise<{ error: string | null }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('gate_submissions').upsert(
     {
