@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { getInitials } from '@/lib/session'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -233,10 +234,6 @@ function formatRelativeDate(record: ApprovalRecord): { label: string; urgency: '
   if (hLeft < 48)  return { label: 'Due tomorrow',                        urgency: 'urgent' }
   const dLeft = Math.floor(hLeft / 24)
   return { label: `Due in ${dLeft} days`, urgency: 'normal' }
-}
-
-function getInitials(name: string): string {
-  return name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -663,6 +660,10 @@ export const ApprovalInbox = React.memo(function ApprovalInbox({
 
       {/* ── List ──────────────────────────────── */}
       <div className="px-4 py-3">
+        {/* Announce result count changes to screen readers */}
+        <div aria-live="polite" className="sr-only">
+          {`${visible.length} ${visible.length === 1 ? 'approval' : 'approvals'} found`}
+        </div>
         {visible.length === 0 ? (
           <EmptyState />
         ) : (
