@@ -276,6 +276,52 @@ export async function expireSweep(
 }
 
 // ─────────────────────────────────────────────────────────────
+// 1b. Status-change timeline (from the workflow_events audit spine)
+// ─────────────────────────────────────────────────────────────
+
+export interface PermitTimelineEntry {
+  id: string
+  from: string | null
+  to: string
+  transition: string
+  comment: string | null
+  actorId: string | null
+  actorName: string | null
+  at: string
+}
+
+/** Ordered history of status changes for a permit, newest first. */
+export async function getPermitTimeline(permitId: string): Promise<PermitTimelineEntry[]> {
+  await getActor() // reads allowed for viewers
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('workflow_events')
+    .select('id, from_state, to_state, transition_code, comment, actor_id, created_at, metadata')
+    .eq('metadata->>module', 'work_permit')
+    .eq('metadata->>permit_id', permitId)
+    .order('created_at', { ascending: false })
+
+  const rows = data ?? []
+  const actorIds = [...new Set(rows.map((r) => r.actor_id).filter(Boolean) as string[])]
+  const names: Record<string, string> = {}
+  if (actorIds.length > 0) {
+    const { data: profiles } = await admin.from('profiles').select('id, full_name').in('id', actorIds)
+    for (const p of profiles ?? []) names[p.id as string] = (p.full_name as string) ?? ''
+  }
+
+  return rows.map((r) => ({
+    id: r.id as string,
+    from: (r.from_state as string) ?? null,
+    to: (r.to_state as string) ?? '',
+    transition: (r.transition_code as string) ?? '',
+    comment: (r.comment as string) ?? null,
+    actorId: (r.actor_id as string) ?? null,
+    actorName: r.actor_id ? names[r.actor_id as string] ?? null : null,
+    at: r.created_at as string,
+  }))
+}
+
+// ─────────────────────────────────────────────────────────────
 // 2. Request (with conflict check)
 // ─────────────────────────────────────────────────────────────
 

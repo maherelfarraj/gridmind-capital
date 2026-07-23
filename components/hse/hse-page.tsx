@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import useSWR from 'swr'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -19,7 +20,10 @@ import {
   RefreshCw,
   Loader2,
   X,
+  ClipboardCheck,
+  ChevronRight,
 } from 'lucide-react'
+import { getProjects } from '@/app/actions/projects'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -354,6 +358,8 @@ export function HsePage() {
   const { data, isLoading, mutate } = useSWR('hse-dashboard', () => getHseDashboard(), {
     revalidateOnFocus: true,
   })
+  const { data: projects } = useSWR('hse-projects-for-ptw', () => getProjects())
+  const ptwHref = projects && projects.length > 0 ? `/projects/${projects[0].id}/permits` : null
 
   const incidents: HseIncident[] = data?.incidents ?? []
   const permits: HsePermit[]     = data?.permits ?? []
@@ -417,6 +423,23 @@ export function HsePage() {
         <StatTile value={activePermits}  label="Active Permits" color="#22c55e" icon={ClipboardList}  />
         <StatTile value={expiredPermits} label="Expired PTWs"   color={expiredPermits > 0 ? '#ef4444' : '#22c55e'} icon={XCircle} />
       </div>
+
+      {/* Permit to Work board nav card */}
+      {ptwHref && (
+        <Link
+          href={ptwHref}
+          className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:bg-muted/40 transition-colors"
+        >
+          <div className="size-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+            <ClipboardCheck className="size-5 text-orange-600 dark:text-orange-400" aria-hidden />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground">Permit to Work</p>
+            <p className="text-xs text-muted-foreground">Live PTW board — request, issue, suspend and close permits with hazard controls.</p>
+          </div>
+          <ChevronRight className="size-4 text-muted-foreground shrink-0" aria-hidden />
+        </Link>
+      )}
 
       {/* Days without incident banner */}
       <div className="flex items-center gap-4 rounded-xl bg-[#22c55e]/8 border border-[#22c55e]/20 px-5 py-4">

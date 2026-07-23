@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   Send,
   RefreshCw,
+  HardHat,
 } from 'lucide-react'
 import { useRouter as useNextRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -445,6 +446,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           label: 'Transmittals', icon: Send, iconColor: '#0891b2',
           bgColor: 'bg-sky-100 dark:bg-sky-900/30', count: 'Document log',
           ariaLabel: 'Open Transmittals register', href: `/projects/${projectId}/transmittals`,
+        },
+        {
+          label: 'Permit to Work', icon: HardHat, iconColor: '#ea580c',
+          bgColor: 'bg-orange-100 dark:bg-orange-900/30', count: 'PTW board',
+          ariaLabel: 'Open Permit to Work board', href: `/projects/${projectId}/permits`,
         },
       ]
     : QUICK_ACTIONS
