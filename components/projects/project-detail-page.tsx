@@ -441,6 +441,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'Print PDF',
           ariaLabel: 'Open Lender Progress Report', href: `/projects/${projectId}/lender-report`,
         },
+        {
+          label: 'Transmittals', icon: Send, iconColor: '#0891b2',
+          bgColor: 'bg-sky-100 dark:bg-sky-900/30', count: 'Document log',
+          ariaLabel: 'Open Transmittals register', href: `/projects/${projectId}/transmittals`,
+        },
       ]
     : QUICK_ACTIONS
   return (

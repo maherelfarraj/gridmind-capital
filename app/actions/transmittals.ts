@@ -408,3 +408,48 @@ export async function closeTransmittal(id: string): Promise<ActionResult<{ id: s
     'CLOSE', 'closed',
   )
 }
+
+// ─────────────────────────────────────────────────────────────
+// 7. Document linking helpers (transmittal_items.document_id → document_files.id)
+// ─────────────────────────────────────────────────────────────
+
+export interface LinkableDocument {
+  id: string
+  title: string
+  code: string | null
+}
+
+/** List registered document files for a project, for the item-link select. */
+export async function listLinkableDocuments(projectId: string): Promise<LinkableDocument[]> {
+  const { tenantId } = await getActor()
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('document_files')
+    .select('id, title, file_name, code')
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+  return (data ?? []).map((d) => ({
+    id: d.id,
+    title: (d.title as string) ?? (d.file_name as string) ?? 'Untitled document',
+    code: (d.code as string) ?? null,
+  }))
+}
+
+/** Resolve a short-lived signed download URL for a linked document. */
+export async function getLinkedDocumentUrl(
+  documentId: string,
+): Promise<{ url?: string; error?: string }> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('document_files')
+    .select('storage_path')
+    .eq('id', documentId)
+    .single()
+  if (error || !data?.storage_path) return { error: 'Document not found.' }
+  const { data: signed, error: signErr } = await admin.storage
+    .from('documents')
+    .createSignedUrl(data.storage_path as string, 300)
+  if (signErr || !signed) return { error: signErr?.message ?? 'Could not generate download URL.' }
+  return { url: signed.signedUrl }
+}
