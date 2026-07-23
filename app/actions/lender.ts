@@ -262,7 +262,7 @@ export async function upsertFacility(
     : await admin.from('lender_facilities').insert({ tenant_id: DEMO_TENANT, project_id: projectId, ...payload })
 
   if (error) return { error: error.message }
-  revalidatePath(`/projects/${projectId}/lender`)
+  revalidatePath(`/projects/${projectId}/lender-report`)
   return {}
 }
 
@@ -599,7 +599,7 @@ export async function saveLenderReport(
   // Fire-and-forget AI insight check: flag cost/schedule risk off the fresh snapshot.
   void maybeCreateLenderRiskInsight(projectId, snapshot.cost.cpi, snapshot.cost.spi)
 
-  revalidatePath(`/projects/${projectId}/lender`)
+  revalidatePath(`/projects/${projectId}/lender-report`)
   return { id: data?.id as string }
 }
 
