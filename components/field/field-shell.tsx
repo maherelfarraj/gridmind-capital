@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { CalendarDays, ClipboardCheck, Camera, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToastProvider } from '@/components/ui/toast'
+import { PwaProvider } from '@/components/pwa/pwa-provider'
 import { FieldProvider, useField } from './field-context'
 
 const TABS = [
@@ -71,6 +72,8 @@ export function FieldShell({ children }: { children: React.ReactNode }) {
           <main className="flex-1 pb-24 pt-16">{children}</main>
           <BottomTabs />
         </div>
+        {/* SW registration + offline queue flush + install prompt for the field module */}
+        <PwaProvider />
       </FieldProvider>
     </ToastProvider>
   )
