@@ -23,6 +23,7 @@ import {
   markNotificationReadAction,
   markAllReadAction,
   seedNotificationsAction,
+  getActivityFeed,
   type LiveNotification,
 } from '@/app/actions/notifications'
 
@@ -253,13 +254,13 @@ function NotificationsTab({
 
 // ─── Activity tab ────────────────────────────────────────────────────────────
 
-function ActivityTab() {
+function ActivityTab({ items }: { items: ActivityItem[] }) {
   const [filter, setFilter] = React.useState<'all' | ActivityItem['type']>('all')
 
-  const projects = Array.from(new Set(MOCK_ACTIVITY.map((a) => a.project)))
+  const projects = Array.from(new Set(items.map((a) => a.project)))
   const [projectFilter, setProjectFilter] = React.useState<string>('all')
 
-  const filtered = MOCK_ACTIVITY.filter((a) => {
+  const filtered = items.filter((a) => {
     const typeOk    = filter === 'all' || a.type === filter
     const projectOk = projectFilter === 'all' || a.project === projectFilter
     return typeOk && projectOk
@@ -555,6 +556,15 @@ export function NotificationPanel({ open, onClose, unreadCount }: NotificationPa
     { refreshInterval: 30_000, revalidateOnFocus: true },
   )
 
+  // Activity feed — fetch once when panel opens
+  const { data: feedData } = useSWR(
+    open ? 'activity-feed' : null,
+    () => getActivityFeed(),
+    { revalidateOnFocus: false },
+  )
+  const activityItems = (feedData && feedData.length > 0
+    ? feedData : MOCK_ACTIVITY) as unknown as ActivityItem[]
+
   // Map live rows → panel type; merge with mock fallback when DB is empty
   const liveItems: Notification[] = data?.items.length
     ? data.items.map(dbToNotif)
@@ -662,7 +672,7 @@ export function NotificationPanel({ open, onClose, unreadCount }: NotificationPa
               </TabsContent>
 
               <TabsContent value="activity" className="flex-1 overflow-hidden mt-0">
-                <ActivityTab />
+                <ActivityTab items={activityItems} />
               </TabsContent>
 
               <TabsContent value="mentions" className="flex-1 overflow-hidden mt-0">
