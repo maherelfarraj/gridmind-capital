@@ -420,6 +420,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
     ? [
         ...QUICK_ACTIONS,
         {
+          label: 'Variations & Claims', icon: GitBranch, iconColor: '#0891b2',
+          bgColor: 'bg-cyan-100 dark:bg-cyan-900/30', count: 'VOs & claims',
+          ariaLabel: 'Open Variations and Claims', href: `/projects/${projectId}/variations`,
+        },
+        {
           label: 'Client Report', icon: FileText, iconColor: '#7c3aed',
           bgColor: 'bg-violet-100 dark:bg-violet-900/30', count: 'Monthly PDF',
           ariaLabel: 'Open Client Report', href: `/projects/${projectId}/client-report`,
@@ -467,7 +472,7 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────���───────────
 // Activity Timeline card
 // ──────────────────────────────────────���──────────────────────
 

@@ -43,6 +43,12 @@ export interface VoKpis {
   pendingValue: number
   totalCount: number
   byStatus: { name: VoStatus; value: number }[]
+  /** Sum of time_impact_days across approved VOs. */
+  approvedTimeImpactDays: number
+  /** Baseline project budget + approved VO cost impact. */
+  currentContractValue: number
+  /** Baseline project budget (budget_usd) before VO adjustments. */
+  baselineBudget: number
 }
 
 export interface VoRegister {
@@ -209,12 +215,25 @@ export async function getVariationOrders(projectId: string): Promise<VoRegister>
 
   const rows = (error || !data ? [] : data).map(mapRow)
 
-  const approvedValue = rows.filter(r => r.status === 'approved').reduce((s, r) => s + (r.cost_impact ?? 0), 0)
+  const approvedRows = rows.filter(r => r.status === 'approved')
+  const approvedValue = approvedRows.reduce((s, r) => s + (r.cost_impact ?? 0), 0)
   const pendingValue  = rows.filter(r => r.status === 'submitted').reduce((s, r) => s + (r.cost_impact ?? 0), 0)
+  const approvedTimeImpactDays = approvedRows.reduce((s, r) => s + (r.time_impact_days ?? 0), 0)
   const statusOrder: VoStatus[] = ['draft', 'submitted', 'approved', 'rejected', 'withdrawn']
   const byStatus = statusOrder.map(s => ({ name: s, value: rows.filter(r => r.status === s).length }))
 
-  return { rows, kpis: { approvedValue, pendingValue, totalCount: rows.length, byStatus } }
+  // Baseline budget for the current contract value (budget + approved VOs).
+  const { data: proj } = await admin.from('projects').select('budget_usd').eq('id', projectId).maybeSingle()
+  const baselineBudget = proj?.budget_usd == null ? 0 : Number(proj.budget_usd)
+  const currentContractValue = baselineBudget + approvedValue
+
+  return {
+    rows,
+    kpis: {
+      approvedValue, pendingValue, totalCount: rows.length, byStatus,
+      approvedTimeImpactDays, currentContractValue, baselineBudget,
+    },
+  }
 }
 
 export async function getVariationOrder(id: string): Promise<VariationOrder | null> {
