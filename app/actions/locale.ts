@@ -3,9 +3,7 @@
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { LOCALES, isValidLocale, type Locale } from '@/i18n/request'
-
-export { LOCALES, type Locale }
+import { LOCALES, isValidLocale } from '@/i18n/request'
 
 const COOKIE_NAME = 'NEXT_LOCALE'
 // 1 year in seconds
