@@ -4,7 +4,7 @@ import * as React from 'react'
 import { Globe } from 'lucide-react'
 import { useLocale } from 'next-intl'
 import { setLocaleAction } from '@/app/actions/locale'
-import { LOCALES, type Locale } from '@/i18n/request'
+import { LOCALES, type Locale } from '@/i18n/config'
 import { cn } from '@/lib/utils'
 
 const LOCALE_CONFIG: Record<Locale, { label: string; labelNative: string }> = {
