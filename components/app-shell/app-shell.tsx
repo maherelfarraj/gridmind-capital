@@ -134,15 +134,15 @@ export function AppShell({
     setMobileOpen(false)
   }, [pathname])
 
-  // Prevent body scroll when mobile drawer is open
+  // Prevent body scroll when mobile drawer is open.
+  // Capture and restore the original value so unmounting while open
+  // (or any pre-existing lock) doesn't leave the body permanently locked.
   React.useEffect(() => {
-    if (mobileOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
+    if (!mobileOpen) return
+    const original = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     return () => {
-      document.body.style.overflow = ''
+      document.body.style.overflow = original
     }
   }, [mobileOpen])
 
