@@ -22,7 +22,6 @@ import {
   Truck,
   HardHat,
   Settings,
-  TrendingUp,
   Leaf,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -66,8 +65,8 @@ interface GateMeta {
 
 const GATES: GateMeta[] = [
   {
-    gate: 0, phase: 'Intake', shortName: 'G0', fullName: 'Project Registration & Screening',
-    purpose: 'Validate strategic fit, assign project code, confirm preliminary resource availability.',
+    gate: 0, phase: 'Intake', shortName: 'G0', fullName: 'Opportunity Accepted',
+    purpose: 'Formal acceptance of a new project opportunity into the GridMind pipeline. Confirms strategic fit, preliminary resource allocation, and assigns a Project Sponsor.',
     color: '#64748b', icon: Zap, status: 'passed', approvedDate: '14 Jan 2025', approvedBy: 'A. Carter',
     reviewers: [{ name: 'A. Carter', initials: 'AC', color: '#64ffda', decision: 'approve' }],
     deliverables: [
@@ -76,8 +75,8 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 1, phase: 'Development', shortName: 'G1', fullName: 'Development Sanction',
-    purpose: 'Approve project development budget and confirm site acquisition pathway.',
+    gate: 1, phase: 'Development', shortName: 'G1', fullName: 'Project Baseline Approved',
+    purpose: 'Locks the project baseline: scope, schedule, budget, and team. Triggers transition from development to active delivery.',
     color: '#3b82f6', icon: Building2, status: 'passed', approvedDate: '08 Mar 2025', approvedBy: 'A. Carter',
     reviewers: [
       { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'approve' },
@@ -91,9 +90,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 2, phase: 'Commercial', shortName: 'G2', fullName: 'Commercial Sanction & PPA',
-    purpose: 'Approve commercial structure, PPA execution and project finance term sheet.',
-    color: '#6366f1', icon: TrendingUp, status: 'passed', approvedDate: '22 Apr 2025', approvedBy: 'A. Carter',
+    gate: 2, phase: 'Engineering', shortName: 'G2', fullName: 'Engineering IFC Release',
+    purpose: 'Confirms all Issued for Construction (IFC) drawings and technical specifications are complete and approved, enabling procurement to commence.',
+    color: '#6366f1', icon: Wrench, status: 'passed', approvedDate: '22 Apr 2025', approvedBy: 'A. Carter',
     reviewers: [
       { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'approve' },
       { name: 'S. Park',    initials: 'SP', color: '#a855f7', decision: 'approve' },
@@ -107,9 +106,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 3, phase: 'Engineering', shortName: 'G3', fullName: 'Engineering Design Freeze',
-    purpose: 'Approve IFT design package, confirm technology selections, release for IFC.',
-    color: '#8b5cf6', icon: Wrench, status: 'passed', approvedDate: '10 Jun 2025', approvedBy: 'A. Carter',
+    gate: 3, phase: 'Procurement', shortName: 'G3', fullName: 'Procurement Award',
+    purpose: 'Confirms award of all major supply contracts and subcontract packages. Full procurement close-out before mobilisation.',
+    color: '#8b5cf6', icon: Truck, status: 'passed', approvedDate: '10 Jun 2025', approvedBy: 'A. Carter',
     reviewers: [
       { name: 'A. Carter',   initials: 'AC', color: '#64ffda', decision: 'approve' },
       { name: 'M. Al-Farsi', initials: 'MA', color: '#f97316', decision: 'approve' },
@@ -124,9 +123,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 4, phase: 'Procurement', shortName: 'G4', fullName: 'Procurement Sanction & EPC Award',
-    purpose: 'Approve procurement strategy, key equipment awards, and EPC sub-contract structure.',
-    color: '#a855f7', icon: Truck, status: 'active',
+    gate: 4, phase: 'Construction', shortName: 'G4', fullName: 'Construction Mobilization',
+    purpose: 'Authorises full site mobilisation. Confirms HSE plans, site access, temporary works, and construction methodology are approved.',
+    color: '#f97316', icon: HardHat, status: 'active',
     reviewers: [
       { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'pending' },
       { name: 'T. Müller',  initials: 'TM', color: '#3b82f6', decision: 'pending' },
@@ -144,9 +143,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 5, phase: 'Construction', shortName: 'G5', fullName: 'Construction Mobilization',
-    purpose: 'Confirm site readiness, approve mobilization budget, release construction workforce.',
-    color: '#f97316', icon: HardHat, status: 'locked',
+    gate: 5, phase: 'Construction', shortName: 'G5', fullName: 'Mechanical Completion',
+    purpose: 'Certifies that all physical construction works are complete per the IFC drawings. Triggers pre-commissioning activities.',
+    color: '#f97316', icon: Settings, status: 'locked',
     reviewers: [
       { name: 'A. Carter', initials: 'AC', color: '#64ffda', decision: 'pending' },
     ],
@@ -158,9 +157,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 6, phase: 'Commissioning', shortName: 'G6', fullName: 'Mechanical Completion',
-    purpose: 'Declare mechanical completion and hand over systems for commissioning.',
-    color: '#14b8a6', icon: Settings, status: 'locked',
+    gate: 6, phase: 'Handover & O&M', shortName: 'G6', fullName: 'Handover, Operations & Closeout',
+    purpose: 'Formal transfer of the asset to the Owner/Operator, O&M transition, warranty start, and final project closeout.',
+    color: '#22c55e', icon: Leaf, status: 'locked',
     reviewers: [],
     deliverables: [
       { id: 'g6d1', title: 'Mechanical Completion Certificate', owner: 'J. Rivera', status: 'not-started', isMandatory: true },

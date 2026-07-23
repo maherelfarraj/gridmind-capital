@@ -93,13 +93,13 @@ export type PhaseKey =
 // ─────────────────────────────────────────────────────────────
 
 export const PHASE_META: Record<PhaseKey, { label: string; color: string }> = {
-  g0: { label: 'G0 · Intake',             color: '#64748b' },
-  g1: { label: 'G1 · Development',        color: '#3b82f6' },
-  g2: { label: 'G2 · Commercial',         color: '#6366f1' },
-  g3: { label: 'G3 · Engineering',        color: '#8b5cf6' },
-  g4: { label: 'G4 · Procurement',        color: '#a855f7' },
-  g5: { label: 'G5 · Construction',       color: '#f97316' },
-  g6: { label: 'G6 · Handover & O&M',     color: '#22c55e' },
+  g0: { label: 'G0 · Opportunity Accepted',      color: '#64748b' },
+  g1: { label: 'G1 · Baseline Approved',         color: '#3b82f6' },
+  g2: { label: 'G2 · Engineering IFC',           color: '#6366f1' },
+  g3: { label: 'G3 · Procurement Award',         color: '#8b5cf6' },
+  g4: { label: 'G4 · Construction Mobilization', color: '#f97316' },
+  g5: { label: 'G5 · Mechanical Completion',     color: '#f97316' },
+  g6: { label: 'G6 · Handover & O&M',            color: '#22c55e' },
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -158,13 +158,13 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/projects',
         icon: FolderKanban,
         children: [
-          { id: 'g0', label: 'G0 · Intake',            href: '/projects?gate=G0', phase: 'g0' },
-          { id: 'g1', label: 'G1 · Development',     href: '/projects?gate=G1', phase: 'g1' },
-          { id: 'g2', label: 'G2 · Commercial',      href: '/projects?gate=G2', phase: 'g2' },
-          { id: 'g3', label: 'G3 · Engineering',     href: '/projects?gate=G3', phase: 'g3' },
-          { id: 'g4', label: 'G4 · Procurement',     href: '/projects?gate=G4', phase: 'g4' },
-          { id: 'g5', label: 'G5 · Construction',    href: '/projects?gate=G5', phase: 'g5' },
-          { id: 'g6', label: 'G6 · Handover & O&M',  href: '/projects?gate=G6', phase: 'g6' },
+          { id: 'g0', label: 'G0 · Opportunity Accepted',      href: '/projects?gate=G0', phase: 'g0' },
+          { id: 'g1', label: 'G1 · Baseline Approved',         href: '/projects?gate=G1', phase: 'g1' },
+          { id: 'g2', label: 'G2 · Engineering IFC',           href: '/projects?gate=G2', phase: 'g2' },
+          { id: 'g3', label: 'G3 · Procurement Award',         href: '/projects?gate=G3', phase: 'g3' },
+          { id: 'g4', label: 'G4 · Construction Mobilization', href: '/projects?gate=G4', phase: 'g4' },
+          { id: 'g5', label: 'G5 · Mechanical Completion',     href: '/projects?gate=G5', phase: 'g5' },
+          { id: 'g6', label: 'G6 · Handover & O&M',            href: '/projects?gate=G6', phase: 'g6' },
           { id: 'g6-closeout',    label: 'Closeout Checklist', href: '/projects?gate=G6&tab=closeout', phase: 'g6' },
           { id: 'g6-om-transition', label: 'O&M Transition',  href: '/projects?gate=G6&tab=om-transition', phase: 'g6' },
         ],

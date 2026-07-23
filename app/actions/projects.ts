@@ -14,15 +14,15 @@ const PHASE_MAP: Record<number, string> = {
 }
 
 const GATE_NAMES: Record<number, string> = {
-  0: 'Investment Intake',
-  1: 'Development Approval',
-  2: 'Commercial IFC',
-  3: 'Engineering IFC',
-  4: 'Procurement Ready',
-  5: 'Construction Mobilization',
-  6: 'Systems Commissioning',
-  7: 'COD Declaration',
-  8: 'O&M Handover',
+  0: 'Opportunity Accepted',
+  1: 'Project Baseline Approved',
+  2: 'Engineering IFC Release',
+  3: 'Procurement Award',
+  4: 'Construction Mobilization',
+  5: 'Mechanical Completion',
+  6: 'Handover, Ops & Closeout',
+  7: 'Handover, Ops & Closeout',
+  8: 'Handover, Ops & Closeout',
 }
 
 // The governed gate model is G0–G6 (matches GATE_ORDER in app/actions/phase-gates.ts).
