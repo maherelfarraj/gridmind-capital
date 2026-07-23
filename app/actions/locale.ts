@@ -1,5 +1,5 @@
 'use server'
-
+// Locale constants come from @/i18n/config — no server-only deps there.
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'

@@ -9,7 +9,7 @@ import { updateSession } from '@/lib/supabase/proxy'
  * next-intl's `createMiddleware` must NOT run — it would internally rewrite
  * every request to `/{locale}/...` and 404 against the prefix-less route tree.
  *
- * Instead, `i18n/request.ts` reads the `NEXT_LOCALE` cookie directly via
+ * Instead, `i18n/server.ts` reads the `NEXT_LOCALE` cookie directly via
  * `next/headers`, and `setLocaleAction` writes that cookie. The cookie is the
  * single source of truth; no middleware locale work is required.
  */
