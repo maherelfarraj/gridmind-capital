@@ -589,6 +589,8 @@ export interface ProjectDetailPageProps {
   onSettings: () => void
   onSubmitApproval: () => void
   onRequestChanges: () => void
+  /** When provided, renders a role-gated "Lender Report" header button */
+  onLenderReport?: () => void
   /** Suppress the built-in PhaseGateStepper when the parent renders one */
   hideStepper?: boolean
   /** Suppress the built-in ActivityTimeline when the parent renders one */
@@ -669,6 +671,7 @@ export function ProjectDetailPage({
   onSettings,
   onSubmitApproval,
   onRequestChanges,
+  onLenderReport,
   hideStepper  = false,
   hideTimeline = false,
   hideActions  = false,
@@ -723,7 +726,7 @@ export function ProjectDetailPage({
       )}
 
       {/* Project Command Center */}
-      <ProjectCommandCenter project={projectData} loading={isLoading} onBack={onBack} />
+      <ProjectCommandCenter project={projectData} loading={isLoading} onBack={onBack} onLenderReport={onLenderReport} />
 
       {/* Phase Gate Stepper */}
       {!hideStepper && (

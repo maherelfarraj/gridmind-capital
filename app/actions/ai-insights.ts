@@ -95,6 +95,70 @@ export async function maybeCreateCostOverrunInsight(projectId: string): Promise<
   }
 }
 
+/**
+ * Fire-and-forget: raise a high-severity insight off a freshly generated lender
+ * report when performance breaches thresholds — CPI < 0.9 (`cost_overrun`) or
+ * SPI < 0.85 (`schedule_risk`). Each module is created at most once per project
+ * while an open insight of that module already exists. Never throws.
+ */
+export async function maybeCreateLenderRiskInsight(
+  projectId: string,
+  cpi: number,
+  spi: number,
+): Promise<void> {
+  try {
+    const sb = createAdminClient()
+    const { data: proj } = await sb.from('projects').select('name').eq('id', projectId).maybeSingle()
+    const projectName = (proj?.name as string) ?? 'project'
+
+    const candidates: { module: string; title: string; description: string; action: string }[] = []
+    if (cpi < 0.9) {
+      candidates.push({
+        module: 'cost_overrun',
+        title: `Cost performance below threshold on ${projectName}`,
+        description: `The latest lender report shows a Cost Performance Index (CPI) of ${cpi.toFixed(2)}, below the 0.90 threshold. This indicates the project is running over budget for the work completed to date.`,
+        action: 'Review actual costs against earned value with the commercial lead and reforecast the estimate at completion before the next lender submission.',
+      })
+    }
+    if (spi < 0.85) {
+      candidates.push({
+        module: 'schedule_risk',
+        title: `Schedule performance below threshold on ${projectName}`,
+        description: `The latest lender report shows a Schedule Performance Index (SPI) of ${spi.toFixed(2)}, below the 0.85 threshold. This indicates the project is materially behind the planned schedule.`,
+        action: 'Review the critical path and recovery options with the project manager, and assess exposure to milestone/COD commitments.',
+      })
+    }
+    if (candidates.length === 0) return
+
+    for (const c of candidates) {
+      const { data: existing } = await sb
+        .from('ai_insights')
+        .select('id')
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('project_id', projectId)
+        .eq('module', c.module)
+        .eq('status', 'open')
+        .limit(1)
+      if (existing && existing.length > 0) continue
+
+      await sb.from('ai_insights').insert({
+        tenant_id: DEMO_TENANT,
+        project_id: projectId,
+        module: c.module,
+        title: c.title,
+        description: c.description,
+        confidence: 92,
+        severity: 'high',
+        status: 'open',
+        recommended_action: c.action,
+      })
+    }
+    revalidatePath('/ai-insights')
+  } catch (e) {
+    console.error('[ai-insights] lender risk generator failed:', e)
+  }
+}
+
 export async function acknowledgeInsightAction(id: string) {
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }

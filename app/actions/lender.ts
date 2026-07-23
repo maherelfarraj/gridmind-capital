@@ -10,8 +10,14 @@ import { getPaymentCertificates } from '@/app/actions/payments'
 import { getVariationOrders } from '@/app/actions/variation-orders'
 import { getClaims } from '@/app/actions/claims'
 import { getProjectGateState } from '@/app/actions/phase-gates'
+import { sendEmail, NOTIFICATION_EMAIL, heading, para, kvTable, btn } from '@/lib/email/send'
+import { maybeCreateLenderRiskInsight } from '@/app/actions/ai-insights'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gridmind-gules.vercel.app'
+
+// Roles allowed to distribute a lender report to the lender by email.
+const LENDER_DISTRIBUTION_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'finance_manager']
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 // READ actions allow viewers; mutations reject them (mirrors existing actions).
@@ -568,8 +574,110 @@ export async function saveLenderReport(
     .single()
 
   if (error) return { error: error.message }
+
+  // Fire-and-forget AI insight check: flag cost/schedule risk off the fresh snapshot.
+  void maybeCreateLenderRiskInsight(projectId, snapshot.cost.cpi, snapshot.cost.spi)
+
   revalidatePath(`/projects/${projectId}/lender`)
   return { id: data?.id as string }
+}
+
+// ─── 6. Executive-summary bullets (shared by email + report body) ────────────────
+
+/** Compose the factual executive-summary bullets from a report snapshot. */
+function executiveBullets(data: LenderReportData): string[] {
+  const b: string[] = []
+  b.push(`Overall completion reached ${data.progress.overallPct}% by the end of the reporting period, with ${data.progress.completedActivities} of ${data.progress.totalActivities} scheduled activities complete.`)
+  b.push(`The project is currently at gate ${data.gates.currentGate}, having secured approval through ${data.gates.approvedThrough} of ${data.gates.totalGates} stage gates.`)
+  b.push(`Cost performance (CPI) is ${data.cost.cpi.toFixed(2)} and schedule performance (SPI) is ${data.cost.spi.toFixed(2)}.`)
+  if (data.variations.totalCount > 0) {
+    const approved = data.variations.byStatus.find((s) => s.name === 'approved')?.value ?? 0
+    b.push(`${approved} variation order(s) approved; further variations remain pending.`)
+  }
+  b.push(`Health & safety: ${data.hse.openIncidents} open incident(s) and ${data.hse.activePermits} active permit(s).`)
+  return b
+}
+
+// ─── 7. Email a saved report snapshot to the lender ──────────────────────────────
+
+export async function sendLenderReportEmail(
+  projectId: string,
+  reportId: string,
+): Promise<{ error?: string; sentTo?: string }> {
+  const actor = await getUser()
+  if (!actor.role || !LENDER_DISTRIBUTION_ROLES.includes(actor.role)) {
+    return { error: 'You do not have permission to distribute lender reports.' }
+  }
+
+  const snapshot = await getLenderReportSnapshot(reportId)
+  if (!snapshot) return { error: 'Report snapshot not found.' }
+
+  const recipient = snapshot.facility?.contact_email || NOTIFICATION_EMAIL
+  const periodLabel = `${snapshot.period.start} — ${snapshot.period.end}`
+  const bullets = executiveBullets(snapshot)
+  const archiveUrl = `${SITE_URL}/projects/${projectId}/lender-report?archive=${reportId}`
+
+  const html = [
+    heading('Lender Progress Report'),
+    para(`Please find the latest lender progress report for <strong style="color:#e6f1ff">${snapshot.project.name}</strong> (${snapshot.project.code}), covering ${periodLabel}.`),
+    `<ul style="margin:0 0 16px;padding-left:18px;color:#8892b0;font-size:14px;line-height:1.6">${bullets.map((x) => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ul>`,
+    kvTable([
+      ['Project', `${snapshot.project.code} — ${snapshot.project.name}`],
+      ['Reporting period', periodLabel],
+      ['Overall progress', `${snapshot.progress.overallPct}%`],
+      ['CPI / SPI', `${snapshot.cost.cpi.toFixed(2)} / ${snapshot.cost.spi.toFixed(2)}`],
+    ]),
+    btn('View full report', archiveUrl),
+  ].join('\n')
+
+  // Fire-and-forget: a failed send must never break the caller.
+  const res = await sendEmail({
+    to: recipient,
+    type: 'general',
+    subject: `Lender Progress Report — ${snapshot.project.name} — ${periodLabel}`,
+    html,
+  })
+  if (res.status === 'failed') return { error: res.error ?? 'Email could not be sent.' }
+  return { sentTo: recipient }
+}
+
+// ─── 8. Recent reports across all projects (dashboard widget) ────────────────────
+
+export interface RecentLenderReport {
+  id: string
+  title: string
+  period_end: string | null
+  created_at: string
+  project_id: string
+  project_name: string
+}
+
+export async function listRecentLenderReports(limit = 3): Promise<RecentLenderReport[]> {
+  await getUser() // reads allow viewers
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('lender_reports')
+    .select('id, title, period_end, created_at, project_id')
+    .eq('tenant_id', DEMO_TENANT)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  const rows = data ?? []
+  const projectIds = [...new Set(rows.map((r) => r.project_id as string).filter(Boolean))]
+  const names: Record<string, string> = {}
+  if (projectIds.length > 0) {
+    const { data: projs } = await admin.from('projects').select('id, name').in('id', projectIds)
+    for (const p of projs ?? []) names[p.id as string] = (p.name as string) ?? 'Untitled project'
+  }
+
+  return rows.map((r) => ({
+    id: r.id as string,
+    title: (r.title as string) ?? 'Untitled report',
+    period_end: (r.period_end as string) ?? null,
+    created_at: r.created_at as string,
+    project_id: (r.project_id as string) ?? '',
+    project_name: names[r.project_id as string] ?? 'Unknown project',
+  }))
 }
 
 // ─── 4. List archived reports ──────────────────────────────────────────────────

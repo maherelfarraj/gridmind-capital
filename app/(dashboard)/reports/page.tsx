@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import useSWR from 'swr'
-import { Printer, Download, Calendar, RefreshCw } from 'lucide-react'
+import { Printer, Download, Calendar, RefreshCw, Landmark, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ReportListSidebar } from '@/components/reports/report-list-sidebar'
 import { getProjects }           from '@/app/actions/projects'
@@ -18,7 +19,7 @@ import type { RiskRecord }       from '@/lib/types/action-types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register'
+type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register' | 'lender-progress'
 type DateRange  = '30d' | '90d' | '1y' | 'all'
 
 const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
@@ -28,6 +29,7 @@ const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
   { id: 'variations-register', label: 'Variations Register', description: 'Variation orders and claims for a project, with cost and time impacts' },
   { id: 'risk-register',     label: 'Risk Register',      description: 'Full risk register with scores, owners and status' },
   { id: 'approvals-log',     label: 'Approvals Log',      description: 'Approval decisions and pending items across all projects' },
+  { id: 'lender-progress',   label: 'Lender Progress Report', description: 'Bank-ready progress report per project — compile, save, and export the full lender pack' },
 ]
 
 const DATE_RANGE_OPTIONS: { id: DateRange; label: string }[] = [
@@ -352,6 +354,68 @@ function VariationsRegisterReport({ dateRange }: { dateRange: DateRange }) {
   )
 }
 
+function LenderProgressReport() {
+  const { data: projects, isLoading } = useSWR('report-lender-projects', () => getProjects())
+  const [projectId, setProjectId] = React.useState<string | null>(null)
+  const activeProjectId = projectId ?? projects?.[0]?.id ?? null
+  const activeProject = (projects ?? []).find((p) => p.id === activeProjectId) ?? null
+
+  if (isLoading) return <LoadingRows cols={3} />
+
+  if (!projects || projects.length === 0) {
+    return (
+      <div className="rounded-lg border border-border p-10 text-center text-sm text-muted-foreground">
+        No projects available to report on.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Project selector — the lender report is compiled per project */}
+      <div className="flex items-center gap-2 print:hidden">
+        <label className="text-xs font-medium text-muted-foreground">Project</label>
+        <select
+          value={activeProjectId ?? ''}
+          onChange={(e) => setProjectId(e.target.value)}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground"
+        >
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-col items-start gap-4 rounded-lg border border-border bg-card p-6">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Landmark className="size-5" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              Lender Progress Report{activeProject ? ` — ${activeProject.name}` : ''}
+            </h3>
+            <p className="mt-1 max-w-prose text-sm text-muted-foreground">
+              Compile the full bank-ready progress report from live project data — executive summary,
+              S-curve, EVM cost performance, payments, variations, HSE, risks and quality. Choose a
+              reporting period, then save a snapshot or export to PDF on the report page.
+            </p>
+          </div>
+        </div>
+        {activeProjectId && (
+          <Link
+            href={`/projects/${activeProjectId}/lender-report`}
+            className={cn(buttonVariants({ size: 'sm' }), 'gap-1.5')}
+          >
+            Open Lender Report
+            <ArrowRight className="size-3.5" />
+          </Link>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function LoadingRows({ cols }: { cols: number }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -481,6 +545,7 @@ export default function ReportsPage() {
           {activeType === 'variations-register' && <VariationsRegisterReport dateRange={dateRange} />}
           {activeType === 'risk-register'     && <RiskRegisterReport     dateRange={dateRange} />}
           {activeType === 'approvals-log'     && <ApprovalsLogReport     dateRange={dateRange} />}
+          {activeType === 'lender-progress'   && <LenderProgressReport />}
         </div>
       </div>
     </div>

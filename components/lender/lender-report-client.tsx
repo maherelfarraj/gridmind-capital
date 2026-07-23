@@ -6,17 +6,20 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import {
-  FileText, Save, Printer, Archive, Loader2, RefreshCw, ArrowLeft, X, Landmark, Settings2,
+  FileText, Save, Printer, Archive, Loader2, RefreshCw, ArrowLeft, X, Landmark, Settings2, Mail,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
+import { useSession } from '@/lib/session-context'
 import { formatUsd, formatUsdCompact, formatDate } from '@/lib/variation-orders/ui'
 import {
   getLenderReportData,
   saveLenderReport,
   listLenderReports,
   getLenderReportSnapshot,
+  sendLenderReportEmail,
   getFacility,
   upsertFacility,
   type LenderReportData,
@@ -104,14 +107,24 @@ const EVM_CAPTIONS: Record<string, string> = {
 
 export function LenderReportClient({ projectId }: { projectId: string }) {
   const { toast } = useToast()
+  const session = useSession()
+  const searchParams = useSearchParams()
+
+  // Distribution is limited to leadership + finance (AppRole equivalents of the
+  // DB roles finance_manager / project_director / tenant_admin / system_admin).
+  const canEmailLender = session.roles.some((r) =>
+    ['finance_controller', 'pmo_director', 'tenant_admin', 'super_admin'].includes(r),
+  )
 
   const [start, setStart] = useState(isoDaysAgo(90))
   const [end, setEnd] = useState(todayIso())
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [emailing, setEmailing] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [showFacility, setShowFacility] = useState(false)
   const [snapshot, setSnapshot] = useState<LenderReportData | null>(null)
+  const [snapshotId, setSnapshotId] = useState<string | null>(null)
   const [snapshotAsOf, setSnapshotAsOf] = useState<string | null>(null)
 
   // Live report — only fetched once the user clicks "Generate report".
@@ -138,6 +151,7 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
 
   const handleGenerate = useCallback(() => {
     setSnapshot(null)
+    setSnapshotId(null)
     setSnapshotAsOf(null)
     const key = `lender:${projectId}:${start}:${end}`
     if (key === generatedKey) mutate()
@@ -169,12 +183,42 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
     const snap = await getLenderReportSnapshot(item.id)
     if (snap) {
       setSnapshot(snap)
+      setSnapshotId(item.id)
       setSnapshotAsOf(item.created_at)
       setShowArchive(false)
     } else {
       toast({ title: 'Snapshot unavailable', variant: 'danger' })
     }
   }, [toast])
+
+  // Deep-link support: /projects/{id}/lender-report?archive={reportId} auto-loads
+  // the archived snapshot (used by the "Email to lender" distribution link).
+  const archiveParam = searchParams?.get('archive') ?? null
+  useEffect(() => {
+    if (!archiveParam) return
+    let cancelled = false
+    ;(async () => {
+      const snap = await getLenderReportSnapshot(archiveParam)
+      if (cancelled) return
+      if (snap) {
+        setSnapshot(snap)
+        setSnapshotId(archiveParam)
+        setSnapshotAsOf(snap.generatedAt)
+      } else {
+        toast({ title: 'Archived report not found', variant: 'danger' })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [archiveParam, toast])
+
+  const handleEmailLender = useCallback(async () => {
+    if (!snapshotId) return
+    setEmailing(true)
+    const res = await sendLenderReportEmail(projectId, snapshotId)
+    setEmailing(false)
+    if (res.error) toast({ title: 'Could not send email', description: res.error, variant: 'danger' })
+    else toast({ title: 'Report emailed to lender', description: res.sentTo ? `Sent to ${res.sentTo}` : undefined, variant: 'success' })
+  }, [snapshotId, projectId, toast])
 
   // Auto-composed executive narrative (factual, data-interpolated).
   const narrative = useMemo(() => {
@@ -296,9 +340,17 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
 
         {snapshot && (
           <div className="mx-auto max-w-[900px] px-4 pb-3">
-            <div className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <span>Archived snapshot — data as of {snapshotAsOf ? formatDate(snapshotAsOf) : formatDate(snapshot.generatedAt)}. Generate a new report to see current data.</span>
-              <Button size="sm" variant="ghost" onClick={() => { setSnapshot(null); setSnapshotAsOf(null) }}>Dismiss</Button>
+              <div className="flex shrink-0 items-center gap-1">
+                {canEmailLender && snapshotId && (
+                  <Button size="sm" variant="outline" onClick={handleEmailLender} disabled={emailing}>
+                    {emailing ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
+                    Email to lender
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => { setSnapshot(null); setSnapshotId(null); setSnapshotAsOf(null) }}>Dismiss</Button>
+              </div>
             </div>
           </div>
         )}

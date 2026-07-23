@@ -83,6 +83,15 @@ export default function ProjectDetailRoute() {
 
   const isViewer = session.roles.includes('viewer')
 
+  // Lender report distribution is limited to leadership + finance.
+  // AppRole equivalents of DB roles: system_admin→super_admin, project_director→pmo_director,
+  // finance_manager→finance_controller, tenant_admin→tenant_admin.
+  const canLenderReport = session.roles.some((r) =>
+    (['super_admin', 'tenant_admin', 'pmo_director', 'finance_controller'] as const).includes(
+      r as 'super_admin' | 'tenant_admin' | 'pmo_director' | 'finance_controller',
+    ),
+  )
+
   const handleSubmitApproval = React.useCallback(async () => {
     if (!project) return
     setSubmitting(true)
@@ -214,6 +223,7 @@ export default function ProjectDetailRoute() {
         onSettings={() => {}}
         onSubmitApproval={handleSubmitApproval}
         onRequestChanges={handleRequestChanges}
+        onLenderReport={canLenderReport ? () => router.push(`/projects/${project.id}/lender-report`) : undefined}
         hideActions={isViewer}
       />
 
