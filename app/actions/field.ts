@@ -276,11 +276,12 @@ export async function submitDailyReport(
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  // Prefer the authenticated user id (a real uuid) over a client-supplied value.
   const { error } = await supabase
     .from('daily_reports')
     .update({
       status:       'submitted',
-      submitted_by: submittedBy,
+      submitted_by: gate.actor.userId ?? submittedBy,
       updated_at:   new Date().toISOString(),
     })
     .eq('id', id)
@@ -288,6 +289,47 @@ export async function submitDailyReport(
 
   revalidatePath('/field')
   return { error: error?.message }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4b. Create a punch item (field-raised ticket)
+// ─────────────────────────────────────────────────────────────
+
+export interface PunchItemInput {
+  title: string
+  location?: string | null
+  punch_cat: string   // 'A' | 'B' | 'C'
+  description?: string | null
+}
+
+export async function createFieldPunchItem(
+  projectId: string,
+  data: PunchItemInput,
+): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+  const { data: inserted, error } = await supabase
+    .from('tickets')
+    .insert({
+      tenant_id:   DEMO_TENANT,
+      project_id:  projectId,
+      title:       data.title,
+      category:    'punch_item',
+      status:      'open',
+      priority:    'medium',
+      description: data.description ?? null,
+      assigned_to: gate.actor.userId,
+      created_by:  gate.actor.userId,
+      metadata:    { punch_cat: data.punch_cat, location: data.location ?? null },
+    })
+    .select('id')
+    .single()
+
+  if (error || !inserted) return { error: error?.message ?? 'Could not create punch item' }
+  revalidatePath('/field')
+  return { id: inserted.id as string }
 }
 
 // ─────────────────────────────────────────────────────────────
