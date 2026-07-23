@@ -16,8 +16,10 @@ import {
   PhaseGateStepper,
   PhaseGateStepperSkeleton,
   type PhaseGateStepperProps,
+  type GateScheduleDates,
 } from '@/components/project/phase-gate-stepper'
 import { getProjectGateState } from '@/app/actions/phase-gates'
+import { getGateSchedule } from '@/app/actions/schedule'
 
 interface LivePhaseGateStepperProps extends PhaseGateStepperProps {
   /** If provided, the stepper reads live gate state from the DB. */
@@ -36,15 +38,36 @@ export function LivePhaseGateStepper({
     { revalidateOnFocus: true },
   )
 
+  // Schedule-derived gate dates (best-effort; never blocks the stepper).
+  const { data: gateSchedule } = useSWR(
+    projectId ? `gate-schedule-${projectId}` : null,
+    () => getGateSchedule(projectId!),
+  )
+
   if (projectId && isLoading) return <PhaseGateStepperSkeleton />
 
   const currentGate   = data?.currentGate   ?? fallbackCurrent
   const completedGates = data?.completedGates ?? fallbackCompleted
 
+  const gateDates: Record<number, GateScheduleDates> | undefined = gateSchedule?.length
+    ? Object.fromEntries(
+        gateSchedule.map((g) => [
+          g.gateNumber,
+          {
+            plannedStart:  g.plannedStart,
+            plannedFinish: g.plannedFinish,
+            actualStart:   g.actualStart,
+            actualFinish:  g.actualFinish,
+          },
+        ]),
+      )
+    : undefined
+
   return (
     <PhaseGateStepper
       currentGate={currentGate}
       completedGates={completedGates}
+      gateDates={gateDates}
       {...rest}
     />
   )

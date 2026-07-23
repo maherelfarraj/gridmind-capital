@@ -171,6 +171,14 @@ export function useTranslatedGates(): GateDef[] {
 
 export type GateState = 'completed' | 'current' | 'future' | 'locked'
 
+/** Schedule-derived dates for a gate (see getGateSchedule — never from phase_gates). */
+export interface GateScheduleDates {
+  plannedStart: string | null
+  plannedFinish: string | null
+  actualStart: string | null
+  actualFinish: string | null
+}
+
 export interface PhaseGateStepperProps {
   /** Gate code string, e.g. "G2" */
   currentGate: string
@@ -184,11 +192,25 @@ export interface PhaseGateStepperProps {
    * instead of opening the in-place detail drawer.
    */
   projectId?: string
+  /**
+   * Optional map of gate id (0-6) → schedule-derived planned/actual dates.
+   * Rendered under each node label and in the detail panel. Populated from
+   * getGateSchedule (derived from schedule_activities.gate_number).
+   */
+  gateDates?: Record<number, GateScheduleDates>
+}
+
+/** Format an ISO date (YYYY-MM-DD) as e.g. "5 Jan 26"; empty string for null. */
+function fmtGateDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso + 'T00:00:00Z')
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' })
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────��────────────────────
 
 function getGateState(gateCode: string, currentGate: string, completedGates: string[]): GateState {
   if (completedGates.includes(gateCode)) return 'completed'
@@ -219,6 +241,8 @@ interface GateNodeProps {
   isActive: boolean
   /** When set, the node renders as a link to the gate submission form. */
   href?: string | null
+  /** Schedule-derived dates for this gate (optional). */
+  dates?: GateScheduleDates
 }
 
 function GateNode({
@@ -231,6 +255,7 @@ function GateNode({
   onMouseLeave,
   isActive,
   href,
+  dates,
 }: GateNodeProps) {
   // Shared classes so the <button> and the <Link> variant look identical.
   const nodeClasses = cn(
@@ -438,6 +463,24 @@ function GateNode({
         >
           {gate.shortName.split(' ').slice(0, 3).join(' ')}
         </span>
+        {/* Schedule-derived dates (actual finish once complete, else planned finish) */}
+        {dates && (dates.actualFinish || dates.plannedFinish) && (
+          <span
+            className={cn(
+              'mt-0.5 font-mono text-[9px] leading-none tabular-nums',
+              dates.actualFinish ? 'text-[#22c55e]' : 'text-muted-foreground/70',
+            )}
+            title={
+              dates.actualFinish
+                ? `Actual finish ${fmtGateDate(dates.actualFinish)}`
+                : `Planned ${fmtGateDate(dates.plannedStart)} → ${fmtGateDate(dates.plannedFinish)}`
+            }
+          >
+            {dates.actualFinish
+              ? fmtGateDate(dates.actualFinish)
+              : fmtGateDate(dates.plannedFinish)}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -451,6 +494,7 @@ interface DetailPanelProps {
   gate: GateDef | null
   state: GateState | null
   onClose: () => void
+  dates?: GateScheduleDates
 }
 
 const STATE_BANNERS: Record<GateState, { bg: string; text: string; icon: React.ReactNode; label: string }> = {
@@ -480,7 +524,7 @@ const STATE_BANNERS: Record<GateState, { bg: string; text: string; icon: React.R
   },
 }
 
-function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
+function DetailPanel({ gate, state, onClose, dates }: DetailPanelProps) {
   const banner = state ? STATE_BANNERS[state] : null
 
   // Track viewport after mount so animation direction is decided without
@@ -645,6 +689,33 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
                 </div>
               </section>
 
+              {/* Schedule-derived dates (from the project Gantt, not phase_gates) */}
+              {dates && (dates.plannedStart || dates.plannedFinish || dates.actualStart || dates.actualFinish) && (
+                <section aria-labelledby={`panel-schedule-${gate.id}`}>
+                  <h3 id={`panel-schedule-${gate.id}`} className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <CalendarDays className="size-3.5" />
+                    Schedule Dates
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-muted/50 border border-border p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Planned</p>
+                      <p className="text-xs font-medium text-foreground tabular-nums">
+                        {fmtGateDate(dates.plannedStart) || '—'} → {fmtGateDate(dates.plannedFinish) || '—'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 border border-border p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Actual</p>
+                      <p className="text-xs font-medium text-foreground tabular-nums">
+                        {fmtGateDate(dates.actualStart) || '—'} → {fmtGateDate(dates.actualFinish) || (dates.actualStart ? 'in progress' : '—')}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground/70 leading-snug">
+                    Derived from the project schedule (activities linked to this gate). Formal completion is recorded by the gate sign-off flow.
+                  </p>
+                </section>
+              )}
+
               {/* Completion summary for completed gates */}
               {state === 'completed' && (
                 <section aria-labelledby={`panel-completion-${gate.id}`} className="rounded-lg bg-[#22c55e]/8 border border-[#22c55e]/20 p-4 space-y-2.5">
@@ -737,6 +808,7 @@ export function PhaseGateStepper({
   className,
   onGateClick,
   projectId,
+  gateDates,
 }: PhaseGateStepperProps) {
   const [activeTooltip, setActiveTooltip] = React.useState<number | null>(null)
   const [activePanel, setActivePanel] = React.useState<{ gate: GateDef; state: GateState } | null>(null)
@@ -851,6 +923,7 @@ export function PhaseGateStepper({
                     onMouseLeave={() => setActiveTooltip(null)}
                     isActive={activePanel?.gate.code === gate.code}
                     href={projectId ? `/stage-gates/${projectId}/gate/${gate.id}` : null}
+                    dates={gateDates?.[gate.id]}
                   />
                 </div>
               )
@@ -879,6 +952,7 @@ export function PhaseGateStepper({
         gate={activePanel?.gate ?? null}
         state={activePanel?.state ?? null}
         onClose={closePanel}
+        dates={activePanel ? gateDates?.[activePanel.gate.id] : undefined}
       />
     </>
   )

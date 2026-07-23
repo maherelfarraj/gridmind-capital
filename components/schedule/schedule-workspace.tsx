@@ -3,16 +3,18 @@
 import * as React from 'react'
 import Link from 'next/link'
 import useSWR from 'swr'
-import { ArrowLeft, Plus, RefreshCw, Loader2, LayoutTemplate, Flag, Pencil } from 'lucide-react'
+import { ArrowLeft, Plus, RefreshCw, Loader2, LayoutTemplate, Flag, Pencil, FileUp, Network } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { GanttChart } from '@/components/schedule/gantt-chart'
 import { ActivityDialog } from '@/components/schedule/activity-dialog'
+import { ImportScheduleDialog } from '@/components/schedule/import-schedule-dialog'
 import {
   getSchedule,
   getProjectProgress,
   seedScheduleTemplate,
   createBaseline,
+  recalcCriticalPath,
   type ScheduleActivity,
 } from '@/app/actions/schedule'
 import { getProject } from '@/app/actions/projects'
@@ -24,6 +26,8 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
   const [editing, setEditing] = React.useState<ScheduleActivity | null>(null)
   const [seeding, setSeeding] = React.useState(false)
   const [baselining, setBaselining] = React.useState(false)
+  const [importOpen, setImportOpen] = React.useState(false)
+  const [recalcing, setRecalcing] = React.useState(false)
 
   const { data: project } = useSWR(`project-${projectId}`, () => getProject(projectId))
   const { data: schedule, isLoading, mutate } = useSWR(
@@ -76,6 +80,15 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
     toast({ title: 'Baseline created', variant: 'success' })
   }
 
+  async function handleRecalc() {
+    setRecalcing(true)
+    const res = await recalcCriticalPath(projectId)
+    setRecalcing(false)
+    if (res.error) { toast({ title: 'Critical path failed', description: res.error, variant: 'danger' }); return }
+    toast({ title: `Critical path updated — ${res.criticalCount} activities on the path`, variant: 'success' })
+    refresh()
+  }
+
   const overall = progress?.percentComplete ?? 0
 
   return (
@@ -86,6 +99,13 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
         projectId={projectId}
         activity={editing}
         onSaved={refresh}
+      />
+
+      <ImportScheduleDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        projectId={projectId}
+        onImported={refresh}
       />
 
       <div className="space-y-6">
@@ -112,6 +132,14 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
             <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
               {seeding ? <Loader2 className="size-3.5 animate-spin" /> : <LayoutTemplate className="size-3.5" />}
               Generate template
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+              <FileUp className="size-3.5" />
+              Import
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleRecalc} disabled={recalcing || !activities.length}>
+              {recalcing ? <Loader2 className="size-3.5 animate-spin" /> : <Network className="size-3.5" />}
+              Recalculate critical path
             </Button>
             <Button variant="outline" size="sm" onClick={handleBaseline} disabled={baselining || !activities.length}>
               {baselining ? <Loader2 className="size-3.5 animate-spin" /> : <Flag className="size-3.5" />}

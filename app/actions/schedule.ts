@@ -748,3 +748,282 @@ export async function seedScheduleTemplate(projectId: string): Promise<{ seeded:
   revalidatePath(`/projects/${projectId}/schedule`)
   return { seeded: true, count: rows.length }
 }
+
+// ─── 9. Import activities (CSV / MS Project XML / P6 XML) ───────────────────────
+
+export interface ImportRow {
+  activity_code?: string | null
+  name: string
+  phase?: string | null
+  discipline?: string | null
+  gate_number?: number | null
+  duration_days?: number | null
+  planned_start?: string | null
+  planned_finish?: string | null
+  percent_complete?: number | null
+  weight?: number | null
+  is_milestone?: boolean | null
+  /** Optional FS predecessor referenced by activity_code (wired after insert). */
+  predecessor_code?: string | null
+}
+
+/**
+ * Bulk-import activities parsed client-side from CSV or XML.
+ * mode 'replace' clears the project's existing activities (+ deps + progress)
+ * first; 'append' adds after the current max sort_order.
+ * FS dependencies are wired from predecessor_code when both codes are present.
+ */
+export async function importActivities(
+  projectId: string,
+  rows: ImportRow[],
+  mode: 'append' | 'replace' = 'append',
+): Promise<{ error?: string; imported?: number }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+  if (!rows.length) return { error: 'No rows to import' }
+
+  const sb = createAdminClient()
+
+  if (mode === 'replace') {
+    await sb.from('activity_dependencies').delete().eq('tenant_id', DEMO_TENANT).eq('project_id', projectId)
+    await sb.from('progress_updates').delete().eq('tenant_id', DEMO_TENANT).eq('project_id', projectId)
+    await sb.from('schedule_activities').delete().eq('tenant_id', DEMO_TENANT).eq('project_id', projectId)
+  }
+
+  let sortBase = 0
+  if (mode === 'append') {
+    const { data: maxRow } = await sb
+      .from('schedule_activities')
+      .select('sort_order')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    sortBase = Number(maxRow?.sort_order ?? 0) + 10
+  }
+
+  const insertRows = rows.map((r, i) => {
+    const pct = Math.max(0, Math.min(100, Number(r.percent_complete ?? 0)))
+    return {
+      tenant_id:        DEMO_TENANT,
+      project_id:       projectId,
+      activity_code:    r.activity_code ?? null,
+      name:             r.name || 'Imported activity',
+      phase:            r.phase ?? null,
+      discipline:       r.discipline ?? null,
+      gate_number:      r.gate_number ?? null,
+      duration_days:    r.duration_days ?? null,
+      planned_start:    r.planned_start ?? null,
+      planned_finish:   r.planned_finish ?? null,
+      percent_complete: pct,
+      weight:           r.weight ?? 1,
+      is_critical:      false,
+      is_milestone:     r.is_milestone ?? false,
+      status:           statusFromPercent(pct),
+      sort_order:       sortBase + i * 10,
+    }
+  })
+
+  const { data: inserted, error } = await sb
+    .from('schedule_activities')
+    .insert(insertRows)
+    .select('id, activity_code')
+
+  if (error) return { error: error.message }
+
+  // Wire FS dependencies by predecessor_code (best-effort).
+  const idByCode: Record<string, string> = {}
+  for (const row of inserted ?? []) {
+    if (row.activity_code) idByCode[row.activity_code as string] = row.id as string
+  }
+  const depRows = rows
+    .filter(r => r.predecessor_code && r.activity_code && idByCode[r.predecessor_code] && idByCode[r.activity_code])
+    .map(r => ({
+      tenant_id:      DEMO_TENANT,
+      project_id:     projectId,
+      predecessor_id: idByCode[r.predecessor_code as string],
+      successor_id:   idByCode[r.activity_code as string],
+      type:           'FS',
+      lag_days:       0,
+    }))
+  if (depRows.length) await sb.from('activity_dependencies').insert(depRows)
+
+  revalidatePath(`/projects/${projectId}/schedule`)
+  return { imported: insertRows.length }
+}
+
+// ─── 10. Critical path (CPM forward/backward pass) ─────────────────────────────
+
+/**
+ * Compute the critical path via the Critical Path Method and persist
+ * is_critical on every activity. Uses duration_days (falling back to the
+ * planned_start→planned_finish span) and FS dependency lags. Activities with
+ * total float <= 0 are flagged critical.
+ */
+export async function recalcCriticalPath(
+  projectId: string,
+): Promise<{ error?: string; criticalCount?: number }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
+  const sb = createAdminClient()
+  const [{ data: acts }, { data: deps }] = await Promise.all([
+    sb.from('schedule_activities')
+      .select('id, duration_days, planned_start, planned_finish')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId),
+    sb.from('activity_dependencies')
+      .select('predecessor_id, successor_id, lag_days')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId),
+  ])
+
+  const activities = acts ?? []
+  if (!activities.length) return { error: 'No activities to analyse' }
+
+  const dur: Record<string, number> = {}
+  for (const a of activities) {
+    let d = Number(a.duration_days ?? 0)
+    if ((!d || d <= 0) && a.planned_start && a.planned_finish) {
+      d = dayDiff(a.planned_start as string, a.planned_finish as string) ?? 1
+    }
+    dur[a.id] = Math.max(1, d || 1)
+  }
+
+  const preds: Record<string, { id: string; lag: number }[]> = {}
+  const succs: Record<string, { id: string; lag: number }[]> = {}
+  for (const a of activities) { preds[a.id] = []; succs[a.id] = [] }
+  for (const d of deps ?? []) {
+    const p = d.predecessor_id as string
+    const s = d.successor_id as string
+    const lag = Number(d.lag_days ?? 0)
+    if (preds[s]) preds[s].push({ id: p, lag })
+    if (succs[p]) succs[p].push({ id: s, lag })
+  }
+
+  // Topological order (Kahn's algorithm).
+  const indeg: Record<string, number> = {}
+  for (const a of activities) indeg[a.id] = preds[a.id].length
+  const q = activities.filter(a => indeg[a.id] === 0).map(a => a.id)
+  const order: string[] = []
+  while (q.length) {
+    const n = q.shift() as string
+    order.push(n)
+    for (const s of succs[n]) {
+      indeg[s.id]--
+      if (indeg[s.id] === 0) q.push(s.id)
+    }
+  }
+  // Guard against a residual cycle — append any unvisited nodes.
+  if (order.length < activities.length) {
+    const seen = new Set(order)
+    for (const a of activities) if (!seen.has(a.id)) order.push(a.id)
+  }
+
+  // Forward pass → early start / early finish.
+  const ES: Record<string, number> = {}
+  const EF: Record<string, number> = {}
+  for (const id of order) {
+    const es = preds[id].length
+      ? Math.max(...preds[id].map(p => (EF[p.id] ?? 0) + p.lag))
+      : 0
+    ES[id] = es
+    EF[id] = es + dur[id]
+  }
+  const projectEnd = Math.max(0, ...activities.map(a => EF[a.id] ?? 0))
+
+  // Backward pass → late start / late finish.
+  const LF: Record<string, number> = {}
+  const LS: Record<string, number> = {}
+  for (const id of [...order].reverse()) {
+    const lf = succs[id].length
+      ? Math.min(...succs[id].map(s => (LS[s.id] ?? projectEnd) - s.lag))
+      : projectEnd
+    LF[id] = lf
+    LS[id] = lf - dur[id]
+  }
+
+  // Total float ≤ 0 ⇒ critical.
+  const criticalIds: string[] = []
+  const nonCriticalIds: string[] = []
+  for (const a of activities) {
+    const float = (LS[a.id] ?? 0) - (ES[a.id] ?? 0)
+    if (float <= 0) criticalIds.push(a.id)
+    else nonCriticalIds.push(a.id)
+  }
+
+  if (criticalIds.length) {
+    await sb.from('schedule_activities').update({ is_critical: true }).in('id', criticalIds).eq('tenant_id', DEMO_TENANT)
+  }
+  if (nonCriticalIds.length) {
+    await sb.from('schedule_activities').update({ is_critical: false }).in('id', nonCriticalIds).eq('tenant_id', DEMO_TENANT)
+  }
+
+  revalidatePath(`/projects/${projectId}/schedule`)
+  return { criticalCount: criticalIds.length }
+}
+
+// ─── 11. Gate schedule (derived from activities — never touches phase_gates) ────
+
+export interface GateScheduleRow {
+  gateNumber:      number
+  plannedStart:    string | null
+  plannedFinish:   string | null
+  actualStart:     string | null
+  actualFinish:    string | null
+  activityCount:   number
+  percentComplete: number
+}
+
+/**
+ * Derive planned/actual gate dates purely from schedule_activities grouped by
+ * gate_number. This NEVER reads or writes phase_gates — that table stays owned
+ * by the /team gate sign-off flow. planned_start/finish are the min/max planned
+ * dates of the gate's activities; actual_finish only resolves once every
+ * activity in the gate is 100% complete.
+ */
+export async function getGateSchedule(projectId: string): Promise<GateScheduleRow[]> {
+  const sb = createAdminClient()
+  const { data } = await sb
+    .from('schedule_activities')
+    .select('gate_number, planned_start, planned_finish, actual_start, actual_finish, percent_complete, weight')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+
+  const rows = (data ?? []).filter(r => r.gate_number != null)
+  const byGate = new Map<number, typeof rows>()
+  for (const r of rows) {
+    const g = Number(r.gate_number)
+    if (!byGate.has(g)) byGate.set(g, [])
+    byGate.get(g)!.push(r)
+  }
+
+  const minIso = (vals: (string | null)[]): string | null => {
+    const xs = vals.filter(Boolean) as string[]
+    return xs.length ? xs.slice().sort()[0] : null
+  }
+  const maxIso = (vals: (string | null)[]): string | null => {
+    const xs = vals.filter(Boolean) as string[]
+    return xs.length ? xs.slice().sort()[xs.length - 1] : null
+  }
+
+  const result: GateScheduleRow[] = []
+  for (const [gateNumber, acts] of Array.from(byGate.entries()).sort((a, b) => a[0] - b[0])) {
+    const allComplete = acts.every(a => Number(a.percent_complete ?? 0) >= 100)
+    const totalWeight = acts.reduce((s, a) => s + Number(a.weight ?? 1), 0) || 1
+    const weighted    = acts.reduce((s, a) => s + Number(a.weight ?? 1) * Number(a.percent_complete ?? 0), 0)
+
+    result.push({
+      gateNumber,
+      plannedStart:  minIso(acts.map(a => a.planned_start as string | null)),
+      plannedFinish: maxIso(acts.map(a => a.planned_finish as string | null)),
+      actualStart:   minIso(acts.map(a => a.actual_start as string | null)),
+      actualFinish:  allComplete ? maxIso(acts.map(a => a.actual_finish as string | null)) : null,
+      activityCount: acts.length,
+      percentComplete: Math.round((weighted / totalWeight) * 10) / 10,
+    })
+  }
+
+  return result
+}
