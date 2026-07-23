@@ -1,7 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireWriter } from '@/lib/auth/guard'
+import { requireWriter, requireProjectDirector } from '@/lib/auth/guard'
 import { sendProjectCreatedEmail } from '@/lib/email/send'
 import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
@@ -379,7 +379,7 @@ export async function createProjectFull(
 }
 
 export async function archiveProject(id: string): Promise<{ error?: string }> {
-  const gate = await requireWriter()
+  const gate = await requireProjectDirector()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
@@ -392,7 +392,7 @@ export async function archiveProject(id: string): Promise<{ error?: string }> {
 }
 
 export async function duplicateProject(id: string): Promise<{ id?: string; error?: string }> {
-  const gate = await requireWriter()
+  const gate = await requireProjectDirector()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
@@ -773,4 +773,109 @@ export async function seedStakeholdersDemoData(projectId: string): Promise<{ err
     await supabase.from('project_members').insert({ tenant_id: DEMO_TENANT, project_id: projectId, ...d })
   }
   return {}
+}
+
+// ─── Per-project data loaders (used by project detail page) ──────────────────
+
+/** Risks for a single project. */
+export async function getProjectRisks(projectId: string) {
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('risks')
+    .select('id, title, probability, impact, status')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+
+  return (data ?? []).map((r) => ({
+    title:       r.title       ?? 'Unnamed risk',
+    probability: r.probability <= 2 ? 'low' : r.probability <= 3 ? 'medium' : 'high',
+    impact:      r.impact      <= 2 ? 'low' : r.impact      <= 3 ? 'medium' : 'high',
+    status:      (r.status ?? 'open') as 'open' | 'closed',
+  }))
+}
+
+/** Approvals linked to a project via project_code stored in the title. */
+export async function getProjectApprovals(projectCode: string): Promise<import('@/lib/project-types').Approval[]> {
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('approvals')
+    .select('id, object_type, title, status, priority, created_at')
+    .ilike('title', `%${projectCode}%`)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  const now = Date.now()
+  return (data ?? []).map((a) => {
+    const daysOpen = Math.floor((now - new Date(a.created_at).getTime()) / 86400000)
+    return {
+      id:          a.id,
+      type:        a.object_type ?? 'general',
+      title:       a.title ?? a.id.slice(0, 8).toUpperCase(),
+      projectCode,
+      projectName: '',
+      requestedBy: 'Team',
+      daysOpen,
+      isOverdue:   daysOpen > 5 && a.status === 'pending',
+      priority:    (a.priority ?? 'medium') as import('@/lib/project-types').Approval['priority'],
+    }
+  })
+}
+
+/** Phase-gate deliverables for a project — derived from phase_gates rows. */
+export async function getProjectDeliverables(projectId: string) {
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('phase_gates')
+    .select('id, phase_number, phase_name, status')
+    .eq('project_id', projectId)
+    .order('phase_number', { ascending: true })
+
+  return (data ?? []).map((g) => ({
+    name:      g.phase_name ?? `Gate ${g.phase_number}`,
+    completed: g.status === 'approved',
+  }))
+}
+
+/** Team members (project_members) for the project detail Team tab. */
+export async function getProjectTeamMembers(projectId: string): Promise<import('@/lib/project-types').ProjectMember[]> {
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('project_members')
+    .select('id, name, role')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+
+  return (data ?? []).map((m) => {
+    const name: string = (m as { name?: string }).name ?? 'Unknown'
+    const initials = name.split(' ').map((w) => w[0] ?? '').slice(0, 2).join('').toUpperCase()
+    return {
+      id:       m.id,
+      name,
+      role:     m.role ?? 'Team Member',
+      initials,
+    }
+  })
+}
+
+/** Documents for a project — uses document_files table via project_id join. */
+export async function getProjectDocuments(projectCode: string): Promise<import('@/lib/project-types').Document[]> {
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('document_files')
+    .select('id, code, title, file_name, category, created_at, storage_path')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_code', projectCode)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  return (data ?? []).map((d) => ({
+    id:        d.id,
+    code:      d.code ?? d.file_name ?? d.id.slice(0, 8),
+    title:     d.title ?? d.file_name ?? 'Document',
+    status:    d.category ?? 'general',
+    updatedAt: d.created_at ?? '',
+    storagePath: d.storage_path ?? null,
+  }))
 }

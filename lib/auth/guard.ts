@@ -90,3 +90,8 @@ export function requireAdmin(): Promise<GuardResult> {
 export function requireApprover(): Promise<GuardResult> {
   return requireRole(APPROVER_ROLES)
 }
+
+/** Convenience: project deletion — restricted to admins and project director. */
+export function requireProjectDirector(): Promise<GuardResult> {
+  return requireRole(['system_admin', 'tenant_admin', 'project_director'] as const)
+}

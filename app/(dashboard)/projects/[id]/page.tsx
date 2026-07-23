@@ -6,9 +6,19 @@ import useSWR from 'swr'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
 import { CommentThread } from '@/components/comments/comment-thread'
 import { StaffingRadar } from '@/components/projects/staffing-radar'
-import { getProject } from '@/app/actions/projects'
+import { useSession } from '@/lib/session-context'
+import { useToast } from '@/components/ui/toast'
+import {
+  getProject,
+  getProjectRisks,
+  getProjectApprovals,
+  getProjectDeliverables,
+  getProjectTeamMembers,
+  getProjectDocuments,
+} from '@/app/actions/projects'
 import { getProjectTimeline } from '@/app/actions/phase-gates'
 import { loadStaffingRadar } from '@/app/actions/team'
+import { createApproval } from '@/app/actions/approvals'
 
 // ─────────────────────────────────────────────────────────────
 // Page
@@ -18,6 +28,8 @@ export default function ProjectDetailRoute() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
   const id = params?.id ?? ''
+  const session = useSession()
+  const { toast } = useToast()
 
   const { data: project, isLoading } = useSWR(
     id ? `project-${id}` : null,
@@ -34,11 +46,82 @@ export default function ProjectDetailRoute() {
     () => loadStaffingRadar(id),
   )
 
+  // Per-project real data
+  const { data: risks } = useSWR(
+    id ? `project-risks-${id}` : null,
+    () => getProjectRisks(id),
+  )
+
+  const { data: teamMembers } = useSWR(
+    id ? `project-team-${id}` : null,
+    () => getProjectTeamMembers(id),
+  )
+
+  const { data: deliverables, mutate: mutateDeliverables } = useSWR(
+    id ? `project-deliverables-${id}` : null,
+    () => getProjectDeliverables(id),
+  )
+
+  const projectCode = project?.code ?? ''
+
+  const { data: approvals, mutate: mutateApprovals } = useSWR(
+    projectCode ? `project-approvals-${projectCode}` : null,
+    () => getProjectApprovals(projectCode),
+  )
+
+  const { data: documents } = useSWR(
+    projectCode ? `project-docs-${projectCode}` : null,
+    () => getProjectDocuments(projectCode),
+  )
+
   const [activePanel, setActivePanel] = React.useState<'comments' | 'documents' | 'edit' | null>(null)
+  const [submitting, setSubmitting] = React.useState(false)
 
   const openPanel = React.useCallback((panel: 'comments' | 'documents' | 'edit') => {
     setActivePanel((prev) => (prev === panel ? null : panel))
   }, [])
+
+  const isViewer = session.roles.includes('viewer')
+
+  const handleSubmitApproval = React.useCallback(async () => {
+    if (!project) return
+    setSubmitting(true)
+    const res = await createApproval({
+      title:       `${project.code} — Gate ${project.gate} Approval`,
+      description: `Submitted for gate ${project.gate} (${project.gateName}) approval.`,
+      objectType:  'project',
+      priority:    'high',
+      projectCode: project.code,
+      projectName: project.name,
+    })
+    setSubmitting(false)
+    if ('error' in res) {
+      toast({ title: 'Failed to submit', description: res.error, variant: 'danger' })
+    } else {
+      toast({ title: 'Submitted for approval', variant: 'success' })
+      mutateApprovals()
+    }
+  }, [project, toast, mutateApprovals])
+
+  const handleRequestChanges = React.useCallback(async () => {
+    if (!project) return
+    setSubmitting(true)
+    const res = await createApproval({
+      title:       `${project.code} — Change Request (G${project.gate})`,
+      description: `Changes requested for gate ${project.gate} (${project.gateName}).`,
+      objectType:  'change_request',
+      priority:    'normal',
+      projectCode: project.code,
+      projectName: project.name,
+    })
+    setSubmitting(false)
+    if ('error' in res) {
+      toast({ title: 'Failed to request changes', description: res.error, variant: 'danger' })
+    } else {
+      toast({ title: 'Change request created', variant: 'success' })
+      mutateApprovals()
+    }
+  }, [project, toast, mutateApprovals])
 
   const handleBack = React.useCallback(() => router.push('/projects'), [router])
 
@@ -101,31 +184,27 @@ export default function ProjectDetailRoute() {
         gateProgress={Object.fromEntries(
           Array.from({ length: 10 }, (_, i) => [`G${i}`, i < project.gate]),
         )}
-        deliverables={[
-          { name: 'Feasibility Study',        completed: project.gate >= 1 },
-          { name: 'Development Approval',     completed: project.gate >= 1 },
-          { name: 'Commercial IFC Package',   completed: project.gate >= 2 },
-          { name: 'IFC Drawings',             completed: project.gate >= 3 },
-          { name: 'Technical Specifications', completed: project.gate >= 2 },
-          { name: 'Bill of Materials',        completed: project.gate >= 4 },
-          { name: 'Procurement Ready',        completed: project.gate >= 4 },
-          { name: 'Design Calculations',      completed: project.gate >= 3 },
-        ].filter((_, i) => {
-          // Show 4 most relevant deliverables for current gate
-          const g = project.gate
-          if (g <= 1) return i < 2
-          if (g <= 3) return i >= 2 && i < 6
-          return i >= 4
-        })}
-        risks={[
-          { title: 'Permit delays',           probability: 'high',   impact: 'high',   status: 'open' },
-          { title: 'Supply chain disruption', probability: 'medium', impact: 'medium', status: 'open' },
-          { title: 'Weather delays',          probability: 'medium', impact: 'low',    status: 'open' },
-        ]}
+        deliverables={
+          (deliverables && deliverables.length > 0)
+            ? deliverables
+            : [
+                { name: 'Feasibility Study',        completed: project.gate >= 1 },
+                { name: 'Development Approval',     completed: project.gate >= 1 },
+                { name: 'IFC Drawings',             completed: project.gate >= 3 },
+                { name: 'Procurement Ready',        completed: project.gate >= 4 },
+              ]
+        }
+        risks={
+          (risks && risks.length > 0)
+            ? risks
+            : [
+                { title: 'No risks recorded', probability: 'low', impact: 'low', status: 'open' },
+              ]
+        }
         timelineLogs={timelineLogs ?? []}
-        approvals={[]}
-        teamMembers={[]}
-        documents={[]}
+        approvals={approvals ?? []}
+        teamMembers={teamMembers ?? []}
+        documents={documents ?? []}
         comments={[]}
         onBack={handleBack}
         onEdit={() => openPanel('edit')}
@@ -133,8 +212,9 @@ export default function ProjectDetailRoute() {
         onDocuments={() => openPanel('documents')}
         onTeam={() => {}}
         onSettings={() => {}}
-        onSubmitApproval={() => {}}
-        onRequestChanges={() => {}}
+        onSubmitApproval={handleSubmitApproval}
+        onRequestChanges={handleRequestChanges}
+        hideActions={isViewer}
       />
 
       {/* ── Side panels ── */}

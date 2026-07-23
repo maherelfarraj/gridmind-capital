@@ -127,12 +127,14 @@ function GateStatusCard({
   overallProgress,
   onSubmitApproval,
   onRequestChanges,
+  hideActions = false,
 }: {
   gateProgress?: Record<string, boolean>
   deliverables?: { name: string; completed: boolean }[]
   overallProgress?: number
   onSubmitApproval?: () => void
   onRequestChanges?: () => void
+  hideActions?: boolean
 }) {
   const completed    = deliverables.filter((d) => d.completed).length
   const total        = deliverables.length
@@ -211,31 +213,33 @@ function GateStatusCard({
           </p>
         </div>
 
-        {/* Next Actions */}
-        <div className="border-t border-slate-100 dark:border-border pt-4 space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-muted-foreground mb-2">
-            Next Actions
-          </p>
-          <Button
-            className="w-full bg-[#0a192f] hover:bg-slate-800 text-white dark:bg-[#64ffda] dark:text-[#0a192f] dark:hover:bg-[#64ffda]/90"
-            size="sm"
-            aria-label="Submit G2 package for approval"
-            onClick={onSubmitApproval}
-          >
-            <Send className="size-4 mr-2" aria-hidden />
-            Submit for Approval
-          </Button>
-          <Button
-            variant="outline"
-            className="w-full border-slate-200 hover:bg-slate-50 dark:border-border dark:hover:bg-muted"
-            size="sm"
-            aria-label="Request changes to G2 deliverables"
-            onClick={onRequestChanges}
-          >
-            <RefreshCw className="size-4 mr-2" aria-hidden />
-            Request Changes
-          </Button>
-        </div>
+        {/* Next Actions — hidden for read-only viewers */}
+        {!hideActions && (
+          <div className="border-t border-slate-100 dark:border-border pt-4 space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-muted-foreground mb-2">
+              Next Actions
+            </p>
+            <Button
+              className="w-full bg-[#0a192f] hover:bg-slate-800 text-white dark:bg-[#64ffda] dark:text-[#0a192f] dark:hover:bg-[#64ffda]/90"
+              size="sm"
+              aria-label="Submit gate package for approval"
+              onClick={onSubmitApproval}
+            >
+              <Send className="size-4 mr-2" aria-hidden />
+              Submit for Approval
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full border-slate-200 hover:bg-slate-50 dark:border-border dark:hover:bg-muted"
+              size="sm"
+              aria-label="Request changes to gate deliverables"
+              onClick={onRequestChanges}
+            >
+              <RefreshCw className="size-4 mr-2" aria-hidden />
+              Request Changes
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -465,7 +469,7 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
 
 // ─────────────────────────────────────────────────────────────
 // Activity Timeline card
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────���──────────────────────
 
 function ActivityTimelineCard({ logs, loading }: { logs: WorkflowLogEntry[]; loading?: boolean }) {
   return (
@@ -572,6 +576,8 @@ export interface ProjectDetailPageProps {
   hideStepper?: boolean
   /** Suppress the built-in ActivityTimeline when the parent renders one */
   hideTimeline?: boolean
+  /** Hide the Submit/Request Changes action buttons (e.g. for read-only viewers) */
+  hideActions?: boolean
 }
 
 /** Adapt spec Approval → internal ApprovalItem for ApprovalQueue */
@@ -648,6 +654,7 @@ export function ProjectDetailPage({
   onRequestChanges,
   hideStepper  = false,
   hideTimeline = false,
+  hideActions  = false,
 }: ProjectDetailPageProps) {
   const gateNumber      = project.gate ?? 2
   const currentGateCode = `G${gateNumber}`
@@ -740,6 +747,7 @@ export function ProjectDetailPage({
             deliverables={deliverables}
             onSubmitApproval={onSubmitApproval}
             onRequestChanges={onRequestChanges}
+            hideActions={hideActions}
           />
           <ProjectInfoCard project={project} />
           <ClientAnnouncementsPanel projectId={project.id} isManager />

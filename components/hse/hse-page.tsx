@@ -2,6 +2,9 @@
 
 import * as React from 'react'
 import useSWR from 'swr'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import {
   ShieldCheck,
   AlertTriangle,
@@ -9,25 +12,235 @@ import {
   HardHat,
   Activity,
   ClipboardList,
-  CheckSquare,
   XCircle,
-  Clock,
   Filter,
   Plus,
   ChevronDown,
   RefreshCw,
   Loader2,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
-import { getHseDashboard, seedHseDemoData } from '@/app/actions/hse'
+import { getHseDashboard, seedHseDemoData, createHseIncident, createHsePermit } from '@/app/actions/hse'
 import type {
   HseIncident,
   HsePermit,
   HseIncidentSeverity,
 } from '@/lib/types/action-types'
+
+// ─── Zod schemas ──────────────────────────────────────────────
+
+const incidentSchema = z.object({
+  title:       z.string().min(3, 'Title must be at least 3 characters'),
+  projectCode: z.string().min(1, 'Project code is required'),
+  severity:    z.enum(['fatality', 'ltif', 'mtc', 'near-miss', 'observation']),
+  reportedBy:  z.string().min(1, 'Reporter name is required'),
+  location:    z.string().min(1, 'Location is required'),
+  description: z.string().min(10, 'Provide at least 10 characters'),
+})
+
+const permitSchema = z.object({
+  type:        z.string().min(1, 'Permit type is required'),
+  scope:       z.string().min(5, 'Scope must be at least 5 characters'),
+  projectCode: z.string().min(1, 'Project code is required'),
+  issuedTo:    z.string().min(1, 'Issued-to name is required'),
+  issuedDate:  z.string().min(1, 'Issued date is required'),
+  expiryDate:  z.string().min(1, 'Expiry date is required'),
+})
+
+type IncidentFormValues = z.infer<typeof incidentSchema>
+type PermitFormValues   = z.infer<typeof permitSchema>
+
+// ─── Field primitives ─────────────────────────────────────────
+
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-foreground">{label}</label>
+      {children}
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  )
+}
+
+const inputCls = 'h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring'
+const selectCls = `${inputCls} cursor-pointer`
+
+// ─── New Incident dialog ──────────────────────────────────────
+
+function NewIncidentDialog({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = React.useState(false)
+  const { toast } = useToast()
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<IncidentFormValues>({
+    resolver: zodResolver(incidentSchema),
+    defaultValues: { severity: 'observation' },
+  })
+
+  async function onSubmit(values: IncidentFormValues) {
+    const res = await createHseIncident(values)
+    if (res.error) {
+      toast({ title: 'Failed to create incident', description: res.error, variant: 'danger' })
+      return
+    }
+    toast({ title: 'Incident reported', variant: 'success' })
+    reset()
+    setOpen(false)
+    onCreated()
+  }
+
+  return (
+    <>
+      <Button variant="default" size="sm" onClick={() => setOpen(true)}>
+        <Plus className="size-4 mr-1.5" aria-hidden />
+        Report Incident
+      </Button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Report new incident"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-lg rounded-xl bg-card border border-border shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="text-base font-semibold text-foreground">Report Incident</h2>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close dialog" className="text-muted-foreground hover:text-foreground">
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-3">
+              <Field label="Title" error={errors.title?.message}>
+                <input {...register('title')} placeholder="Brief description of the incident" className={inputCls} />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Project Code" error={errors.projectCode?.message}>
+                  <input {...register('projectCode')} placeholder="SRS-400" className={inputCls} />
+                </Field>
+                <Field label="Severity" error={errors.severity?.message}>
+                  <select {...register('severity')} className={selectCls}>
+                    <option value="observation">Observation</option>
+                    <option value="near-miss">Near-Miss</option>
+                    <option value="mtc">MTC</option>
+                    <option value="ltif">LTIF</option>
+                    <option value="fatality">Fatality</option>
+                  </select>
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Reported By" error={errors.reportedBy?.message}>
+                  <input {...register('reportedBy')} placeholder="Name of reporter" className={inputCls} />
+                </Field>
+                <Field label="Location" error={errors.location?.message}>
+                  <input {...register('location')} placeholder="Zone / area" className={inputCls} />
+                </Field>
+              </div>
+              <Field label="Description" error={errors.description?.message}>
+                <textarea {...register('description')} rows={3} placeholder="What happened? What was the root cause?" className={`${inputCls} h-auto py-2`} />
+              </Field>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button type="submit" size="sm" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="size-4 animate-spin" aria-hidden /> : 'Submit'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ─── New Permit dialog ────────────────────────────────────────
+
+const PERMIT_TYPE_OPTIONS = [
+  'Work at Height', 'Confined Space', 'Hot Work',
+  'Electrical Isolation', 'Excavation', 'Marine Operations', 'General',
+]
+
+function NewPermitDialog({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = React.useState(false)
+  const { toast } = useToast()
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<PermitFormValues>({
+    resolver: zodResolver(permitSchema),
+    defaultValues: { type: 'General' },
+  })
+
+  async function onSubmit(values: PermitFormValues) {
+    const res = await createHsePermit(values)
+    if (res.error) {
+      toast({ title: 'Failed to create permit', description: res.error, variant: 'danger' })
+      return
+    }
+    toast({ title: 'Permit to work created', variant: 'success' })
+    reset()
+    setOpen(false)
+    onCreated()
+  }
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+        <Plus className="size-4 mr-1.5" aria-hidden />
+        New Permit
+      </Button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="New permit to work"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-lg rounded-xl bg-card border border-border shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="text-base font-semibold text-foreground">New Permit to Work</h2>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close dialog" className="text-muted-foreground hover:text-foreground">
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Permit Type" error={errors.type?.message}>
+                  <select {...register('type')} className={selectCls}>
+                    {PERMIT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </Field>
+                <Field label="Project Code" error={errors.projectCode?.message}>
+                  <input {...register('projectCode')} placeholder="SRS-400" className={inputCls} />
+                </Field>
+              </div>
+              <Field label="Scope" error={errors.scope?.message}>
+                <input {...register('scope')} placeholder="Brief description of work scope" className={inputCls} />
+              </Field>
+              <Field label="Issued To" error={errors.issuedTo?.message}>
+                <input {...register('issuedTo')} placeholder="Responsible person / crew" className={inputCls} />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Issued Date" error={errors.issuedDate?.message}>
+                  <input type="date" {...register('issuedDate')} className={inputCls} />
+                </Field>
+                <Field label="Expiry Date" error={errors.expiryDate?.message}>
+                  <input type="date" {...register('expiryDate')} className={inputCls} />
+                </Field>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button type="submit" size="sm" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="size-4 animate-spin" aria-hidden /> : 'Create Permit'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
 
 // ─── Config maps ──────────────────────────────────────────────
 
@@ -190,10 +403,8 @@ export function HsePage() {
           <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
             {seeding ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : 'Seed Demo'}
           </Button>
-          <Button variant="default" size="sm" onClick={() => addToast({ title: 'Report Incident', description: 'Incident reporting form will open in the full app.', variant: 'info' })}>
-            <Plus className="size-4" aria-hidden />
-            Report Incident
-          </Button>
+          <NewPermitDialog onCreated={() => mutate()} />
+          <NewIncidentDialog onCreated={() => mutate()} />
         </div>
       </div>
 
