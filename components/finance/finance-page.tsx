@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import useSWR from 'swr'
 import {
   TrendingUp,
   TrendingDown,
@@ -17,34 +18,17 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { getFinanceDashboard } from '@/app/actions/finance'
+import type { WbsData, CommitmentData } from '@/app/actions/finance'
 
-// ─── Types ────────────────────────────────────────────────────
+// ─── Types (aliases to imported server types) ────────────────────────────────
 
-interface WbsLine {
-  id: string
-  code: string
-  description: string
-  bac: number      // Budget At Completion ($M)
-  ev: number       // Earned Value ($M)
-  ac: number       // Actual Cost ($M)
-  pv: number       // Planned Value ($M)
-  eac?: number     // Estimate At Completion ($M, optional override)
-  level: number    // 0 = top, 1 = sub
-}
+type WbsLine = WbsData
+type CommitmentLine = CommitmentData
 
-interface CommitmentLine {
-  id: string
-  ref: string
-  vendor: string
-  description: string
-  value: number    // $M
-  status: 'committed' | 'invoiced' | 'paid' | 'disputed'
-  date: string
-}
+// ─── Mock fallback data ───────────────────────────────────────────────────────
 
-// ─── Mock data ────────────────────────────────────────────────
-
-const WBS: WbsLine[] = [
+const WBS_MOCK: WbsLine[] = [
   { id: 'w0',  code: '1.0',   description: 'Sirius 400MW Solar Farm — EPC Total', bac: 480.0, ev: 293.0, ac: 301.4, pv: 270.0, level: 0 },
   { id: 'w1',  code: '1.1',   description: 'Civil & Structural',                  bac:  96.0, ev:  72.0, ac:  74.2, pv:  68.0, level: 1 },
   { id: 'w2',  code: '1.2',   description: 'Structural Steel & Racking',           bac:  72.0, ev:  51.8, ac:  54.6, pv:  46.0, level: 1 },
@@ -56,7 +40,7 @@ const WBS: WbsLine[] = [
   { id: 'w8',  code: '1.8',   description: 'Contingency',                          bac:  24.0, ev:   4.0, ac:   2.0, pv:   2.0, level: 1 },
 ]
 
-const COMMITMENTS: CommitmentLine[] = [
+const COMMITMENTS_MOCK: CommitmentLine[] = [
   { id: 'c1', ref: 'PO-4401', vendor: 'Construcciones Andinas SA', description: 'Civil & Earthworks Sub-Contract', value: 38.2, status: 'committed', date: '18 Jul 2025' },
   { id: 'c2', ref: 'PO-4389', vendor: 'Huawei Digital Power',      description: 'Inverter Supply & Installation',  value: 52.4, status: 'invoiced',   date: '10 Jun 2025' },
   { id: 'c3', ref: 'PO-4352', vendor: 'Nextracker Inc.',           description: 'NX Horizon Tracker Systems',     value: 44.8, status: 'paid',       date: '22 Apr 2025' },
@@ -217,11 +201,17 @@ function CommitmentRow({ line }: { line: CommitmentLine }) {
 export function FinancePage() {
   const [tab, setTab] = React.useState<'evm' | 'commitments'>('evm')
 
+  const { data: liveData, isLoading } = useSWR('finance-dashboard', () => getFinanceDashboard())
+
+  // Prefer live data; fall back to mock while loading or when DB is empty
+  const WBS         = liveData?.seeded ? liveData.wbs         : WBS_MOCK
+  const COMMITMENTS = liveData?.seeded ? liveData.commitments : COMMITMENTS_MOCK
+
   // Portfolio-level derived metrics
-  const root   = WBS[0]
-  const cpi    = root.ev / root.ac
-  const spi    = root.ev / root.pv
-  const eac    = root.bac / cpi
+  const root   = WBS[0] ?? WBS_MOCK[0]
+  const cpi    = root.ev / (root.ac || 1)
+  const spi    = root.ev / (root.pv || 1)
+  const eac    = root.bac / (cpi || 1)
   const cv     = root.ev - root.ac   // Cost Variance
   const sv     = root.ev - root.pv   // Schedule Variance
   const totalCommitted = COMMITMENTS.reduce((s, c) => s + c.value, 0)
@@ -241,10 +231,21 @@ export function FinancePage() {
             Earned Value Management & Commitment Register — <span className="font-mono text-[#64ffda]">SRS-400</span>
           </p>
         </div>
-        <Button variant="outline" size="sm">
-          <BarChart3 className="size-4" aria-hidden />
-          Export Report
-        </Button>
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            'inline-flex items-center gap-1.5 text-[10px] font-semibold rounded-full px-2 py-0.5 border',
+            liveData?.seeded
+              ? 'bg-green-500/10 text-green-600 border-green-500/25'
+              : 'bg-muted text-muted-foreground border-border',
+          )}>
+            <span className={cn('size-1.5 rounded-full', liveData?.seeded ? 'bg-green-500' : 'bg-muted-foreground')} />
+            {isLoading ? 'Loading…' : liveData?.seeded ? 'Live' : 'Illustrative'}
+          </span>
+          <Button variant="outline" size="sm">
+            <BarChart3 className="size-4" aria-hidden />
+            Export Report
+          </Button>
+        </div>
       </div>
 
       {/* KPI strip */}
