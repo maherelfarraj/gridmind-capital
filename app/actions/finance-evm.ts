@@ -9,21 +9,44 @@ const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
 export async function loadFinanceEvmDashboard(): Promise<FinanceEvmDashboard> {
   const sb = createAdminClient()
-  const [{ data: records }, { data: cashflow }, { data: projects }] = await Promise.all([
+  const [{ data: records }, { data: cashflow }, { data: projects }, { data: certs }, { data: vos }] = await Promise.all([
     sb.from('finance_records').select('*').eq('tenant_id', DEMO_TENANT).order('period'),
     sb.from('cash_flow_records').select('*').eq('tenant_id', DEMO_TENANT).order('period'),
-    sb.from('projects').select('id, name').eq('tenant_id', DEMO_TENANT),
+    sb.from('projects').select('id, name, budget_usd').eq('tenant_id', DEMO_TENANT),
+    sb.from('payment_certificates').select('this_period, status').eq('tenant_id', DEMO_TENANT),
+    sb.from('variation_orders').select('cost_impact, status').eq('tenant_id', DEMO_TENANT),
   ])
 
   const pm = Object.fromEntries((projects ?? []).map(p => [p.id, p.name]))
   const r = (records ?? []).map(x => ({ ...x, project_name: pm[x.project_id] ?? 'Unknown' })) as FinanceRecord[]
   const c = (cashflow ?? []).map(x => ({ ...x, project_name: pm[x.project_id] ?? 'Unknown' })) as CashFlowRecord[]
 
-  const totalBAC = r.reduce((s, x) => s + (x.bac ?? 0), 0)
   const totalEV  = r.reduce((s, x) => s + (x.ev  ?? 0), 0)
-  const totalAC  = r.reduce((s, x) => s + (x.ac  ?? 0), 0)
-  const avgCPI   = r.length ? r.reduce((s, x) => s + (x.cpi ?? 1), 0) / r.length : 1
   const avgSPI   = r.length ? r.reduce((s, x) => s + (x.spi ?? 1), 0) / r.length : 1
+
+  // ── Actual Cost: prefer cumulative certified from payment certificates ──────
+  // When certificates exist, the certified (certified/invoiced/paid) amount is a
+  // firmer actual than the finance_records estimate; otherwise fall back.
+  const certifiedStatuses = ['certified', 'invoiced', 'paid']
+  const certifiedAC = (certs ?? [])
+    .filter(x => certifiedStatuses.includes(x.status as string))
+    .reduce((s, x) => s + Number(x.this_period ?? 0), 0)
+  const recordsAC = r.reduce((s, x) => s + (x.ac ?? 0), 0)
+  const acSource: 'certificates' | 'finance_records' = certifiedAC > 0 ? 'certificates' : 'finance_records'
+  const totalAC = acSource === 'certificates' ? certifiedAC : recordsAC
+
+  // ── Budget at Completion: baseline budget + approved VO cost impacts ─────────
+  const approvedVos = (vos ?? []).filter(x => x.status === 'approved')
+  const approvedVoCount = approvedVos.length
+  const approvedVoImpact = approvedVos.reduce((s, x) => s + Number(x.cost_impact ?? 0), 0)
+  const baselineBudget = (projects ?? []).reduce((s, p) => s + Number((p as { budget_usd?: number }).budget_usd ?? 0), 0)
+  const recordsBAC = r.reduce((s, x) => s + (x.bac ?? 0), 0)
+  // Use the project baseline + approved VOs when project budgets are available,
+  // otherwise fall back to the finance_records BAC sum.
+  const totalBAC = (baselineBudget > 0 ? baselineBudget : recordsBAC) + approvedVoImpact
+
+  // CPI recomputed against the (possibly certificate-sourced) actual cost.
+  const avgCPI = totalAC > 0 ? totalEV / totalAC : (r.length ? r.reduce((s, x) => s + (x.cpi ?? 1), 0) / r.length : 1)
 
   // Aggregate by period for trend charts
   const periodEvm: Record<string, { pv: number; ev: number; ac: number }> = {}
@@ -53,6 +76,8 @@ export async function loadFinanceEvmDashboard(): Promise<FinanceEvmDashboard> {
       avgSPI: Math.round(avgSPI * 100) / 100,
       totalEAC: r.reduce((s, x) => s + (x.eac ?? 0), 0),
       variance: totalEV - totalAC,
+      acSource,
+      approvedVoCount,
     },
     evmTrend: Object.entries(periodEvm).map(([period, v]) => ({ period, ...v })),
     cashTrend: Object.entries(periodCash).map(([period, v]) => ({ period, ...v })),

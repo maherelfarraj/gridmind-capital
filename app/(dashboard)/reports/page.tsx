@@ -12,17 +12,20 @@ import { loadRisksDashboard }    from '@/app/actions/risks'
 import { getApprovals }          from '@/app/actions/approvals'
 import { loadFinanceEvmDashboard } from '@/app/actions/finance-evm'
 import { getGateProgressReport } from '@/app/actions/phase-gates'
+import { getVariationOrders }    from '@/app/actions/variation-orders'
+import { getClaims }             from '@/app/actions/claims'
 import type { RiskRecord }       from '@/lib/types/action-types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log'
+type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register'
 type DateRange  = '30d' | '90d' | '1y' | 'all'
 
 const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
   { id: 'project-status',    label: 'Project Status',     description: 'Portfolio-wide project status, gate and budget overview' },
   { id: 'gate-progress',     label: 'Gate Progress',      description: 'Phase gate status across all active projects' },
   { id: 'financial-summary', label: 'Financial Summary',  description: 'EVM records — budget, actual, EAC, and CPI by period' },
+  { id: 'variations-register', label: 'Variations Register', description: 'Variation orders and claims for a project, with cost and time impacts' },
   { id: 'risk-register',     label: 'Risk Register',      description: 'Full risk register with scores, owners and status' },
   { id: 'approvals-log',     label: 'Approvals Log',      description: 'Approval decisions and pending items across all projects' },
 ]
@@ -257,6 +260,98 @@ function ApprovalsLogReport({ dateRange }: { dateRange: DateRange }) {
   )
 }
 
+function usd(n: number): string {
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
+  if (abs >= 1_000)     return `$${(n / 1_000).toFixed(0)}K`
+  return `$${n.toFixed(0)}`
+}
+
+function VariationsRegisterReport({ dateRange }: { dateRange: DateRange }) {
+  const { data: projects } = useSWR('report-vo-projects', () => getProjects())
+  const [projectId, setProjectId] = React.useState<string | null>(null)
+
+  // Default to the first project once loaded.
+  const activeProjectId = projectId ?? projects?.[0]?.id ?? null
+
+  const { data: voData, isLoading: voLoading } = useSWR(
+    activeProjectId ? ['report-vo', activeProjectId] : null,
+    () => getVariationOrders(activeProjectId!),
+  )
+  const { data: claimData, isLoading: claimLoading } = useSWR(
+    activeProjectId ? ['report-claims', activeProjectId] : null,
+    () => getClaims(activeProjectId!),
+  )
+
+  const from = cutoff(dateRange)
+  const vos    = (voData?.rows ?? []).filter((r) => withinRange(r.created_at, from))
+  const claims = (claimData?.rows ?? []).filter((r) => withinRange(r.created_at, from))
+
+  // Unified rows so VOs and claims share one register table.
+  type Line = { kind: 'VO' | 'Claim'; ref: string; title: string; status: string; cost: number; days: number }
+  const lines: Line[] = [
+    ...vos.map((v): Line => ({
+      kind: 'VO', ref: v.vo_number, title: v.title, status: v.status,
+      cost: v.cost_impact ?? 0, days: v.time_impact_days ?? 0,
+    })),
+    ...claims.map((c): Line => ({
+      kind: 'Claim', ref: c.claim_number, title: c.title, status: c.status,
+      cost: c.amount ?? 0, days: c.eot_days ?? 0,
+    })),
+  ]
+  const totalCost = lines.reduce((s, l) => s + l.cost, 0)
+  const totalDays = lines.reduce((s, l) => s + l.days, 0)
+
+  const isLoading = voLoading || claimLoading
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Project selector — VOs and claims are per project */}
+      <div className="flex items-center gap-2 print:hidden">
+        <label className="text-xs font-medium text-muted-foreground">Project</label>
+        <select
+          value={activeProjectId ?? ''}
+          onChange={(e) => setProjectId(e.target.value)}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground"
+        >
+          {(projects ?? []).map((p) => (
+            <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {isLoading ? (
+        <LoadingRows cols={5} />
+      ) : (
+        <ReportTable
+          headers={['Type', 'Reference', 'Title', 'Status', 'Cost Impact', 'Time (days)']}
+          empty={!lines.length}
+        >
+          {lines.map((l, i) => (
+            <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors print:hover:bg-transparent">
+              <td className="px-3 py-2.5">
+                <Badge variant="outline" className="text-[11px]">{l.kind}</Badge>
+              </td>
+              <td className="px-3 py-2.5 font-mono text-xs font-medium text-foreground">{l.ref}</td>
+              <td className="px-3 py-2.5 font-medium text-foreground max-w-[260px] truncate" title={l.title}>{l.title}</td>
+              <td className="px-3 py-2.5"><StatusPill value={l.status} /></td>
+              <td className="px-3 py-2.5 text-right tabular-nums">{usd(l.cost)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">{l.days}</td>
+            </tr>
+          ))}
+          {lines.length > 0 && (
+            <tr className="border-t-2 border-border bg-muted/40 font-semibold">
+              <td className="px-3 py-2.5" colSpan={4}>Total ({lines.length} item{lines.length === 1 ? '' : 's'})</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">{usd(totalCost)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">{totalDays}</td>
+            </tr>
+          )}
+        </ReportTable>
+      )}
+    </div>
+  )
+}
+
 function LoadingRows({ cols }: { cols: number }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -383,6 +478,7 @@ export default function ReportsPage() {
           {activeType === 'project-status'    && <ProjectStatusReport    dateRange={dateRange} />}
           {activeType === 'gate-progress'     && <GateProgressReport     dateRange={dateRange} />}
           {activeType === 'financial-summary' && <FinancialSummaryReport dateRange={dateRange} />}
+          {activeType === 'variations-register' && <VariationsRegisterReport dateRange={dateRange} />}
           {activeType === 'risk-register'     && <RiskRegisterReport     dateRange={dateRange} />}
           {activeType === 'approvals-log'     && <ApprovalsLogReport     dateRange={dateRange} />}
         </div>

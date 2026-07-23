@@ -40,6 +40,61 @@ export async function loadAiMarketplaceDashboard(): Promise<AiMarketplaceDashboa
   }
 }
 
+/**
+ * Fire-and-forget: create a high-severity `cost_overrun` AI insight when a
+ * project's pending (submitted) VO impact exceeds 5% of its budget_usd.
+ *
+ * Idempotent guard: only creates a row if there is no existing OPEN cost_overrun
+ * insight for the project. Never throws — designed to be called with `void` from
+ * inside a read (e.g. getVariationsRegister) as a side effect.
+ */
+export async function maybeCreateCostOverrunInsight(projectId: string): Promise<void> {
+  try {
+    const sb = createAdminClient()
+
+    const [{ data: proj }, { data: vos }] = await Promise.all([
+      sb.from('projects').select('budget_usd, name').eq('id', projectId).maybeSingle(),
+      sb.from('variation_orders').select('cost_impact, status').eq('project_id', projectId).eq('status', 'submitted'),
+    ])
+
+    const budget = Number(proj?.budget_usd ?? 0)
+    if (budget <= 0) return
+
+    const pendingImpact = (vos ?? []).reduce((s, v) => s + Number((v as { cost_impact?: number }).cost_impact ?? 0), 0)
+    const pct = (pendingImpact / budget) * 100
+    if (pct <= 5) return
+
+    // Skip if an open cost_overrun insight already exists for this project.
+    const { data: existing } = await sb
+      .from('ai_insights')
+      .select('id')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .eq('module', 'cost_overrun')
+      .eq('status', 'open')
+      .limit(1)
+    if (existing && existing.length > 0) return
+
+    const fmt = (n: number) =>
+      n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toFixed(0)}`
+
+    await sb.from('ai_insights').insert({
+      tenant_id: DEMO_TENANT,
+      project_id: projectId,
+      module: 'cost_overrun',
+      title: `Pending variations exceed 5% of budget on ${proj?.name ?? 'project'}`,
+      description: `Submitted (pending) variation orders total ${fmt(pendingImpact)}, which is ${pct.toFixed(1)}% of the ${fmt(budget)} project budget. If approved, this materially erodes contingency.`,
+      confidence: 90,
+      severity: 'high',
+      status: 'open',
+      recommended_action: 'Review the pending variation orders with the commercial lead. Assess contingency headroom and confirm client cost recovery before approval.',
+    })
+    revalidatePath('/ai-insights')
+  } catch (e) {
+    console.error('[ai-insights] cost_overrun generator failed:', e)
+  }
+}
+
 export async function acknowledgeInsightAction(id: string) {
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }

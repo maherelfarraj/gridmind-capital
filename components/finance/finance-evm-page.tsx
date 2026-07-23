@@ -76,7 +76,19 @@ export function FinanceEvmPage() {
           <h1 className="text-2xl font-bold text-foreground">Finance — EVM & Cash Flow</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Earned Value Management, cost performance, and cash flow analysis</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {isLive && s?.acSource === 'certificates' && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <span className="size-1.5 rounded-full bg-blue-500" />
+              AC from payment certificates
+            </span>
+          )}
+          {isLive && (s?.approvedVoCount ?? 0) > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <span className="size-1.5 rounded-full bg-amber-500" />
+              BAC includes {s?.approvedVoCount} approved VO{(s?.approvedVoCount ?? 0) === 1 ? '' : 's'}
+            </span>
+          )}
           <LiveBadge live={isLive} />
           <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
             <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />

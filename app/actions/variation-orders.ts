@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendVoEmail } from '@/lib/email/send'
+import { maybeCreateCostOverrunInsight } from '@/app/actions/ai-insights'
 import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -226,6 +227,9 @@ export async function getVariationOrders(projectId: string): Promise<VoRegister>
   const { data: proj } = await admin.from('projects').select('budget_usd').eq('id', projectId).maybeSingle()
   const baselineBudget = proj?.budget_usd == null ? 0 : Number(proj.budget_usd)
   const currentContractValue = baselineBudget + approvedValue
+
+  // Fire-and-forget: raise a cost_overrun AI insight if pending VO impact > 5% of budget.
+  void maybeCreateCostOverrunInsight(projectId)
 
   return {
     rows,

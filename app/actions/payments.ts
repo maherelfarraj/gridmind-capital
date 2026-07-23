@@ -143,6 +143,98 @@ export async function getPaymentCertificates(projectId: string): Promise<Payment
   }
 }
 
+// ─── Portfolio cost exposure (dashboard widget) ─────────────────────────────────
+
+export interface ProjectCostExposure {
+  projectId: string
+  code: string
+  name: string
+  /** budget_usd + approved VO cost impact */
+  contractValue: number
+  certifiedToDate: number
+  /** certified / contract value, 0-100 */
+  certifiedPct: number
+  /** sum of submitted (pending) VO cost impact — the "exposure" */
+  pendingVoImpact: number
+}
+
+export interface PortfolioCostExposure {
+  projects: ProjectCostExposure[]
+  totals: {
+    contractValue: number
+    certifiedToDate: number
+    certifiedPct: number
+    pendingVoImpact: number
+  }
+}
+
+/**
+ * Aggregate per-project cost exposure across the portfolio for the dashboard
+ * widget: contract value (budget + approved VOs), % certified (from payment
+ * certificates) and pending VO impact ("exposure"). Uses 3 batched queries
+ * rather than an N+1 per project.
+ */
+export async function getPortfolioCostExposure(): Promise<PortfolioCostExposure> {
+  const admin = createAdminClient()
+  const certifiedStatuses = ['certified', 'invoiced', 'paid']
+
+  const [{ data: projects }, { data: vos }, { data: certs }] = await Promise.all([
+    admin.from('projects').select('id, code, name, budget_usd').eq('tenant_id', DEMO_TENANT),
+    admin.from('variation_orders').select('project_id, cost_impact, status').eq('tenant_id', DEMO_TENANT),
+    admin.from('payment_certificates').select('project_id, this_period, status').eq('tenant_id', DEMO_TENANT),
+  ])
+
+  // Per-project approved / pending VO impact.
+  const approvedVo: Record<string, number> = {}
+  const pendingVo: Record<string, number> = {}
+  for (const v of vos ?? []) {
+    const pid = (v as Row).project_id as string
+    const amt = num((v as Row).cost_impact)
+    if ((v as Row).status === 'approved') approvedVo[pid] = (approvedVo[pid] ?? 0) + amt
+    else if ((v as Row).status === 'submitted') pendingVo[pid] = (pendingVo[pid] ?? 0) + amt
+  }
+
+  // Per-project certified-to-date (this_period for certified-onward statuses).
+  const certified: Record<string, number> = {}
+  for (const c of certs ?? []) {
+    const pid = (c as Row).project_id as string
+    if (certifiedStatuses.includes((c as Row).status as string)) {
+      certified[pid] = (certified[pid] ?? 0) + num((c as Row).this_period)
+    }
+  }
+
+  const rows: ProjectCostExposure[] = (projects ?? []).map((p) => {
+    const pid = (p as Row).id as string
+    const contractValue = num((p as Row).budget_usd) + (approvedVo[pid] ?? 0)
+    const certifiedToDate = certified[pid] ?? 0
+    return {
+      projectId: pid,
+      code: ((p as Row).code as string) ?? '—',
+      name: ((p as Row).name as string) ?? 'Untitled',
+      contractValue,
+      certifiedToDate,
+      certifiedPct: contractValue > 0 ? Math.round((certifiedToDate / contractValue) * 1000) / 10 : 0,
+      pendingVoImpact: pendingVo[pid] ?? 0,
+    }
+  })
+  // Most exposed / largest contract first for a meaningful widget view.
+  .sort((a, b) => b.contractValue - a.contractValue)
+
+  const totContract = rows.reduce((s, r) => s + r.contractValue, 0)
+  const totCertified = rows.reduce((s, r) => s + r.certifiedToDate, 0)
+  const totPending = rows.reduce((s, r) => s + r.pendingVoImpact, 0)
+
+  return {
+    projects: rows,
+    totals: {
+      contractValue: totContract,
+      certifiedToDate: totCertified,
+      certifiedPct: totContract > 0 ? Math.round((totCertified / totContract) * 1000) / 10 : 0,
+      pendingVoImpact: totPending,
+    },
+  }
+}
+
 // ─── Mutations ─────────────────────────────────────────────────────────────────
 
 /**
