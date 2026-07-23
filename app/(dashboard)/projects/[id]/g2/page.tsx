@@ -3,6 +3,8 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import useSWR from 'swr'
+import { getG2Data } from '@/app/actions/engineering'
 import {
   ChevronRight, Plus, MessageCircle, Send, FileUp, X, Zap, CheckCircle,
   Clock, FileText, Eye, AlertTriangle, Search, ChevronDown, Download,
@@ -1063,24 +1065,35 @@ export default function G2EngineeringPage() {
 
   const [tab, setTab] = React.useState<TabId>('packages')
 
+  const { data: g2Data } = useSWR(
+    projectId ? `g2-data-${projectId}` : null,
+    () => getG2Data(projectId),
+  )
+
+  // Use real data when available, fall back to mock while loading
+  const packages     = g2Data?.packages     ?? MOCK_PACKAGES
+  const drawings     = g2Data?.drawings     ?? MOCK_DRAWINGS
+  const rfis         = g2Data?.rfis         ?? MOCK_RFIS
+  const transmittals = MOCK_TRANSMITTALS
+
   const tabs: { id: TabId; label: string; count: number }[] = [
-    { id: 'packages',    label: 'Engineering Packages', count: MOCK_PACKAGES.length },
-    { id: 'drawings',    label: 'Drawing Register',     count: MOCK_DRAWINGS.length },
-    { id: 'transmittals',label: 'Transmittals',         count: MOCK_TRANSMITTALS.length },
-    { id: 'rfis',        label: 'RFIs',                 count: MOCK_RFIS.length },
+    { id: 'packages',    label: 'Engineering Packages', count: packages.length },
+    { id: 'drawings',    label: 'Drawing Register',     count: drawings.length },
+    { id: 'transmittals',label: 'Transmittals',         count: transmittals.length },
+    { id: 'rfis',        label: 'RFIs',                 count: rfis.length },
     { id: 'doccontrol',  label: 'Document Control',     count: 0 },
     { id: 'designreview',label: 'Design Review',        count: 0 },
   ]
 
-  const openRFIs = MOCK_RFIS.filter((r) => r.status === 'Open' || r.status === 'Escalated').length
-  const approvedPkgs = MOCK_PACKAGES.filter((p) => p.status === 'Approved IFC' || p.status === 'Approved AFC').length
-  const pendingPkgs  = MOCK_PACKAGES.filter((p) => p.status === 'Internal Review' || p.status === 'Client Review').length
+  const openRFIs     = rfis.filter((r) => r.status === 'Open' || r.status === 'Escalated').length
+  const approvedPkgs = packages.filter((p) => p.status === 'Approved IFC' || p.status === 'Approved AFC').length
+  const pendingPkgs  = packages.filter((p) => p.status === 'Internal Review' || p.status === 'Client Review').length
 
   const stats = [
-    { label: 'Total Packages', value: MOCK_PACKAGES.length, bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-400', icon: Zap },
-    { label: 'Approved IFC',   value: approvedPkgs,         bg: 'bg-green-100  dark:bg-green-900/30',  text: 'text-green-700  dark:text-green-400',  icon: CheckCircle },
-    { label: 'Pending Review', value: pendingPkgs,          bg: 'bg-amber-100  dark:bg-amber-900/30',  text: 'text-amber-700  dark:text-amber-400',  icon: Clock },
-    { label: 'Open RFIs',      value: openRFIs,             bg: 'bg-red-100    dark:bg-red-900/30',    text: 'text-red-700    dark:text-red-400',    icon: MessageCircle },
+    { label: 'Total Packages', value: packages.length, bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-400', icon: Zap },
+    { label: 'Approved IFC',   value: approvedPkgs,   bg: 'bg-green-100  dark:bg-green-900/30',  text: 'text-green-700  dark:text-green-400',  icon: CheckCircle },
+    { label: 'Pending Review', value: pendingPkgs,    bg: 'bg-amber-100  dark:bg-amber-900/30',  text: 'text-amber-700  dark:text-amber-400',  icon: Clock },
+    { label: 'Open RFIs',      value: openRFIs,       bg: 'bg-red-100    dark:bg-red-900/30',    text: 'text-red-700    dark:text-red-400',    icon: MessageCircle },
   ]
 
   return (

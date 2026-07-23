@@ -3,9 +3,25 @@ import * as React from 'react'
 import { FileText, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MOCK_CHARTER, STATUS_META } from './data'
+import type { G0FormData } from '@/app/actions/gate-submissions'
 
-export function CharterTab() {
-  const c = MOCK_CHARTER
+export function CharterTab({ formData }: { formData?: G0FormData | null }) {
+  // Merge real form data over mock — only override fields present in the intake form
+  const base = MOCK_CHARTER
+  const c = formData ? {
+    ...base,
+    project_code:        formData.opportunityCode  || base.project_code,
+    project_name:        formData.opportunityName  || base.project_name,
+    technology:          formData.technologyType   || formData.technology  || base.technology,
+    capacity_mw:         parseFloat(formData.estimatedCapacityMw || formData.capacityMwp || '') || base.capacity_mw,
+    location:            formData.siteLocation     || base.location,
+    country:             formData.hostCountry      || base.country,
+    client:              formData.clientName       || base.client,
+    sponsor:             formData.projectSponsor   || base.sponsor,
+    description:         formData.description      || base.description,
+    capex_estimate_usd:  parseFloat(formData.capexEstimateUsd || formData.budgetMax || '') || base.capex_estimate_usd,
+    target_irr_pct:      parseFloat(formData.targetIrrPct || formData.expectedIrr || '') || base.target_irr_pct,
+  } : base
   const meta = STATUS_META[c.status]
   const [showScope, setShowScope] = React.useState(true)
 

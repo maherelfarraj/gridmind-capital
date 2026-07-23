@@ -3,6 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import useSWR from 'swr'
 import { ArrowLeft, FileText, Users, AlertTriangle, CheckSquare, BarChart2, ClipboardList, Send, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MOCK_CHARTER, STATUS_META, MOCK_DELIVERABLES } from '@/components/g0/data'
@@ -12,6 +13,7 @@ import { StakeholdersTab } from '@/components/g0/stakeholders-tab'
 import { RisksTab }        from '@/components/g0/risks-tab'
 import { ScreeningTab }    from '@/components/g0/screening-tab'
 import { MilestonesTab }   from '@/components/g0/milestones-tab'
+import { getG0Data } from '@/app/actions/gate-submissions'
 
 const TABS = [
   { id: 'charter',      label: 'Project Charter',       icon: FileText    },
@@ -29,6 +31,12 @@ export default function G0Page() {
   const router = useRouter()
   const [activeTab, setActiveTab] = React.useState<TabId>('charter')
 
+  const { data: g0Data } = useSWR(
+    id ? `g0-data-${id}` : null,
+    () => getG0Data(id!),
+  )
+
+  // Fall back to mock values while data loads so the header doesn't flicker
   const charter    = MOCK_CHARTER
   const meta       = STATUS_META[charter.status]
   const done       = MOCK_DELIVERABLES.filter((d) => d.status === 'approved' || d.status === 'complete').length
@@ -108,12 +116,12 @@ export default function G0Page() {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'charter'      && <CharterTab />}
-          {activeTab === 'screening'    && <ScreeningTab />}
+          {activeTab === 'charter'      && <CharterTab      formData={g0Data?.formData} />}
+          {activeTab === 'screening'    && <ScreeningTab    hasSubmission={g0Data?.hasSubmission} />}
           {activeTab === 'deliverables' && <DeliverablesTab />}
-          {activeTab === 'stakeholders' && <StakeholdersTab />}
-          {activeTab === 'risks'        && <RisksTab />}
-          {activeTab === 'milestones'   && <MilestonesTab />}
+          {activeTab === 'stakeholders' && <StakeholdersTab liveData={g0Data?.stakeholders} />}
+          {activeTab === 'risks'        && <RisksTab        liveData={g0Data?.risks} />}
+          {activeTab === 'milestones'   && <MilestonesTab   liveData={g0Data?.milestones} />}
         </div>
 
       </div>

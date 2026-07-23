@@ -4,6 +4,10 @@ import { CheckCircle2, Circle, Mail, Phone, Users } from 'lucide-react'
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { cn } from '@/lib/utils'
 import { MOCK_STAKEHOLDERS } from './data'
+import type { G0LiveStakeholder } from '@/app/actions/gate-submissions'
+import type { Stakeholder } from './types'
+
+const EMPTY_MSG = 'No members recorded yet — add team members via the Project Members page.'
 
 const ROLE_COLORS: Record<string, string> = {
   sponsor:   '#f59e0b',
@@ -18,11 +22,26 @@ const ROLE_COLORS: Record<string, string> = {
 const INFLUENCE_NUM = { high: 3, medium: 2, low: 1 }
 const INTEREST_NUM  = { high: 3, medium: 2, low: 1 }
 
-export function StakeholdersTab() {
-  const signatories = MOCK_STAKEHOLDERS.filter((s) => s.charter_signatory)
+export function StakeholdersTab({ liveData }: { liveData?: G0LiveStakeholder[] }) {
+  // liveData=undefined → still loading, use mock; liveData=[] → empty state
+  const stakeholders: Stakeholder[] = liveData === undefined
+    ? MOCK_STAKEHOLDERS
+    : liveData.map((m) => ({ ...m } as unknown as Stakeholder))
+
+  if (liveData !== undefined && liveData.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-10 text-center">
+        <Users className="size-8 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm font-medium text-foreground">No records yet</p>
+        <p className="text-xs text-muted-foreground mt-1">{EMPTY_MSG}</p>
+      </div>
+    )
+  }
+
+  const signatories = stakeholders.filter((s) => s.charter_signatory)
   const signed      = signatories.filter((s) => s.signed).length
 
-  const scatterData = MOCK_STAKEHOLDERS.map((s) => ({
+  const scatterData = stakeholders.map((s) => ({
     x: INFLUENCE_NUM[s.influence],
     y: INTEREST_NUM[s.interest],
     name: s.name,
@@ -73,7 +92,7 @@ export function StakeholdersTab() {
 
       {/* Stakeholder cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {MOCK_STAKEHOLDERS.map((s) => (
+        {stakeholders.map((s) => (
           <div key={s.id} className="rounded-xl border border-border bg-card p-4 space-y-2">
             <div className="flex items-start justify-between gap-2">
               <div>

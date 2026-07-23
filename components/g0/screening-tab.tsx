@@ -4,6 +4,7 @@ import { CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { cn } from '@/lib/utils'
 import { MOCK_SCREENING } from './data'
+import { ClipboardList } from 'lucide-react'
 
 const RESULT_META = {
   pass:        { label: 'Pass',        color: '#22c55e', icon: CheckCircle2 },
@@ -11,7 +12,18 @@ const RESULT_META = {
   fail:        { label: 'Fail',        color: '#ef4444', icon: XCircle      },
 }
 
-export function ScreeningTab() {
+export function ScreeningTab({ hasSubmission }: { hasSubmission?: boolean }) {
+  // If we know for certain there's no submission yet, show empty state
+  if (hasSubmission === false) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-10 text-center">
+        <ClipboardList className="size-8 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm font-medium text-foreground">No records yet</p>
+        <p className="text-xs text-muted-foreground mt-1">No opportunity screening recorded — use the gate form to add.</p>
+      </div>
+    )
+  }
+
   const totalScore = MOCK_SCREENING.reduce((a, s) => a + s.score, 0)
   const maxScore   = MOCK_SCREENING.reduce((a, s) => a + s.max_score, 0)
   const pct        = Math.round((totalScore / maxScore) * 100)
