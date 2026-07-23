@@ -35,9 +35,7 @@ export async function updateSession(request: NextRequest) {
   // Redirect authenticated users away from auth pages → dashboard
   const isAuthPage =
     pathname === '/login' ||
-    pathname === '/auth/login' ||
-    pathname === '/auth/signup' ||
-    pathname === '/auth/forgot-password'
+    pathname.startsWith('/auth/')
 
   if (isAuthPage && user) {
     const url = request.nextUrl.clone()
@@ -45,16 +43,20 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Protect all dashboard routes — redirect to login if no session
-  const isDashboardRoute =
-    pathname.startsWith('/dashboard') ||
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/projects') ||
-    pathname.startsWith('/greos') ||
-    pathname.startsWith('/portal') ||
-    pathname.startsWith('/client')
+  // Public paths that never require authentication
+  const isPublic =
+    pathname === '/login' ||
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/icons/') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/manifest.json' ||
+    pathname === '/sw.js' ||
+    pathname === '/offline.html'
 
-  if (isDashboardRoute && !user) {
+  // Protect everything else — redirect to login if no session
+  if (!isPublic && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
     return NextResponse.redirect(url)

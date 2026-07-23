@@ -15,7 +15,9 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildEmail, getUserLocale, heading, para, kvTable, btn } from '@/lib/email/render'
 
-const FROM = 'GridMind Capital <notifications@gridmind.capital>'
+const FROM_ADDRESS = process.env.EMAIL_FROM ?? 'notifications@gridmind.capital'
+const FROM = `GridMind Capital <${FROM_ADDRESS}>`
+export const NOTIFICATION_EMAIL = process.env.NOTIFICATION_EMAIL ?? 'admin@gridmind.capital'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gridmind-gules.vercel.app'
 
 export type EmailType =

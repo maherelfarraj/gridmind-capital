@@ -211,10 +211,12 @@ export async function delegateApproval(opts: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  // 'delegated' is not a valid status per the CHECK constraint.
+  // Use 'under_review' and record delegation metadata in the description.
   const { error } = await supabase
     .from('approvals')
     .update({
-      status:      'delegated' as never,
+      status:      'under_review',
       description: `[Delegated to: ${opts.delegateId}]\nReason: ${opts.reason}`,
       updated_at:  new Date().toISOString(),
     })
