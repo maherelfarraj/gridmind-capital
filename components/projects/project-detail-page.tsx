@@ -14,6 +14,7 @@ import {
   Clock,
   ArrowRight,
   GitBranch,
+  Receipt,
   Info,
   Activity,
   Zap,
@@ -423,6 +424,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           label: 'Variations & Claims', icon: GitBranch, iconColor: '#0891b2',
           bgColor: 'bg-cyan-100 dark:bg-cyan-900/30', count: 'VOs & claims',
           ariaLabel: 'Open Variations and Claims', href: `/projects/${projectId}/variations`,
+        },
+        {
+          label: 'Payment Certificates', icon: Receipt, iconColor: '#0891b2',
+          bgColor: 'bg-emerald-100 dark:bg-emerald-900/30', count: 'IPCs',
+          ariaLabel: 'Open Payment Certificates', href: `/projects/${projectId}/payments`,
         },
         {
           label: 'Client Report', icon: FileText, iconColor: '#7c3aed',

@@ -13,13 +13,16 @@ import {
   Minus,
   ChevronDown,
   ChevronUp,
+  Receipt,
 } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getFinanceDashboard } from '@/app/actions/finance'
 import type { WbsData, CommitmentData } from '@/app/actions/finance'
+import { getProjects } from '@/app/actions/projects'
 
 // ─── Types (aliases to imported server types) ────────────────────────────────
 
@@ -203,6 +206,11 @@ export function FinancePage() {
 
   const { data: liveData, isLoading } = useSWR('finance-dashboard', () => getFinanceDashboard())
 
+  // Resolve a project to deep-link the Payment Certificates card (prefer SRS-400).
+  const { data: financeProjects } = useSWR('finance-projects', () => getProjects())
+  const paymentsProjectId =
+    financeProjects?.find((p) => p.code === 'SRS-400')?.id ?? financeProjects?.[0]?.id ?? null
+
   // Prefer live data; fall back to mock while loading or when DB is empty
   const WBS         = liveData?.seeded ? liveData.wbs         : WBS_MOCK
   const COMMITMENTS = liveData?.seeded ? liveData.commitments : COMMITMENTS_MOCK
@@ -241,6 +249,15 @@ export function FinancePage() {
             <span className={cn('size-1.5 rounded-full', liveData?.seeded ? 'bg-green-500' : 'bg-muted-foreground')} />
             {isLoading ? 'Loading…' : liveData?.seeded ? 'Live' : 'Illustrative'}
           </span>
+          {paymentsProjectId && (
+            <Link
+              href={`/projects/${paymentsProjectId}/payments`}
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+            >
+              <Receipt className="size-4" aria-hidden />
+              Payment Certificates
+            </Link>
+          )}
           <Button variant="outline" size="sm">
             <BarChart3 className="size-4" aria-hidden />
             Export Report
