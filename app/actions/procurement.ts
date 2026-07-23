@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
@@ -88,6 +89,9 @@ export async function loadProcurementDashboard(): Promise<ProcurementDashboard> 
 export async function issueRFQ(data: {
   title: string; vendor: string; amount_usd: number; close_date: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const rfq_number = `RFQ-${Date.now().toString(36).toUpperCase().slice(-6)}`
   const { error } = await supabase.from('rfqs').insert({
@@ -105,6 +109,9 @@ export async function issueRFQ(data: {
 }
 
 export async function advancePOStatus(id: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: po } = await supabase.from('purchase_orders').select('status').eq('id', id).single()
   const lifecycle = ['draft', 'issued', 'acknowledged', 'delivered', 'closed']
@@ -118,6 +125,9 @@ export async function advancePOStatus(id: string): Promise<{ error?: string }> {
 }
 
 export async function seedProcurementDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('rfqs').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
   if ((ex?.length ?? 0) > 0) return {}

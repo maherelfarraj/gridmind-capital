@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { CommissioningTest, HandoverRecord, CommissioningDashboard } from '@/lib/types/action-types'
 
@@ -54,6 +55,9 @@ export async function loadCommissioningDashboard(): Promise<CommissioningDashboa
 
 // ─── Mutations ────────────────────────────────────────────────
 export async function updateTestStatusAction(id: string, status: CommissioningTest['status']) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb
     .from('commissioning_tests')
@@ -73,6 +77,9 @@ export async function createTestAction(data: {
   scheduled_date: string
   witness_required: boolean
 }) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb.from('commissioning_tests').insert({
     ...data,
@@ -85,6 +92,9 @@ export async function createTestAction(data: {
 }
 
 export async function approveHandoverDocAction(id: string) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb
     .from('handover_records')
@@ -96,6 +106,9 @@ export async function approveHandoverDocAction(id: string) {
 
 // ─── Seed ─────────────────────────────────────────────────────
 export async function seedCommissioningDemoAction() {
+  const gate = await requireWriter()
+  if ('error' in gate) return { seeded: false, message: gate.error }
+
   const sb = createAdminClient()
 
   const { data: existing } = await sb

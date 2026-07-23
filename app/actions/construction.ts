@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import type { WorkPackage, InspectionRecord, PunchItem, ConstructionDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
@@ -107,6 +108,9 @@ export async function loadConstructionDashboard(): Promise<ConstructionDashboard
 }
 
 export async function closePunchItem(id: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('tickets')
     .update({ status: 'closed', updated_at: new Date().toISOString() })
@@ -117,6 +121,9 @@ export async function closePunchItem(id: string): Promise<{ error?: string }> {
 export async function recordInspection(data: {
   title: string; type: string; result: string; location: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('inspections').insert({
     tenant_id:  DEMO_TENANT,
@@ -132,6 +139,9 @@ export async function recordInspection(data: {
 }
 
 export async function seedConstructionDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('work_packages').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
   if ((ex?.length ?? 0) > 0) return {}

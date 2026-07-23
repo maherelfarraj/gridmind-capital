@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import { sendDocumentUploadEmail } from '@/lib/email/send'
 
@@ -53,6 +54,9 @@ export async function createUploadUrl(opts: {
   projectCode: string | null
   uploadedBy: string
 }): Promise<{ uploadUrl: string; storagePath: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   await ensureStorageBucket()
   const supabase = createAdminClient()
 
@@ -82,6 +86,9 @@ export async function registerDocument(opts: {
   projectCode: string | null
   uploadedBy: string
 }): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Auto-generate document code
@@ -173,6 +180,9 @@ export async function toggleDocumentFileVisibility(
   id: string,
   visibleToClient: boolean,
 ): Promise<{ error: string | null }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('document_files')
@@ -184,6 +194,9 @@ export async function toggleDocumentFileVisibility(
 
 /** Delete a document from storage + the DB record. */
 export async function deleteDocument(id: string, storagePath: string): Promise<{ error: string | null }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   await supabase.storage.from(BUCKET).remove([storagePath])
   const { error } = await supabase.from('document_files').delete().eq('id', id)
@@ -226,6 +239,9 @@ export async function uploadFieldPhoto(opts: {
   linkId: string
   uploadedBy: string
 }): Promise<{ photo: FieldPhoto } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   await ensureStorageBucket()
   const supabase = createAdminClient()
 

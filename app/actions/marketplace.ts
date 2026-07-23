@@ -117,6 +117,9 @@ export async function loadMarketplaceDashboard(): Promise<MarketplaceDashboard> 
 }
 
 export async function connectProviderAction(id: string): Promise<{ error: string | null }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const sb = createAdminClient()
   const { error } = await sb
     .from('marketplace_providers')
@@ -128,6 +131,9 @@ export async function connectProviderAction(id: string): Promise<{ error: string
 }
 
 export async function disconnectProviderAction(id: string): Promise<{ error: string | null }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const sb = createAdminClient()
   const { error } = await sb
     .from('marketplace_providers')
@@ -139,6 +145,9 @@ export async function disconnectProviderAction(id: string): Promise<{ error: str
 }
 
 export async function seedMarketplaceDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const sb = createAdminClient()
   const { data: ex } = await sb.from('marketplace_providers').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
   if ((ex?.length ?? 0) > 0) return {}

@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { Asset, MaintenancePlan, OmDashboard } from '@/lib/types/action-types'
 
@@ -48,6 +49,9 @@ export async function loadOmDashboard(): Promise<OmDashboard> {
 }
 
 export async function updateAssetStatusAction(id: string, status: Asset['status']) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb.from('assets').update({ status }).eq('id', id)
   revalidatePath('/om')
@@ -55,6 +59,9 @@ export async function updateAssetStatusAction(id: string, status: Asset['status'
 }
 
 export async function completeMaintenanceAction(id: string) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb.from('maintenance_plans').update({
     status: 'completed',
@@ -65,6 +72,9 @@ export async function completeMaintenanceAction(id: string) {
 }
 
 export async function seedOmDemoAction() {
+  const gate = await requireWriter()
+  if ('error' in gate) return { seeded: false }
+
   const sb = createAdminClient()
   const { data: existing } = await sb.from('assets').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
   if (existing && existing.length > 0) return { seeded: false }

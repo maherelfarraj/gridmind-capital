@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
@@ -99,6 +100,9 @@ export async function updateHandoverStatus(
   status: HandoverStatus,
   completion_pct?: number,
 ): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('handover_items')
@@ -120,6 +124,9 @@ export async function createHandoverItem(data: {
   description?: string
   due_date?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('handover_items').insert({
     tenant_id:      DEMO_TENANT,
@@ -135,6 +142,9 @@ export async function createHandoverItem(data: {
 }
 
 export async function seedHandoverDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Get first demo project
