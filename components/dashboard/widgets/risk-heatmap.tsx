@@ -1,8 +1,10 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WidgetConfig } from './types'
+import { getRiskHeatmap } from '@/app/actions/dashboard'
 
 // [probability 1-3][impact 1-3] → color
 const CELL_COLOR = [
@@ -11,17 +13,9 @@ const CELL_COLOR = [
   ['#22c55e20', '#22c55e30', '#22c55e40'],  // P=1 (Low)
 ]
 
-const RISKS = [
-  { id: 'r1', label: 'Piling delay',      p: 3, i: 3 },
-  { id: 'r2', label: 'Supply chain',      p: 2, i: 3 },
-  { id: 'r3', label: 'Weather event',     p: 1, i: 2 },
-  { id: 'r4', label: 'Permit delay',      p: 3, i: 2 },
-  { id: 'r5', label: 'Budget overrun',    p: 2, i: 2 },
-  { id: 'r6', label: 'Staff turnover',    p: 1, i: 1 },
-]
-
 export function RiskHeatmapWidget({ config }: { config: WidgetConfig }) {
-  const [hovered, setHovered] = React.useState<string | null>(null)
+  const { data, isLoading } = useSWR('widget-risk-heatmap', getRiskHeatmap)
+  const RISKS = data ?? []
 
   const cellRisks = (p: number, i: number) =>
     RISKS.filter(r => r.p === p && r.i === i)
@@ -35,6 +29,10 @@ export function RiskHeatmapWidget({ config }: { config: WidgetConfig }) {
           {RISKS.filter(r => r.p === 3 || r.i === 3).length} critical
         </span>
       </div>
+      {!isLoading && RISKS.length === 0 && (
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
+      )}
+      {(isLoading || RISKS.length > 0) && (
       {/* 3×3 grid */}
       <div className="flex-1 flex flex-col gap-1">
         {/* Y-axis label row */}

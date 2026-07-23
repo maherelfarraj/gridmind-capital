@@ -1,22 +1,35 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { BarChart2 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import type { WidgetConfig } from './types'
-
-const DATA = [
-  { phase: 'G0',  budget: 2.1,  actual: 1.9  },
-  { phase: 'G1',  budget: 8.4,  actual: 8.7  },
-  { phase: 'G2',  budget: 22.0, actual: 19.8 },
-  { phase: 'G3',  budget: 45.0, actual: 38.2 },
-  { phase: 'G4',  budget: 180,  actual: 142  },
-  { phase: 'G5',  budget: 12.0, actual: 9.1  },
-]
+import { getBudgetOverview } from '@/app/actions/dashboard'
 
 export function BudgetOverviewWidget({ config }: { config: WidgetConfig }) {
-  const totalBudget = DATA.reduce((s, d) => s + d.budget, 0)
-  const totalActual = DATA.reduce((s, d) => s + d.actual, 0)
-  const pct = Math.round((totalActual / totalBudget) * 100)
+  const { data: overview, isLoading } = useSWR('widget-budget', getBudgetOverview)
+
+  // Chart rows keyed by finance record type (budget vs actual spend)
+  const DATA = (overview?.groups ?? []).map((g) => ({
+    phase:  g.category,
+    budget: Math.round((g.planned / 1_000_000) * 10) / 10,
+    actual: Math.round((g.actual  / 1_000_000) * 10) / 10,
+  }))
+  const totalBudget = (overview?.totalPlanned ?? 0) / 1_000_000
+  const totalActual = (overview?.totalActual  ?? 0) / 1_000_000
+  const pct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full p-4 gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <BarChart2 className="size-3.5" />
+          <span>Budget Overview</span>
+        </div>
+        <div className="flex-1 rounded-lg bg-muted/20 animate-pulse" />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
@@ -25,6 +38,10 @@ export function BudgetOverviewWidget({ config }: { config: WidgetConfig }) {
         <span>Budget Overview</span>
         <span className="ml-auto text-[10px] font-mono font-normal text-foreground">${totalActual.toFixed(0)}M / ${totalBudget.toFixed(0)}M</span>
       </div>
+      {DATA.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
+      ) : (
+      <>
       {/* KPI row */}
       <div className="grid grid-cols-3 gap-2">
         {[
@@ -56,6 +73,8 @@ export function BudgetOverviewWidget({ config }: { config: WidgetConfig }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      </>
+      )}
     </div>
   )
 }
