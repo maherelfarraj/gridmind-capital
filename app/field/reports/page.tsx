@@ -41,18 +41,19 @@ export default function ReportsPage() {
         </div>
       ) : (
         <ul className="space-y-2.5">
-          {reports.map((r) => <ReportRow key={r.id} report={r} />)}
+          {reports.map((r) => <ReportRow key={r.id} report={r} projectId={activeProjectId as string} />)}
         </ul>
       )}
     </div>
   )
 }
 
-function ReportRow({ report }: { report: DailyReportSummary }) {
+function ReportRow({ report, projectId }: { report: DailyReportSummary; projectId: string }) {
   const st = STATUS_META[report.status] ?? STATUS_META.draft
+  const submitted = report.status === 'submitted'
   return (
-    <li>
-      <Link href="/field" className="flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 active:bg-muted/40">
+    <li className="rounded-xl border border-border bg-card overflow-hidden">
+      <Link href="/field" className="flex items-center gap-3 p-3.5 active:bg-muted/40">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="text-sm font-semibold text-foreground">{fmtDate(report.report_date)}</p>
@@ -67,6 +68,14 @@ function ReportRow({ report }: { report: DailyReportSummary }) {
         </div>
         <ChevronRight className="size-4 text-muted-foreground shrink-0" />
       </Link>
+      {submitted && (
+        <Link
+          href={`/projects/${projectId}/schedule`}
+          className="flex items-center justify-center gap-1.5 border-t border-border bg-primary/5 py-2 text-xs font-semibold text-primary active:bg-primary/10"
+        >
+          <TrendingUp className="size-3.5" /> Update schedule progress
+        </Link>
+      )}
     </li>
   )
 }
