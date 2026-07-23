@@ -373,7 +373,7 @@ const ApprovalItemCard = React.memo(function ApprovalItemCard({
             {/* Avatar + name */}
             <div className="flex items-center gap-1.5">
               <span
-                className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[#64ffda]/20 text-[9px] font-bold text-[#0a192f] dark:text-[#64ffda]"
+                className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-gm-accent/20 text-[9px] font-bold text-navy dark:text-gm-accent"
                 aria-hidden="true"
               >
                 {initials}
