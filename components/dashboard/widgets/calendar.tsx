@@ -1,16 +1,18 @@
 'use client'
 import * as React from 'react'
+import Link from 'next/link'
 import useSWR from 'swr'
 import { Calendar as CalIcon, Video, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WidgetConfig } from './types'
-import { getUpcomingMilestones } from '@/app/actions/dashboard'
+import { getCalendarEvents } from '@/app/actions/dashboard'
 
 const TYPE_COLOR: Record<string, string> = {
   gate:    '#6366f1', milestone: '#22c55e', deadline: '#ef4444',
+  permit:  '#f59e0b', transmittal: '#0891b2',
 }
 
-interface CalEvent { id: string; title: string; project: string; date: string; type: string; location: string }
+interface CalEvent { id: string; title: string; project: string; date: string; type: string; location: string; link: string | null }
 
 function fmtDay(iso: string): string {
   const d = new Date(iso)
@@ -19,16 +21,17 @@ function fmtDay(iso: string): string {
 }
 
 export function CalendarWidget({ config }: { config: WidgetConfig }) {
-  const { data, isLoading } = useSWR('widget-milestones', getUpcomingMilestones)
+  const { data, isLoading } = useSWR('widget-calendar-events', getCalendarEvents)
 
-  // Reuse the upcoming-milestones feed as scheduled calendar events
+  // Merged feed: milestones + permit expiries + transmittal response-due dates
   const EVENTS: CalEvent[] = (data ?? []).map((m) => ({
     id:       m.id,
     title:    m.label,
     project:  m.project,
     date:     fmtDay(m.date),
     type:     m.type,
-    location: m.type === 'gate' ? 'Gate Review' : m.type === 'deadline' ? 'Deadline' : 'Milestone',
+    location: m.location,
+    link:     m.link,
   }))
 
   // Build day groupings (preserves the date order from the sorted feed)
@@ -55,9 +58,8 @@ export function CalendarWidget({ config }: { config: WidgetConfig }) {
             <div className="flex flex-col gap-1.5">
               {events.map(e => {
                 const isRemote = e.location.toLowerCase().includes('teams') || e.location.toLowerCase().includes('call')
-                return (
-                  <div key={e.id} className="flex items-start gap-2.5 rounded-lg hover:bg-muted/30 px-2 py-1.5 transition-colors group cursor-pointer"
-                    style={{ borderLeft: `2px solid ${TYPE_COLOR[e.type] ?? '#6b7280'}` }}>
+                const inner = (
+                  <>
                     <div className="flex-1 min-w-0 pl-1.5">
                       <p className="text-xs font-semibold text-foreground truncate">{e.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -68,7 +70,14 @@ export function CalendarWidget({ config }: { config: WidgetConfig }) {
                         <span className="text-[10px] text-muted-foreground">{e.location}</span>
                       </div>
                     </div>
-                  </div>
+                  </>
+                )
+                const cls = 'flex items-start gap-2.5 rounded-lg hover:bg-muted/30 px-2 py-1.5 transition-colors group cursor-pointer'
+                const style = { borderLeft: `2px solid ${TYPE_COLOR[e.type] ?? '#6b7280'}` }
+                return e.link ? (
+                  <Link key={e.id} href={e.link} className={cls} style={style}>{inner}</Link>
+                ) : (
+                  <div key={e.id} className={cls} style={style}>{inner}</div>
                 )
               })}
             </div>

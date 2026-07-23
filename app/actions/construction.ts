@@ -159,10 +159,18 @@ export interface G4Permit {
   renewal_required: boolean; documents: string
 }
 
+export interface G4WorkPermit {
+  id: string; permit_no: string; type: string; title: string
+  location: string | null; status: string
+  valid_from: string | null; valid_to: string | null; issuer: string | null
+  active: boolean
+}
+
 export interface G4DataResult {
   workPackages: G4WorkPackage[]
   incidents:    G4Incident[]
   permits:      G4Permit[]
+  workPermits:  G4WorkPermit[]
   gateFormData: Record<string, unknown> | null
 }
 
@@ -193,7 +201,7 @@ const INCIDENT_STATUS_REMAP: Record<string, string> = {
 export async function getG4Data(projectId: string): Promise<G4DataResult> {
   const supabase = createAdminClient()
 
-  const [wpRes, incRes, permRes, gateRes] = await Promise.all([
+  const [wpRes, incRes, permRes, workPermitRes, gateRes] = await Promise.all([
     supabase.from('work_packages')
       .select('id, wp_code, title, discipline, planned_pct, actual_pct, status')
       .eq('tenant_id', DEMO_TENANT)
@@ -206,6 +214,11 @@ export async function getG4Data(projectId: string): Promise<G4DataResult> {
     supabase.from('hse_permits')
       .select('id, ref, type, scope, issued_to, issued_date, expiry_date, status')
       .eq('tenant_id', DEMO_TENANT)
+      .order('created_at', { ascending: false }),
+    supabase.from('work_permits')
+      .select('id, permit_no, type, title, location, status, valid_from, valid_to, issuer')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     supabase.from('gate_submissions')
       .select('form_data')
@@ -262,10 +275,25 @@ export async function getG4Data(projectId: string): Promise<G4DataResult> {
     documents:        r.scope ?? '',
   }))
 
+  const nowMs = Date.now()
+  const workPermits: G4WorkPermit[] = (workPermitRes.data ?? []).map((r) => ({
+    id:         r.id as string,
+    permit_no:  (r.permit_no as string) ?? `PTW-${(r.id as string).slice(0, 4).toUpperCase()}`,
+    type:       (r.type as string) ?? 'general',
+    title:      (r.title as string) ?? 'Work permit',
+    location:   (r.location as string) ?? null,
+    status:     (r.status as string) ?? 'requested',
+    valid_from: (r.valid_from as string) ?? null,
+    valid_to:   (r.valid_to as string) ?? null,
+    issuer:     (r.issuer as string) ?? null,
+    active:     r.status === 'issued' && !!r.valid_to && new Date(r.valid_to as string).getTime() > nowMs,
+  }))
+
   return {
     workPackages,
     incidents,
     permits,
+    workPermits,
     gateFormData: (gateRes.data?.form_data as Record<string, unknown>) ?? null,
   }
 }

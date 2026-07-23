@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { maybeCreatePermitSafetyInsight } from '@/app/actions/ai-insights'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
@@ -229,6 +230,14 @@ export async function getPermitsBoard(projectId: string): Promise<PermitsBoard> 
       if (p.expiringSoon) expiring48h++
     }
   }
+
+  // Fire-and-forget safety watchdog: suspended permits, or >3 expired-without-closure in 7d.
+  const sevenDaysAgo = now - 7 * 86_400_000
+  const expiredUnclosedLast7d = byStatus.expired.filter((p) => {
+    const t = new Date(p.updated_at).getTime()
+    return !isNaN(t) && t >= sevenDaysAgo
+  }).length
+  void maybeCreatePermitSafetyInsight(projectId, byStatus.suspended.length, expiredUnclosedLast7d)
 
   return {
     byStatus: { ...EMPTY_BOARD, ...byStatus },

@@ -34,12 +34,78 @@ export async function getNotificationsAction(): Promise<NotificationsResult> {
     .order('created_at', { ascending: false })
     .limit(50)
 
-  if (error || !data) return { items: [], unreadCount: 0 }
+  const stored = (error || !data) ? [] : (data as LiveNotification[])
 
-  const items = data as LiveNotification[]
+  // Merge in derived operational alerts (permits expiring, overdue transmittal responses).
+  const derived = await getDerivedNotifications()
+
+  const items = [...derived, ...stored].sort(
+    (a, b) => (b.created_at > a.created_at ? 1 : b.created_at < a.created_at ? -1 : 0),
+  )
   const unreadCount = items.filter(n => !n.is_read).length
 
   return { items, unreadCount }
+}
+
+/**
+ * Synthetic, always-unread feed items derived from live operational data:
+ * – work permits expiring within 48h  → link to the permits board
+ * – transmittals with an overdue response (issued/acknowledged, response_due passed)
+ * These are computed on read (not persisted) so they never need a marked-read row.
+ */
+async function getDerivedNotifications(): Promise<LiveNotification[]> {
+  const admin = createAdminClient()
+  const now   = new Date()
+  const nowIso = now.toISOString()
+  const in48   = new Date(now.getTime() + 48 * 3_600_000).toISOString()
+
+  const [permitRes, transRes] = await Promise.all([
+    admin
+      .from('work_permits')
+      .select('id, permit_no, title, project_id, valid_to')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('status', 'issued')
+      .gte('valid_to', nowIso)
+      .lte('valid_to', in48)
+      .order('valid_to', { ascending: true }),
+    admin
+      .from('transmittals')
+      .select('id, transmittal_no, subject, project_id, response_due')
+      .eq('tenant_id', DEMO_TENANT)
+      .in('status', ['issued', 'acknowledged'])
+      .lt('response_due', nowIso)
+      .order('response_due', { ascending: true }),
+  ])
+
+  const out: LiveNotification[] = []
+
+  for (const p of permitRes.data ?? []) {
+    const validTo = p.valid_to as string
+    out.push({
+      id:        `permit-expiry-${p.id}`,
+      title:     `Permit expiring soon — ${(p.permit_no as string) ?? 'PTW'}`,
+      body:      `${(p.title as string) ?? 'Work permit'} expires ${new Date(validTo).toLocaleString()}. Renew or close before expiry.`,
+      type:      'alert',
+      is_read:   false,
+      link:      `/projects/${p.project_id}/permits`,
+      created_at: validTo,
+    })
+  }
+
+  for (const t of transRes.data ?? []) {
+    const due = t.response_due as string
+    out.push({
+      id:        `transmittal-overdue-${t.id}`,
+      title:     `Overdue transmittal response — ${(t.transmittal_no as string) ?? 'Transmittal'}`,
+      body:      `A response for "${(t.subject as string) ?? 'transmittal'}" was due ${new Date(due).toLocaleDateString()}.`,
+      type:      'urgent',
+      is_read:   false,
+      link:      `/projects/${t.project_id}/transmittals`,
+      created_at: due,
+    })
+  }
+
+  return out
 }
 
 /** Get unread count only — used by layout for the badge */

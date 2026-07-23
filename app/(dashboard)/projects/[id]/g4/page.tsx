@@ -143,7 +143,7 @@ export default function G4ConstructionPage() {
         {/* Tab content */}
         {activeTab === 'work-packages' && <WorkPackagesTab packages={workPackages} />}
         {activeTab === 'hse'           && <HSETab planItems={MOCK_HSE_PLAN} incidents={incidents} />}
-        {activeTab === 'permits'       && <PermitsTab permits={permits} />}
+        {activeTab === 'permits'       && <PermitsTab permits={permits} workPermits={g4Data?.workPermits ?? []} projectId={projectId} />}
         {activeTab === 'site'          && <SiteReadinessTab items={SITE_READINESS_ITEMS} />}
         {activeTab === 'resources'     && (
           <ResourcesTab

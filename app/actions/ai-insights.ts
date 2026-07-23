@@ -159,6 +159,59 @@ export async function maybeCreateLenderRiskInsight(
   }
 }
 
+/**
+ * Fire-and-forget PTW safety watchdog, called from getPermitsBoard.
+ * Raises ONE high-severity `safety` insight for a project when either:
+ *  – any permit is currently suspended, OR
+ *  – more than 3 permits expired without closure in the last 7 days.
+ * No-ops when a `safety` insight is already open for the project. Never throws.
+ */
+export async function maybeCreatePermitSafetyInsight(
+  projectId: string,
+  suspendedCount: number,
+  expiredUnclosedLast7d: number,
+): Promise<void> {
+  try {
+    const triggerSuspended = suspendedCount > 0
+    const triggerExpired = expiredUnclosedLast7d > 3
+    if (!triggerSuspended && !triggerExpired) return
+
+    const sb = createAdminClient()
+
+    const { data: existing } = await sb
+      .from('ai_insights')
+      .select('id')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .eq('module', 'safety')
+      .eq('status', 'open')
+      .limit(1)
+    if (existing && existing.length > 0) return
+
+    const { data: proj } = await sb.from('projects').select('name').eq('id', projectId).maybeSingle()
+    const projectName = (proj?.name as string) ?? 'project'
+
+    const reasons: string[] = []
+    if (triggerSuspended) reasons.push(`${suspendedCount} permit(s) currently suspended`)
+    if (triggerExpired) reasons.push(`${expiredUnclosedLast7d} permits expired without formal closure in the last 7 days`)
+
+    await sb.from('ai_insights').insert({
+      tenant_id: DEMO_TENANT,
+      project_id: projectId,
+      module: 'safety',
+      title: `Permit-to-work compliance risk on ${projectName}`,
+      description: `Live PTW monitoring detected ${reasons.join(' and ')}. Uncontrolled or lapsed permits indicate a breakdown in the permit lifecycle and elevate on-site safety exposure.`,
+      confidence: 90,
+      severity: 'high',
+      status: 'open',
+      recommended_action: 'Have the HSE manager review the affected permits: reinstate or close suspended permits and ensure every expired permit is formally closed out before work continues.',
+    })
+    revalidatePath('/ai-insights')
+  } catch (e) {
+    console.error('[ai-insights] permit safety generator failed:', e)
+  }
+}
+
 export async function acknowledgeInsightAction(id: string) {
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }

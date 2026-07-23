@@ -15,11 +15,13 @@ import { loadFinanceEvmDashboard } from '@/app/actions/finance-evm'
 import { getGateProgressReport } from '@/app/actions/phase-gates'
 import { getVariationOrders }    from '@/app/actions/variation-orders'
 import { getClaims }             from '@/app/actions/claims'
+import { getTransmittalsRegister } from '@/app/actions/transmittals'
+import { getPermitsBoard }       from '@/app/actions/workpermits'
 import type { RiskRecord }       from '@/lib/types/action-types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register' | 'lender-progress'
+type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register' | 'lender-progress' | 'document-control-log' | 'ptw-log'
 type DateRange  = '30d' | '90d' | '1y' | 'all'
 
 const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
@@ -30,6 +32,8 @@ const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
   { id: 'risk-register',     label: 'Risk Register',      description: 'Full risk register with scores, owners and status' },
   { id: 'approvals-log',     label: 'Approvals Log',      description: 'Approval decisions and pending items across all projects' },
   { id: 'lender-progress',   label: 'Lender Progress Report', description: 'Bank-ready progress report per project — compile, save, and export the full lender pack' },
+  { id: 'document-control-log', label: 'Document Control Log', description: 'Transmittals for a project with response codes and turnaround days' },
+  { id: 'ptw-log',           label: 'PTW Log',            description: 'Permits to work by type and status with validity windows' },
 ]
 
 const DATE_RANGE_OPTIONS: { id: DateRange; label: string }[] = [
@@ -416,6 +420,174 @@ function LenderProgressReport() {
   )
 }
 
+// ─── Per-project report project picker ─────────────────────────────────────────
+
+function useReportProject() {
+  const { data: projects, isLoading } = useSWR('report-perproject-list', () => getProjects())
+  const [projectId, setProjectId] = React.useState<string | null>(null)
+  const activeProjectId = projectId ?? projects?.[0]?.id ?? null
+  return { projects: projects ?? [], isLoading, activeProjectId, setProjectId }
+}
+
+function ReportProjectPicker({
+  projects, activeProjectId, onChange,
+}: {
+  projects: { id: string; code: string; name: string }[]
+  activeProjectId: string | null
+  onChange: (id: string) => void
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-4 print:hidden">
+      <label className="text-xs font-medium text-muted-foreground">Project</label>
+      <select
+        value={activeProjectId ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground"
+      >
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+// ─── Document Control Log (transmittals) ────────────────────────────────────────
+
+const RESPONSE_CODE_LABEL: Record<string, string> = {
+  A: 'Approved', B: 'As noted', C: 'Revise & resubmit', D: 'Rejected',
+}
+const RESPONSE_CODE_CLASS: Record<string, string> = {
+  A: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20',
+  B: 'bg-teal-500/10 text-teal-700 border-teal-500/20',
+  C: 'bg-amber-500/10 text-amber-700 border-amber-500/20',
+  D: 'bg-red-500/10 text-red-700 border-red-500/20',
+}
+
+function turnaroundDays(issue: string | null, response: string | null): number | null {
+  if (!issue || !response) return null
+  const d = Math.round((new Date(response).getTime() - new Date(issue).getTime()) / 86_400_000)
+  return d >= 0 ? d : null
+}
+
+function DocumentControlLogReport() {
+  const { projects, isLoading: projLoading, activeProjectId, setProjectId } = useReportProject()
+  const { data, isLoading } = useSWR(
+    activeProjectId ? `report-doc-control-${activeProjectId}` : null,
+    () => getTransmittalsRegister(activeProjectId as string),
+  )
+
+  if (projLoading) return <LoadingRows cols={8} />
+  if (projects.length === 0) {
+    return <div className="rounded-lg border border-border p-10 text-center text-sm text-muted-foreground">No projects available.</div>
+  }
+
+  const rows = data?.rows ?? []
+
+  return (
+    <div>
+      <ReportProjectPicker projects={projects} activeProjectId={activeProjectId} onChange={setProjectId} />
+      {isLoading ? <LoadingRows cols={8} /> : (
+        <ReportTable
+          headers={['Transmittal', 'Dir.', 'Subject', 'To / From', 'Issued', 'Response Due', 'Response Code', 'Turnaround']}
+          empty={rows.length === 0}
+        >
+          {rows.map((t) => {
+            const td = turnaroundDays(t.issue_date, t.response_date)
+            return (
+              <tr key={t.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                <td className="px-3 py-2 font-mono text-xs text-primary whitespace-nowrap">{t.transmittal_no}</td>
+                <td className="px-3 py-2 text-xs capitalize text-muted-foreground">{t.direction}</td>
+                <td className="px-3 py-2 max-w-[240px] truncate">{t.subject}</td>
+                <td className="px-3 py-2 text-xs text-muted-foreground">{t.direction === 'outgoing' ? (t.to_party ?? '—') : (t.from_party ?? '—')}</td>
+                <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{t.issue_date ? new Date(t.issue_date).toLocaleDateString() : '—'}</td>
+                <td className={cn('px-3 py-2 text-xs whitespace-nowrap', t.overdue ? 'text-red-600 font-semibold' : 'text-muted-foreground')}>
+                  {t.response_due ? new Date(t.response_due).toLocaleDateString() : '—'}
+                </td>
+                <td className="px-3 py-2">
+                  {t.response_code ? (
+                    <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium', RESPONSE_CODE_CLASS[t.response_code] ?? '')}>
+                      {t.response_code} · {RESPONSE_CODE_LABEL[t.response_code] ?? t.response_code}
+                    </span>
+                  ) : <span className="text-xs text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{td != null ? `${td} day${td === 1 ? '' : 's'}` : '—'}</td>
+              </tr>
+            )
+          })}
+        </ReportTable>
+      )}
+      {!isLoading && data && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          {data.stats.issuedThisMonth} issued this month · {data.stats.awaitingResponse} awaiting response · {data.stats.overdue} overdue
+          {data.stats.avgResponseDays != null ? ` · avg turnaround ${data.stats.avgResponseDays} days` : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ─── PTW Log (work permits) ─────────────────────────────────────────────────────
+
+const PTW_STATUS_CLASS: Record<string, string> = {
+  requested: 'bg-amber-500/10 text-amber-700 border-amber-500/20',
+  issued:    'bg-emerald-500/10 text-emerald-700 border-emerald-500/20',
+  suspended: 'bg-red-500/10 text-red-700 border-red-500/20',
+  expired:   'bg-slate-100 text-slate-500 border-slate-200',
+  closed:    'bg-slate-100 text-slate-500 border-slate-200',
+  cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
+}
+
+function PtwLogReport() {
+  const { projects, isLoading: projLoading, activeProjectId, setProjectId } = useReportProject()
+  const { data, isLoading } = useSWR(
+    activeProjectId ? `report-ptw-${activeProjectId}` : null,
+    () => getPermitsBoard(activeProjectId as string),
+  )
+
+  if (projLoading) return <LoadingRows cols={7} />
+  if (projects.length === 0) {
+    return <div className="rounded-lg border border-border p-10 text-center text-sm text-muted-foreground">No projects available.</div>
+  }
+
+  const rows = [...(data?.all ?? [])].sort((a, b) => a.type.localeCompare(b.type) || a.status.localeCompare(b.status))
+
+  return (
+    <div>
+      <ReportProjectPicker projects={projects} activeProjectId={activeProjectId} onChange={setProjectId} />
+      {isLoading ? <LoadingRows cols={7} /> : (
+        <ReportTable
+          headers={['Permit No', 'Type', 'Title', 'Location', 'Status', 'Valid From', 'Valid To']}
+          empty={rows.length === 0}
+        >
+          {rows.map((p) => (
+            <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+              <td className="px-3 py-2 font-mono text-xs text-primary whitespace-nowrap">{p.permit_no}</td>
+              <td className="px-3 py-2 text-xs capitalize text-muted-foreground whitespace-nowrap">{p.type.replace(/_/g, ' ')}</td>
+              <td className="px-3 py-2 max-w-[220px] truncate">{p.title}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{p.location ?? '—'}</td>
+              <td className="px-3 py-2">
+                <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize', PTW_STATUS_CLASS[p.status] ?? '')}>
+                  {p.status}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{p.valid_from ? new Date(p.valid_from).toLocaleDateString() : '—'}</td>
+              <td className={cn('px-3 py-2 text-xs whitespace-nowrap', p.expiringSoon ? 'text-amber-600 font-semibold' : 'text-muted-foreground')}>
+                {p.valid_to ? new Date(p.valid_to).toLocaleDateString() : '—'}
+              </td>
+            </tr>
+          ))}
+        </ReportTable>
+      )}
+      {!isLoading && data && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          {data.stats.activeNow} active · {data.stats.expiring48h} expiring in 48h · {data.stats.requested} awaiting issue · {data.stats.suspended} suspended
+        </p>
+      )}
+    </div>
+  )
+}
+
 function LoadingRows({ cols }: { cols: number }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -546,6 +718,8 @@ export default function ReportsPage() {
           {activeType === 'risk-register'     && <RiskRegisterReport     dateRange={dateRange} />}
           {activeType === 'approvals-log'     && <ApprovalsLogReport     dateRange={dateRange} />}
           {activeType === 'lender-progress'   && <LenderProgressReport />}
+          {activeType === 'document-control-log' && <DocumentControlLogReport />}
+          {activeType === 'ptw-log'           && <PtwLogReport />}
         </div>
       </div>
     </div>
