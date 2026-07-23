@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import useSWR from 'swr'
 import {
-  Wrench, FileText, CheckCircle2, AlertTriangle, Plus, Search, Download,
+  Wrench, FileText, CheckCircle2, AlertTriangle, Plus, Search,
   RefreshCw, Loader2, Layers, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import {
-  loadEngineeringDashboard, createRFI, closeRFI, seedEngineeringDemoData,
+  loadEngineeringDashboard, createRFI, closeRFI,
 } from '@/app/actions/engineering'
 import type { DrawingRecord, RFIRecord, IFCPackage } from '@/lib/types/action-types'
 
@@ -276,8 +276,6 @@ export type EngineeringTab = 'drawings' | 'rfis' | 'packages'
 export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: EngineeringTab }) {
   const { toast } = useToast()
   const { data, isLoading, mutate } = useSWR('engineering-dashboard', loadEngineeringDashboard, { revalidateOnFocus: true })
-  const [seeding, setSeeding] = useState(false)
-
   const drawings = data?.drawings ?? []
   const rfis = data?.rfis ?? []
   const packages = data?.packages ?? []
@@ -285,15 +283,6 @@ export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: E
   const approvedPackages = data?.approvedPackages ?? 0
   const openRFIs = data?.openRFIs ?? 0
   const overdueRFIs = data?.overdueRFIs ?? 0
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedEngineeringDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
-    mutate()
-  }
 
   return (
     <div className="p-6 space-y-6">
@@ -308,9 +297,6 @@ export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: E
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw size={14} /></Button>
-          <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding} className="gap-1.5">
-            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Seed Demo
-          </Button>
         </div>
       </div>
 

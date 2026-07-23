@@ -19,6 +19,7 @@ import {
   Store,
   Bell,
   GitMerge,
+  FileBarChart,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -272,6 +273,12 @@ export const NAV_SECTIONS: NavSection[] = [
         children: [
           { id: 'fin-evm',        label: 'EVM & Cash Flow',   href: '/finance/evm' },
         ],
+      },
+      {
+        id: 'reports',
+        label: 'Reports',
+        href: '/reports',
+        icon: FileBarChart,
       },
     ],
   },

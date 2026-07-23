@@ -272,3 +272,49 @@ async function getModuleEvents(
     }
   })
 }
+
+// ─── Gate Progress Report ─────────────────────────────────────────────────────
+
+export interface GateProgressRow {
+  projectId:   string
+  projectCode: string
+  projectName: string
+  phaseNumber: number
+  phaseName:   string
+  status:      string
+  reviewedAt:  string | null
+  notes:       string | null
+}
+
+/** Returns all phase_gates rows joined with project name/code for the Reports center. */
+export async function getGateProgressReport(): Promise<GateProgressRow[]> {
+  const supabase = createAdminClient()
+
+  const { data: gates } = await supabase
+    .from('phase_gates')
+    .select('project_id, phase_number, phase_name, status, reviewed_at, notes')
+    .eq('tenant_id', DEMO_TENANT)
+    .order('project_id')
+    .order('phase_number')
+
+  if (!gates?.length) return []
+
+  const projectIds = Array.from(new Set(gates.map((g) => g.project_id as string)))
+  const { data: projects } = await supabase
+    .from('projects')
+    .select('id, code, name')
+    .in('id', projectIds)
+
+  const pm = Object.fromEntries((projects ?? []).map((p) => [p.id as string, { code: p.code as string, name: p.name as string }]))
+
+  return gates.map((g) => ({
+    projectId:   g.project_id as string,
+    projectCode: pm[g.project_id as string]?.code  ?? '—',
+    projectName: pm[g.project_id as string]?.name  ?? 'Project',
+    phaseNumber: g.phase_number as number,
+    phaseName:   g.phase_name   as string ?? `G${g.phase_number}`,
+    status:      g.status       as string ?? 'pending',
+    reviewedAt:  g.reviewed_at  as string | null,
+    notes:       g.notes        as string | null,
+  }))
+}

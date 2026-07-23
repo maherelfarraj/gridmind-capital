@@ -7,11 +7,11 @@ import {
   Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import {
-  CheckCircle2, Clock, AlertTriangle, GitMerge, Database, RefreshCw,
+  CheckCircle2, Clock, AlertTriangle, GitMerge, RefreshCw,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ApprovalInboxWrapper } from '@/components/approvals/approval-inbox-wrapper'
-import { loadApprovalsDashboard, seedApprovalsDemoData } from '@/app/actions/approvals'
+import { loadApprovalsDashboard } from '@/app/actions/approvals'
 import type { ApprovalsDashboard } from '@/app/actions/approvals'
 import { cn } from '@/lib/utils'
 
@@ -58,17 +58,8 @@ function KpiCard({ label, value, sub, accent, icon: Icon }: {
 
 export default function ApprovalsPage() {
   const { data, mutate, isLoading } = useSWR('approvals-dashboard', loadApprovalsDashboard)
-  const [seeding, setSeeding] = React.useState(false)
-
   const d = data ?? (isLoading ? null : ILLUSTRATIVE)
   const isLive = !!data
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedApprovalsDemoData()
-    await mutate()
-    setSeeding(false)
-  }
 
   const byTypeData = (() => {
     if (!d) return []
@@ -97,17 +88,6 @@ export default function ApprovalsPage() {
           )}>
             {isLive ? 'Live' : 'Illustrative'}
           </span>
-          {!isLive && (
-            <button
-              type="button"
-              onClick={handleSeed}
-              disabled={seeding}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-800 dark:bg-slate-700 text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-50"
-            >
-              <Database className="size-3.5" aria-hidden />
-              {seeding ? 'Seeding...' : 'Seed Demo'}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => mutate()}
