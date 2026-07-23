@@ -156,3 +156,126 @@ export async function submitG1FormAction(
   )
   return { error: error?.message ?? null }
 }
+
+// ─── G2–G7 form data types ────────────────────────────────────
+
+export interface G2FormData {
+  engineeringPackagesPlanned: string
+  disciplinesInvolved:        string[]
+  ifcTargetDate:              string
+  keyDeliverables:            { value: string }[]
+  designBasisNotes:           string
+}
+
+export interface G3FormData {
+  contractingStrategy:    'EPC' | 'EPCM' | 'multi-package'
+  bidders:                { name: string }[]
+  targetAwardDate:        string
+  estimatedContractValue: string
+  longLeadItemsNotes:     string
+}
+
+export interface G4FormData {
+  contractorName:       string
+  mobilizationDate:     string
+  siteReadiness: {
+    access:          boolean
+    permits:         boolean
+    hsePlanApproved: boolean
+    insurance:       boolean
+  }
+  plannedWorkforcePeak: string
+}
+
+export interface G5FormData {
+  systemsCount:            string
+  punchItemsOpenCount:     string
+  mcCertificateTargetDate: string
+  walkdownDate:            string
+  asBuiltStatus:           'not-started' | 'in-progress' | 'complete'
+}
+
+export interface G6FormData {
+  testPackagesCount:         string
+  energizationDate:          string
+  performanceTestPlanStatus: 'not-started' | 'draft' | 'approved'
+  gridConnectionDate:        string
+  trainingPlanStatus:        'not-started' | 'draft' | 'approved'
+}
+
+export interface G7FormData {
+  omContractor:           string
+  handoverCertificateDate: string
+  warrantyPeriodMonths:   string
+  sparePartsDelivered:    'yes' | 'no'
+  omManualsDelivered:     'yes' | 'no'
+  finalAcceptanceNotes:   string
+}
+
+// ─── Shared submit helper for G2–G7 ───────────────────────────
+
+const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+
+/**
+ * Saves a gate submission (upsert on project_id + gate_number) and creates a
+ * paired approvals row — mirrors the G0/G1 pattern for gates 2 through 7.
+ */
+async function submitGateForm(
+  gateNumber: number,
+  formData: unknown,
+  projectId: string,
+  projectName: string,
+): Promise<{ error: string | null }> {
+  const guard = await requireWriter()
+  if ('error' in guard) return guard
+
+  const supabase = createAdminClient()
+
+  const { error: subError } = await supabase.from('gate_submissions').upsert(
+    {
+      project_id:   projectId,
+      gate_number:  gateNumber,
+      form_data:    formData as Record<string, unknown>,
+      status:       'submitted',
+      submitted_at: new Date().toISOString(),
+      updated_at:   new Date().toISOString(),
+    },
+    { onConflict: 'project_id,gate_number' },
+  )
+  if (subError) return { error: subError.message }
+
+  // Create the approval request for this submission
+  const { error: apprError } = await supabase.from('approvals').insert({
+    tenant_id:   DEMO_TENANT,
+    object_type: 'gate_submission',
+    object_id:   projectId,
+    title:       `G${gateNumber} Submission — ${projectName}`,
+    priority:    'normal',
+  })
+
+  return { error: apprError?.message ?? null }
+}
+
+export async function submitG2FormAction(formData: G2FormData, projectId: string, projectName: string) {
+  return submitGateForm(2, formData, projectId, projectName)
+}
+
+export async function submitG3FormAction(formData: G3FormData, projectId: string, projectName: string) {
+  return submitGateForm(3, formData, projectId, projectName)
+}
+
+export async function submitG4FormAction(formData: G4FormData, projectId: string, projectName: string) {
+  return submitGateForm(4, formData, projectId, projectName)
+}
+
+export async function submitG5FormAction(formData: G5FormData, projectId: string, projectName: string) {
+  return submitGateForm(5, formData, projectId, projectName)
+}
+
+export async function submitG6FormAction(formData: G6FormData, projectId: string, projectName: string) {
+  return submitGateForm(6, formData, projectId, projectName)
+}
+
+export async function submitG7FormAction(formData: G7FormData, projectId: string, projectName: string) {
+  return submitGateForm(7, formData, projectId, projectName)
+}
