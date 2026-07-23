@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthActor, requireWriter } from '@/lib/auth/guard'
 import { ensureStorageBucket } from '@/app/actions/storage'
+import { maybeCreateDelayInsight } from '@/app/actions/ai-insights'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 
@@ -19,6 +20,7 @@ export interface DailyReportSummary {
   weather: string | null
   workforce_count: number | null
   equipment_count: number | null
+  work_summary: string | null
   status: string
   photo_count: number
 }
@@ -109,7 +111,7 @@ export async function getDailyReports(
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('daily_reports')
-    .select('id, report_date, weather, workforce_count, equipment_count, status')
+    .select('id, report_date, weather, workforce_count, equipment_count, work_performed, status')
     .eq('tenant_id', DEMO_TENANT)
     .eq('project_id', projectId)
     .order('report_date', { ascending: false })
@@ -130,12 +132,17 @@ export async function getDailyReports(
     }
   }
 
+  // Fire-and-forget: raise a schedule-risk insight if delays recur on 3+
+  // consecutive days. Never blocks or fails the read.
+  void maybeCreateDelayInsight(projectId).catch(() => {})
+
   return data.map((r) => ({
     id:              r.id as string,
     report_date:     r.report_date as string,
     weather:         (r.weather as string) ?? null,
     workforce_count: (r.workforce_count as number) ?? null,
     equipment_count: (r.equipment_count as number) ?? null,
+    work_summary:    (r.work_performed as string) ?? null,
     status:          (r.status as string) ?? 'draft',
     photo_count:     counts[r.id as string] ?? 0,
   }))

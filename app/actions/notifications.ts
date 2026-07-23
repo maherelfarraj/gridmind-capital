@@ -58,8 +58,10 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
   const now   = new Date()
   const nowIso = now.toISOString()
   const in48   = new Date(now.getTime() + 48 * 3_600_000).toISOString()
+  const today  = nowIso.slice(0, 10)
+  const last24 = new Date(now.getTime() - 24 * 3_600_000).toISOString()
 
-  const [permitRes, transRes] = await Promise.all([
+  const [permitRes, transRes, dailyRes, photoRes] = await Promise.all([
     admin
       .from('work_permits')
       .select('id, permit_no, title, project_id, valid_to')
@@ -75,7 +77,41 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       .in('status', ['issued', 'acknowledged'])
       .lt('response_due', nowIso)
       .order('response_due', { ascending: true }),
+    admin
+      .from('daily_reports')
+      .select('id, project_id, report_date, workforce_count, updated_at')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('status', 'submitted')
+      .gte('report_date', today)
+      .order('updated_at', { ascending: false }),
+    admin
+      .from('field_photos')
+      .select('id, ticket_id, project_id, created_at')
+      .eq('tenant_id', DEMO_TENANT)
+      .not('ticket_id', 'is', null)
+      .gte('created_at', last24)
+      .order('created_at', { ascending: false }),
   ])
+
+  // Resolve project names + punch-item titles for the field-derived alerts.
+  const punchTicketIds = Array.from(
+    new Set((photoRes.data ?? []).map((p) => p.ticket_id as string).filter(Boolean)),
+  )
+  const projectIds = Array.from(new Set([
+    ...(dailyRes.data ?? []).map((r) => r.project_id as string),
+    ...(photoRes.data ?? []).map((p) => p.project_id as string),
+  ].filter(Boolean)))
+
+  const [ticketRes, projRes] = await Promise.all([
+    punchTicketIds.length
+      ? admin.from('tickets').select('id, title, project_id, created_at, metadata')
+          .eq('tenant_id', DEMO_TENANT).eq('category', 'punch_item').in('id', punchTicketIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    projectIds.length
+      ? admin.from('projects').select('id, name').eq('tenant_id', DEMO_TENANT).in('id', projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ])
+  const projName = Object.fromEntries((projRes.data ?? []).map((p) => [p.id as string, p.name as string]))
 
   const out: LiveNotification[] = []
 
@@ -102,6 +138,37 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       is_read:   false,
       link:      `/projects/${t.project_id}/transmittals`,
       created_at: due,
+    })
+  }
+
+  // Daily reports submitted today (field mode → construction).
+  for (const r of dailyRes.data ?? []) {
+    const proj = projName[r.project_id as string] ?? 'a project'
+    const crew = r.workforce_count != null ? ` — ${r.workforce_count} on site` : ''
+    out.push({
+      id:        `daily-report-${r.id}`,
+      title:     `Daily report submitted — ${proj}`,
+      body:      `Today's site report was filed from the field${crew}.`,
+      type:      'document',
+      is_read:   false,
+      link:      '/construction',
+      created_at: (r.updated_at as string) ?? nowIso,
+    })
+  }
+
+  // New punch items raised from field mode that include photos.
+  for (const t of ticketRes.data ?? []) {
+    const proj = projName[t.project_id as string] ?? 'a project'
+    const meta = (t.metadata as { punch_cat?: string } | null) ?? null
+    const cat  = meta?.punch_cat ? `Cat ${meta.punch_cat} ` : ''
+    out.push({
+      id:        `field-punch-${t.id}`,
+      title:     `New ${cat}punch item with photo — ${proj}`,
+      body:      `"${(t.title as string) ?? 'Punch item'}" was raised from the field with a photo attached.`,
+      type:      'alert',
+      is_read:   false,
+      link:      '/construction',
+      created_at: (t.created_at as string) ?? nowIso,
     })
   }
 

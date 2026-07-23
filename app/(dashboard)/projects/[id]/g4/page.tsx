@@ -24,13 +24,14 @@ import { SiteReadinessTab } from '@/components/g4/site-readiness-tab'
 import { ResourcesTab }     from '@/components/g4/resources-tab'
 import { ProgressTab }      from '@/components/g4/progress-tab'
 
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
+function StatCard({ icon, label, value, color, sub }: { icon: React.ReactNode; label: string; value: string; color: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 px-4 py-4 flex items-center gap-3 bg-white shadow-sm">
       <div className={cn('rounded-lg p-2.5', color)}>{icon}</div>
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 leading-none mb-0.5">{label}</p>
         <p className="text-xl font-bold text-slate-900 leading-none">{value}</p>
+        {sub && <p className="text-[10px] text-slate-400 mt-1 leading-none">{sub}</p>}
       </div>
     </div>
   )
@@ -111,11 +112,18 @@ export default function G4ConstructionPage() {
 
         <PhaseGateStepper currentGate="G4" completedGates={['G0', 'G1', 'G2', 'G3']} projectId={projectId} />
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard icon={<HardHat    className="size-5 text-orange-600" />}  label="Work Packages"     value="24"      color="bg-orange-100" />
           <StatCard icon={<TrendingUp className="size-5 text-amber-600" />}   label="Mobilization %"   value="65%"     color="bg-amber-100"  />
           <StatCard icon={<FileCheck  className="size-5 text-green-600" />}   label="Permits Approved" value="8 of 12" color="bg-green-100"  />
           <StatCard icon={<ShieldCheck className="size-5 text-green-600" />}  label="HSE Incidents"    value="0"       color="bg-green-100"  />
+          <StatCard
+            icon={<FileText className="size-5 text-sky-600" />}
+            label="Daily Reports"
+            value={String(g4Data?.dailyReportCount ?? 0)}
+            sub={g4Data?.latestReportDate ? `Latest ${new Date(g4Data.latestReportDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : 'None yet'}
+            color="bg-sky-100"
+          />
         </div>
 
         {/* Tab bar */}

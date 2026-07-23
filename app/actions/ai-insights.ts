@@ -212,6 +212,75 @@ export async function maybeCreatePermitSafetyInsight(
   }
 }
 
+/**
+ * Fire-and-forget schedule-risk watchdog, called from getDailyReports.
+ * Raises ONE high-severity `schedule_risk` insight for a project when a
+ * SUBMITTED daily report records a delay (non-empty `delays`) on 3+ consecutive
+ * calendar days. No-ops when a `schedule_risk` insight is already open for the
+ * project. Never throws.
+ */
+export async function maybeCreateDelayInsight(projectId: string): Promise<void> {
+  try {
+    const sb = createAdminClient()
+
+    // Pull recent submitted reports that actually record a delay.
+    const { data: rows } = await sb
+      .from('daily_reports')
+      .select('report_date, delays')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .eq('status', 'submitted')
+      .order('report_date', { ascending: false })
+      .limit(60)
+
+    const delayDays = (rows ?? [])
+      .filter((r) => typeof r.delays === 'string' && (r.delays as string).trim().length > 0)
+      .map((r) => String(r.report_date).slice(0, 10))
+
+    // Detect a run of 3+ consecutive calendar days among the delay dates.
+    const daySet = new Set(delayDays)
+    const DAY = 86_400_000
+    let hasStreak = false
+    let streakEnd = ''
+    for (const d of daySet) {
+      const base = Date.parse(d)
+      if (Number.isNaN(base)) continue
+      const d1 = new Date(base + DAY).toISOString().slice(0, 10)
+      const d2 = new Date(base + 2 * DAY).toISOString().slice(0, 10)
+      if (daySet.has(d1) && daySet.has(d2)) { hasStreak = true; streakEnd = d2 > streakEnd ? d2 : streakEnd }
+    }
+    if (!hasStreak) return
+
+    const { data: existing } = await sb
+      .from('ai_insights')
+      .select('id')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .eq('module', 'schedule_risk')
+      .eq('status', 'open')
+      .limit(1)
+    if (existing && existing.length > 0) return
+
+    const { data: proj } = await sb.from('projects').select('name').eq('id', projectId).maybeSingle()
+    const projectName = (proj?.name as string) ?? 'project'
+
+    await sb.from('ai_insights').insert({
+      tenant_id: DEMO_TENANT,
+      project_id: projectId,
+      module: 'schedule_risk',
+      title: `Recurring site delays reported — ${projectName}`,
+      description: `Field daily reports logged delays on 3 or more consecutive days (through ${streakEnd}). Sustained day-over-day delays are a leading indicator of schedule slippage and should be reconciled against the programme.`,
+      confidence: 82,
+      severity: 'high',
+      status: 'open',
+      recommended_action: 'Review the recent daily reports with the site team, quantify the schedule impact, and update the project programme / critical path accordingly.',
+    })
+    revalidatePath('/ai-insights')
+  } catch (e) {
+    console.error('[ai-insights] recurring-delay generator failed:', e)
+  }
+}
+
 export async function acknowledgeInsightAction(id: string) {
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }

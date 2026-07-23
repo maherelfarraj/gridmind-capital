@@ -171,6 +171,8 @@ export interface G4DataResult {
   incidents:    G4Incident[]
   permits:      G4Permit[]
   workPermits:  G4WorkPermit[]
+  dailyReportCount: number
+  latestReportDate: string | null
   gateFormData: Record<string, unknown> | null
 }
 
@@ -201,7 +203,7 @@ const INCIDENT_STATUS_REMAP: Record<string, string> = {
 export async function getG4Data(projectId: string): Promise<G4DataResult> {
   const supabase = createAdminClient()
 
-  const [wpRes, incRes, permRes, workPermitRes, gateRes] = await Promise.all([
+  const [wpRes, incRes, permRes, workPermitRes, dailyRes, gateRes] = await Promise.all([
     supabase.from('work_packages')
       .select('id, wp_code, title, discipline, planned_pct, actual_pct, status')
       .eq('tenant_id', DEMO_TENANT)
@@ -220,6 +222,11 @@ export async function getG4Data(projectId: string): Promise<G4DataResult> {
       .eq('tenant_id', DEMO_TENANT)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
+    supabase.from('daily_reports')
+      .select('report_date', { count: 'exact' })
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .order('report_date', { ascending: false }),
     supabase.from('gate_submissions')
       .select('form_data')
       .eq('tenant_id', DEMO_TENANT)
@@ -294,6 +301,8 @@ export async function getG4Data(projectId: string): Promise<G4DataResult> {
     incidents,
     permits,
     workPermits,
+    dailyReportCount: dailyRes.count ?? (dailyRes.data?.length ?? 0),
+    latestReportDate: (dailyRes.data?.[0]?.report_date as string) ?? null,
     gateFormData: (gateRes.data?.form_data as Record<string, unknown>) ?? null,
   }
 }

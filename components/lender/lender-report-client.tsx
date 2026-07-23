@@ -520,6 +520,29 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
                 <p className="text-xs text-neutral-500">No activities scheduled to start in the next 30 days.</p>
               )}
             </div>
+
+            {/* Optional — renders only when a submitted field daily report exists */}
+            {data.progress.latestDailyReport && (
+              <div className="print-avoid-break mt-6">
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Latest site daily report</h3>
+                <table className="w-full border-collapse">
+                  <tbody>
+                    <tr>
+                      <Td>Report date</Td>
+                      <Td>{formatDate(data.progress.latestDailyReport.report_date)}</Td>
+                    </tr>
+                    <tr>
+                      <Td>Workforce on site</Td>
+                      <Td>{data.progress.latestDailyReport.workforce_count ?? '—'}</Td>
+                    </tr>
+                    <tr>
+                      <Td>Work performed</Td>
+                      <Td>{data.progress.latestDailyReport.work_performed?.trim() || '—'}</Td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           {/* ===== SECTION 4 — COST & EVM ===== */}

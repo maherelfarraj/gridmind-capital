@@ -84,6 +84,7 @@ export interface LenderReportData {
     sCurve: { week: string; planned: number; actual: number | null }[]
     completedInPeriod: { name: string; finish: string | null }[]
     lookAhead30d: { name: string; start: string | null; finish: string | null }[]
+    latestDailyReport: { report_date: string; workforce_count: number | null; work_performed: string | null } | null
   }
   gates: {
     currentGate: string
@@ -343,6 +344,25 @@ export async function getLenderReportData(
       finish: (a.planned_finish as string) ?? null,
     }))
 
+  // ── Latest field daily report (optional; renders only when present) ─────────
+  const { data: latestReportRow } = await admin
+    .from('daily_reports')
+    .select('report_date, workforce_count, work_performed')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+    .eq('status', 'submitted')
+    .order('report_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const latestDailyReport = latestReportRow
+    ? {
+        report_date: latestReportRow.report_date as string,
+        workforce_count: (latestReportRow.workforce_count as number) ?? null,
+        work_performed: (latestReportRow.work_performed as string) ?? null,
+      }
+    : null
+
   // ── Cost / EVM ──────────────────────────────────────────────────────────────
   const s = evm.summary
   const cpi = s.avgCPI > 0 ? s.avgCPI : 1
@@ -497,6 +517,7 @@ export async function getLenderReportData(
       sCurve: sCurve.map((p) => ({ week: p.week, planned: p.planned, actual: p.actual })),
       completedInPeriod,
       lookAhead30d,
+      latestDailyReport,
     },
     gates: {
       currentGate: gateState.currentGate,

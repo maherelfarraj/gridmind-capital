@@ -17,6 +17,7 @@ import {
   loadConstructionDashboard, closePunchItem, recordInspection,
 } from '@/app/actions/construction'
 import type { WorkPackage, InspectionRecord, PunchItem } from '@/lib/types/action-types'
+import { DailyReportsSection } from './daily-reports-section'
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -153,7 +154,7 @@ function PunchRow({ item, onClose }: { item: PunchItem; onClose: (id: string) =>
   )
 }
 
-// ─── Main page ────────────────────────────────────────────────
+// ��── Main page ────────────────────────────────────────────────
 
 export function ConstructionPage() {
   const { toast } = useToast()
@@ -392,6 +393,9 @@ export function ConstructionPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Daily reports (field mode → construction) */}
+        <DailyReportsSection />
       </div>
     </>
   )

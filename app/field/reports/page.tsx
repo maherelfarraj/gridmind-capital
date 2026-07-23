@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import useSWR from 'swr'
-import { FileText, Loader2, Users, Wrench, Camera, ChevronRight } from 'lucide-react'
+import { FileText, Loader2, Users, Wrench, Camera, ChevronRight, TrendingUp } from 'lucide-react'
 import { useFieldProject } from '@/components/field/field-context'
 import { getDailyReports, type DailyReportSummary } from '@/app/actions/field'
 
