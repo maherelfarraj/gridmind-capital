@@ -98,3 +98,9 @@ export function useField(): FieldContextValue {
   if (!ctx) throw new Error('useField must be used within a FieldProvider')
   return ctx
 }
+
+/** Convenience accessor for the currently-selected project id. */
+export function useFieldProject(): { activeProjectId: string | null; setActiveProjectId: (id: string) => void } {
+  const { projectId, setProjectId } = useField()
+  return { activeProjectId: projectId, setActiveProjectId: setProjectId }
+}

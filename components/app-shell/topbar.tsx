@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Menu, Bell, Search, ChevronRight, ChevronLeft, Command, Sun, Moon } from 'lucide-react'
+import { Menu, Bell, Search, ChevronRight, ChevronLeft, Command, Sun, Moon, HardHat } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useLocale } from 'next-intl'
 import { LanguageSwitcher } from '@/components/i18n/language-switcher'
@@ -220,6 +220,15 @@ export function TopBar({
         <LiveClock />
         <div className="h-4 w-px bg-border hidden lg:block" />
         <SearchTrigger onOpen={onSearchOpen} />
+        <Link
+          href="/field"
+          aria-label="Open Field mode"
+          title="Field mode"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-primary hover:bg-primary/15 transition-colors"
+        >
+          <HardHat size={15} aria-hidden="true" />
+          <span className="hidden text-xs font-semibold sm:block">Field</span>
+        </Link>
         <ThemeToggle />
         <LanguageSwitcher />
         <NotificationBell count={notificationCount} onClick={onNotifOpen} />

@@ -68,7 +68,7 @@ export function FieldShell({ children }: { children: React.ReactNode }) {
       <FieldProvider>
         <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-background">
           <TopBar />
-          <main className="flex-1 px-4 pb-24 pt-16">{children}</main>
+          <main className="flex-1 pb-24 pt-16">{children}</main>
           <BottomTabs />
         </div>
       </FieldProvider>
