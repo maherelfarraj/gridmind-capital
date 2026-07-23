@@ -276,6 +276,10 @@ interface TimelineEntryProps {
 function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) {
   const cfg = getConfig(entry.action)
   const { relative, absolute } = formatTimestamp(entry.created_at)
+  // Relative time is client-only: it differs between SSR and hydration.
+  // Render the stable absolute date first, then swap to relative after mount.
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => setMounted(true), [])
   const displayCode = entry.object_code ?? entry.object_id
   const actorName = entry.actor_name ?? 'System'
   const tags = (entry.metadata?.tags as string[] | undefined) ?? []
@@ -341,14 +345,13 @@ function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) 
             {entry.object_type.replace(/_/g, ' ')}
           </span>
 
-          {/* Timestamp — suppressHydrationWarning because relative time differs between SSR and client */}
+          {/* Timestamp — absolute date on SSR/first paint, relative after mount */}
           <time
             dateTime={new Date(entry.created_at).toISOString()}
             title={absolute}
             className="ml-auto shrink-0 text-[11px] text-muted-foreground tabular-nums"
-            suppressHydrationWarning
           >
-            {relative}
+            {mounted ? relative : absolute}
           </time>
         </div>
 
@@ -487,7 +490,7 @@ const FILTERS: { value: FilterOption; label: string }[] = [
   { value: 'documents', label: 'Documents' },
 ]
 
-/* ─────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────��───────────────────
    MOCK DATA (8 items per spec)
 ───────────────────────────────────────────── */
 
@@ -781,5 +784,3 @@ export function WorkflowTimeline({
     </div>
   )
 }
-
-export default WorkflowTimeline
