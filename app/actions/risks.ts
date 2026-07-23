@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import type { RiskRecord, RisksDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -81,6 +82,9 @@ export async function createRisk(data: {
   title: string; category: string; probability: number; impact: number
   owner: string; mitigation: string; project_id?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const code = `R-${Date.now().toString(36).toUpperCase().slice(-4)}`
   const { error } = await supabase.from('risks').insert({
@@ -99,6 +103,9 @@ export async function createRisk(data: {
 }
 
 export async function closeRisk(id: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('risks')
@@ -109,6 +116,9 @@ export async function closeRisk(id: string): Promise<{ error?: string }> {
 }
 
 export async function seedRisksDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('risks').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
   if ((ex?.length ?? 0) > 0) return {}

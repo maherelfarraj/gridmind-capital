@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { getInitials } from '@/lib/session'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -235,10 +236,6 @@ function formatRelativeDate(record: ApprovalRecord): { label: string; urgency: '
   return { label: `Due in ${dLeft} days`, urgency: 'normal' }
 }
 
-function getInitials(name: string): string {
-  return name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
-}
-
 // ─────────────────────────────────────────────────────────────
 // Filter / sort logic (memoised)
 // ─────────────────────────────────────────────────────────────
@@ -376,7 +373,7 @@ const ApprovalItemCard = React.memo(function ApprovalItemCard({
             {/* Avatar + name */}
             <div className="flex items-center gap-1.5">
               <span
-                className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[#64ffda]/20 text-[9px] font-bold text-[#0a192f] dark:text-[#64ffda]"
+                className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-gm-accent/20 text-[9px] font-bold text-navy dark:text-gm-accent"
                 aria-hidden="true"
               >
                 {initials}
@@ -663,6 +660,10 @@ export const ApprovalInbox = React.memo(function ApprovalInbox({
 
       {/* ── List ──────────────────────────────── */}
       <div className="px-4 py-3">
+        {/* Announce result count changes to screen readers */}
+        <div aria-live="polite" className="sr-only">
+          {`${visible.length} ${visible.length === 1 ? 'approval' : 'approvals'} found`}
+        </div>
         {visible.length === 0 ? (
           <EmptyState />
         ) : (

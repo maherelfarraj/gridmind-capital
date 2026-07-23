@@ -15,6 +15,8 @@ import {
   NAV_SECTIONS,
   NAV_BOTTOM,
   PHASE_META,
+  EXTERNAL_NAV_SECTIONS,
+  EXTERNAL_ROLES,
   filterSectionsByRole,
   type NavItem,
   type NavChild,
@@ -237,7 +239,7 @@ function NavLeafItem({
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ───��─────────────────────────────────────────────────────────
 // Section label
 // ─────────────────────────────────────────────────────────────
 
@@ -266,7 +268,9 @@ function SidebarContent({
   showCloseButton,
   onClose,
 }: SidebarProps & { onItemClick?: () => void; showCloseButton?: boolean; onClose?: () => void }) {
-  const sections = filterSectionsByRole(NAV_SECTIONS, user.role).map((section) => ({
+  const isExternalRole = EXTERNAL_ROLES.includes(user.role)
+  const baseSections = isExternalRole ? EXTERNAL_NAV_SECTIONS : NAV_SECTIONS
+  const sections = filterSectionsByRole(baseSections, user.role).map((section) => ({
     ...section,
     items: section.items.map((item) =>
       item.id === 'approvals' && approvalCount != null

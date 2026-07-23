@@ -2,12 +2,15 @@
 
 import React from 'react'
 import Link from 'next/link'
+import useSWR from 'swr'
 import { useParams } from 'next/navigation'
 import {
   ChevronRight, Plus, FileText, Download,
   Eye, ClipboardList, AlertCircle, CheckSquare, Award, FolderOpen, BarChart2,
 } from 'lucide-react'
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
+import { G5GateApprovalButton } from '@/components/g5/gate-approval-dialog'
+import { getNcrs } from '@/app/actions/ncrs'
 
 import { Tab, KpiCard } from '@/components/g5/shared'
 import { InspectionsTab }   from '@/components/g5/inspections-tab'
@@ -15,6 +18,8 @@ import { PunchListTab }     from '@/components/g5/punch-tab'
 import { NcrTab }           from '@/components/g5/ncr-tab'
 import { TestPlansTab }     from '@/components/g5/test-plans-tab'
 import { MCCertificatesTab } from '@/components/g5/certs-tab'
+import { GateCertificatePanel } from '@/components/stage-gate/gate-certificate'
+import { getProject } from '@/app/actions/projects'
 import { AnalyticsTab }     from '@/components/g5/analytics-tab'
 import { AsBuiltsTab }      from '@/components/g5/as-builts-tab'
 import {
@@ -40,9 +45,20 @@ export default function G5MechanicalCompletionPage() {
   const projectId = Array.isArray(params?.id) ? params.id[0] : (params?.id ?? 'demo')
   const [activeTab, setActiveTab] = React.useState<TabId>('inspections')
 
+  // Live NCRs drive the gate-approval guard + the Open NCRs KPI.
+  const { data: ncrData } = useSWR(`g5-ncrs-${projectId}`, () => getNcrs(projectId))
+  const liveOpenNcrs = ncrData?.kpis.open
+
+  // Project name for the completion certificate.
+  const { data: project } = useSWR(`project-${projectId}`, () => getProject(projectId))
+  const certDeliverables = MC_PROGRESS.map((m) => ({
+    label: m.system,
+    status: m.pct >= 100 ? 'Complete' : `${m.pct}%`,
+  }))
+
   const totalMC     = Math.round(MC_PROGRESS.reduce((s, r) => s + r.pct, 0) / MC_PROGRESS.length)
   const openPunchA  = MOCK_PUNCH_ITEMS.filter((p) => p.category === 'A' && p.status !== 'closed').length
-  const openNcrs    = MOCK_NCRS.filter((n) => n.status !== 'closed').length
+  const openNcrs    = liveOpenNcrs ?? MOCK_NCRS.filter((n) => n.status !== 'closed').length
   const issuedCerts = MOCK_MC_CERTS.filter((c) => c.status === 'issued').length
 
   return (
@@ -59,7 +75,7 @@ export default function G5MechanicalCompletionPage() {
         </nav>
 
         {/* Phase gate stepper */}
-        <PhaseGateStepper currentGate="G5" completedGates={['G0', 'G1', 'G2', 'G3', 'G4']} />
+        <PhaseGateStepper currentGate="G5" completedGates={['G0', 'G1', 'G2', 'G3', 'G4']} projectId={projectId} />
 
         {/* Page header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -70,6 +86,10 @@ export default function G5MechanicalCompletionPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link href={`/stage-gates/${projectId}/gate/5`}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+              <ClipboardList className="size-4" /> Gate Submission Form
+            </Link>
             <button type="button"
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <FileText className="size-4" /> ITP Register
@@ -79,9 +99,10 @@ export default function G5MechanicalCompletionPage() {
               <Download className="size-4" /> Export Report
             </button>
             <button type="button"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#64ffda]/10 border border-[#64ffda]/30 text-sm font-medium text-[#64ffda] hover:bg-[#64ffda]/20 transition-colors">
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <Plus className="size-4" /> New Inspection
             </button>
+            <G5GateApprovalButton projectId={projectId} />
           </div>
         </div>
 
@@ -89,7 +110,7 @@ export default function G5MechanicalCompletionPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <KpiCard label="Overall MC %"     value={`${totalMC}%`}   color="#64ffda"  sub="across all systems"    />
           <KpiCard label="Open Cat-A Punch" value={openPunchA}       color="#ef4444"  sub="blocks MC certificate"  />
-          <KpiCard label="Open NCRs"        value={openNcrs}         color="#f59e0b"  sub={`${MOCK_NCRS.filter((n) => n.severity === 'critical').length} critical`} />
+          <KpiCard label="Open NCRs"        value={openNcrs}         color="#f59e0b"  sub={openNcrs > 0 ? 'blocks G5 approval' : 'none — G5 clear'} />
           <KpiCard label="MC Certs Issued"  value={`${issuedCerts}/${MOCK_MC_CERTS.length}`} color="#22c55e" sub="systems certified" />
         </div>
 
@@ -103,11 +124,22 @@ export default function G5MechanicalCompletionPage() {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'inspections' && <InspectionsTab    inspections={MOCK_INSPECTIONS} />}
+          {activeTab === 'inspections' && <InspectionsTab    inspections={MOCK_INSPECTIONS} projectId={projectId} />}
           {activeTab === 'punch'       && <PunchListTab      items={MOCK_PUNCH_ITEMS}        />}
           {activeTab === 'ncr'         && <NcrTab            ncrs={MOCK_NCRS}                />}
           {activeTab === 'testplans'   && <TestPlansTab      plans={MOCK_TEST_PLANS}         />}
-          {activeTab === 'certs'       && <MCCertificatesTab certs={MOCK_MC_CERTS}           />}
+          {activeTab === 'certs'       && (
+            <div className="space-y-6">
+              <GateCertificatePanel
+                projectId={projectId}
+                projectName={project?.name ?? projectId}
+                gateCode="G5"
+                gateName="Mechanical Completion"
+                deliverables={certDeliverables}
+              />
+              <MCCertificatesTab certs={MOCK_MC_CERTS} />
+            </div>
+          )}
           {activeTab === 'asbuilts'    && <AsBuiltsTab       drawings={MOCK_AS_BUILTS}       />}
           {activeTab === 'analytics'   && <AnalyticsTab                                      />}
         </div>

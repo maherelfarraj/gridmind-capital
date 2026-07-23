@@ -1,16 +1,10 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { CheckSquare, Clock, AlertCircle, Circle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WidgetConfig } from './types'
-
-const TASKS = [
-  { id: 't1', title: 'Review G3 Convene Package',   project: 'Sirius 400MW',  priority: 'high',   due: '2026-07-23', done: false },
-  { id: 't2', title: 'Sign off IPA-03 application', project: 'Lyra Grid',     priority: 'high',   due: '2026-07-24', done: false },
-  { id: 't3', title: 'Approve earthing design',     project: 'Vega BESS',     priority: 'medium', due: '2026-07-25', done: false },
-  { id: 't4', title: 'Upload HSE induction records',project: 'Helios Sub',    priority: 'low',    due: '2026-07-28', done: true  },
-  { id: 't5', title: 'Confirm milestone MS-14',     project: 'Orion Wind',    priority: 'medium', due: '2026-07-30', done: false },
-]
+import { getMyTasks } from '@/app/actions/dashboard'
 
 const P_META = {
   high:   { label: 'High',   color: 'text-red-500',    bg: 'bg-red-500/10'    },
@@ -18,9 +12,17 @@ const P_META = {
   low:    { label: 'Low',    color: 'text-blue-500',   bg: 'bg-blue-500/10'   },
 }
 
+function fmtDue(due: string | null): string {
+  if (!due) return '—'
+  const d = new Date(due)
+  return isNaN(d.getTime()) ? '—' : d.toISOString().slice(5, 10)
+}
+
 export function MyTasksWidget({ config }: { config: WidgetConfig }) {
-  const [done, setDone] = React.useState<string[]>(TASKS.filter(t => t.done).map(t => t.id))
-  const open = TASKS.filter(t => !done.includes(t.id)).length
+  const { data: TASKS, isLoading } = useSWR('widget-my-tasks', getMyTasks)
+  const [done, setDone] = React.useState<string[]>([])
+  const tasks = TASKS ?? []
+  const open = tasks.filter(t => !done.includes(t.id)).length
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
@@ -30,7 +32,11 @@ export function MyTasksWidget({ config }: { config: WidgetConfig }) {
         <span className="ml-auto bg-primary/10 text-primary rounded-full px-1.5 text-[10px] font-medium">{open} open</span>
       </div>
       <div className="flex flex-col gap-1.5 flex-1 overflow-auto">
-        {TASKS.map((t) => {
+        {isLoading && Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-11 rounded-lg bg-muted/20 animate-pulse" />)}
+        {!isLoading && tasks.length === 0 && (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
+        )}
+        {tasks.map((t) => {
           const isDone = done.includes(t.id)
           const p = P_META[t.priority as keyof typeof P_META]
           return (
@@ -53,7 +59,7 @@ export function MyTasksWidget({ config }: { config: WidgetConfig }) {
               </div>
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground flex-shrink-0">
                 <Clock className="size-3" />
-                <span className="font-mono">{t.due.slice(5)}</span>
+                <span className="font-mono">{fmtDue(t.due)}</span>
               </div>
             </div>
           )

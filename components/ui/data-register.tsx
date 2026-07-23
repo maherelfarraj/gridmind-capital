@@ -117,6 +117,10 @@ export interface DataRegisterProps<T = Record<string, unknown>> {
   selectable?: boolean
   /** Called with selected rows when selection changes */
   onSelectionChange?: (selected: T[]) => void
+  /** Bulk "Export selected" handler — button is hidden when omitted */
+  onExportSelected?: (selected: T[]) => void
+  /** Bulk "Delete selected" handler — button is hidden when omitted */
+  onDeleteSelected?: (selected: T[]) => void
   /** Loading skeleton state */
   loading?: boolean
   /** Custom empty-state icon */
@@ -679,6 +683,8 @@ export function DataRegister<T = Record<string, unknown>>({
   searchable = true,
   selectable = false,
   onSelectionChange,
+  onExportSelected,
+  onDeleteSelected,
   loading = false,
   emptyIcon,
   emptyTitle,
@@ -727,25 +733,28 @@ export function DataRegister<T = Record<string, unknown>>({
     filterable: col.filterable ?? (globalFilterable === true),
   })), [columns, globalSortable, globalFilterable])
 
+  // Read the row-key value in a type-safe way (rowKey is `keyof T`)
+  const keyOf = React.useCallback((row: T) => String(row[rowKey]), [rowKey])
+
   // Selection helpers
   const handleSelectAll = React.useCallback((checked: boolean) => {
-    const next = checked ? new Set(data.map((r) => String((r as Record<string, unknown>)[rowKey as string]))) : new Set<string>()
+    const next = checked ? new Set(data.map(keyOf)) : new Set<string>()
     setSelected(next)
     onSelectionChange?.(checked ? [...data] : [])
-  }, [data, rowKey, onSelectionChange])
+  }, [data, keyOf, onSelectionChange])
 
   const handleSelectRow = React.useCallback((row: T, checked: boolean) => {
-    const key = String((row as Record<string, unknown>)[rowKey as string])
+    const key = keyOf(row)
     setSelected((prev) => {
       const next = new Set(prev)
-      checked ? next.add(key) : next.delete(key)
+      if (checked) next.add(key)
+      else next.delete(key)
+      // Derive the callback payload from the freshly-computed set,
+      // never the stale `selected` snapshot.
+      onSelectionChange?.(data.filter((r) => next.has(keyOf(r))))
       return next
     })
-    onSelectionChange?.(data.filter((r) => {
-      const k = String((r as Record<string, unknown>)[rowKey as string])
-      return checked ? selected.has(k) || k === key : selected.has(k) && k !== key
-    }))
-  }, [data, rowKey, selected, onSelectionChange])
+  }, [data, keyOf, onSelectionChange])
 
   // Reset page on filter change
   React.useEffect(() => { setPage(1) }, [debouncedQuery, colFilters])
@@ -766,15 +775,11 @@ export function DataRegister<T = Record<string, unknown>>({
   const hasColFilters = resolvedColumns.some((c) => c.filterable)
   const activeColFilters = Object.values(colFilters).filter(Boolean).length
 
-  const allSelected = data.length > 0 && data.every((r) =>
-    selected.has(String((r as Record<string, unknown>)[rowKey as string])),
-  )
-  const someSelected = !allSelected && data.some((r) =>
-    selected.has(String((r as Record<string, unknown>)[rowKey as string])),
-  )
+  const allSelected = data.length > 0 && data.every((r) => selected.has(keyOf(r)))
+  const someSelected = !allSelected && data.some((r) => selected.has(keyOf(r)))
 
   /* ── Multi-sort toggle (Shift+click adds secondary sorts) ── */
-  function handleSort(key: string, shiftKey = false) {
+  const handleSort = React.useCallback((key: string, shiftKey = false) => {
     setSortSpecs((prev) => {
       const existing = prev.find((s) => s.key === key)
       if (shiftKey) {
@@ -789,30 +794,30 @@ export function DataRegister<T = Record<string, unknown>>({
       return []
     })
     setPage(1)
-  }
+  }, [])
 
   // Compat helpers for legacy sortKey/sortDir references in the render
   const sortKey = sortSpecs[0]?.key ?? null
   const sortDir: SortDir = sortSpecs[0]?.dir ?? null
 
   /* ── Column filter ── */
-  function setColFilter(key: string, val: string) {
+  const setColFilter = React.useCallback((key: string, val: string) => {
     setColFilters((prev) => ({ ...prev, [key]: val }))
-  }
+  }, [])
 
-  function clearAllFilters() {
+  const clearAllFilters = React.useCallback(() => {
     setQuery('')
     setColFilters({})
     searchRef.current?.focus()
-  }
+  }, [])
 
   /* ── Keyboard row handler ── */
-  function handleRowKeyDown(e: React.KeyboardEvent, row: T) {
+  const handleRowKeyDown = React.useCallback((e: React.KeyboardEvent, row: T) => {
     if ((e.key === 'Enter' || e.key === ' ') && onRowClick) {
       e.preventDefault()
       onRowClick(row)
     }
-  }
+  }, [onRowClick])
 
   const isClickable = Boolean(onRowClick)
 
@@ -894,21 +899,27 @@ export function DataRegister<T = Record<string, unknown>>({
             >
               Clear selection
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-            >
-              <Download className="size-3 mr-1" aria-hidden="true" />
-              Export selected
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
-            >
-              Delete selected
-            </Button>
+            {onExportSelected && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => onExportSelected(data.filter((r) => selected.has(keyOf(r))))}
+              >
+                <Download className="size-3 mr-1" aria-hidden="true" />
+                Export selected
+              </Button>
+            )}
+            {onDeleteSelected && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
+                onClick={() => onDeleteSelected(data.filter((r) => selected.has(keyOf(r))))}
+              >
+                Delete selected
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -928,7 +939,7 @@ export function DataRegister<T = Record<string, unknown>>({
       {!error && !loading && pageRows.length > 0 && (
         <ul className="sm:hidden divide-y divide-border" aria-label={`${title} cards`}>
           {pageRows.map((row) => {
-            const key = String((row as Record<string, unknown>)[rowKey as string])
+            const key = keyOf(row)
             return (
               <li
                 key={key}
@@ -1123,7 +1134,7 @@ export function DataRegister<T = Record<string, unknown>>({
                 </tr>
               ) : (
                 pageRows.map((row, ri) => {
-                  const key = String((row as Record<string, unknown>)[rowKey as string])
+                  const key = keyOf(row)
                   const isEven     = ri % 2 === 1
                   const isChecked  = selected.has(key)
                   // Honour both legacy selectedKey (single-select) and new multi-select

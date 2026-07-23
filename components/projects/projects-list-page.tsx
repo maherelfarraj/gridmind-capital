@@ -123,13 +123,13 @@ export const PROJECTS_MOCK: Project[] = [
   { id: '4', code: 'SOL-2026-004', name: 'Noor Ouarzazate IV',                              client_name: 'MASEN',                                  phase: 'construction',  gate: 'G4', budget_amount:   500_000_000,  status: 'active',    target_cod: '2027-03-15' },
   { id: '5', code: 'WND-2026-005', name: 'Hornsea Project Four',                            client_name: 'Orsted',                                 phase: 'commercial',    gate: 'G1', budget_amount: 2_100_000_000,  status: 'on-hold',   target_cod: '2030-09-30' },
   { id: '6', code: 'BAT-2026-006', name: 'Victorian Big Battery',                           client_name: 'Neoen Australia',                        phase: 'commissioning', gate: 'G6', budget_amount:   180_000_000,  status: 'active',    target_cod: '2026-11-30' },
-  { id: '7', code: 'CSP-2026-007', name: 'Noor III CSP Tower',                              client_name: 'MASEN',                                  phase: 'om',            gate: 'G7', budget_amount:   750_000_000,  status: 'active',    target_cod: '2028-01-31' },
-  { id: '8', code: 'WIN-2026-008', name: 'Fosen Vind Onshore Wind',                         client_name: 'Fosen Vind',                             phase: 'finance',       gate: 'G8', budget_amount: 1_100_000_000,  status: 'completed', target_cod: '2025-08-31' },
-  { id: '9', code: 'SOL-2026-009', name: 'Mohammed bin Rashid Al Maktoum Solar Park Phase V', client_name: 'DEWA',                                 phase: 'ai-analytics',  gate: 'G9', budget_amount:   320_000_000,  status: 'active',    target_cod: '2027-12-31' },
+  { id: '7', code: 'CSP-2026-007', name: 'Noor III CSP Tower',                              client_name: 'MASEN',                                  phase: 'om',            gate: 'G6', budget_amount:   750_000_000,  status: 'active',    target_cod: '2028-01-31' },
+  { id: '8', code: 'WIN-2026-008', name: 'Fosen Vind Onshore Wind',                         client_name: 'Fosen Vind',                             phase: 'commissioning', gate: 'G6', budget_amount: 1_100_000_000,  status: 'completed', target_cod: '2025-08-31' },
+  { id: '9', code: 'SOL-2026-009', name: 'Mohammed bin Rashid Al Maktoum Solar Park Phase V', client_name: 'DEWA',                                 phase: 'commissioning', gate: 'G6', budget_amount:   320_000_000,  status: 'active',    target_cod: '2027-12-31' },
   { id:'10', code: 'HYD-2026-010', name: 'Ituango Hydroelectric',                           client_name: 'EPM',                                    phase: 'engineering',   gate: 'G2', budget_amount: 2_800_000_000,  status: 'draft',     target_cod: '2029-03-31' },
 ]
 
-/* ─────────────────────────────────────────────────────────────
+/* ───────────────────────────────────────────────────────��─────
    HELPERS
 ───────────────────────────────────────────── */
 
@@ -668,7 +668,7 @@ function Pagination({
 
 /* ─────────────────────────────────────────────────────────────
    MAIN COMPONENT
-───────────────────────────────────────────── */
+────────────��──────────────────────────────── */
 
 export function ProjectsListPage({
   projects: externalProjects,

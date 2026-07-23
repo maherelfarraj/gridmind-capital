@@ -130,10 +130,9 @@ export const MOCK_PROJECTS: PipelineProject[] = [
   { id: 'p-atlas',   name: 'Atlas Solar PV 300MW',     code: 'ATL-300', client: 'Masdar',             gate: 5, phase: 'g5', status: 'active',     mw: 300,  budgetM: 360,  progress: 74,  healthRag: 'green', location: 'Abu Dhabi, UAE', targetCod: 'Q3 2025' },
   // G6
   { id: 'p-ceres',   name: 'Ceres Wind Repowering',    code: 'CRS-150', client: 'RWE Renewables',     gate: 6, phase: 'g6', status: 'active',     mw: 150,  budgetM: 195,  progress: 88,  healthRag: 'green', location: 'Rhineland, Germany', targetCod: 'Q2 2025' },
-  // G7
-  { id: 'p-ares',    name: 'Ares Solar + Storage',     code: 'ARS-250', client: 'AGL Energy',         gate: 7, phase: 'g7', status: 'active',     mw: 250,  budgetM: 415,  progress: 94,  healthRag: 'green', location: 'Victoria, Australia', targetCod: 'Dec 2024' },
-  // G8
-  { id: 'p-titan',   name: 'Titan Hydro Upgrade',      code: 'TTN-800', client: 'Hydro Quebec',       gate: 8, phase: 'g8', status: 'completed',  mw: 800,  budgetM: 940,  progress: 100, healthRag: 'green', location: 'Quebec, Canada', targetCod: 'Jun 2024' },
+  // G6 (Handover & O&M — formerly G7/G8)
+  { id: 'p-ares',    name: 'Ares Solar + Storage',     code: 'ARS-250', client: 'AGL Energy',         gate: 6, phase: 'g6', status: 'active',     mw: 250,  budgetM: 415,  progress: 94,  healthRag: 'green', location: 'Victoria, Australia', targetCod: 'Dec 2024' },
+  { id: 'p-titan',   name: 'Titan Hydro Upgrade',      code: 'TTN-800', client: 'Hydro Quebec',       gate: 6, phase: 'g6', status: 'completed',  mw: 800,  budgetM: 940,  progress: 100, healthRag: 'green', location: 'Quebec, Canada', targetCod: 'Jun 2024' },
 ]
 
 // ─────────────────────────────────────────────────────────────
@@ -156,10 +155,7 @@ export function buildGateLanes(projects: PipelineProject[]): GateLane[] {
     { gate: 3, phase: 'g3', shortName: 'Engineering',   color: '#8b5cf6' },
     { gate: 4, phase: 'g4', shortName: 'Procurement',   color: '#a855f7' },
     { gate: 5, phase: 'g5', shortName: 'Construction',  color: '#f97316' },
-    { gate: 6, phase: 'g6', shortName: 'Commissioning', color: '#14b8a6' },
-    { gate: 7, phase: 'g7', shortName: 'O&M',           color: '#22c55e' },
-    { gate: 8, phase: 'g8', shortName: 'Finance',       color: '#10b981' },
-    { gate: 9, phase: 'g9', shortName: 'AI Optimise',   color: '#06b6d4' },
+    { gate: 6, phase: 'g6', shortName: 'Handover & O&M', color: '#22c55e' },
   ]
   return LANE_META.map((meta) => ({
     ...meta,
@@ -167,7 +163,7 @@ export function buildGateLanes(projects: PipelineProject[]): GateLane[] {
   }))
 }
 
-// ─────────────────────────────────────────────────────────────
+// ───────��─────────────────────────────────────────────────────
 // Approval queue
 // ─────────────────────────────────────────────────────────────
 

@@ -7,7 +7,12 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureStorageBucket } from '@/app/actions/storage'
 
-export async function GET() {
+export async function GET(request: Request) {
+  const secret = process.env.SETUP_SECRET
+  if (!secret || request.headers.get('x-setup-secret') !== secret) {
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  }
+
   const supabase = createAdminClient()
 
   const ddl = `

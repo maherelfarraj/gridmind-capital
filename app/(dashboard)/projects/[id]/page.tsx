@@ -4,7 +4,11 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import useSWR from 'swr'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
+import { CommentThread } from '@/components/comments/comment-thread'
+import { StaffingRadar } from '@/components/projects/staffing-radar'
 import { getProject } from '@/app/actions/projects'
+import { getProjectTimeline } from '@/app/actions/phase-gates'
+import { loadStaffingRadar } from '@/app/actions/team'
 
 // ─────────────────────────────────────────────────────────────
 // Page
@@ -18,6 +22,16 @@ export default function ProjectDetailRoute() {
   const { data: project, isLoading } = useSWR(
     id ? `project-${id}` : null,
     () => getProject(id),
+  )
+
+  const { data: timelineLogs } = useSWR(
+    id ? `project-timeline-${id}` : null,
+    () => getProjectTimeline(id),
+  )
+
+  const { data: staffingRadar } = useSWR(
+    id ? `staffing-radar-${id}` : null,
+    () => loadStaffingRadar(id),
   )
 
   const [activePanel, setActivePanel] = React.useState<'comments' | 'documents' | 'edit' | null>(null)
@@ -61,6 +75,11 @@ export default function ProjectDetailRoute() {
 
   return (
     <>
+      {staffingRadar && (
+        <div className="mb-4">
+          <StaffingRadar projectId={project.id} data={staffingRadar} />
+        </div>
+      )}
       <ProjectDetailPage
         project={{
           id: project.id,
@@ -103,7 +122,7 @@ export default function ProjectDetailRoute() {
           { title: 'Supply chain disruption', probability: 'medium', impact: 'medium', status: 'open' },
           { title: 'Weather delays',          probability: 'medium', impact: 'low',    status: 'open' },
         ]}
-        timelineLogs={[]}
+        timelineLogs={timelineLogs ?? []}
         approvals={[]}
         teamMembers={[]}
         documents={[]}
@@ -135,9 +154,16 @@ export default function ProjectDetailRoute() {
               &times;
             </button>
           </div>
-          <div className="p-5 text-sm text-muted-foreground">
+          <div className="p-4 text-sm text-muted-foreground">
             {activePanel === 'edit' && 'Edit panel — form fields coming soon.'}
-            {activePanel === 'comments' && 'Comments panel — coming soon.'}
+            {activePanel === 'comments' && (
+              <CommentThread
+                entityType="project"
+                entityId={project.id}
+                title="Project Discussion"
+                className="border-0 shadow-none"
+              />
+            )}
             {activePanel === 'documents' && 'Documents panel — coming soon.'}
           </div>
         </aside>

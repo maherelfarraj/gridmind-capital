@@ -1,23 +1,30 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { Megaphone, Pin, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WidgetConfig } from './types'
+import { getSystemAlerts } from '@/app/actions/dashboard'
 
-const POSTS = [
-  { id: 'p1', title: 'Platform Maintenance: July 26 at 02:00 UTC', body: 'GridMind will be offline for scheduled maintenance. Export any critical data beforehand.', pinned: true,  author: 'Platform Team', date: '1d ago',  category: 'system'   },
-  { id: 'p2', title: 'G3 Review Process Updated',                  body: 'The stage-gate G3 checklist has been updated to include the new NEOM authority requirements. Review before your next convene.', pinned: true, author: 'PMO Director', date: '3d ago', category: 'process' },
-  { id: 'p3', title: 'New HSE Template Library Available',         body: '14 new HSE templates have been added to the Document Library, including updated incident report forms.', pinned: false, author: 'HSE Manager', date: '5d ago',  category: 'content'  },
-]
-
-const CAT_COLOR: Record<string, string> = {
-  system:  '#ef4444',
-  process: '#6366f1',
-  content: '#22c55e',
+const SEV_COLOR: Record<string, string> = {
+  critical: '#ef4444',
+  high:     '#f59e0b',
 }
 
 export function AnnouncementsWidget({ config }: { config: WidgetConfig }) {
+  const { data, isLoading } = useSWR('widget-alerts', getSystemAlerts)
   const [expanded, setExpanded] = React.useState<string | null>(null)
+
+  const POSTS = (data ?? []).map((a) => ({
+    id:       a.id,
+    title:    a.title,
+    body:     a.body,
+    pinned:   a.severity === 'critical',
+    author:   a.module ? a.module.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'System',
+    date:     a.date,
+    severity: a.severity,
+  }))
+
   return (
     <div className="flex flex-col h-full p-4 gap-3">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -26,12 +33,16 @@ export function AnnouncementsWidget({ config }: { config: WidgetConfig }) {
         <span className="ml-auto bg-muted/50 text-muted-foreground rounded-full px-1.5 text-[10px]">{POSTS.length}</span>
       </div>
       <div className="flex flex-col gap-1.5 flex-1 overflow-auto">
+        {isLoading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 rounded-lg bg-muted/20 animate-pulse" />)}
+        {!isLoading && POSTS.length === 0 && (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No announcements</div>
+        )}
         {POSTS.map((p) => {
           const isOpen = expanded === p.id
           return (
             <div key={p.id}
               className={cn('rounded-lg border border-border overflow-hidden', p.pinned && 'border-primary/20')}
-              style={{ borderLeftColor: CAT_COLOR[p.category], borderLeftWidth: 3 }}
+              style={{ borderLeftColor: SEV_COLOR[p.severity] ?? '#6b7280', borderLeftWidth: 3 }}
             >
               <button className="w-full flex items-start gap-2 px-3 py-2.5 hover:bg-muted/20 transition-colors text-left"
                 onClick={() => setExpanded(isOpen ? null : p.id)}>

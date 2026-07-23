@@ -1,12 +1,14 @@
 'use client'
 
 import * as React from 'react'
+import useSWR from 'swr'
 import { Command } from 'cmdk'
 import { useRouter } from 'next/navigation'
+import { getProjects } from '@/app/actions/projects'
 import {
   Search, X, Folder, Shield, CheckSquare, FileText, Users,
   ArrowRight, Clock, Zap, ChevronRight, Keyboard,
-  Navigation, Settings, Plus, LogIn, BarChart3, AlertCircle,
+  Navigation, Settings, Plus, LogIn, AlertCircle,
   FolderOpen, Gavel, ClipboardList, LayoutDashboard, User,
   Terminal, Star, Hash
 } from 'lucide-react'
@@ -77,30 +79,27 @@ const COMMANDS: CommandItem[] = [
   { id: 'nav-dashboard', category: 'Navigation', title: 'Go to Dashboard', icon: LayoutDashboard, href: '/', kbd: 'G D' },
   { id: 'nav-projects',  category: 'Navigation', title: 'Go to Projects', icon: FolderOpen, href: '/projects', kbd: 'G P' },
   { id: 'nav-approvals', category: 'Navigation', title: 'Go to Approvals', icon: Gavel, href: '/approvals', kbd: 'G A' },
-  { id: 'nav-gates',     category: 'Navigation', title: 'Go to Stage Gates', icon: Shield, href: '/greos/stage-gates', kbd: 'G G' },
-  { id: 'nav-risk',      category: 'Navigation', title: 'Go to Risk Register', icon: AlertCircle, href: '/risk/register' },
-  { id: 'nav-reports',   category: 'Navigation', title: 'Go to Analytics', icon: BarChart3, href: '/executive/kpis' },
+  { id: 'nav-gates',     category: 'Navigation', title: 'Go to Stage Gates', icon: Shield, href: '/stage-gates', kbd: 'G G' },
+  { id: 'nav-risk',      category: 'Navigation', title: 'Go to Risk Register', icon: AlertCircle, href: '/risks' },
   // Actions
   { id: 'act-project',   category: 'Actions', title: 'Create New Project', icon: Plus, href: '/projects', kbd: 'N P' },
   { id: 'act-task',      category: 'Actions', title: 'Create New Task', icon: CheckSquare, href: '/approvals' },
   { id: 'act-doc',       category: 'Actions', title: 'Upload Document', icon: FileText, href: '/documents' },
-  { id: 'act-report',    category: 'Actions', title: 'Export Report', icon: BarChart3, description: 'Generate PDF/Excel report', href: '/executive' },
   { id: 'act-invite',    category: 'Actions', title: 'Invite User', icon: User, href: '/admin/users' },
   // Settings
   { id: 'set-profile',   category: 'Settings', title: 'Open Profile Settings', icon: User, href: '/settings', kbd: 'G S' },
   { id: 'set-theme',     category: 'Settings', title: 'Toggle Dark Mode', icon: Settings, action: undefined },
   // Admin
   { id: 'adm-users',     category: 'Admin', title: 'Manage Users & Roles', icon: Users, href: '/admin/users' },
-  { id: 'adm-doa',       category: 'Admin', title: 'View DOA Matrix', icon: ClipboardList, href: '/admin/doa-matrix' },
   { id: 'adm-audit',     category: 'Admin', title: 'View Audit Logs', icon: ClipboardList, href: '/admin/audit' },
 ]
 
 const RECENT_SEARCHES = ['Sirius 400MW', 'G4 gate review', 'Aisha Al-Rashidi', 'EPC Contract']
 const SUGGESTED_ACTIONS = [
-  { label: 'Go to current gate', icon: Shield, href: '/greos/stage-gates' },
+  { label: 'Go to current gate', icon: Shield, href: '/stage-gates' },
   { label: 'View my approvals', icon: Gavel, href: '/approvals' },
   { label: 'Create new task', icon: Plus, href: '/approvals' },
-  { label: 'View risk register', icon: AlertCircle, href: '/risk/register' },
+  { label: 'View risk register', icon: AlertCircle, href: '/risks' },
 ]
 
 const FILTER_TABS: { id: FilterTab; label: string }[] = [
@@ -216,9 +215,35 @@ export function GlobalCommandPalette({ open, onClose }: GlobalCommandPaletteProp
     return () => window.removeEventListener('keydown', onKey)
   }, [open, isCommandMode])
 
-  // Filtered results
+  // Live project index — fetched from the real DB, merged ahead of the mock rows
+  const { data: liveProjects } = useSWR(
+    open ? 'palette-projects' : null,
+    () => getProjects({ status: null }),
+    { revalidateOnFocus: false },
+  )
+  const liveProjectResults = React.useMemo<ResultItem[]>(() => {
+    if (!liveProjects || liveProjects.length === 0) return []
+    const statusColor: Record<string, string> = {
+      active: '#22c55e', draft: '#6b7280', 'on-hold': '#f59e0b',
+      completed: '#3b82f6', cancelled: '#ef4444',
+    }
+    return liveProjects.map((p) => ({
+      id: `live-${p.id}`,
+      type: 'projects' as FilterTab,
+      title: p.name,
+      subtitle: p.client_name,
+      meta: `${p.gate} — ${p.status}`,
+      href: `/projects/${p.id}`,
+      badge: { label: p.status, color: statusColor[p.status] ?? '#6b7280' },
+      status: { color: statusColor[p.status] ?? '#6b7280' },
+    }))
+  }, [liveProjects])
+
+  // Filtered results — live projects first, then non-project mock rows
   const results = React.useMemo(() => {
-    const base = filter === 'all' ? MOCK_RESULTS : MOCK_RESULTS.filter((r) => r.type === filter)
+    const mockNonProjects = MOCK_RESULTS.filter((r) => r.type !== 'projects')
+    const pool = [...liveProjectResults, ...(liveProjectResults.length ? mockNonProjects : MOCK_RESULTS)]
+    const base = filter === 'all' ? pool : pool.filter((r) => r.type === filter)
     if (!searchQuery) return base
     const q = searchQuery.toLowerCase()
     return base.filter((r) =>
@@ -226,7 +251,7 @@ export function GlobalCommandPalette({ open, onClose }: GlobalCommandPaletteProp
       r.subtitle?.toLowerCase().includes(q) ||
       r.meta?.toLowerCase().includes(q)
     )
-  }, [searchQuery, filter])
+  }, [searchQuery, filter, liveProjectResults])
 
   // Filtered commands
   const commands = React.useMemo(() => {

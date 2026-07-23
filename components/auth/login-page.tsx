@@ -164,7 +164,7 @@ export interface LoginPageProps {
   isLoading?: boolean
 }
 
-/* ─────────────────────────────────────────────
+/* ─────────────────────────��───────────────────
    Main LoginPage
 ───────────────────────────────────────────── */
 export function LoginPage({
@@ -538,12 +538,12 @@ export function LoginPage({
               {/* Card footer */}
               <p className="mt-6 text-center text-sm text-slate-500">
                 Don&apos;t have an account?{' '}
-                <button
-                  type="button"
+                <a
+                  href="/auth/sign-up"
                   className="text-sky-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded"
                 >
-                  Contact your administrator
-                </button>
+                  Create account
+                </a>
               </p>
 
               {/* Demo hint */}

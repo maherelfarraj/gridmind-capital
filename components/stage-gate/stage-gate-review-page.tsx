@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   GitMerge,
   CheckCircle2,
@@ -22,13 +23,19 @@ import {
   Truck,
   HardHat,
   Settings,
-  TrendingUp,
   Leaf,
+  Pencil,
+  FilePlus2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
+import { GatePackExportButton } from '@/components/stage-gate/gate-pack-export'
+import { GatePackSignoffBlock } from '@/components/signatures/signoff-block'
+import { getProjects } from '@/app/actions/projects'
+import { getSubmittedGateNumbers } from '@/app/actions/gate-submissions'
+import useSWR from 'swr'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -62,8 +69,8 @@ interface GateMeta {
 
 const GATES: GateMeta[] = [
   {
-    gate: 0, phase: 'Intake', shortName: 'G0', fullName: 'Project Registration & Screening',
-    purpose: 'Validate strategic fit, assign project code, confirm preliminary resource availability.',
+    gate: 0, phase: 'Intake', shortName: 'G0', fullName: 'Opportunity Accepted',
+    purpose: 'Formal acceptance of a new project opportunity into the GridMind pipeline. Confirms strategic fit, preliminary resource allocation, and assigns a Project Sponsor.',
     color: '#64748b', icon: Zap, status: 'passed', approvedDate: '14 Jan 2025', approvedBy: 'A. Carter',
     reviewers: [{ name: 'A. Carter', initials: 'AC', color: '#64ffda', decision: 'approve' }],
     deliverables: [
@@ -72,8 +79,8 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 1, phase: 'Development', shortName: 'G1', fullName: 'Development Sanction',
-    purpose: 'Approve project development budget and confirm site acquisition pathway.',
+    gate: 1, phase: 'Development', shortName: 'G1', fullName: 'Project Baseline Approved',
+    purpose: 'Locks the project baseline: scope, schedule, budget, and team. Triggers transition from development to active delivery.',
     color: '#3b82f6', icon: Building2, status: 'passed', approvedDate: '08 Mar 2025', approvedBy: 'A. Carter',
     reviewers: [
       { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'approve' },
@@ -87,9 +94,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 2, phase: 'Commercial', shortName: 'G2', fullName: 'Commercial Sanction & PPA',
-    purpose: 'Approve commercial structure, PPA execution and project finance term sheet.',
-    color: '#6366f1', icon: TrendingUp, status: 'passed', approvedDate: '22 Apr 2025', approvedBy: 'A. Carter',
+    gate: 2, phase: 'Engineering', shortName: 'G2', fullName: 'Engineering IFC Release',
+    purpose: 'Confirms all Issued for Construction (IFC) drawings and technical specifications are complete and approved, enabling procurement to commence.',
+    color: '#6366f1', icon: Wrench, status: 'passed', approvedDate: '22 Apr 2025', approvedBy: 'A. Carter',
     reviewers: [
       { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'approve' },
       { name: 'S. Park',    initials: 'SP', color: '#a855f7', decision: 'approve' },
@@ -103,9 +110,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 3, phase: 'Engineering', shortName: 'G3', fullName: 'Engineering Design Freeze',
-    purpose: 'Approve IFT design package, confirm technology selections, release for IFC.',
-    color: '#8b5cf6', icon: Wrench, status: 'passed', approvedDate: '10 Jun 2025', approvedBy: 'A. Carter',
+    gate: 3, phase: 'Procurement', shortName: 'G3', fullName: 'Procurement Award',
+    purpose: 'Confirms award of all major supply contracts and subcontract packages. Full procurement close-out before mobilisation.',
+    color: '#8b5cf6', icon: Truck, status: 'passed', approvedDate: '10 Jun 2025', approvedBy: 'A. Carter',
     reviewers: [
       { name: 'A. Carter',   initials: 'AC', color: '#64ffda', decision: 'approve' },
       { name: 'M. Al-Farsi', initials: 'MA', color: '#f97316', decision: 'approve' },
@@ -120,9 +127,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 4, phase: 'Procurement', shortName: 'G4', fullName: 'Procurement Sanction & EPC Award',
-    purpose: 'Approve procurement strategy, key equipment awards, and EPC sub-contract structure.',
-    color: '#a855f7', icon: Truck, status: 'active',
+    gate: 4, phase: 'Construction', shortName: 'G4', fullName: 'Construction Mobilization',
+    purpose: 'Authorises full site mobilisation. Confirms HSE plans, site access, temporary works, and construction methodology are approved.',
+    color: '#f97316', icon: HardHat, status: 'active',
     reviewers: [
       { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'pending' },
       { name: 'T. Müller',  initials: 'TM', color: '#3b82f6', decision: 'pending' },
@@ -140,9 +147,9 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 5, phase: 'Construction', shortName: 'G5', fullName: 'Construction Mobilization',
-    purpose: 'Confirm site readiness, approve mobilization budget, release construction workforce.',
-    color: '#f97316', icon: HardHat, status: 'locked',
+    gate: 5, phase: 'Construction', shortName: 'G5', fullName: 'Mechanical Completion',
+    purpose: 'Certifies that all physical construction works are complete per the IFC drawings. Triggers pre-commissioning activities.',
+    color: '#f97316', icon: Settings, status: 'locked',
     reviewers: [
       { name: 'A. Carter', initials: 'AC', color: '#64ffda', decision: 'pending' },
     ],
@@ -154,23 +161,13 @@ const GATES: GateMeta[] = [
     ],
   },
   {
-    gate: 6, phase: 'Commissioning', shortName: 'G6', fullName: 'Mechanical Completion',
-    purpose: 'Declare mechanical completion and hand over systems for commissioning.',
-    color: '#14b8a6', icon: Settings, status: 'locked',
+    gate: 6, phase: 'Handover & O&M', shortName: 'G6', fullName: 'Handover, Operations & Closeout',
+    purpose: 'Formal transfer of the asset to the Owner/Operator, O&M transition, warranty start, and final project closeout.',
+    color: '#22c55e', icon: Leaf, status: 'locked',
     reviewers: [],
     deliverables: [
       { id: 'g6d1', title: 'Mechanical Completion Certificate', owner: 'J. Rivera', status: 'not-started', isMandatory: true },
       { id: 'g6d2', title: 'Systems Hand-Over Package',         owner: 'T. Müller', status: 'not-started', isMandatory: true },
-    ],
-  },
-  {
-    gate: 7, phase: 'O&M', shortName: 'G7', fullName: 'Commercial Operations Declaration',
-    purpose: 'Declare Commercial Operations Date (COD) and hand over to O&M team.',
-    color: '#22c55e', icon: Leaf, status: 'locked',
-    reviewers: [],
-    deliverables: [
-      { id: 'g7d1', title: 'COD Certificate', owner: 'A. Carter', status: 'not-started', isMandatory: true },
-      { id: 'g7d2', title: 'O&M Handover Pack', owner: 'T. Müller', status: 'not-started', isMandatory: true },
     ],
   },
 ]
@@ -186,54 +183,80 @@ function DeliverableIcon({ status }: { status: GateDeliverable['status'] }) {
 
 // ─── Gate card ────────────────────────────────────────────────
 
-function GateCard({ gate, isSelected, onSelect }: {
+function GateCard({ gate, isSelected, onSelect, projectId, hasSubmission }: {
   gate: GateMeta; isSelected: boolean; onSelect: () => void
+  projectId?: string | null; hasSubmission?: boolean
 }) {
   const Icon = gate.icon
   const completed = gate.deliverables.filter((d) => d.status === 'complete' || d.status === 'waived').length
   const total = gate.deliverables.length
 
   return (
-    <button
-      onClick={onSelect}
-      aria-pressed={isSelected}
-      className={cn(
-        'relative flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all duration-150 w-full',
-        isSelected
-          ? 'bg-card border-[#64ffda]/60 shadow-lg'
-          : 'bg-card/60 border-border hover:border-border/80 hover:bg-card',
-        gate.status === 'locked' && 'opacity-50',
-      )}
-    >
-      {/* Status indicator */}
-      <div
-        className="size-9 rounded-full flex items-center justify-center shrink-0"
-        style={{ backgroundColor: `${gate.color}20` }}
+    <div className="flex flex-col gap-1.5">
+      <button
+        onClick={onSelect}
+        aria-pressed={isSelected}
+        className={cn(
+          'relative flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all duration-150 w-full',
+          isSelected
+            ? 'bg-card border-[#64ffda]/60 shadow-lg'
+            : 'bg-card/60 border-border hover:border-border/80 hover:bg-card',
+          gate.status === 'locked' && 'opacity-50',
+        )}
       >
-        {gate.status === 'passed' ? (
-          <CheckCircle2 className="size-5 text-[#22c55e]" aria-hidden />
-        ) : gate.status === 'active' ? (
-          <Icon className="size-5" style={{ color: gate.color }} aria-hidden />
-        ) : (
-          <Lock className="size-4 text-muted-foreground/50" aria-hidden />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="font-mono text-xs font-bold" style={{ color: gate.color }}>{gate.shortName}</span>
-          <span className="text-xs text-foreground font-medium truncate">{gate.phase}</span>
+        {/* Status indicator */}
+        <div
+          className="size-9 rounded-full flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${gate.color}20` }}
+        >
+          {gate.status === 'passed' ? (
+            <CheckCircle2 className="size-5 text-[#22c55e]" aria-hidden />
+          ) : gate.status === 'active' ? (
+            <Icon className="size-5" style={{ color: gate.color }} aria-hidden />
+          ) : (
+            <Lock className="size-4 text-muted-foreground/50" aria-hidden />
+          )}
         </div>
-        {gate.status !== 'locked' && (
-          <div className="mt-1 h-1 bg-muted rounded-full w-full">
-            <div
-              className="h-1 rounded-full transition-all"
-              style={{ width: `${total > 0 ? Math.round((completed / total) * 100) : 0}%`, backgroundColor: gate.color }}
-            />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-xs font-bold" style={{ color: gate.color }}>{gate.shortName}</span>
+            <span className="text-xs text-foreground font-medium truncate">{gate.phase}</span>
           </div>
-        )}
-      </div>
-      {isSelected && <ChevronRight className="size-4 text-[#64ffda] shrink-0" aria-hidden />}
-    </button>
+          {gate.status !== 'locked' && (
+            <div className="mt-1 h-1 bg-muted rounded-full w-full">
+              <div
+                className="h-1 rounded-full transition-all"
+                style={{ width: `${total > 0 ? Math.round((completed / total) * 100) : 0}%`, backgroundColor: gate.color }}
+              />
+            </div>
+          )}
+        </div>
+        {isSelected && <ChevronRight className="size-4 text-[#64ffda] shrink-0" aria-hidden />}
+      </button>
+
+      {/* Open gate form action — links to the gate submission form */}
+      {projectId && (
+        <Link
+          href={`/stage-gates/${projectId}/gate/${gate.gate}`}
+          className={cn(
+            'flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+            hasSubmission
+              ? 'border-[#64ffda]/40 text-[#64ffda] hover:bg-[#64ffda]/10'
+              : 'border-border text-muted-foreground hover:text-foreground hover:bg-muted/40',
+          )}
+        >
+          {hasSubmission ? (
+            <>
+              <Pencil className="size-3" aria-hidden /> Edit submission
+            </>
+          ) : (
+            <>
+              <FilePlus2 className="size-3" aria-hidden /> Start submission
+            </>
+          )}
+        </Link>
+      )}
+    </div>
   )
 }
 
@@ -432,6 +455,18 @@ export function StageGateReviewPage() {
   const passedCount = GATES.filter((g) => g.status === 'passed').length
   const activeGate  = GATES.find((g) => g.status === 'active')
 
+  // Resolve a real project so recorded signatures can be shown + exported in the Gate Pack.
+  const { data: projects } = useSWR('stage-gate-projects', () => getProjects())
+  const linkedProject =
+    projects?.find((p) => p.code === 'SRS-400') ?? projects?.[0] ?? null
+
+  // Which gates already have a saved submission (drives Edit/Start labels).
+  const { data: submittedGates } = useSWR(
+    linkedProject ? `submitted-gates-${linkedProject.id}` : null,
+    () => getSubmittedGateNumbers(linkedProject!.id),
+  )
+  const submittedSet = React.useMemo(() => new Set(submittedGates ?? []), [submittedGates])
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -439,7 +474,7 @@ export function StageGateReviewPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Stage Gate Control</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            G0–G7 lifecycle governance — <span className="font-mono text-[#64ffda]">SRS-400</span> Sirius 400MW Solar Farm
+            G0–G6 lifecycle governance — <span className="font-mono text-[#64ffda]">SRS-400</span> Sirius 400MW Solar Farm
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -453,6 +488,11 @@ export function StageGateReviewPage() {
               {activeGate.shortName} active
             </span>
           )}
+          <GatePackExportButton
+            targetId="gate-pack-printable"
+            gateCode={`G${gate.gate}`}
+            projectName="Sirius 400MW Solar Farm"
+          />
         </div>
       </div>
 
@@ -466,14 +506,22 @@ export function StageGateReviewPage() {
                 gate={g}
                 isSelected={selectedGate === g.gate}
                 onSelect={() => setSelectedGate(g.gate)}
+                projectId={linkedProject?.id ?? null}
+                hasSubmission={submittedSet.has(g.gate)}
               />
             </div>
           ))}
         </nav>
 
-        {/* Detail panel */}
-        <div>
+        {/* Detail panel — id used by GatePackExportButton */}
+        <div id="gate-pack-printable">
           <GateDetailPanel gate={gate} />
+          {linkedProject && (
+            <GatePackSignoffBlock
+              projectId={linkedProject.id}
+              gateCode={`G${gate.gate}`}
+            />
+          )}
         </div>
       </div>
     </div>

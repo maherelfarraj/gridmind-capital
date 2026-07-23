@@ -195,7 +195,7 @@ export function CommissioningPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Commissioning & Handover</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">G6 test management, performance verification, and G7 handover documentation</p>
+          <p className="text-sm text-muted-foreground mt-0.5">G5–G6 test management, performance verification, and handover documentation</p>
         </div>
         <div className="flex items-center gap-2">
           <LiveBadge live={isLive} />

@@ -4,12 +4,9 @@ import {
   CheckSquare,
   Shield,
   Settings,
-  HelpCircle,
   GitBranch,
-  Activity,
   Sparkles,
   FileText,
-  Building2,
   Wrench,
   Hammer,
   Zap,
@@ -18,9 +15,10 @@ import {
   BarChart3,
   ClipboardList,
   Users,
-  Globe,
   AlertTriangle,
   Store,
+  Bell,
+  GitMerge,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -28,7 +26,36 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────
 
-export type UserRole = 'admin' | 'pm' | 'engineer' | 'viewer'
+export type UserRole = 'admin' | 'pm' | 'engineer' | 'viewer' | 'subcontractor' | 'client_viewer'
+
+/** External roles that receive a stripped-down navigation. */
+export const EXTERNAL_ROLES: UserRole[] = ['subcontractor', 'client_viewer']
+
+/**
+ * Minimal navigation for external users (subcontractor / client_viewer).
+ * They see only the projects list and their own portal page.
+ * No portfolio, finance, admin, cost-control, or audit.
+ */
+export const EXTERNAL_NAV_SECTIONS: NavSection[] = [
+  {
+    id: 'portal',
+    label: 'PORTAL',
+    items: [
+      {
+        id: 'projects',
+        label: 'My Projects',
+        href: '/projects',
+        icon: FolderKanban,
+      },
+      {
+        id: 'documents',
+        label: 'Documents',
+        href: '/documents',
+        icon: FileText,
+      },
+    ],
+  },
+]
 
 export interface NavChild {
   id: string
@@ -59,23 +86,20 @@ export interface NavItem {
 
 export type PhaseKey =
   | 'g0' | 'g1' | 'g2' | 'g3' | 'g4'
-  | 'g5' | 'g6' | 'g7' | 'g8' | 'g9'
+  | 'g5' | 'g6'
 
 // ─────────────────────────────────────────────────────────────
 // Phase metadata
 // ─────────────────────────────────────────────────────────────
 
 export const PHASE_META: Record<PhaseKey, { label: string; color: string }> = {
-  g0: { label: 'G0 · Intake',          color: '#64748b' },
-  g1: { label: 'G1 · Development',     color: '#3b82f6' },
-  g2: { label: 'G2 · Commercial',      color: '#6366f1' },
-  g3: { label: 'G3 · Engineering',     color: '#8b5cf6' },
-  g4: { label: 'G4 · Procurement',     color: '#a855f7' },
-  g5: { label: 'G5 · Construction',    color: '#f97316' },
-  g6: { label: 'G6 · Commissioning',   color: '#14b8a6' },
-  g7: { label: 'G7 · O&M',             color: '#22c55e' },
-  g8: { label: 'G8 · Finance',         color: '#10b981' },
-  g9: { label: 'G9 · AI Analytics',    color: '#06b6d4' },
+  g0: { label: 'G0 · Opportunity Accepted',      color: '#64748b' },
+  g1: { label: 'G1 · Baseline Approved',         color: '#3b82f6' },
+  g2: { label: 'G2 · Engineering IFC',           color: '#6366f1' },
+  g3: { label: 'G3 · Procurement Award',         color: '#8b5cf6' },
+  g4: { label: 'G4 · Construction Mobilization', color: '#f97316' },
+  g5: { label: 'G5 · Mechanical Completion',     color: '#f97316' },
+  g6: { label: 'G6 · Handover & O&M',            color: '#22c55e' },
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -98,6 +122,10 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Portfolio',
         href: '/portfolio',
         icon: BarChart3,
+        children: [
+          { id: 'portfolio-overview',  label: 'Overview',   href: '/portfolio' },
+          { id: 'portfolio-cash-flow', label: 'Cash Flow',  href: '/portfolio/cash-flow' },
+        ],
       },
       {
         id: 'stage-gates',
@@ -130,16 +158,15 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/projects',
         icon: FolderKanban,
         children: [
-          { id: 'g0', label: 'G0 · Intake',         href: '/projects?gate=G0', phase: 'g0' },
-          { id: 'g1', label: 'G1 · Development',    href: '/projects?gate=G1', phase: 'g1' },
-          { id: 'g2', label: 'G2 · Commercial',     href: '/projects?gate=G2', phase: 'g2' },
-          { id: 'g3', label: 'G3 · Engineering',    href: '/projects?gate=G3', phase: 'g3' },
-          { id: 'g4', label: 'G4 · Procurement',    href: '/projects?gate=G4', phase: 'g4' },
-          { id: 'g5', label: 'G5 · Construction',   href: '/projects?gate=G5', phase: 'g5' },
-          { id: 'g6', label: 'G6 · Commissioning',  href: '/projects?gate=G6', phase: 'g6' },
-          { id: 'g7', label: 'G7 · O&M',            href: '/projects?gate=G7', phase: 'g7' },
-          { id: 'g8', label: 'G8 · Finance',        href: '/projects?gate=G8', phase: 'g8' },
-          { id: 'g9', label: 'G9 · Analytics',      href: '/projects?gate=G9', phase: 'g9' },
+          { id: 'g0', label: 'G0 · Opportunity Accepted',      href: '/projects?gate=G0', phase: 'g0' },
+          { id: 'g1', label: 'G1 · Baseline Approved',         href: '/projects?gate=G1', phase: 'g1' },
+          { id: 'g2', label: 'G2 · Engineering IFC',           href: '/projects?gate=G2', phase: 'g2' },
+          { id: 'g3', label: 'G3 · Procurement Award',         href: '/projects?gate=G3', phase: 'g3' },
+          { id: 'g4', label: 'G4 · Construction Mobilization', href: '/projects?gate=G4', phase: 'g4' },
+          { id: 'g5', label: 'G5 · Mechanical Completion',     href: '/projects?gate=G5', phase: 'g5' },
+          { id: 'g6', label: 'G6 · Handover & O&M',            href: '/projects?gate=G6', phase: 'g6' },
+          { id: 'g6-closeout',    label: 'Closeout Checklist', href: '/projects?gate=G6&tab=closeout', phase: 'g6' },
+          { id: 'g6-om-transition', label: 'O&M Transition',  href: '/projects?gate=G6&tab=om-transition', phase: 'g6' },
         ],
       },
       {
@@ -153,6 +180,24 @@ export const NAV_SECTIONS: NavSection[] = [
           { id: 'proj-risks',       label: 'Project Risks',      href: '/risks',    phase: 'g1' },
         ],
       },
+      {
+        id: 'pmo',
+        label: 'PMO Cockpit',
+        href: '/pmo',
+        icon: ClipboardList,
+      },
+      {
+        id: 'workflows',
+        label: 'Workflows',
+        href: '/workflows',
+        icon: GitMerge,
+      },
+      {
+        id: 'notifications',
+        label: 'Notifications & Audit',
+        href: '/notifications',
+        icon: Bell,
+      },
     ],
   },
   {
@@ -165,10 +210,9 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/engineering',
         icon: Wrench,
         children: [
-          { id: 'eng-drawings',    label: 'Drawing Register',  href: '/engineering/drawings' },
-          { id: 'eng-rfis',        label: 'RFIs',              href: '/engineering/rfis' },
-          { id: 'eng-submittals',  label: 'Submittals',        href: '/engineering/submittals' },
-          { id: 'eng-transmittals',label: 'Transmittals',      href: '/engineering/transmittals' },
+          { id: 'eng-drawings',   label: 'Drawing Register',  href: '/engineering/drawings' },
+          { id: 'eng-rfis',       label: 'RFIs',              href: '/engineering/rfis' },
+          { id: 'eng-packages',   label: 'IFC Packages',      href: '/engineering/packages' },
         ],
       },
       {
@@ -176,12 +220,6 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Procurement',
         href: '/procurement',
         icon: ClipboardList,
-        children: [
-          { id: 'proc-rfqs',      label: 'RFQ Register',      href: '/procurement' },
-          { id: 'proc-contracts', label: 'Contracts',         href: '/procurement/contracts' },
-          { id: 'proc-po',        label: 'Purchase Orders',   href: '/procurement/purchase-orders' },
-          { id: 'proc-receiving', label: 'Receiving',         href: '/procurement/receiving' },
-        ],
       },
       {
         id: 'construction',
@@ -190,8 +228,6 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Hammer,
         children: [
           { id: 'con-hse',        label: 'HSE',               href: '/hse' },
-          { id: 'con-testing',    label: 'Testing & QA',      href: '/testing' },
-          { id: 'con-punch',      label: 'Punch Lists',       href: '/construction/punch-lists' },
         ],
       },
       {
@@ -229,26 +265,12 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: FileText,
       },
       {
-        id: 'commercial',
-        label: 'Commercial',
-        href: '/commercial',
-        icon: Building2,
-        children: [
-          { id: 'com-contracts',  label: 'Contracts',         href: '/commercial/contracts' },
-          { id: 'com-variations', label: 'Variations',        href: '/commercial/variations' },
-          { id: 'com-claims',     label: 'Claims',            href: '/commercial/claims' },
-        ],
-      },
-      {
         id: 'finance',
         label: 'Finance',
         href: '/finance',
         icon: DollarSign,
         children: [
-          { id: 'fin-budget',     label: 'Budget',            href: '/finance/budget' },
           { id: 'fin-evm',        label: 'EVM & Cash Flow',   href: '/finance/evm' },
-          { id: 'fin-actuals',    label: 'Actuals',           href: '/finance/actuals' },
-          { id: 'fin-forecast',   label: 'Forecast',          href: '/finance/forecast' },
         ],
       },
     ],
@@ -264,12 +286,6 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: AlertTriangle,
       },
       {
-        id: 'esg',
-        label: 'ESG & Reporting',
-        href: '/esg',
-        icon: Globe,
-      },
-      {
         id: 'ai-insights',
         label: 'AI Insights',
         href: '/ai-insights',
@@ -280,12 +296,6 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Marketplace',
         href: '/marketplace',
         icon: Store,
-      },
-      {
-        id: 'analytics',
-        label: 'Analytics',
-        href: '/analytics',
-        icon: Activity,
       },
     ],
   },
@@ -301,8 +311,11 @@ export const NAV_SECTIONS: NavSection[] = [
         children: [
           { id: 'admin-console', label: 'Admin Console',     href: '/admin',         roles: ['admin'] },
           { id: 'admin-users',   label: 'Users & Roles',     href: '/admin/users',   roles: ['admin'] },
+          { id: 'admin-roles-flow', label: 'Roles & Approval Flow', href: '/admin/roles-flow', roles: ['admin'] },
           { id: 'admin-tenant',  label: 'Tenant Settings',   href: '/admin/tenant',  roles: ['admin'] },
+          { id: 'admin-gates',   label: 'Gate Templates',    href: '/admin/gate-templates', roles: ['admin'] },
           { id: 'admin-audit',   label: 'Audit Log',         href: '/admin/audit',   roles: ['admin'] },
+          { id: 'admin-signatures', label: 'Signature Audit', href: '/admin/signatures', roles: ['admin'] },
           { id: 'api-docs',      label: 'API Reference',     href: '/api-docs',      roles: ['admin'] },
         ],
       },
@@ -326,13 +339,6 @@ export const NAV_BOTTOM: NavItem[] = [
     label: 'Settings',
     href: '/settings',
     icon: Settings,
-    bottom: true,
-  },
-  {
-    id: 'help',
-    label: 'Help & Docs',
-    href: '/help',
-    icon: HelpCircle,
     bottom: true,
   },
 ]

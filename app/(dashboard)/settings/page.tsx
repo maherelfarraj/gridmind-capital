@@ -7,6 +7,8 @@ import {
   Lock, KeyRound, CreditCard, Check, ChevronRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/lib/session-context'
+import { hasRole } from '@/lib/session'
 import { ProfileTab }       from '@/components/settings/profile-tab'
 import { AccountTab }       from '@/components/settings/account-tab'
 import { PreferencesTab }   from '@/components/settings/preferences-tab'
@@ -68,6 +70,7 @@ function SavedToast({ show }: { show: boolean }) {
 
 export default function SettingsPage() {
   const router       = useSearchParams()
+  const session      = useSession()
   const [tab, setTab] = React.useState<TabId>('profile')
   const [saved, setSaved] = React.useState(false)
 
@@ -76,7 +79,8 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2200)
   }
 
-  const isAdmin = true // replace with real session role check
+  // Real session-driven admin check (super_admin / tenant_admin)
+  const isAdmin = session.isSuperAdmin || hasRole(session, 'super_admin', 'tenant_admin')
 
   const visibleNav = NAV_ITEMS.filter((n) => !n.adminOnly || isAdmin)
 
@@ -157,7 +161,7 @@ export default function SettingsPage() {
             {tab === 'notifications' && <NotificationsTab onSave={handleSave} />}
             {tab === 'security'      && <SecurityTab      onSave={handleSave} />}
             {tab === 'api-keys'      && <ApiKeysTab       onSave={handleSave} />}
-            {tab === 'billing'       && (
+            {tab === 'billing'       && isAdmin && (
               <div className="rounded-xl border border-border bg-card p-8 text-center space-y-2">
                 <CreditCard className="size-8 mx-auto text-muted-foreground" />
                 <p className="text-sm font-semibold text-foreground">Billing is managed at the tenant level.</p>

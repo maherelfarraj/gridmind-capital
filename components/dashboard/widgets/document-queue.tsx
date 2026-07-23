@@ -1,16 +1,10 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { FileText, Upload, Clock, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WidgetConfig } from './types'
-
-const DOCS = [
-  { id: 'd1', name: 'G3 Piling Report Rev B',     project: 'Sirius 400MW', type: 'approval', dueIn: '2 days',  urgent: true  },
-  { id: 'd2', name: 'Earthing Design Rev C',       project: 'Vega BESS',   type: 'review',   dueIn: '4 days',  urgent: false },
-  { id: 'd3', name: 'IPA-03 Payment Application',  project: 'Lyra Grid',   type: 'approval', dueIn: 'Today',   urgent: true  },
-  { id: 'd4', name: 'HSE Method Statement',        project: 'Helios Sub',  type: 'upload',   dueIn: '5 days',  urgent: false },
-  { id: 'd5', name: 'Transmittal TRS-088',         project: 'Orion Wind',  type: 'review',   dueIn: '1 day',   urgent: true  },
-]
+import { getDocumentQueue } from '@/app/actions/dashboard'
 
 const TYPE_META = {
   approval: { icon: CheckCircle, color: 'text-green-500',  bg: 'bg-green-500/10', label: 'Approval' },
@@ -19,8 +13,9 @@ const TYPE_META = {
 }
 
 export function DocumentQueueWidget({ config }: { config: WidgetConfig }) {
+  const { data, isLoading } = useSWR('widget-doc-queue', getDocumentQueue)
   const [dismissed, setDismissed] = React.useState<string[]>([])
-  const visible = DOCS.filter(d => !dismissed.includes(d.id))
+  const visible = (data ?? []).filter(d => !dismissed.includes(d.id))
   const urgentCount = visible.filter(d => d.urgent).length
 
   return (
@@ -33,7 +28,8 @@ export function DocumentQueueWidget({ config }: { config: WidgetConfig }) {
         )}
       </div>
       <div className="flex flex-col gap-1.5 flex-1 overflow-auto">
-        {visible.length === 0 && (
+        {isLoading && Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-12 rounded-lg bg-muted/20 animate-pulse" />)}
+        {!isLoading && visible.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">All clear</div>
         )}
         {visible.map((d) => {
@@ -53,7 +49,7 @@ export function DocumentQueueWidget({ config }: { config: WidgetConfig }) {
               </div>
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground flex-shrink-0">
                 <Clock className="size-3" />
-                <span className={d.urgent ? 'text-red-500 font-semibold' : ''}>{d.dueIn}</span>
+                <span className={d.urgent ? 'text-red-500 font-semibold' : ''}>{d.when}</span>
               </div>
               <button
                 onClick={() => setDismissed(prev => [...prev, d.id])}

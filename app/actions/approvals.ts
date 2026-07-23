@@ -1,17 +1,65 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter, requireApprover } from '@/lib/auth/guard'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 
-export async function getApprovals(): Promise<ApprovalRecord[]> {
+// Roles that see every approval regardless of routing rules.
+const ADMIN_APPROVER_ROLES = ['Super Admin', 'Tenant Admin', 'Executive Sponsor', 'PMO Director']
+
+// profiles.role enum values that action approvals (used to resolve email recipients).
+const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
+const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+
+/** Resolve the active approver profiles (id + email + name) for a tenant. */
+async function resolveApprovers(
+  admin: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+): Promise<{ id: string; email: string; name: string }[]> {
+  const { data } = await admin
+    .from('profiles')
+    .select('id, email, full_name, role, is_active')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+    .in('role', APPROVER_ENUM_ROLES)
+  return (data ?? [])
+    .filter((p) => p.email)
+    .map((p) => ({ id: p.id, email: p.email as string, name: p.full_name ?? 'Approver' }))
+}
+
+/**
+ * Fetch approvals for the inbox.
+ * @param approverRole  Human-readable role label (e.g. "Project Manager"). When provided
+ *                      and not an admin role, results are scoped to the object_types this
+ *                      role is configured to approve in `approval_rules`. Omit for the
+ *                      full/admin view.
+ */
+export async function getApprovals(approverRole?: string): Promise<ApprovalRecord[]> {
   const supabase = createAdminClient()
 
-  const { data, error } = await supabase
+  // Resolve which object_types this approver is responsible for.
+  let allowedObjectTypes: string[] | null = null
+  if (approverRole && !ADMIN_APPROVER_ROLES.includes(approverRole)) {
+    const { data: rules } = await supabase
+      .from('approval_rules')
+      .select('object_type')
+      .eq('approver_role', approverRole)
+    allowedObjectTypes = Array.from(new Set((rules ?? []).map((r) => r.object_type).filter(Boolean)))
+  }
+
+  let query = supabase
     .from('approvals')
     .select('id, object_type, title, status, priority, created_at, description, amount')
     .order('created_at', { ascending: false })
 
+  // Scope to the approver's object types. If the role has no rules, it sees nothing.
+  if (allowedObjectTypes !== null) {
+    if (allowedObjectTypes.length === 0) return []
+    query = query.in('object_type', allowedObjectTypes)
+  }
+
+  const { data, error } = await query
   if (error || !data) return []
 
   return data.map((a) => ({
@@ -20,7 +68,7 @@ export async function getApprovals(): Promise<ApprovalRecord[]> {
     object_code: a.title ?? a.id.slice(0, 8).toUpperCase(),
     status: (a.status as ApprovalRecord['status']) ?? 'pending',
     level: 1,
-    approver_role: 'Project Manager',
+    approver_role: approverRole ?? 'Project Manager',
     requested_by_name: 'Team Member',
     due_date: null,
     created_at: a.created_at,
@@ -35,12 +83,16 @@ export async function createApproval(opts: {
   objectType?: string
   priority?: 'critical' | 'high' | 'normal' | 'low'
   approverEmail?: string
+  approverUserId?: string
   approverName?: string
   requestedBy?: string
   projectCode?: string
   projectName?: string
   amount?: number
 }): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -58,18 +110,36 @@ export async function createApproval(opts: {
 
   if (error || !data) return { error: error?.message ?? 'Failed to create approval' }
 
-  // Notify approver — fire-and-forget
-  if (opts.approverEmail) {
-    sendApprovalRequestEmail({
-      to: opts.approverEmail,
-      approverName: opts.approverName ?? 'Approver',
-      title: opts.title,
-      requestedBy: opts.requestedBy ?? 'System',
-      projectCode: opts.projectCode ?? 'N/A',
-      projectName: opts.projectName ?? opts.title,
-      approvalId: data.id,
-    }).catch(() => {})
-  }
+  // Notify approvers — fire-and-forget, prefs-aware, logged to email_log.
+  void (async () => {
+    // Explicit recipient wins; otherwise notify all active approver profiles.
+    if (opts.approverEmail) {
+      await sendApprovalRequestEmail({
+        to: opts.approverEmail,
+        userId: opts.approverUserId ?? null,
+        approverName: opts.approverName ?? 'Approver',
+        title: opts.title,
+        requestedBy: opts.requestedBy ?? 'System',
+        projectCode: opts.projectCode ?? 'N/A',
+        projectName: opts.projectName ?? opts.title,
+        approvalId: data.id,
+      })
+      return
+    }
+    const approvers = await resolveApprovers(supabase, DEMO_TENANT)
+    for (const a of approvers) {
+      await sendApprovalRequestEmail({
+        to: a.email,
+        userId: a.id,
+        approverName: a.name,
+        title: opts.title,
+        requestedBy: opts.requestedBy ?? 'System',
+        projectCode: opts.projectCode ?? 'N/A',
+        projectName: opts.projectName ?? opts.title,
+        approvalId: data.id,
+      })
+    }
+  })().catch((e) => console.error('[approvals] notify failed:', e))
 
   return { id: data.id }
 }
@@ -79,7 +149,12 @@ export async function decideApproval(opts: {
   decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject'
   rationale: string
   conditions?: string
+  /** Id of the electronic signature captured for this decision (gate approvals). */
+  signatureId?: string
 }): Promise<{ error: string | null }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const statusMap = {
@@ -106,6 +181,7 @@ export async function decideApproval(opts: {
         `\n\n[Decision: ${opts.decision.replace('_', ' ')}]`,
         `\nRationale: ${opts.rationale}`,
         opts.conditions ? `\nConditions: ${opts.conditions}` : '',
+        opts.signatureId ? `\n[Signed: ${opts.signatureId}]` : '',
       ].join(''),
     })
     .eq('id', opts.id)
@@ -131,6 +207,9 @@ export async function delegateApproval(opts: {
   delegateId: string
   reason: string
 }): Promise<{ error: string | null }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('approvals')
@@ -224,6 +303,9 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
 }
 
 export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('approvals').select('id').limit(1)
   if ((ex?.length ?? 0) > 0) return {}
@@ -260,7 +342,61 @@ export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
   return {}
 }
 
+/**
+ * Apply a decision that may carry an approver comment. Used by both the
+ * mobile swipe/thumb inbox and the offline-queue sync path. The comment
+ * is appended to the approval description so it is preserved in the audit
+ * trail (mirrors decideApproval's rationale handling).
+ */
+export async function syncQueuedApproval(opts: {
+  id: string
+  decision: 'approved' | 'rejected'
+  comment: string
+}): Promise<{ error: string | null }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('title, description, object_type')
+    .eq('id', opts.id)
+    .single()
+
+  const description = opts.comment
+    ? [
+        approval?.description ?? '',
+        `\n\n[${opts.decision === 'approved' ? 'Approved' : 'Rejected'} via mobile]`,
+        `\nComment: ${opts.comment}`,
+      ].join('')
+    : approval?.description ?? null
+
+  const { error } = await supabase
+    .from('approvals')
+    .update({ status: opts.decision, description, updated_at: new Date().toISOString() })
+    .eq('id', opts.id)
+
+  if (!error && approval) {
+    sendApprovalDecisionEmail({
+      to: 'admin@gridmind.capital',
+      requesterName: 'Team',
+      title: approval.title ?? opts.id,
+      decision: opts.decision,
+      decisionBy: 'Mobile',
+      projectCode: approval.object_type ?? 'N/A',
+      approvalId: opts.id,
+      reason: opts.comment || undefined,
+    }).catch(() => {})
+  }
+
+  return { error: error?.message ?? null }
+}
+
 export async function updateApprovalStatus(id: string, status: 'approved' | 'rejected') {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Fetch the approval first so we can include context in the email

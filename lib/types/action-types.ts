@@ -61,6 +61,44 @@ export interface RisksDashboard {
   items: RiskRecord[]
 }
 
+// ── HSE ──────────────────────────────────────────────────────────────────────
+
+export type HseIncidentSeverity = 'fatality' | 'ltif' | 'mtc' | 'near-miss' | 'observation'
+export type HseIncidentStatus   = 'open' | 'under-investigation' | 'closed'
+export type HsePermitStatus      = 'active' | 'expired' | 'cancelled' | 'pending'
+
+export interface HseIncident {
+  id: string
+  ref: string
+  title: string
+  projectCode: string
+  severity: HseIncidentSeverity
+  status: HseIncidentStatus
+  date: string
+  reportedBy: string
+  location: string
+  description: string
+  actionCount: number
+  closedActions: number
+}
+
+export interface HsePermit {
+  id: string
+  ref: string
+  type: string
+  scope: string
+  projectCode: string
+  issuedTo: string
+  issuedDate: string
+  expiryDate: string
+  status: HsePermitStatus
+}
+
+export interface HseDashboard {
+  incidents: HseIncident[]
+  permits: HsePermit[]
+}
+
 // ── Engineering ──────────────────────────────────────────────────────────────
 
 export interface IFCPackage {

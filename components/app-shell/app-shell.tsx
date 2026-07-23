@@ -11,6 +11,8 @@ import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
 import { ToastProvider } from '@/components/ui/toast'
 import { GlobalCommandPalette } from '@/components/command-palette/global-command-palette'
 import { NotificationPanel } from '@/components/notifications/notification-panel'
+import { PwaProvider } from '@/components/pwa/pwa-provider'
+import { BottomTabBar } from '@/components/pwa/bottom-tab-bar'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -132,15 +134,15 @@ export function AppShell({
     setMobileOpen(false)
   }, [pathname])
 
-  // Prevent body scroll when mobile drawer is open
+  // Prevent body scroll when mobile drawer is open.
+  // Capture and restore the original value so unmounting while open
+  // (or any pre-existing lock) doesn't leave the body permanently locked.
   React.useEffect(() => {
-    if (mobileOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
+    if (!mobileOpen) return
+    const original = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     return () => {
-      document.body.style.overflow = ''
+      document.body.style.overflow = original
     }
   }, [mobileOpen])
 
@@ -162,9 +164,10 @@ export function AppShell({
       <div
         className={cn(
           'flex min-w-0 flex-1 flex-col overflow-hidden',
-          // Desktop: margin matches sidebar width with same transition
-          'md:transition-[margin-left] md:duration-200 md:ease-out',
-          collapsed ? 'md:ml-16' : 'md:ml-64',
+          // Use logical margin-inline-start so the column shifts away from the
+          // sidebar whether it is on the left (LTR) or the right (RTL).
+          'md:transition-[margin-inline-start] md:duration-200 md:ease-out',
+          collapsed ? 'md:ms-16' : 'md:ms-64',
         )}
       >
         {/* Top bar */}
@@ -191,10 +194,12 @@ export function AppShell({
             Skip to main content
           </a>
 
-          {/* Page fade-in wrapper */}
+          {/* Page fade-in wrapper.
+              pb accounts for the mobile bottom tab bar (md:hidden) so
+              content is never hidden behind it. */}
           <div
             key={pathname}
-            className="animate-[fade-in_0.18s_ease-out] p-4 sm:p-6"
+            className="animate-[fade-in_0.18s_ease-out] p-4 pb-[calc(env(safe-area-inset-bottom)+76px)] sm:p-6 md:pb-6"
           >
             {children}
           </div>
@@ -209,6 +214,16 @@ export function AppShell({
       <GlobalCommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {/* ── Notifications & Activity Feed ── */}
       <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} unreadCount={notificationCount} />
+      {/* ── Mobile bottom tab bar (≤768px) ── */}
+      <BottomTabBar
+        pathname={pathname}
+        approvalCount={approvalCount}
+        notificationCount={notificationCount}
+        onMore={() => setMobileOpen(true)}
+        onNotifications={() => setNotifOpen(true)}
+      />
+      {/* ── PWA runtime: SW registration, offline banner, install prompt, queue sync ── */}
+      <PwaProvider />
     </div>
     </ToastProvider>
   )

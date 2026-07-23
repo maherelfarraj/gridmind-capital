@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { AiInsight, MarketplaceProvider, AiMarketplaceDashboard } from '@/lib/types/action-types'
 
@@ -40,6 +41,9 @@ export async function loadAiMarketplaceDashboard(): Promise<AiMarketplaceDashboa
 }
 
 export async function acknowledgeInsightAction(id: string) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb.from('ai_insights').update({ status: 'acknowledged' }).eq('id', id)
   revalidatePath('/ai-insights')
@@ -47,6 +51,9 @@ export async function acknowledgeInsightAction(id: string) {
 }
 
 export async function dismissInsightAction(id: string) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb.from('ai_insights').update({ status: 'dismissed' }).eq('id', id)
   revalidatePath('/ai-insights')
@@ -54,6 +61,9 @@ export async function dismissInsightAction(id: string) {
 }
 
 export async function connectProviderAction(id: string) {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
   const sb = createAdminClient()
   const { error } = await sb.from('marketplace_providers').update({ status: 'connected' }).eq('id', id)
   revalidatePath('/marketplace')
@@ -61,6 +71,9 @@ export async function connectProviderAction(id: string) {
 }
 
 export async function seedAiMarketplaceDemoAction() {
+  const gate = await requireWriter()
+  if ('error' in gate) return { seeded: false }
+
   const sb = createAdminClient()
   const { data: existing } = await sb.from('ai_insights').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
   if (existing && existing.length > 0) return { seeded: false }

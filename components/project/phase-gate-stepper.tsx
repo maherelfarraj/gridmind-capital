@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   Check,
   Lock,
@@ -15,8 +16,10 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Pencil,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useTranslations, useLocale } from 'next-intl'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -114,52 +117,53 @@ export const GATE_DEFINITIONS: GateDef[] = [
   {
     id: 6,
     code: 'G6',
-    shortName: 'Commissioning Completion',
-    fullName: 'G6 — Commissioning Completion',
-    purpose: 'Confirms all systems have been tested, commissioned, and are operating within specification. Enables commercial operation declaration.',
-    phase: 'Commissioning',
-    phaseColor: '#14b8a6',
-    keyDeliverables: ['Commissioning Test Reports', 'Performance Test Certificate', 'O&M Manuals Issued', 'Training Records'],
-    typicalDuration: '3–6 weeks',
-    approvers: ['Commissioning Manager', 'Grid Authority', 'Independent Engineer'],
-  },
-  {
-    id: 7,
-    code: 'G7',
-    shortName: 'Handover & Warranty Start',
-    fullName: 'G7 — Handover and Warranty Start',
-    purpose: 'Formal transfer of the asset to the Owner/Operator. Warranty period commences and defects liability clock starts.',
-    phase: 'Handover',
+    shortName: 'Handover, Ops & Closeout',
+    fullName: 'G6 — Handover, Operations & Closeout',
+    purpose: 'Formal transfer of the asset to the Owner/Operator, O&M transition, warranty start, and final project closeout. Covers COD, as-built package, lessons learned, and final accounts.',
+    phase: 'Handover & O&M',
     phaseColor: '#22c55e',
-    keyDeliverables: ['Taking-Over Certificate', 'Final As-Built Package', 'Warranty Schedule', 'Asset Register'],
-    typicalDuration: '1–2 weeks',
-    approvers: ['Project Director', 'Asset Owner', 'Financial Lenders'],
-  },
-  {
-    id: 8,
-    code: 'G8',
-    shortName: 'Operations Performance Review',
-    fullName: 'G8 — Operations Performance Review',
-    purpose: 'Formal review of operational performance against contractual KPIs after 12 months of operation. Triggers final account settlement.',
-    phase: 'O&M',
-    phaseColor: '#10b981',
-    keyDeliverables: ['Performance Report (Year 1)', 'KPI Scorecard', 'Final Account Statement', 'Lessons Learned Register'],
-    typicalDuration: '4 weeks',
-    approvers: ['O&M Director', 'Lenders Technical Advisor', 'Asset Management Board'],
-  },
-  {
-    id: 9,
-    code: 'G9',
-    shortName: 'AI/Enterprise Optimization',
-    fullName: 'G9 — AI & Enterprise Optimization',
-    purpose: 'Continuous improvement gate driven by GridMind AI analytics. Evaluates operational data to optimise yield, reduce OPEX, and surface portfolio insights.',
-    phase: 'AI & Analytics',
-    phaseColor: '#06b6d4',
-    keyDeliverables: ['AI Analytics Dashboard', 'Optimisation Recommendations', 'OPEX Reduction Plan', 'Digital Twin Baseline'],
-    typicalDuration: 'Ongoing (quarterly review)',
-    approvers: ['Chief Digital Officer', 'Asset Performance Team', 'GridMind AI Governance Board'],
+    keyDeliverables: ['Taking-Over Certificate', 'O&M Transition Package', 'Final As-Built Drawings', 'Closeout Checklist', 'Lessons Learned Register', 'Final Account Statement'],
+    typicalDuration: '4–8 weeks',
+    approvers: ['Project Director', 'Asset Owner', 'Financial Lenders', 'O&M Director'],
   },
 ]
+
+// ─────────────────────────────────────────────────────────────
+// Translation hook — overlays catalog strings onto static GATE_DEFINITIONS
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns GATE_DEFINITIONS with shortName/fullName/purpose/phase
+ * replaced by the active locale's translations.  Falls back to the
+ * static English values if the catalog key is missing.
+ */
+export function useTranslatedGates(): GateDef[] {
+  // next-intl useTranslations() must be called at the top of a component/hook.
+  // We use a try/catch so the stepper still works in non-next-intl contexts.
+  let t: ReturnType<typeof useTranslations> | null = null
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    t = useTranslations('gates')
+  } catch {
+    // Outside NextIntlClientProvider — return static definitions as-is.
+    return GATE_DEFINITIONS
+  }
+
+  return GATE_DEFINITIONS.map((gate) => {
+    const code = gate.code as 'G0' | 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6'
+    try {
+      return {
+        ...gate,
+        shortName: t(`${code}.short`),
+        fullName:  t(`${code}.full`),
+        purpose:   t(`${code}.purpose`),
+        phase:     t(`${code}.phase`),
+      }
+    } catch {
+      return gate
+    }
+  })
+}
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -174,6 +178,12 @@ export interface PhaseGateStepperProps {
   completedGates?: string[]
   className?: string
   onGateClick?: (gate: GateDef, state: GateState) => void
+  /**
+   * When provided, each gate node becomes a link to
+   * `/stage-gates/{projectId}/gate/{gateNumber}` (the gate submission form)
+   * instead of opening the in-place detail drawer.
+   */
+  projectId?: string
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -185,6 +195,8 @@ function getGateState(gateCode: string, currentGate: string, completedGates: str
   if (gateCode === currentGate) return 'current'
   const currentIdx = GATE_DEFINITIONS.findIndex((g) => g.code === currentGate)
   const gateIdx = GATE_DEFINITIONS.findIndex((g) => g.code === gateCode)
+  // Guard: unknown currentGate (e.g. project not started) — nothing is unlocked yet
+  if (currentIdx === -1) return 'locked'
   // Gates before current that weren't explicitly completed are locked
   if (gateIdx < currentIdx && !completedGates.includes(gateCode)) return 'locked'
   // The immediately next gate is 'future' (accessible info); gates 2+ ahead are 'locked'
@@ -205,6 +217,8 @@ interface GateNodeProps {
   onMouseEnter: () => void
   onMouseLeave: () => void
   isActive: boolean
+  /** When set, the node renders as a link to the gate submission form. */
+  href?: string | null
 }
 
 function GateNode({
@@ -216,9 +230,69 @@ function GateNode({
   onMouseEnter,
   onMouseLeave,
   isActive,
+  href,
 }: GateNodeProps) {
+  // Shared classes so the <button> and the <Link> variant look identical.
+  const nodeClasses = cn(
+    'relative flex items-center justify-center rounded-full',
+    'size-10 shrink-0 overflow-visible',
+    'border-2 transition-all duration-200',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+    // State styles
+    state === 'completed' && [
+      'bg-[#22c55e] border-[#22c55e]',
+      'hover:scale-110 cursor-pointer shadow-[0_0_0_3px_rgba(34,197,94,0.15)]',
+    ],
+    state === 'current' && [
+      'bg-[#0a192f] border-[#64ffda]',
+      'cursor-pointer scale-110',
+      'shadow-[0_0_0_4px_rgba(100,255,218,0.15),0_0_16px_rgba(100,255,218,0.1)]',
+      'dark:bg-[#112240] dark:border-[#64ffda]',
+    ],
+    state === 'locked' && [
+      'bg-muted border-border',
+      'cursor-pointer hover:border-muted-foreground/50',
+    ],
+    state === 'future' && [
+      'bg-background border-border',
+      'cursor-pointer hover:border-muted-foreground hover:bg-muted/30',
+    ],
+    isActive && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
+  )
+
+  // Inner content of the node — identical for both link and button variants.
+  const nodeInner = (
+    <>
+      {/* Pulse ring for current — rendered outside button clip via overflow-visible */}
+      {state === 'current' && (
+        <span
+          className="absolute -inset-1.5 rounded-full animate-ping bg-[#64ffda]/25 pointer-events-none"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Icon / number */}
+      {state === 'completed' && (
+        <Check className="size-4 text-white" strokeWidth={3} aria-hidden="true" />
+      )}
+      {state === 'current' && (
+        <span className="relative z-10 text-[#64ffda] font-mono font-bold text-xs leading-none tracking-tight">
+          {gate.code}
+        </span>
+      )}
+      {state === 'locked' && (
+        <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
+      )}
+      {state === 'future' && (
+        <span className="text-muted-foreground font-mono font-semibold text-sm leading-none">
+          {gate.id}
+        </span>
+      )}
+    </>
+  )
+
   return (
-    <div className="flex flex-col items-center relative">
+    <div className="group flex flex-col items-center relative">
       {/* Node + connector row */}
       <div className="flex items-center">
         {/* Connector line (before node, except first) */}
@@ -235,69 +309,51 @@ function GateNode({
 
         {/* Clickable node */}
         <div className="relative flex flex-col items-center" style={{ position: 'relative' }}>
-          <button
-            type="button"
-            onClick={onClick}
-            onMouseEnter={onMouseEnter}
-            onMouseLeave={onMouseLeave}
-            onFocus={onMouseEnter}
-            onBlur={onMouseLeave}
-            aria-label={`${gate.fullName} — ${state}`}
-            aria-pressed={isActive}
-            aria-current={state === 'current' ? 'step' : undefined}
-            className={cn(
-              'relative flex items-center justify-center rounded-full',
-              'size-10 shrink-0 overflow-visible',
-              'border-2 transition-all duration-200',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              // State styles
-              state === 'completed' && [
-                'bg-[#22c55e] border-[#22c55e]',
-                'hover:scale-110 cursor-pointer shadow-[0_0_0_3px_rgba(34,197,94,0.15)]',
-              ],
-              state === 'current' && [
-                'bg-[#0a192f] border-[#64ffda]',
-                'cursor-pointer scale-110',
-                'shadow-[0_0_0_4px_rgba(100,255,218,0.15),0_0_16px_rgba(100,255,218,0.1)]',
-                'dark:bg-[#112240] dark:border-[#64ffda]',
-              ],
-              state === 'locked' && [
-                'bg-muted border-border',
-                'cursor-pointer hover:border-muted-foreground/50',
-              ],
-              state === 'future' && [
-                'bg-background border-border',
-                'cursor-pointer hover:border-muted-foreground hover:bg-muted/30',
-              ],
-              isActive && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
-            )}
-          >
-            {/* Pulse ring for current — rendered outside button clip via overflow-visible */}
-            {state === 'current' && (
-              <span
-                className="absolute -inset-1.5 rounded-full animate-ping bg-[#64ffda]/25 pointer-events-none"
-                aria-hidden="true"
-              />
-            )}
+          {href ? (
+            <Link
+              href={href}
+              onMouseEnter={onMouseEnter}
+              onMouseLeave={onMouseLeave}
+              onFocus={onMouseEnter}
+              onBlur={onMouseLeave}
+              aria-label={`Open ${gate.fullName} submission form`}
+              aria-current={state === 'current' ? 'step' : undefined}
+              className={nodeClasses}
+            >
+              {nodeInner}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={onClick}
+              onMouseEnter={onMouseEnter}
+              onMouseLeave={onMouseLeave}
+              onFocus={onMouseEnter}
+              onBlur={onMouseLeave}
+              aria-label={`${gate.fullName} — ${state}`}
+              aria-pressed={isActive}
+              aria-current={state === 'current' ? 'step' : undefined}
+              className={nodeClasses}
+            >
+              {nodeInner}
+            </button>
+          )}
 
-            {/* Icon / number */}
-            {state === 'completed' && (
-              <Check className="size-4 text-white" strokeWidth={3} aria-hidden="true" />
-            )}
-            {state === 'current' && (
-              <span className="relative z-10 text-[#64ffda] font-mono font-bold text-xs leading-none tracking-tight">
-                {gate.code}
-              </span>
-            )}
-            {state === 'locked' && (
-              <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
-            )}
-            {state === 'future' && (
-              <span className="text-muted-foreground font-mono font-semibold text-sm leading-none">
-                {gate.id}
-              </span>
-            )}
-          </button>
+          {/* "Open form" affordance for the active gate when it links to the form */}
+          {href && state === 'current' && (
+            <span
+              className={cn(
+                'absolute -top-1.5 -right-1.5 z-20 flex size-4 items-center justify-center rounded-full',
+                'bg-[#64ffda] text-[#0a192f] shadow',
+                'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity',
+                'pointer-events-none',
+              )}
+              aria-hidden="true"
+              title="Open form"
+            >
+              <Pencil className="size-2.5" strokeWidth={2.5} />
+            </span>
+          )}
 
           {/* Tooltip */}
           {tooltipVisible && (
@@ -309,7 +365,7 @@ function GateNode({
                 'w-64 rounded-xl border border-border bg-popover p-3.5 shadow-xl',
                 'animate-[fade-in_0.12s_ease-out]',
                 // Align to edges for first/last gates
-                gate.id <= 1 ? 'left-0' : gate.id >= 8 ? 'right-0' : '-translate-x-1/2 left-1/2',
+                gate.id <= 1 ? 'left-0' : gate.id >= 5 ? 'right-0' : '-translate-x-1/2 left-1/2',
               )}
             >
               <div className="flex items-start gap-2 mb-2">
@@ -337,7 +393,7 @@ function GateNode({
               <div
                 className={cn(
                   'absolute top-full w-2 h-2 border-b border-r border-border bg-popover rotate-45 -mt-1',
-                  gate.id <= 1 ? 'left-4' : gate.id >= 8 ? 'right-4' : 'left-1/2 -translate-x-1/2',
+                  gate.id <= 1 ? 'left-4' : gate.id >= 5 ? 'right-4' : 'left-1/2 -translate-x-1/2',
                 )}
                 aria-hidden="true"
               />
@@ -376,6 +432,7 @@ function GateNode({
             state === 'completed' && 'text-foreground/70',
             state === 'current' && 'text-foreground font-medium',
             (state === 'locked' || state === 'future') && 'text-muted-foreground/60',
+            href && 'group-hover:underline group-focus-within:underline underline-offset-2 decoration-[#64ffda]',
           )}
           style={{ maxWidth: '56px' }}
         >
@@ -426,6 +483,17 @@ const STATE_BANNERS: Record<GateState, { bg: string; text: string; icon: React.R
 function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
   const banner = state ? STATE_BANNERS[state] : null
 
+  // Track viewport after mount so animation direction is decided without
+  // reading `window` during render (prevents SSR/hydration mismatch).
+  const [isMobile, setIsMobile] = React.useState(false)
+  React.useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mql.matches)
+    update()
+    mql.addEventListener('change', update)
+    return () => mql.removeEventListener('change', update)
+  }, [])
+
   // Close on Escape
   React.useEffect(() => {
     if (!gate) return
@@ -457,9 +525,9 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
             aria-modal="true"
             aria-label={gate ? `${gate.code} Gate Details` : 'Gate Details'}
             // Desktop: slide in from right. Mobile: slide up from bottom.
-            initial={{ x: typeof window !== 'undefined' && window.innerWidth < 768 ? 0 : '100%', y: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : 0 }}
+            initial={{ x: isMobile ? 0 : '100%', y: isMobile ? '100%' : 0 }}
             animate={{ x: 0, y: 0 }}
-            exit={{ x: typeof window !== 'undefined' && window.innerWidth < 768 ? 0 : '100%', y: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : 0 }}
+            exit={{ x: isMobile ? 0 : '100%', y: isMobile ? '100%' : 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
               'fixed z-50 bg-card shadow-2xl flex flex-col',
@@ -586,11 +654,9 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
                   </h3>
                   <dl className="space-y-1.5 text-sm">
                     <div className="flex items-center gap-2">
-                      <dt className="text-muted-foreground min-w-[80px] text-xs">Date</dt>
-                      <dd className="text-foreground font-medium font-mono text-xs">
-                        {/* Approximate completion date based on gate index */}
-                        {new Date(Date.now() - (9 - gate.id) * 45 * 24 * 60 * 60 * 1000)
-                          .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      <dt className="text-muted-foreground min-w-[80px] text-xs">Status</dt>
+                      <dd className="text-foreground font-medium text-xs">
+                        Recorded on gate approval
                       </dd>
                     </div>
                     <div className="flex items-center gap-2">
@@ -670,16 +736,31 @@ export function PhaseGateStepper({
   completedGates = [],
   className,
   onGateClick,
+  projectId,
 }: PhaseGateStepperProps) {
   const [activeTooltip, setActiveTooltip] = React.useState<number | null>(null)
   const [activePanel, setActivePanel] = React.useState<{ gate: GateDef; state: GateState } | null>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
+  const tooltipTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear any pending tooltip timeout on unmount
+  React.useEffect(() => () => {
+    if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current)
+  }, [])
+
+  // Translated gate definitions (names/purpose/phase in active locale)
+  const translatedGates = useTranslatedGates()
+  // RTL: render gate list in reverse so G0 is on the right
+  const locale = useLocale()
+  const isRtl = locale === 'ar'
+  const orderedGates = isRtl ? [...translatedGates].reverse() : translatedGates
 
   const handleGateClick = React.useCallback((gate: GateDef, state: GateState) => {
     // Locked/future gates show a tooltip only — do not open the full detail panel
     if (state === 'locked' || state === 'future') {
       setActiveTooltip(gate.id)
-      setTimeout(() => setActiveTooltip(null), 2500)
+      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current)
+      tooltipTimeoutRef.current = setTimeout(() => setActiveTooltip(null), 2500)
       onGateClick?.(gate, state)
       return
     }
@@ -732,7 +813,7 @@ export function PhaseGateStepper({
               style={{ width: `${(completedGates.length / 10) * 100}%` }}
             />
           </div>
-          <p className="mt-1.5 text-[10px] text-muted-foreground">
+          <p className="mt-1.5 text-[10px] text-muted-foreground" aria-live="polite">
             {Math.round((completedGates.length / 10) * 100)}% of gate milestones reached
           </p>
         </div>
@@ -747,7 +828,7 @@ export function PhaseGateStepper({
             className="flex items-start px-4 py-5 gap-0 min-w-max sm:min-w-0 sm:w-full"
             role="list"
           >
-            {GATE_DEFINITIONS.map((gate, idx) => {
+            {orderedGates.map((gate, idx) => {
               const state = getGateState(gate.code, currentGate, completedGates)
               return (
                 <div
@@ -769,6 +850,7 @@ export function PhaseGateStepper({
                     onMouseEnter={() => setActiveTooltip(gate.id)}
                     onMouseLeave={() => setActiveTooltip(null)}
                     isActive={activePanel?.gate.code === gate.code}
+                    href={projectId ? `/stage-gates/${projectId}/gate/${gate.id}` : null}
                   />
                 </div>
               )

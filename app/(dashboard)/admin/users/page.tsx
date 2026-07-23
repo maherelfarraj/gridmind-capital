@@ -4,6 +4,7 @@ import * as React from 'react'
 import useSWR from 'swr'
 import { formatDistanceToNow } from 'date-fns'
 import { UsersRolesPage } from '@/components/admin/users-roles-page'
+import { ExternalAccessTab } from '@/components/admin/external-access-tab'
 import { getUsers, updateUserRole } from '@/app/actions/admin'
 import type { UserProfile, UserRole } from '@/components/admin/users-roles-page'
 
@@ -33,6 +34,7 @@ function toRelativeTime(iso: string | null | undefined): string {
 }
 
 export default function Page() {
+  const [activeTab, setActiveTab] = React.useState<'internal' | 'external'>('internal')
   const { data: rawUsers, isLoading, mutate } = useSWR('admin-users', getUsers)
 
   // Map DB profile shape → UsersRolesPage UserProfile shape
@@ -62,11 +64,35 @@ export default function Page() {
   }
 
   return (
-    <UsersRolesPage
-      users={users}
-      totalCount={users.length}
-      isLoading={false}
-      onUpdateRole={handleUpdateRole}
-    />
+    <div className="space-y-4">
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-border">
+        {(['internal', 'external'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === tab
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tab === 'internal' ? 'Internal users' : 'External access'}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'internal' && (
+        <UsersRolesPage
+          users={users}
+          totalCount={users.length}
+          isLoading={false}
+          onUpdateRole={handleUpdateRole}
+        />
+      )}
+
+      {activeTab === 'external' && <ExternalAccessTab />}
+    </div>
   )
 }

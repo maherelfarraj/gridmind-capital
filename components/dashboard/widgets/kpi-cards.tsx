@@ -1,26 +1,48 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import type { WidgetConfig } from './types'
+import { getWidgetStats } from '@/app/actions/dashboard'
 
 interface KPI { label: string; value: string; unit: string; delta: number; deltaUnit: string }
 
-const KPIS: KPI[] = [
-  { label: 'Portfolio Spend',   value: '71.2',  unit: '%',   delta: +2.1, deltaUnit: 'pts vs LM'  },
-  { label: 'Avg SPI',           value: '0.94',  unit: '',    delta: -0.03, deltaUnit: 'vs baseline' },
-  { label: 'Avg CPI',           value: '1.02',  unit: '',    delta: +0.04, deltaUnit: 'vs baseline' },
-  { label: 'Open Defects',      value: '14',    unit: '',    delta: -3,   deltaUnit: 'vs last week' },
-  { label: 'Gate Pass Rate',    value: '87',    unit: '%',   delta: +5,   deltaUnit: 'pts vs Q1'   },
-  { label: 'HSE Incidents',     value: '0',     unit: '',    delta: 0,    deltaUnit: 'this month'  },
-]
-
 export function KpiCardsWidget({ config }: { config: WidgetConfig }) {
+  const { data: stats, isLoading } = useSWR('widget-stats', getWidgetStats)
+
+  const KPIS: KPI[] = stats ? [
+    { label: 'Active Projects', value: `${stats.activeProjects}`,                     unit: '',  delta: 0, deltaUnit: 'in portfolio' },
+    { label: 'Total Budget',    value: `${(stats.totalBudget / 1_000_000).toFixed(0)}`, unit: 'M', delta: 0, deltaUnit: 'USD committed' },
+    { label: 'Open Approvals',  value: `${stats.openApprovals}`,                      unit: '',  delta: 0, deltaUnit: 'awaiting action' },
+    { label: 'Open Risks',      value: `${stats.openRisks}`,                          unit: '',  delta: 0, deltaUnit: 'active' },
+    { label: 'Avg Health',      value: `${stats.avgHealth}`,                          unit: '%', delta: 0, deltaUnit: 'portfolio' },
+  ] : []
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full p-4 gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <TrendingUp className="size-3.5" />
+          <span>KPI Cards</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 flex-1">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-border bg-muted/10 h-20 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full p-4 gap-3">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         <TrendingUp className="size-3.5" />
         <span>KPI Cards</span>
       </div>
+      {KPIS.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
+      ) : (
       <div className="grid grid-cols-3 gap-2 flex-1">
         {KPIS.map((k) => {
           const isGood = (k.label === 'Open Defects' || k.label === 'HSE Incidents')
@@ -42,6 +64,7 @@ export function KpiCardsWidget({ config }: { config: WidgetConfig }) {
           )
         })}
       </div>
+      )}
     </div>
   )
 }

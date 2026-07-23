@@ -1,28 +1,32 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { Shield, ChevronRight } from 'lucide-react'
 import type { WidgetConfig } from './types'
 import { useRouter } from 'next/navigation'
-
-const GATES = [
-  { project: 'Sirius 400MW',  gate: 'G3', label: 'Procurement', pct: 78, status: 'in_progress', color: '#3b82f6', id: 'p1' },
-  { project: 'Vega BESS',     gate: 'G2', label: 'Engineering', pct: 55, status: 'at_risk',     color: '#f59e0b', id: 'p2' },
-  { project: 'Lyra Grid',     gate: 'G5', label: 'QA',          pct: 92, status: 'in_progress', color: '#22c55e', id: 'p3' },
-  { project: 'Orion Wind',    gate: 'G1', label: 'Feasibility', pct: 30, status: 'pending',     color: '#6b7280', id: 'p4' },
-  { project: 'Helios Sub',    gate: 'G4', label: 'Construction', pct: 64, status: 'in_progress', color: '#3b82f6', id: 'p5' },
-]
+import { getActiveGates } from '@/app/actions/dashboard'
 
 export function ActiveGatesWidget({ config }: { config: WidgetConfig }) {
   const router = useRouter()
+  const { data: GATES, isLoading } = useSWR('widget-active-gates', getActiveGates)
+
   return (
     <div className="flex flex-col h-full p-4 gap-3">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         <Shield className="size-3.5" />
         <span>Active Gates</span>
-        <span className="ml-auto bg-muted/50 text-muted-foreground rounded-full px-1.5 text-[10px] font-medium">{GATES.length}</span>
+        <span className="ml-auto bg-muted/50 text-muted-foreground rounded-full px-1.5 text-[10px] font-medium">{GATES?.length ?? 0}</span>
       </div>
       <div className="flex flex-col gap-2 flex-1 overflow-auto">
-        {GATES.map((g) => (
+        {isLoading && (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-9 rounded-lg bg-muted/20 animate-pulse" />)}
+          </div>
+        )}
+        {!isLoading && (GATES?.length ?? 0) === 0 && (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
+        )}
+        {(GATES ?? []).map((g) => (
           <button
             key={g.id}
             onClick={() => router.push(`/projects/${g.id}`)}

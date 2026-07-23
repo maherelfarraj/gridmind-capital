@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import useSWR from 'swr'
 import {
   ShieldCheck,
   AlertTriangle,
@@ -14,96 +15,23 @@ import {
   Filter,
   Plus,
   ChevronDown,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
-
-// ─── Types ────────────────────────────────────────────────────
-
-type IncidentSeverity = 'fatality' | 'ltif' | 'mtc' | 'near-miss' | 'observation'
-type IncidentStatus   = 'open' | 'under-investigation' | 'closed'
-
-interface IncidentRecord {
-  id: string
-  ref: string
-  title: string
-  projectCode: string
-  severity: IncidentSeverity
-  status: IncidentStatus
-  date: string
-  reportedBy: string
-  location: string
-  description: string
-  actionCount: number
-  closedActions: number
-}
-
-interface PermitRecord {
-  id: string
-  ref: string
-  type: string
-  scope: string
-  projectCode: string
-  issuedTo: string
-  issuedDate: string
-  expiryDate: string
-  status: 'active' | 'expired' | 'cancelled' | 'pending'
-}
-
-// ─── Mock data ────────────────────────────────────────────────
-
-const INCIDENTS: IncidentRecord[] = [
-  {
-    id: 'i1', ref: 'NM-22', title: 'Scaffolding Collapse — Grid Connection Point',
-    projectCode: 'CRS-150', severity: 'near-miss', status: 'under-investigation',
-    date: '19 Jul 2025', reportedBy: 'L. Schmidt', location: 'Zone 4 — Turbine Row C',
-    description: 'Scaffolding section collapsed during high-wind event (45km/h). No injuries. Root cause: weather monitoring protocol gap identified.',
-    actionCount: 5, closedActions: 2,
-  },
-  {
-    id: 'i2', ref: 'OBS-47', title: 'Unsecured Tools on Elevated Platform',
-    projectCode: 'SRS-400', severity: 'observation', status: 'closed',
-    date: '17 Jul 2025', reportedBy: 'M. Al-Farsi', location: 'Inverter Station B',
-    description: 'Tools not secured to tool lanyards on platform at 4.5m elevation. Corrected on-site immediately.',
-    actionCount: 1, closedActions: 1,
-  },
-  {
-    id: 'i3', ref: 'MTC-08', title: 'Hand Laceration — Wire Rope Handling',
-    projectCode: 'NOV-600', severity: 'mtc', status: 'closed',
-    date: '12 Jul 2025', reportedBy: 'T. Müller', location: 'Offshore Platform Alpha',
-    description: 'Worker sustained laceration to left hand while handling wire rope without cut-resistant gloves. First aid administered. Returned to duty same day.',
-    actionCount: 3, closedActions: 3,
-  },
-  {
-    id: 'i4', ref: 'OBS-44', title: 'Missing Barricading Around Excavation',
-    projectCode: 'ATL-300', severity: 'observation', status: 'closed',
-    date: '08 Jul 2025', reportedBy: 'J. Rivera', location: 'Cable Trench Section 12',
-    description: 'Open excavation trench lacked adequate barricading at site entrance. Barriers reinstated immediately.',
-    actionCount: 2, closedActions: 2,
-  },
-  {
-    id: 'i5', ref: 'NM-21', title: 'Near-Miss — Crane Swing Arc Intrusion',
-    projectCode: 'ORN-180', severity: 'near-miss', status: 'open',
-    date: '02 Jul 2025', reportedBy: 'A. Patel', location: 'Assembly Area Row 7',
-    description: 'Personnel entered crane exclusion zone during tower section lift. No contact made. Exclusion zone protocol under review.',
-    actionCount: 4, closedActions: 1,
-  },
-]
-
-const PERMITS: PermitRecord[] = [
-  { id: 'p1', ref: 'PTW-4801', type: 'Work at Height',     scope: 'Scaffold erection — Zone A',          projectCode: 'SRS-400', issuedTo: 'M. Al-Farsi', issuedDate: '20 Jul 2025', expiryDate: '21 Jul 2025', status: 'active'    },
-  { id: 'p2', ref: 'PTW-4799', type: 'Confined Space',     scope: 'Inverter pit inspection',              projectCode: 'SRS-400', issuedTo: 'R. Chen',     issuedDate: '19 Jul 2025', expiryDate: '19 Jul 2025', status: 'expired'   },
-  { id: 'p3', ref: 'PTW-4795', type: 'Hot Work',           scope: 'Welding — substation frame',           projectCode: 'ATL-300', issuedTo: 'J. Rivera',   issuedDate: '18 Jul 2025', expiryDate: '18 Jul 2025', status: 'expired'   },
-  { id: 'p4', ref: 'PTW-4810', type: 'Electrical Isolation','scope': 'MV switchgear maintenance',          projectCode: 'SRS-400', issuedTo: 'M. Al-Farsi', issuedDate: '20 Jul 2025', expiryDate: '22 Jul 2025', status: 'active'    },
-  { id: 'p5', ref: 'PTW-4780', type: 'Excavation',         scope: 'Cable trench section 14-18',           projectCode: 'CRS-150', issuedTo: 'L. Schmidt',  issuedDate: '15 Jul 2025', expiryDate: '17 Jul 2025', status: 'cancelled' },
-  { id: 'p6', ref: 'PTW-4815', type: 'Marine Operations',  scope: 'Foundation installation vessel ops',   projectCode: 'NOV-600', issuedTo: 'T. Müller',   issuedDate: '21 Jul 2025', expiryDate: '25 Jul 2025', status: 'pending'   },
-]
+import { getHseDashboard, seedHseDemoData } from '@/app/actions/hse'
+import type {
+  HseIncident,
+  HsePermit,
+  HseIncidentSeverity,
+} from '@/lib/types/action-types'
 
 // ─── Config maps ──────────────────────────────────────────────
 
-const SEVERITY_META: Record<IncidentSeverity, { label: string; color: string; icon: React.ElementType }> = {
+const SEVERITY_META: Record<HseIncidentSeverity, { label: string; color: string; icon: React.ElementType }> = {
   fatality:    { label: 'Fatality',    color: '#1e1e2e', icon: AlertOctagon  },
   ltif:        { label: 'LTIF',        color: '#ef4444', icon: AlertOctagon  },
   mtc:         { label: 'MTC',         color: '#f97316', icon: AlertTriangle },
@@ -111,7 +39,7 @@ const SEVERITY_META: Record<IncidentSeverity, { label: string; color: string; ic
   observation: { label: 'Observation', color: '#3b82f6', icon: Activity      },
 }
 
-const PERMIT_STATUS_META: Record<PermitRecord['status'], { label: string; color: string }> = {
+const PERMIT_STATUS_META: Record<HsePermit['status'], { label: string; color: string }> = {
   active:    { label: 'Active',     color: '#22c55e' },
   expired:   { label: 'Expired',    color: '#ef4444' },
   cancelled: { label: 'Cancelled',  color: '#94a3b8' },
@@ -120,7 +48,7 @@ const PERMIT_STATUS_META: Record<PermitRecord['status'], { label: string; color:
 
 // ─── Incident Row (expandable) ────────────────────────────────
 
-function IncidentRow({ item }: { item: IncidentRecord }) {
+function IncidentRow({ item }: { item: HseIncident }) {
   const [open, setOpen] = React.useState(false)
   const meta = SEVERITY_META[item.severity]
   const Icon = meta.icon
@@ -207,24 +135,41 @@ function StatTile({ value, label, color, icon: Icon }: {
 export function HsePage() {
   const { toast: addToast } = useToast()
   const [tab, setTab] = React.useState<'incidents' | 'permits'>('incidents')
-  const [severityFilter, setSeverityFilter] = React.useState<IncidentSeverity | 'all'>('all')
+  const [severityFilter, setSeverityFilter] = React.useState<HseIncidentSeverity | 'all'>('all')
+  const [seeding, setSeeding] = React.useState(false)
 
-  const openIncidents     = INCIDENTS.filter((i) => i.status !== 'closed').length
-  const nearMissCount     = INCIDENTS.filter((i) => i.severity === 'near-miss').length
-  const observationCount  = INCIDENTS.filter((i) => i.severity === 'observation').length
-  const activePermits     = PERMITS.filter((p) => p.status === 'active').length
-  const expiredPermits    = PERMITS.filter((p) => p.status === 'expired').length
+  const { data, isLoading, mutate } = useSWR('hse-dashboard', () => getHseDashboard(), {
+    revalidateOnFocus: true,
+  })
 
-  const filteredIncidents = INCIDENTS.filter((i) =>
+  const incidents: HseIncident[] = data?.incidents ?? []
+  const permits: HsePermit[]     = data?.permits ?? []
+
+  const openIncidents     = incidents.filter((i) => i.status !== 'closed').length
+  const nearMissCount     = incidents.filter((i) => i.severity === 'near-miss').length
+  const observationCount  = incidents.filter((i) => i.severity === 'observation').length
+  const activePermits     = permits.filter((p) => p.status === 'active').length
+  const expiredPermits    = permits.filter((p) => p.status === 'expired').length
+
+  const filteredIncidents = incidents.filter((i) =>
     severityFilter === 'all' || i.severity === severityFilter
   )
 
+  async function handleSeed() {
+    setSeeding(true)
+    const { error } = await seedHseDemoData()
+    setSeeding(false)
+    if (error) { addToast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
+    addToast({ title: 'Demo data seeded', variant: 'success' })
+    mutate()
+  }
+
   const TABS = [
-    { id: 'incidents' as const, label: `Incidents (${INCIDENTS.length})` },
-    { id: 'permits'   as const, label: `Permits (${PERMITS.length})`    },
+    { id: 'incidents' as const, label: `Incidents (${incidents.length})` },
+    { id: 'permits'   as const, label: `Permits (${permits.length})`    },
   ]
 
-  const SEVERITY_FILTERS: { id: IncidentSeverity | 'all'; label: string }[] = [
+  const SEVERITY_FILTERS: { id: HseIncidentSeverity | 'all'; label: string }[] = [
     { id: 'all',        label: 'All' },
     { id: 'near-miss',  label: 'Near-Miss' },
     { id: 'mtc',        label: 'MTC' },
@@ -240,10 +185,16 @@ export function HsePage() {
           <h1 className="text-2xl font-bold text-foreground">Health, Safety & Environment</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Incident register, permits to work, and safety performance</p>
         </div>
-        <Button variant="default" size="sm" onClick={() => addToast({ title: 'Report Incident', description: 'Incident reporting form will open in the full app.', variant: 'info' })}>
-          <Plus className="size-4" aria-hidden />
-          Report Incident
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw className="size-3.5" aria-hidden /></Button>
+          <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
+            {seeding ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : 'Seed Demo'}
+          </Button>
+          <Button variant="default" size="sm" onClick={() => addToast({ title: 'Report Incident', description: 'Incident reporting form will open in the full app.', variant: 'info' })}>
+            <Plus className="size-4" aria-hidden />
+            Report Incident
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -310,7 +261,17 @@ export function HsePage() {
           </div>
           <Card>
             <CardContent className="p-0">
-              {filteredIncidents.length === 0 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+                  <Loader2 className="size-4 animate-spin" aria-hidden /> Loading…
+                </div>
+              ) : incidents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <ShieldCheck className="size-12 text-[#22c55e] mb-3" aria-hidden />
+                  <p className="text-sm font-semibold text-foreground">No incidents recorded</p>
+                  <p className="text-xs text-muted-foreground mt-1">Seed demo data or report an incident to get started.</p>
+                </div>
+              ) : filteredIncidents.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16">
                   <ShieldCheck className="size-12 text-[#22c55e] mb-3" aria-hidden />
                   <p className="text-sm font-semibold text-foreground">No incidents found</p>
@@ -327,38 +288,50 @@ export function HsePage() {
       {tab === 'permits' && (
         <Card className="overflow-hidden">
           <CardContent className="p-0 overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm" role="table" aria-label="Permits to work">
-              <thead>
-                <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <th className="px-4 py-2.5 text-left font-semibold">Ref</th>
-                  <th className="px-4 py-2.5 text-left font-semibold">Type</th>
-                  <th className="px-4 py-2.5 text-left font-semibold">Scope</th>
-                  <th className="px-4 py-2.5 text-left font-semibold hidden md:table-cell">Issued To</th>
-                  <th className="px-4 py-2.5 text-right font-semibold hidden lg:table-cell">Expiry</th>
-                  <th className="px-4 py-2.5 text-center font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {PERMITS.map((p) => {
-                  const pMeta = PERMIT_STATUS_META[p.status]
-                  return (
-                    <tr key={p.id} className="border-b border-border hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 font-mono text-xs text-[#64ffda]">{p.ref}</td>
-                      <td className="px-4 py-2.5 text-sm font-medium text-foreground">{p.type}</td>
-                      <td className="px-4 py-2.5 text-sm text-muted-foreground max-w-[220px] truncate">{p.scope}</td>
-                      <td className="px-4 py-2.5 text-sm text-foreground hidden md:table-cell">{p.issuedTo}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground text-right hidden lg:table-cell">{p.expiryDate}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold"
-                          style={{ color: pMeta.color, backgroundColor: `${pMeta.color}18` }}>
-                          {pMeta.label}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+                <Loader2 className="size-4 animate-spin" aria-hidden /> Loading…
+              </div>
+            ) : permits.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <ClipboardList className="size-12 text-muted-foreground mb-3" aria-hidden />
+                <p className="text-sm font-semibold text-foreground">No permits to work</p>
+                <p className="text-xs text-muted-foreground mt-1">Seed demo data to populate the permit register.</p>
+              </div>
+            ) : (
+              <table className="w-full min-w-[680px] text-sm" role="table" aria-label="Permits to work">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-4 py-2.5 text-left font-semibold">Ref</th>
+                    <th className="px-4 py-2.5 text-left font-semibold">Type</th>
+                    <th className="px-4 py-2.5 text-left font-semibold">Scope</th>
+                    <th className="px-4 py-2.5 text-left font-semibold hidden md:table-cell">Issued To</th>
+                    <th className="px-4 py-2.5 text-right font-semibold hidden lg:table-cell">Expiry</th>
+                    <th className="px-4 py-2.5 text-center font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {permits.map((p) => {
+                    const pMeta = PERMIT_STATUS_META[p.status]
+                    return (
+                      <tr key={p.id} className="border-b border-border hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-2.5 font-mono text-xs text-[#64ffda]">{p.ref}</td>
+                        <td className="px-4 py-2.5 text-sm font-medium text-foreground">{p.type}</td>
+                        <td className="px-4 py-2.5 text-sm text-muted-foreground max-w-[220px] truncate">{p.scope}</td>
+                        <td className="px-4 py-2.5 text-sm text-foreground hidden md:table-cell">{p.issuedTo}</td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground text-right hidden lg:table-cell">{p.expiryDate}</td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold"
+                            style={{ color: pMeta.color, backgroundColor: `${pMeta.color}18` }}>
+                            {pMeta.label}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
           </CardContent>
         </Card>
       )}

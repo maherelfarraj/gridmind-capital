@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import type { IFCPackage, DrawingRecord, RFIRecord, EngineeringDashboard } from '@/lib/types/action-types'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -113,6 +114,9 @@ export async function loadEngineeringDashboard(): Promise<EngineeringDashboard> 
 export async function createRFI(data: {
   title: string; discipline: string; description: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('tickets').insert({
     tenant_id:  DEMO_TENANT,
@@ -129,6 +133,9 @@ export async function createRFI(data: {
 }
 
 export async function closeRFI(id: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('tickets')
     .update({ status: 'closed', updated_at: new Date().toISOString() })
@@ -137,6 +144,9 @@ export async function closeRFI(id: string): Promise<{ error?: string }> {
 }
 
 export async function seedEngineeringDemoData(): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('engineering_packages')
     .select('id').eq('tenant_id', DEMO_TENANT).limit(1)

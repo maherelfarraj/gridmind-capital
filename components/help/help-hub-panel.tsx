@@ -123,10 +123,7 @@ Each gate requires specific deliverables and approvals before a project can adva
 • G3 – Procurement Award
 • G4 – Construction Mobilization
 • G5 – Mechanical Completion
-• G6 – Commissioning Completion
-• G7 – Handover & Warranty
-• G8 – Operations Performance Review
-• G9 – AI/Enterprise Optimization
+• G6 – Handover, Operations & Closeout
 
 > Segregation of duty rules apply — the creator of a workflow cannot be the sole approver.`,
     tags: ['gates', 'approvals', 'workflow'],
@@ -1043,7 +1040,8 @@ export function HelpHubPanel({
     }
   }, [open])
 
-  // Focus trap — keep Tab/Shift+Tab inside dialog when open
+  // Focus trap — keep Tab/Shift+Tab inside dialog when open,
+  // and restore focus to the trigger when it closes (any close path).
   React.useEffect(() => {
     if (!open || !panelRef.current) return
     const FOCUSABLE = [
@@ -1051,6 +1049,8 @@ export function HelpHubPanel({
       'select:not([disabled])', 'textarea:not([disabled])',
       '[tabindex]:not([tabindex="-1"])',
     ].join(',')
+    // Remember what had focus before opening so we can restore it on close.
+    const previouslyFocused = document.activeElement as HTMLElement | null
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Tab' || !panelRef.current) return
       const nodes = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
@@ -1067,7 +1067,12 @@ export function HelpHubPanel({
     // Move initial focus into panel
     const first = panelRef.current.querySelector<HTMLElement>(FOCUSABLE)
     first?.focus()
-    return () => document.removeEventListener('keydown', handler)
+    return () => {
+      document.removeEventListener('keydown', handler)
+      // Restore focus to the trigger (FAB) or whatever was focused before.
+      const restoreTarget = fabRef.current ?? previouslyFocused
+      restoreTarget?.focus()
+    }
   }, [open])
 
   // Close on Escape

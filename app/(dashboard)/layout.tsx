@@ -1,12 +1,14 @@
 import { redirect } from 'next/navigation'
+import { ShieldAlert } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { SessionProvider } from '@/lib/session-context'
 import { createClient } from '@/lib/supabase/server'
+import { getUnreadCountAction } from '@/app/actions/notifications'
+import { signOutAction } from '@/app/actions/auth'
 import {
   type AppSession,
   type AppRole,
   type AppPermission,
-  mockSession,
 } from '@/lib/session'
 
 // Map DB user_role → AppRole
@@ -21,6 +23,8 @@ const ROLE_MAP: Record<string, AppRole> = {
   finance_manager:      'finance_controller',
   commercial_manager:   'procurement_manager',
   viewer:               'viewer',
+  subcontractor:        'subcontractor',
+  client_viewer:        'client_viewer',
 }
 
 // Permissions granted per role
@@ -40,13 +44,19 @@ const ROLE_PERMISSIONS: Record<AppRole, AppPermission[]> = {
   executive_sponsor:     ['project.read','approval.read','document.read','finance.read','hse.read'],
   client_pmc:            ['project.read','approval.read','document.read'],
   viewer:                ['project.read','approval.read','document.read'],
+  subcontractor:         ['project.read','document.read'],
+  client_viewer:         ['project.read','document.read'],
 }
 
-async function getSession(): Promise<AppSession> {
+// Returns the resolved session, or null when the authenticated user has no
+// profile row. We NEVER fall back to a mock/default identity here — doing so
+// would silently grant a real role, permissions and tenant to an account that
+// has not been provisioned.
+async function getSession(): Promise<AppSession | null> {
   const supabase = await createClient()
 
   const { data: { user }, error: userError } = await supabase.auth.getUser()
-  if (userError || !user) return mockSession
+  if (userError || !user) return null
 
   // Fetch profile + tenant
   const { data: profile } = await supabase
@@ -56,13 +66,8 @@ async function getSession(): Promise<AppSession> {
     .single()
 
   if (!profile) {
-    // Profile not yet created (trigger may still be running) — fall back gracefully
-    return {
-      ...mockSession,
-      userId: user.id,
-      email: user.email ?? '',
-      fullName: user.user_metadata?.full_name ?? user.email ?? '',
-    }
+    // Authenticated but not provisioned — caller must show the setup screen.
+    return null
   }
 
   const appRole: AppRole = ROLE_MAP[profile.role] ?? 'viewer'
@@ -81,6 +86,36 @@ async function getSession(): Promise<AppSession> {
   }
 }
 
+// Shown when a user is authenticated but has no provisioned profile row.
+// We deliberately do NOT grant any role, permission, or tenant in this state.
+function AccountSetupIncomplete({ email }: { email: string }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-8 text-center shadow-sm">
+        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+          <ShieldAlert className="h-6 w-6 text-destructive" aria-hidden="true" />
+        </div>
+        <h1 className="text-balance text-xl font-semibold text-card-foreground">
+          Account setup incomplete
+        </h1>
+        <p className="mt-3 text-pretty leading-relaxed text-muted-foreground">
+          Your account is authenticated{email ? ` as ${email}` : ''}, but it has not
+          been fully provisioned yet. Please contact your administrator to have your
+          profile and role assigned before accessing the dashboard.
+        </p>
+        <form action={signOutAction} className="mt-6">
+          <button
+            type="submit"
+            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Sign out
+          </button>
+        </form>
+      </div>
+    </main>
+  )
+}
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -95,6 +130,16 @@ export default async function DashboardLayout({
 
   const session = await getSession()
 
+  // Authenticated, but no profile row exists for this account. Do NOT fall
+  // back to a default identity — show a setup-incomplete screen instead.
+  if (!session) {
+    return <AccountSetupIncomplete email={user.email ?? ''} />
+  }
+
+  // External roles never see the internal dashboard — bounce to their portal.
+  if (session.roles.includes('client_viewer')) redirect('/client')
+  if (session.roles.includes('subcontractor')) redirect('/portal')
+
   // Count pending approvals scoped to this tenant
   const { count: approvalCount } = await supabase
     .from('approvals')
@@ -102,9 +147,12 @@ export default async function DashboardLayout({
     .eq('tenant_id', session.tenantId)
     .eq('status', 'pending')
 
+  // Live unread notification count for the bell badge
+  const notificationCount = await getUnreadCountAction()
+
   return (
     <SessionProvider session={session}>
-      <AppShell approvalCount={approvalCount ?? 0}>
+      <AppShell approvalCount={approvalCount ?? 0} notificationCount={notificationCount}>
         {children}
       </AppShell>
     </SessionProvider>

@@ -73,6 +73,10 @@ export default function G4ConstructionPage() {
               <p className="text-sm text-slate-500 mt-1">Site mobilization, work packages, HSE readiness, and permit compliance</p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Link href={`/stage-gates/${projectId}/gate/4`}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm">
+                <FileText className="size-4" /> Gate Submission Form
+              </Link>
               <button type="button" onClick={() => setNewWPOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold transition-colors shadow-sm">
                 <Plus className="size-4" /> New Work Package
@@ -91,7 +95,7 @@ export default function G4ConstructionPage() {
           </div>
         </div>
 
-        <PhaseGateStepper currentGate="G4" completedGates={['G0', 'G1', 'G2', 'G3']} />
+        <PhaseGateStepper currentGate="G4" completedGates={['G0', 'G1', 'G2', 'G3']} projectId={projectId} />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard icon={<HardHat    className="size-5 text-orange-600" />}  label="Work Packages"     value="24"      color="bg-orange-100" />

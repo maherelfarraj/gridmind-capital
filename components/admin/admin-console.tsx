@@ -4,6 +4,7 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { UsersRolesPage } from '@/components/admin/users-roles-page'
 import type { UserProfile, UserRole } from '@/components/admin/users-roles-page'
+import { AuditTrail } from '@/components/notifications/audit-trail'
 import {
   Users, Shield, UsersRound, ClipboardList, Settings2,
   ChevronDown, ChevronRight, Plus, X, Check, Search,
@@ -502,151 +503,9 @@ const SEVERITY_META = {
 }
 
 function AuditLogTab() {
-  const [search, setSearch]     = React.useState('')
-  const [actionFilter, setActionFilter] = React.useState('all')
-  const [dateFrom, setDateFrom] = React.useState('')
-  const [dateTo, setDateTo]     = React.useState('')
-
-  const filtered = React.useMemo(() => {
-    let list = MOCK_AUDIT
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(e => e.actor.toLowerCase().includes(q) || e.target.toLowerCase().includes(q) || e.details.toLowerCase().includes(q))
-    }
-    if (actionFilter !== 'all') list = list.filter(e => e.action === actionFilter)
-    if (dateFrom) list = list.filter(e => e.timestamp >= dateFrom)
-    if (dateTo)   list = list.filter(e => e.timestamp <= dateTo + ' 23:59:59')
-    return list
-  }, [search, actionFilter, dateFrom, dateTo])
-
-  function exportCSV() {
-    const header = 'Timestamp,Actor,Action,Target,IP,Details\n'
-    const rows = filtered.map(e =>
-      `"${e.timestamp}","${e.actor}","${ACTION_META[e.action].label}","${e.target}","${e.ip}","${e.details}"`
-    ).join('\n')
-    const blob = new Blob([header + rows], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'audit-log.csv'; a.click()
-    URL.revokeObjectURL(url)
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Audit Log</h2>
-          <p className="text-sm text-slate-500 mt-0.5">All admin and system actions across the platform.</p>
-        </div>
-        <button
-          type="button"
-          onClick={exportCSV}
-          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <Download className="size-4" />
-          Export CSV
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-          <input
-            type="search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search actor, target, details..."
-            className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 focus:border-[#0a192f]"
-          />
-        </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 min-w-[180px]">
-          <Sliders className="size-4 text-slate-400 shrink-0" />
-          <select
-            value={actionFilter}
-            onChange={e => setActionFilter(e.target.value)}
-            className="flex-1 bg-transparent text-sm focus:outline-none"
-            aria-label="Filter by action"
-          >
-            <option value="all">All Actions</option>
-            {(Object.keys(ACTION_META) as AuditAction[]).map(a => (
-              <option key={a} value={a}>{ACTION_META[a].label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <Calendar className="size-4 text-slate-400 shrink-0" />
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-transparent text-sm focus:outline-none" aria-label="From date" />
-          </div>
-          <span className="text-slate-400 text-sm">to</span>
-          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <Calendar className="size-4 text-slate-400 shrink-0" />
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-transparent text-sm focus:outline-none" aria-label="To date" />
-          </div>
-        </div>
-        {(search || actionFilter !== 'all' || dateFrom || dateTo) && (
-          <button
-            type="button"
-            onClick={() => { setSearch(''); setActionFilter('all'); setDateFrom(''); setDateTo('') }}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 transition-colors"
-          >
-            <X className="size-3.5" /> Clear
-          </button>
-        )}
-      </div>
-
-      {/* Count */}
-      <p className="text-xs text-slate-500">{filtered.length} entries</p>
-
-      {/* Table */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" role="table" aria-label="Audit log">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap">Timestamp</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Actor</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Action</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Target</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 hidden md:table-cell">IP Address</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 hidden lg:table-cell">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400 text-sm">No matching audit entries</td></tr>
-              ) : filtered.map((entry, i) => {
-                const sev = SEVERITY_META[entry.severity]
-                const actionMeta = ACTION_META[entry.action]
-                return (
-                  <tr key={entry.id} className={cn('border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors', sev.row)}>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{entry.timestamp}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">
-                          {entry.actorInitials}
-                        </span>
-                        <span className="text-slate-700 font-medium whitespace-nowrap">{entry.actor}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className={cn('size-2 rounded-full shrink-0', sev.dot)} />
-                        <span className="text-xs font-semibold whitespace-nowrap" style={{ color: actionMeta.color }}>
-                          {actionMeta.label}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-700 max-w-[180px] truncate">{entry.target}</td>
-                    <td className="px-4 py-3 hidden md:table-cell font-mono text-xs text-slate-400 whitespace-nowrap">{entry.ip}</td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-slate-500 text-xs max-w-[280px] truncate">{entry.details}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <div className="h-[600px] flex flex-col">
+      <AuditTrail />
     </div>
   )
 }

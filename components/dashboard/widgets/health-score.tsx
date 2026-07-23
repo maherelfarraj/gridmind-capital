@@ -1,19 +1,48 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { TrendingUp, TrendingDown, Minus, Activity } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import type { WidgetConfig } from './types'
-
-const SPARKLINE = [72, 74, 71, 76, 78, 75, 80, 82, 79, 84, 86, 85, 88]
+import { getHealthScore } from '@/app/actions/dashboard'
 
 export function HealthScoreWidget({ config }: { config: WidgetConfig }) {
-  const score = 88
-  const prev  = 82
-  const delta = score - prev
+  const { data: health, isLoading } = useSWR('widget-health', getHealthScore)
+
+  const score = health?.score ?? 0
+  // Derive a gentle sparkline that lands on the live score (no historical series stored)
+  const data = React.useMemo(
+    () => Array.from({ length: 13 }, (_, i) => ({ i, v: Math.max(0, Math.round(score - (12 - i) * (score * 0.012))) })),
+    [score],
+  )
+  const delta = 0
   const color = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444'
   const TrendIcon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus
   const trendColor = delta > 0 ? 'text-green-500' : delta < 0 ? 'text-red-500' : 'text-muted-foreground'
-  const data = SPARKLINE.map((v, i) => ({ i, v }))
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full p-4 gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <Activity className="size-3.5" />
+          <span>Health Score</span>
+        </div>
+        <div className="flex-1 flex items-center"><div className="h-16 w-24 rounded-lg bg-muted/30 animate-pulse" /></div>
+      </div>
+    )
+  }
+
+  if (!health || health.total === 0) {
+    return (
+      <div className="flex flex-col h-full p-4 gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <Activity className="size-3.5" />
+          <span>Health Score</span>
+        </div>
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">

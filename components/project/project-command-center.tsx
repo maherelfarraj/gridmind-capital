@@ -95,14 +95,14 @@ export function adaptProjectRaw(raw: ProjectRaw): ProjectData {
   const PHASE_STRING_TO_KEY: Record<string, string> = {
     intake: 'g0', development: 'g1', commercial: 'g2',
     engineering: 'g3', procurement: 'g4', construction: 'g5',
-    commissioning: 'g6', om: 'g7', finance: 'g8', 'ai-analytics': 'g9',
+    commissioning: 'g6', om: 'g6', finance: 'g6', 'ai-analytics': 'g6',
   }
   const phaseKey = (PHASE_STRING_TO_KEY[raw.phase.toLowerCase()] ?? 'g0') as PhaseKey
 
   const GATE_NAMES: Record<number, string> = {
     0: 'Investment Intake', 1: 'Development Approval', 2: 'Engineering IFC',
-    3: 'Procurement Ready', 4: 'Construction Mobilization', 5: 'Systems Commissioning',
-    6: 'COD Declaration', 7: 'O&M Handover', 8: 'Financial Close', 9: 'AI Analytics',
+    3: 'Procurement Ready', 4: 'Construction Mobilization', 5: 'Mechanical Completion',
+    6: 'Handover, Operations & Closeout',
   }
 
   return {
@@ -162,9 +162,6 @@ const PHASE_BADGE_VARIANT: Record<PhaseKey, BadgeProps['variant']> = {
   g4: 'procurement',
   g5: 'construction',
   g6: 'commissioning',
-  g7: 'om',
-  g8: 'finance',
-  g9: 'ai-analytics',
 }
 
 const PHASE_LABEL: Record<PhaseKey, string> = {
@@ -174,10 +171,7 @@ const PHASE_LABEL: Record<PhaseKey, string> = {
   g3: 'G3 · Engineering',
   g4: 'G4 · Procurement',
   g5: 'G5 · Construction',
-  g6: 'G6 · Commissioning',
-  g7: 'G7 · O&M',
-  g8: 'G8 · Finance',
-  g9: 'G9 · AI Analytics',
+  g6: 'G6 · Handover & O&M',
 }
 
 function formatCurrency(value: number): string {

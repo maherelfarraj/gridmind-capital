@@ -6,7 +6,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * Creates the missing tables for sprints S08–S23.
  * Idempotent — uses IF NOT EXISTS throughout.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const secret = process.env.SETUP_SECRET
+  if (!secret || request.headers.get('x-setup-secret') !== secret) {
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  }
+
   const sb = createAdminClient()
 
   const ddl = `

@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 import { sendProjectCreatedEmail } from '@/lib/email/send'
 import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
@@ -13,16 +14,23 @@ const PHASE_MAP: Record<number, string> = {
 }
 
 const GATE_NAMES: Record<number, string> = {
-  0: 'Investment Intake',
-  1: 'Development Approval',
-  2: 'Commercial IFC',
-  3: 'Engineering IFC',
-  4: 'Procurement Ready',
-  5: 'Construction Mobilization',
-  6: 'Systems Commissioning',
-  7: 'COD Declaration',
-  8: 'O&M Handover',
+  0: 'Opportunity Accepted',
+  1: 'Project Baseline Approved',
+  2: 'Engineering IFC Release',
+  3: 'Procurement Award',
+  4: 'Construction Mobilization',
+  5: 'Mechanical Completion',
+  6: 'Handover, Ops & Closeout',
+  7: 'Handover, Ops & Closeout',
+  8: 'Handover, Ops & Closeout',
 }
+
+// The governed gate model is G0–G6 (matches GATE_ORDER in app/actions/phase-gates.ts).
+// Used to seed phase_gates rows when a project is created.
+const GATE_PHASES: { phase: number; name: string }[] = Array.from({ length: 7 }, (_, i) => ({
+  phase: i,
+  name: GATE_NAMES[i],
+}))
 
 export interface GetProjectsOptions {
   phase?: string | null
@@ -126,7 +134,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   const gate = data.current_phase ?? 0
   const PHASE_KEY_MAP: Record<number, ProjectData['phase']> = {
     0: 'g0', 1: 'g1', 2: 'g2', 3: 'g3', 4: 'g4',
-    5: 'g5', 6: 'g6', 7: 'g7', 8: 'g8', 9: 'g9',
+    5: 'g5', 6: 'g6', 7: 'g6', 8: 'g6', 9: 'g6',
   }
 
   return {
@@ -160,6 +168,9 @@ export async function createProject(payload: {
   target_completion: string
   description?: string
 }): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   // Guard: Postgres DATE columns reject empty strings — convert to null
@@ -173,13 +184,24 @@ export async function createProject(payload: {
       target_completion: isValidDate(payload.target_completion) ? payload.target_completion : null,
       tenant_id: DEMO_TENANT,
       status: 'active',
-      current_phase: 0,
+      current_phase: 1,   // G0 (origination) complete, G1 (development) in progress
       health: 'green',
     })
     .select('id')
     .single()
 
   if (error) return { error: error.message }
+
+  // Seed the G0–G6 gate records for the new project.
+  // G0 = approved (project originated), G1 = in_review (active gate), G2–G6 = pending.
+  const gateRows = GATE_PHASES.map((g) => ({
+    project_id:   data.id,
+    phase_number: g.phase,
+    phase_name:   g.name,
+    status:       g.phase === 0 ? 'approved' : g.phase === 1 ? 'in_review' : 'pending',
+  }))
+  const { error: gateErr } = await supabase.from('phase_gates').insert(gateRows)
+  if (gateErr) console.log('[v0] phase_gates seed failed:', gateErr.message)
 
   // Fire-and-forget notification email — does not block response
   sendProjectCreatedEmail({
@@ -193,6 +215,200 @@ export async function createProject(payload: {
   }).catch(() => {})
 
   return { id: data.id }
+}
+
+// ── Phase 6: transactional wizard create ─────────────────────
+
+// Exact G1–G8 phase names (must equal gates.name so spawn_gate_signoffs joins).
+const WIZARD_PHASE_NAMES: string[] = [
+  'Origination & Feasibility',
+  'Permitting & Grid Application',
+  'Commercial & Financial Close (RTB)',
+  'Detailed Design (IFC)',
+  'Procurement & Manufacturing',
+  'Construction & Installation',
+  'Commissioning & Grid Tests',
+  'Handover & O&M',
+]
+
+export interface CreateProjectFullInput {
+  name: string
+  codeHint: string
+  technology: string
+  capacity_mw: number
+  bess_mwh: number
+  location: string
+  country: string
+  target_completion: string | null
+  pdPersonId: string
+  pmPersonId: string
+  approvers: { gate_number: number; primary_role: string | null; secondary_role: string | null }[]
+}
+
+/**
+ * Create a project with PD+PM staffing, 8 gate-approver rows, and 8 phase_gates
+ * (G1 `in_review` → trigger spawns G1 sign-offs; the wizard inserts none itself).
+ * No true SQL transaction is available via the JS client, so any failure after
+ * the project row triggers a compensating delete (children cascade) — giving
+ * all-or-nothing semantics.
+ */
+export async function createProjectFull(
+  input: CreateProjectFullInput,
+): Promise<{ id: string } | { error: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const { getActor } = await import('@/lib/db/queries')
+  const actor = await getActor()
+  const admin = createAdminClient()
+  const tenantId = actor.tenantId ?? DEMO_TENANT
+
+  if (!input.name?.trim()) return { error: 'Project name is required.' }
+  if (!input.pdPersonId || !input.pmPersonId) return { error: 'PD and PM are required.' }
+
+  // Resolve PD/PM role ids.
+  const { data: roleRows, error: roleErr } = await admin
+    .from('roles')
+    .select('id, code')
+    .in('code', ['PD', 'PM'])
+  if (roleErr) return { error: roleErr.message }
+  const pdRoleId = roleRows?.find((r) => r.code === 'PD')?.id
+  const pmRoleId = roleRows?.find((r) => r.code === 'PM')?.id
+  if (!pdRoleId || !pmRoleId) return { error: 'PD/PM roles missing from catalog.' }
+
+  const isDate = (d: string | null) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d)
+
+  // Ensure a unique code (retry with a suffix on collision).
+  let code = input.codeHint?.trim() || `PRJ-${new Date().getFullYear()}-001`
+
+  // 1) Project.
+  let projectId = ''
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await admin
+      .from('projects')
+      .insert({
+        tenant_id: tenantId,
+        code,
+        name: input.name.trim(),
+        technology: input.technology,
+        capacity_mw: Number.isFinite(input.capacity_mw) ? input.capacity_mw : null,
+        bess_mwh: Number.isFinite(input.bess_mwh) ? input.bess_mwh : null,
+        location: input.location || null,
+        country: input.country || null,
+        target_completion: isDate(input.target_completion) ? input.target_completion : null,
+        status: 'active',
+        current_phase: 0,
+        health: 'green',
+        project_manager: input.pmPersonId,
+        created_by: actor.userId,
+      })
+      .select('id')
+      .single()
+    if (!error && data) {
+      projectId = data.id as string
+      break
+    }
+    if (error?.code === '23505') {
+      code = `${input.codeHint}-${Math.floor(10 + Math.random() * 89)}`
+      continue
+    }
+    return { error: error?.message ?? 'Failed to create project.' }
+  }
+  if (!projectId) return { error: `Could not allocate a unique code near "${input.codeHint}".` }
+
+  const rollback = async (msg: string): Promise<{ error: string }> => {
+    await admin.from('projects').delete().eq('id', projectId)
+    return { error: msg }
+  }
+
+  // 2) Team: PD + PM (inserted BEFORE gates so the spawn trigger finds assignees).
+  const { error: teamErr } = await admin.from('project_team').insert([
+    { tenant_id: tenantId, project_id: projectId, role_id: pdRoleId, person_id: input.pdPersonId, assigned_by: actor.userId },
+    { tenant_id: tenantId, project_id: projectId, role_id: pmRoleId, person_id: input.pmPersonId, assigned_by: actor.userId },
+  ])
+  if (teamErr) return rollback(`Staffing failed: ${teamErr.message}`)
+
+  // 3) Gate approvers (8 rows).
+  const approverRows = WIZARD_PHASE_NAMES.map((_, i) => {
+    const n = i + 1
+    const supplied = input.approvers.find((a) => a.gate_number === n)
+    return {
+      project_id: projectId,
+      gate_number: n,
+      primary_role: supplied?.primary_role || 'PD',
+      secondary_role: supplied?.secondary_role || null,
+    }
+  })
+  const { error: apprErr } = await admin
+    .from('project_gate_approvers')
+    .upsert(approverRows, { onConflict: 'project_id,gate_number' })
+  if (apprErr) return rollback(`Gate approvers failed: ${apprErr.message}`)
+
+  // 4) phase_gates: G1 in_review (spawns sign-offs), G2–G8 pending.
+  // NOTE: phase_gates has NO tenant_id column.
+  const gateRows = WIZARD_PHASE_NAMES.map((phaseName, i) => ({
+    project_id: projectId,
+    phase_number: i + 1,
+    phase_name: phaseName,
+    status: i === 0 ? 'in_review' : 'pending',
+  }))
+  const { error: gateErr } = await admin.from('phase_gates').insert(gateRows)
+  if (gateErr) return rollback(`Gate seeding failed: ${gateErr.message}`)
+
+  // 5) Audit.
+  await admin.from('audit_logs').insert({
+    tenant_id: tenantId,
+    actor_id: actor.userId,
+    action: 'insert',
+    entity_type: 'projects',
+    entity_id: projectId,
+    new_data: { code, name: input.name, pd: input.pdPersonId, pm: input.pmPersonId },
+  })
+
+  sendProjectCreatedEmail({
+    to: 'admin@gridmind.capital',
+    recipientName: 'GridMind Team',
+    projectCode: code,
+    projectName: input.name,
+    technology: input.technology,
+    budgetUsd: 0,
+    projectId,
+  }).catch(() => {})
+
+  return { id: projectId }
+}
+
+export async function archiveProject(id: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('projects')
+    .update({ status: 'cancelled' })
+    .eq('id', id)
+    .eq('tenant_id', DEMO_TENANT)
+  return error ? { error: error.message } : {}
+}
+
+export async function duplicateProject(id: string): Promise<{ id?: string; error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+  const { data: src, error: fetchErr } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (fetchErr || !src) return { error: fetchErr?.message ?? 'Not found' }
+  const newCode = `${src.code}-COPY-${Date.now().toString().slice(-4)}`
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({ ...src, id: undefined, code: newCode, name: `${src.name} (Copy)`, status: 'draft', created_at: undefined, updated_at: undefined })
+    .select('id')
+    .single()
+  return error ? { error: error.message } : { id: data?.id }
 }
 
 // ─── S09: Commercial Charter ──────────────────────────────────────────────────
@@ -255,6 +471,9 @@ export async function createCommercialRecord(data: {
   project_id: string; type: 'budget' | 'contract' | 'cashflow'
   category: string; description: string; amount: number; status?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('finance_records').insert({
     tenant_id: DEMO_TENANT,
@@ -270,6 +489,9 @@ export async function createCommercialRecord(data: {
 }
 
 export async function seedCommercialDemoData(projectId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('finance_records').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
@@ -320,7 +542,7 @@ export interface ScheduleDashboard {
 export async function loadScheduleDashboard(projectId: string): Promise<ScheduleDashboard> {
   const supabase = createAdminClient()
   const { data } = await supabase
-    .from('phase_gates')
+    .from('schedule_milestones')
     .select('id, project_id, name, planned_start, planned_end, actual_start, actual_end, status, is_critical, gate_number, owner, progress_pct')
     .eq('tenant_id', DEMO_TENANT)
     .eq('project_id', projectId)
@@ -354,8 +576,11 @@ export async function createMilestone(data: {
   project_id: string; name: string; planned_start: string; planned_end: string
   is_critical?: boolean; gate?: number; owner?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
-  const { error } = await supabase.from('phase_gates').insert({
+  const { error } = await supabase.from('schedule_milestones').insert({
     tenant_id:     DEMO_TENANT,
     project_id:    data.project_id,
     name:          data.name,
@@ -371,9 +596,12 @@ export async function createMilestone(data: {
 }
 
 export async function updateMilestoneProgress(id: string, progress_pct: number, status: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase
-    .from('phase_gates')
+    .from('schedule_milestones')
     .update({ progress_pct, status, updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('tenant_id', DEMO_TENANT)
@@ -381,11 +609,16 @@ export async function updateMilestoneProgress(id: string, progress_pct: number, 
 }
 
 export async function seedScheduleDemoData(projectId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
-  const { data: ex } = await supabase.from('phase_gates').select('id').eq('project_id', projectId).limit(1)
+  const { data: ex } = await supabase.from('schedule_milestones').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
-  const base = new Date('2026-01-01')
+  // Anchor the schedule ~120 days before "now" so the Gantt spans today
+  // (today line + in-progress bars render meaningfully against live data).
+  const base = new Date(); base.setDate(base.getDate() - 120)
   const addDays = (d: Date, n: number) => {
     const r = new Date(d); r.setDate(r.getDate() + n); return r.toISOString().slice(0, 10)
   }
@@ -404,7 +637,7 @@ export async function seedScheduleDemoData(projectId: string): Promise<{ error?:
   ]
 
   for (const m of milestones) {
-    await supabase.from('phase_gates').insert({
+    await supabase.from('schedule_milestones').insert({
       tenant_id:     DEMO_TENANT,
       project_id:    projectId,
       name:          m.name,
@@ -501,6 +734,9 @@ export async function createStakeholder(data: {
   project_id: string; name: string; organisation: string; role: string
   influence: number; interest: number; engagement: string; notes?: string
 }): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { error } = await supabase.from('project_members').insert({
     tenant_id:    DEMO_TENANT,
@@ -517,6 +753,9 @@ export async function createStakeholder(data: {
 }
 
 export async function seedStakeholdersDemoData(projectId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('project_members').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}

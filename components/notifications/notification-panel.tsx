@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import {
   Sheet,
@@ -17,6 +18,13 @@ import {
   Zap, Building2, CheckSquare, DollarSign, Send,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  getNotificationsAction,
+  markNotificationReadAction,
+  markAllReadAction,
+  seedNotificationsAction,
+  type LiveNotification,
+} from '@/app/actions/notifications'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -64,12 +72,12 @@ interface Mention {
 // ─── Mock data ──────────────────────────────────────────────────────────────
 
 const MOCK_NOTIFICATIONS: Notification[] = [
-  { id: 'n1',  type: 'urgent',   status: 'unread', title: 'Gate G3 approval overdue',          description: 'Contract Award review has exceeded the 48h SLA window. Chair decision required.',  project: 'Sirius 400MW', projectId: 'sirius',   timestamp: '2m ago',  date: 'today',     href: '/greos/stage-gates' },
+  { id: 'n1',  type: 'urgent',   status: 'unread', title: 'Gate G3 approval overdue',          description: 'Contract Award review has exceeded the 48h SLA window. Chair decision required.',  project: 'Sirius 400MW', projectId: 'sirius',   timestamp: '2m ago',  date: 'today',     href: '/stage-gates' },
   { id: 'n2',  type: 'urgent',   status: 'unread', title: 'Budget threshold breached',          description: 'Phase 1 civil works reached 92% of approved budget. CAPEX overrun risk.',          project: 'Vega BESS',    projectId: 'vega',     timestamp: '18m ago', date: 'today',     href: '/finance' },
-  { id: 'n3',  type: 'approval', status: 'unread', title: 'You approved Gate G2',               description: 'Design & Engineering gate approved with conditions. 2 action items outstanding.',    project: 'Lyra Grid',    projectId: 'lyra',     timestamp: '1h ago',  date: 'today',     href: '/greos/stage-gates' },
-  { id: 'n4',  type: 'document', status: 'unread', title: 'New document uploaded',              description: "HVAC Specifications v2.1 uploaded by Mike Yuen to Engineering package EPC-ELE-02.", project: 'Orion Wind',   projectId: 'orion',    timestamp: '3h ago',  date: 'today',     href: '/greos/documents' },
-  { id: 'n5',  type: 'mention',  status: 'unread', title: 'You were mentioned',                 description: '@you Please review the updated piling report before the G3 convene.',               project: 'Sirius 400MW', projectId: 'sirius',   timestamp: '5h ago',  date: 'today',     href: '/greos/documents' },
-  { id: 'n6',  type: 'approval', status: 'read',   title: 'Punch list closure approved',        description: 'Cat-A punch items for Commissioning Package CP-07 cleared by QA lead.',             project: 'Helios Sub',   projectId: 'helios',   timestamp: '1d ago',  date: 'yesterday', href: '/greos/stage-gates' },
+  { id: 'n3',  type: 'approval', status: 'unread', title: 'You approved Gate G2',               description: 'Design & Engineering gate approved with conditions. 2 action items outstanding.',    project: 'Lyra Grid',    projectId: 'lyra',     timestamp: '1h ago',  date: 'today',     href: '/stage-gates' },
+  { id: 'n4',  type: 'document', status: 'unread', title: 'New document uploaded',              description: "HVAC Specifications v2.1 uploaded by Mike Yuen to Engineering package EPC-ELE-02.", project: 'Orion Wind',   projectId: 'orion',    timestamp: '3h ago',  date: 'today',     href: '/documents' },
+  { id: 'n5',  type: 'mention',  status: 'unread', title: 'You were mentioned',                 description: '@you Please review the updated piling report before the G3 convene.',               project: 'Sirius 400MW', projectId: 'sirius',   timestamp: '5h ago',  date: 'today',     href: '/documents' },
+  { id: 'n6',  type: 'approval', status: 'read',   title: 'Punch list closure approved',        description: 'Cat-A punch items for Commissioning Package CP-07 cleared by QA lead.',             project: 'Helios Sub',   projectId: 'helios',   timestamp: '1d ago',  date: 'yesterday', href: '/stage-gates' },
   { id: 'n7',  type: 'task',     status: 'read',   title: 'Task completed',                     description: "Foundation Pour milestone marked complete by site supervisor Omar Al-Zaid.",        project: 'Sirius 400MW', projectId: 'sirius',   timestamp: '1d ago',  date: 'yesterday', href: '/construction' },
   { id: 'n8',  type: 'document', status: 'read',   title: 'Transmittal acknowledged',           description: 'TRS-2026-041 acknowledged by contractor ACWA Engineering.',                        project: 'Vega BESS',    projectId: 'vega',     timestamp: '2d ago',  date: 'earlier',   href: '/engineering' },
   { id: 'n9',  type: 'budget',   status: 'read',   title: 'Variance report issued',             description: 'Monthly cost report (June 2026) published. CPI: 0.94, SPI: 0.98.',                 project: 'Lyra Grid',    projectId: 'lyra',     timestamp: '3d ago',  date: 'earlier',   href: '/finance' },
@@ -93,7 +101,7 @@ const MOCK_MENTIONS: Mention[] = [
   { id: 'm3', from: 'Aisha Al-Rashidi',fromInitials: 'AA', fromColor: '#f59e0b', thread: 'IPA-03 Payment Application',        project: 'Lyra Grid',    excerpt: '@you The IPA has been submitted. Your approval is needed before end of week for payment to proceed.',        timestamp: '2d ago',  replied: false },
 ]
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────���─────────────────
 
 const TYPE_META: Record<NotifType, { icon: React.ElementType; color: string; border: string; bg: string }> = {
   urgent:   { icon: AlertCircle,  color: '#ef4444', border: 'border-l-red-500',   bg: 'bg-red-500/8'   },
@@ -504,29 +512,78 @@ export interface NotificationPanelProps {
   unreadCount: number
 }
 
+// ─── DB row → panel Notification mapper ──────────────────────────────────────
+
+function dbToNotif(n: LiveNotification): Notification {
+  const typeMap: Record<string, NotifType> = {
+    urgent: 'urgent', alert: 'urgent', approval: 'approval',
+    document: 'document', mention: 'mention', budget: 'budget', task: 'task',
+  }
+  const now = Date.now()
+  const created = new Date(n.created_at).getTime()
+  const diffH = (now - created) / 3_600_000
+  const date: Notification['date'] = diffH < 24 ? 'today' : diffH < 48 ? 'yesterday' : 'earlier'
+  const diffM = (now - created) / 60_000
+  const timestamp =
+    diffM < 1   ? 'just now'
+    : diffM < 60 ? `${Math.round(diffM)}m ago`
+    : diffH < 24 ? `${Math.round(diffH)}h ago`
+    : `${Math.round(diffH / 24)}d ago`
+  return {
+    id: n.id,
+    type: typeMap[n.type] ?? 'task',
+    status: n.is_read ? 'read' : 'unread',
+    title: n.title,
+    description: n.body ?? '',
+    project: 'GridMind Capital',
+    projectId: '',
+    timestamp,
+    date,
+    href: n.link ?? '/notifications',
+  }
+}
+
 export function NotificationPanel({ open, onClose, unreadCount }: NotificationPanelProps) {
   const router = useRouter()
-  const [notifications, setNotifications] = React.useState<Notification[]>(MOCK_NOTIFICATIONS)
-  const [showSettings, setShowSettings]   = React.useState(false)
+  const [showSettings, setShowSettings] = React.useState(false)
+  const [dismissed, setDismissed]       = React.useState<Set<string>>(new Set())
 
-  function handleDismiss(id: string) {
-    setNotifications((prev) => prev.filter((n) => n.id !== id))
+  // Live fetch — refresh every 30s while panel is open
+  const { data, mutate } = useSWR(
+    open ? 'notifications-live' : null,
+    () => getNotificationsAction(),
+    { refreshInterval: 30_000, revalidateOnFocus: true },
+  )
+
+  // Map live rows → panel type; merge with mock fallback when DB is empty
+  const liveItems: Notification[] = data?.items.length
+    ? data.items.map(dbToNotif)
+    : MOCK_NOTIFICATIONS
+
+  const notifications = liveItems.filter(n => !dismissed.has(n.id))
+
+  async function handleDismiss(id: string) {
+    setDismissed(prev => new Set([...prev, id]))
+    // optimistically mark read in DB
+    await markNotificationReadAction(id).catch(() => {})
+    mutate()
   }
 
-  function handleView(n: Notification) {
-    setNotifications((prev) =>
-      prev.map((item) => item.id === n.id ? { ...item, status: 'read' } : item)
-    )
+  async function handleView(n: Notification) {
+    setDismissed(prev => new Set([...prev, n.id]))
+    await markNotificationReadAction(n.id).catch(() => {})
+    mutate()
     router.push(n.href)
     onClose()
   }
 
-  function handleMarkAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, status: 'read' as NotifStatus })))
+  async function handleMarkAllRead() {
+    await markAllReadAction().catch(() => {})
+    mutate()
   }
 
-  const liveUnread = notifications.filter((n) => n.status === 'unread').length
-  const mentionUnread = MOCK_MENTIONS.filter((m) => !m.replied).length
+  const liveUnread = notifications.filter(n => n.status === 'unread').length
+  const mentionUnread = MOCK_MENTIONS.filter(m => !m.replied).length
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>

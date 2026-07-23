@@ -274,19 +274,77 @@
 }
 
 /* ── RTL / Arabic layout overrides ───────────────────────── */
-[dir='rtl'] {
-  /* Reverse sidebar positioning */
-  .sidebar-rail { right: 0; left: auto; }
 
-  /* Flip inline chevrons used in breadcrumbs and lists */
-  .lucide-chevron-right { transform: scaleX(-1); }
-
-  /* Ensure font stack includes Arabic */
-  font-family: 'Inter', 'Segoe UI', 'Noto Sans Arabic', system-ui, sans-serif;
+/* Arabic body font via CSS variable set by next/font */
+[dir='rtl'],
+[dir='rtl'] .font-sans {
+  font-family: var(--font-arabic, 'Noto Sans Arabic'), 'Inter', system-ui, sans-serif;
+  line-height: 1.75;
 }
 
-/* Arabic-specific typography adjustment */
-[dir='rtl'] .font-sans {
-  font-family: 'Noto Sans Arabic', 'Inter', system-ui, sans-serif;
-  line-height: 1.7;
+[dir='rtl'] {
+  /* ── Sidebar: move from left edge to right edge ── */
+  /* The sidebar itself uses position:fixed on small screens.
+     On desktop the main-column uses margin-left; we override to margin-right. */
+  .sidebar-fixed {
+    left: auto;
+    right: 0;
+  }
+
+  /* ── Main content margin: sidebar is now on the right ── */
+  .main-column-collapsed  { margin-left: 0; margin-right: 4rem;  }
+  .main-column-expanded   { margin-left: 0; margin-right: 16rem; }
+
+  /* ── Breadcrumb / list chevrons flip direction ── */
+  .lucide-chevron-right { transform: scaleX(-1); }
+  .lucide-chevron-left  { transform: scaleX(-1); }
+
+  /* ── Back-arrow buttons (history.back, Back link) ── */
+  .icon-back { transform: scaleX(-1); }
+
+  /* ── Table: mirror column order so first column is on the right ── */
+  table { direction: rtl; }
+  /* Keep numeric columns (amounts, percentages) visually LTR */
+  td[data-numeric], th[data-numeric] { direction: ltr; text-align: left; }
+
+  /* ── Form inputs: right-align placeholder text ── */
+  input, textarea, select {
+    text-align: start;
+  }
+
+  /* ── Badge / pill: swap padding so text reads correctly ── */
+  .badge-ltr { direction: ltr; display: inline-block; }
+
+  /* ── Notification badge: move to inline-start corner ── */
+  .notif-badge {
+    left: auto;
+    right: 0.25rem;
+  }
+
+  /* ── Stepper connectors: drawn by CSS, flip so flow is right→left ── */
+  .stepper-connector-ltr { display: none; }
+  .stepper-connector-rtl { display: block; }
+
+  /* ── Gate pack / certificate printable: set Arabic direction ── */
+  #gate-pack-printable,
+  #cert-printable {
+    direction: rtl;
+    font-family: var(--font-arabic, 'Noto Sans Arabic'), sans-serif;
+  }
+
+  /* ── Drawer / side panels: swap inset ── */
+  .drawer-right {
+    left: 0;
+    right: auto;
+  }
+
+  /* ── Mobile bottom tab bar: icon order stays the same (icons are symmetric),
+        but text labels read RTL ── */
+  .bottom-tab-bar { direction: rtl; }
+
+  /* ── Dropdown menus: align to inline-start ── */
+  .dropdown-end {
+    left: 0;
+    right: auto;
+  }
 }

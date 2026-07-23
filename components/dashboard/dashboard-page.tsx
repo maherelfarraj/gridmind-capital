@@ -15,7 +15,6 @@ import {
   ArrowUpCircle,
   Calendar,
   ArrowRight,
-  BarChart3,
   Users,
   Settings,
   PlusCircle,
@@ -118,22 +117,20 @@ const PHASE_VARIANT: Record<string, string> = {
   // PhaseKey (g0–g9)
   g0: 'intake', g1: 'intake', g2: 'commercial', g3: 'engineering',
   g4: 'procurement', g5: 'construction', g6: 'commissioning',
-  g7: 'om', g8: 'finance', g9: 'ai-analytics',
   // Raw API phase strings (spec)
   intake: 'intake', commercial: 'commercial', engineering: 'engineering',
   procurement: 'procurement', construction: 'construction',
-  commissioning: 'commissioning', om: 'om', finance: 'finance',
+  commissioning: 'commissioning', om: 'commissioning', finance: 'commissioning',
 }
 
 const PHASE_LABEL: Record<string, string> = {
-  // PhaseKey (g0–g9)
+  // PhaseKey (g0–g6)
   g0: 'Intake', g1: 'Commercial', g2: 'Engineering', g3: 'Engineering',
-  g4: 'Procurement', g5: 'Construction', g6: 'Commissioning',
-  g7: 'O&M', g8: 'Finance', g9: 'AI & Analytics',
+  g4: 'Procurement', g5: 'Construction', g6: 'Handover & O&M',
   // Raw API phase strings (spec)
   intake: 'Intake', commercial: 'Commercial', engineering: 'Engineering',
   procurement: 'Procurement', construction: 'Construction',
-  commissioning: 'Commissioning', om: 'O&M', finance: 'Finance',
+  commissioning: 'Commissioning', om: 'Handover & O&M', finance: 'Handover & O&M',
 }
 
 const STATUS_META: Record<ProjectRowStatus, { label: string; variant: string; dot?: boolean }> = {
@@ -390,7 +387,6 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   { icon: PlusCircle, iconColor: '#0a192f', label: 'Create Project',   desc: 'Start a new EPC project',          href: '/projects/new'  },
-  { icon: BarChart3,  iconColor: '#059669', label: 'View Reports',     desc: 'Financial and progress reports',   href: '/reports'       },
   { icon: Users,      iconColor: '#2563eb', label: 'Team Management',  desc: 'Manage users and roles',           href: '/admin/users'   },
   { icon: Settings,   iconColor: '#64748b', label: 'System Settings',  desc: 'Configure platform settings',      href: '/settings'      },
 ]

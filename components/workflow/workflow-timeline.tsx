@@ -276,10 +276,17 @@ interface TimelineEntryProps {
 function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) {
   const cfg = getConfig(entry.action)
   const { relative, absolute } = formatTimestamp(entry.created_at)
+  // Relative time is client-only: it differs between SSR and hydration.
+  // Render the stable absolute date first, then swap to relative after mount.
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => setMounted(true), [])
   const displayCode = entry.object_code ?? entry.object_id
   const actorName = entry.actor_name ?? 'System'
   const tags = (entry.metadata?.tags as string[] | undefined) ?? []
   const detail = entry.metadata?.detail as string | undefined
+  const signature = entry.metadata?.signature as
+    | { imageUrl?: string; signerName?: string; signerRole?: string; signedAt?: string; ip?: string }
+    | undefined
 
   return (
     <motion.li
@@ -338,14 +345,13 @@ function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) 
             {entry.object_type.replace(/_/g, ' ')}
           </span>
 
-          {/* Timestamp — suppressHydrationWarning because relative time differs between SSR and client */}
+          {/* Timestamp — absolute date on SSR/first paint, relative after mount */}
           <time
             dateTime={new Date(entry.created_at).toISOString()}
             title={absolute}
             className="ml-auto shrink-0 text-[11px] text-muted-foreground tabular-nums"
-            suppressHydrationWarning
           >
-            {relative}
+            {mounted ? relative : absolute}
           </time>
         </div>
 
@@ -405,6 +411,33 @@ function TimelineEntry({ entry, showActor, isLast, index }: TimelineEntryProps) 
           </p>
         )}
 
+        {/* Row 4b: Electronic signature */}
+        {signature?.imageUrl && (
+          <div className="mt-2 flex items-center gap-3 rounded-lg border border-border bg-muted/20 p-2">
+            <span className="flex h-10 items-center justify-center rounded-md bg-white px-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={signature.imageUrl || '/placeholder.svg'}
+                alt={`Signature of ${signature.signerName ?? 'signer'}`}
+                crossOrigin="anonymous"
+                className="h-8 object-contain"
+              />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-foreground">
+                Signed by {signature.signerName ?? 'Authorized signer'}
+                {signature.signerRole ? <span className="font-normal text-muted-foreground"> · {signature.signerRole}</span> : null}
+              </p>
+              {signature.signedAt && (
+                <p className="text-[11px] text-muted-foreground tabular-nums">
+                  {new Date(signature.signedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {signature.ip ? ` · IP ${signature.ip}` : ''}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Row 5: Detail (from metadata) */}
         {detail && (
           <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">
@@ -457,7 +490,7 @@ const FILTERS: { value: FilterOption; label: string }[] = [
   { value: 'documents', label: 'Documents' },
 ]
 
-/* ─────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────��───────────────────
    MOCK DATA (8 items per spec)
 ───────────────────────────────────────────── */
 
@@ -751,5 +784,3 @@ export function WorkflowTimeline({
     </div>
   )
 }
-
-export default WorkflowTimeline
