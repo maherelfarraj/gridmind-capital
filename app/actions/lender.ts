@@ -8,6 +8,7 @@ import { getProjectProgress, getSCurveData } from '@/app/actions/schedule'
 import { loadFinanceEvmDashboard } from '@/app/actions/finance-evm'
 import { getPaymentCertificates } from '@/app/actions/payments'
 import { getVariationOrders } from '@/app/actions/variation-orders'
+import { getClaims } from '@/app/actions/claims'
 import { getProjectGateState } from '@/app/actions/phase-gates'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -113,8 +114,27 @@ export interface LenderReportData {
   variations: {
     approvedValue: number
     pendingValue: number
+    approvedEotDays: number
     totalCount: number
     byStatus: { name: string; value: number }[]
+    rows: {
+      vo_number: string
+      title: string
+      cost_impact: number | null
+      schedule_impact_days: number | null
+      status: string
+    }[]
+  }
+  claims: {
+    totalCount: number
+    rows: {
+      claim_number: string
+      title: string
+      type: string
+      amount: number
+      eot_days: number
+      status: string
+    }[]
   }
   hse: {
     incidentsInPeriod: number
@@ -130,12 +150,16 @@ export interface LenderReportData {
     probability: string | null
     impact: string | null
     status: string | null
+    mitigation: string | null
+    owner: string | null
     exposure: number
   }[]
   quality: {
     openPunchItems: number
     openInspections: number
+    ncrByStatus: { status: string; count: number }[]
   }
+  preparedBy: string | null
 }
 
 export interface LenderReportListItem {
@@ -242,7 +266,7 @@ export async function getLenderReportData(
   periodStart: string,
   periodEnd: string,
 ): Promise<LenderReportData> {
-  await getUser() // reads allow viewers
+  const actor = await getUser() // reads allow viewers
   const admin = createAdminClient()
 
   const startMs = parseLooseDate(periodStart)
@@ -264,6 +288,7 @@ export async function getLenderReportData(
     evm,
     payments,
     variations,
+    claims,
     gateState,
   ] = await Promise.all([
     admin.from('projects')
@@ -275,6 +300,7 @@ export async function getLenderReportData(
     loadFinanceEvmDashboard(),
     getPaymentCertificates(projectId),
     getVariationOrders(projectId),
+    getClaims(projectId),
     getProjectGateState(projectId),
   ])
 
@@ -377,11 +403,11 @@ export async function getLenderReportData(
   // ── Risks: top 8 by exposure (probability × impact, text-scored) ─────────────
   const { data: riskRows } = await admin
     .from('risks')
-    .select('risk_number, title, category, probability, impact, status')
+    .select('risk_number, title, category, probability, impact, status, mitigation, owner_id')
     .eq('tenant_id', DEMO_TENANT)
     .eq('project_id', projectId)
 
-  const risks = (riskRows ?? [])
+  const topRisks = (riskRows ?? [])
     .filter((r) => !['closed', 'resolved'].includes(String(r.status ?? '').toLowerCase()))
     .map((r) => ({
       risk_number: (r.risk_number as string) ?? '—',
@@ -390,10 +416,44 @@ export async function getLenderReportData(
       probability: (r.probability as string) ?? null,
       impact: (r.impact as string) ?? null,
       status: (r.status as string) ?? null,
+      mitigation: (r.mitigation as string) ?? null,
+      owner_id: (r.owner_id as string) ?? null,
       exposure: scoreText(r.probability) * scoreText(r.impact),
     }))
     .sort((a, b) => b.exposure - a.exposure)
     .slice(0, 8)
+
+  // Resolve owner display names in one batched query.
+  const ownerIds = [...new Set(topRisks.map((r) => r.owner_id).filter((id): id is string => !!id))]
+  const ownerNames: Record<string, string> = {}
+  if (ownerIds.length > 0) {
+    const { data: owners } = await admin.from('profiles').select('id, full_name').in('id', ownerIds)
+    for (const o of owners ?? []) ownerNames[o.id as string] = (o.full_name as string) ?? '—'
+  }
+  const risks = topRisks.map(({ owner_id, ...r }) => ({
+    ...r,
+    owner: owner_id ? (ownerNames[owner_id] ?? null) : null,
+  }))
+
+  // ── NCRs by status (quality) ─────────────────────────────────────────────────
+  const { data: ncrRows } = await admin
+    .from('ncrs')
+    .select('status')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+  const ncrCount: Record<string, number> = {}
+  for (const n of ncrRows ?? []) {
+    const st = String(n.status ?? 'open')
+    ncrCount[st] = (ncrCount[st] ?? 0) + 1
+  }
+  const ncrByStatus = Object.entries(ncrCount).map(([status, count]) => ({ status, count }))
+
+  // ── Prepared-by (current user's display name) ────────────────────────────────
+  let preparedBy: string | null = null
+  if (actor.userId) {
+    const { data: me } = await admin.from('profiles').select('full_name').eq('id', actor.userId).maybeSingle()
+    preparedBy = (me?.full_name as string) ?? null
+  }
 
   // ── Quality: open punch items + open inspections (tickets.type) ──────────────
   const { data: qualityRows } = await admin
@@ -449,12 +509,32 @@ export async function getLenderReportData(
     variations: {
       approvedValue: variations.kpis.approvedValue,
       pendingValue: variations.kpis.pendingValue,
+      approvedEotDays: variations.kpis.approvedTimeImpactDays,
       totalCount: variations.kpis.totalCount,
       byStatus: variations.kpis.byStatus.map((b) => ({ name: b.name, value: b.value })),
+      rows: variations.rows.map((r) => ({
+        vo_number: r.vo_number,
+        title: r.title,
+        cost_impact: r.cost_impact,
+        schedule_impact_days: r.time_impact_days,
+        status: r.status,
+      })),
+    },
+    claims: {
+      totalCount: claims.rows.length,
+      rows: claims.rows.map((r) => ({
+        claim_number: r.claim_number,
+        title: r.title,
+        type: r.type,
+        amount: r.amount,
+        eot_days: r.eot_days,
+        status: r.status,
+      })),
     },
     hse,
     risks,
-    quality: { openPunchItems, openInspections },
+    quality: { openPunchItems, openInspections, ncrByStatus },
+    preparedBy,
   }
 }
 

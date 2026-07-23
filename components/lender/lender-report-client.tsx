@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import useSWR from 'swr'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import {
-  FileText, Save, Printer, Archive, Loader2, RefreshCw, ArrowLeft, X,
+  FileText, Save, Printer, Archive, Loader2, RefreshCw, ArrowLeft, X, Landmark, Settings2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -17,8 +17,11 @@ import {
   saveLenderReport,
   listLenderReports,
   getLenderReportSnapshot,
+  getFacility,
+  upsertFacility,
   type LenderReportData,
   type LenderReportListItem,
+  type LenderFacility,
 } from '@/app/actions/lender'
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
@@ -107,7 +110,9 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
+  const [showFacility, setShowFacility] = useState(false)
   const [snapshot, setSnapshot] = useState<LenderReportData | null>(null)
+  const [snapshotAsOf, setSnapshotAsOf] = useState<string | null>(null)
 
   // Live report — only fetched once the user clicks "Generate report".
   const { data: liveData, isLoading, mutate } = useSWR(
@@ -122,11 +127,18 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
     () => listLenderReports(projectId),
   )
 
+  // Facility on file (drives the cover + the setup card prominence).
+  const { data: facility, mutate: mutateFacility } = useSWR<LenderFacility | null>(
+    ['lender-facility', projectId],
+    () => getFacility(projectId),
+  )
+
   // A loaded snapshot takes precedence over the live query.
   const data = snapshot ?? liveData
 
   const handleGenerate = useCallback(() => {
     setSnapshot(null)
+    setSnapshotAsOf(null)
     const key = `lender:${projectId}:${start}:${end}`
     if (key === generatedKey) mutate()
     else setGeneratedKey(key)
@@ -153,10 +165,11 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
     window.print()
   }, [])
 
-  const loadSnapshot = useCallback(async (id: string) => {
-    const snap = await getLenderReportSnapshot(id)
+  const loadSnapshot = useCallback(async (item: LenderReportListItem) => {
+    const snap = await getLenderReportSnapshot(item.id)
     if (snap) {
       setSnapshot(snap)
+      setSnapshotAsOf(item.created_at)
       setShowArchive(false)
     } else {
       toast({ title: 'Snapshot unavailable', variant: 'danger' })
@@ -222,49 +235,94 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
           <Button size="sm" variant="outline" onClick={handlePrint} disabled={!data}>
             <Printer className="size-4" /> Export PDF
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowArchive((v) => !v)}>
+          <Button size="sm" variant="ghost" onClick={() => { setShowArchive((v) => !v); setShowFacility(false) }}>
             <Archive className="size-4" /> Archived ({archived?.length ?? 0})
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setShowFacility((v) => !v); setShowArchive(false) }}>
+            <Settings2 className="size-4" /> Facility
           </Button>
         </div>
 
-        {/* Archived reports drawer */}
+        {/* Archived reports tab — table of saved snapshots */}
         {showArchive && (
           <div className="mx-auto max-w-[900px] px-4 pb-3">
             <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-medium text-neutral-700">Archived snapshots</span>
-                <button onClick={() => setShowArchive(false)} className="text-neutral-400 hover:text-neutral-700">
+                <span className="text-sm font-medium text-neutral-700">Archived reports</span>
+                <button onClick={() => setShowArchive(false)} className="text-neutral-400 hover:text-neutral-700" aria-label="Close">
                   <X className="size-4" />
                 </button>
               </div>
               {(archived?.length ?? 0) === 0 ? (
-                <p className="text-xs text-neutral-500">No snapshots saved yet.</p>
+                <p className="text-xs text-neutral-500">No snapshots saved yet. Generate a report and click “Save snapshot”.</p>
               ) : (
-                <ul className="flex flex-col divide-y divide-neutral-200">
-                  {archived!.map((r) => (
-                    <li key={r.id} className="flex items-center justify-between py-1.5">
-                      <div>
-                        <div className="text-sm text-neutral-800">{r.title}</div>
-                        <div className="text-[11px] text-neutral-500">Saved {formatDate(r.created_at)}</div>
-                      </div>
-                      <Button size="sm" variant="ghost" onClick={() => loadSnapshot(r.id)}>Load</Button>
-                    </li>
-                  ))}
-                </ul>
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-neutral-500">
+                      <th className="border-b border-neutral-200 px-2 py-1.5 font-semibold">Title</th>
+                      <th className="border-b border-neutral-200 px-2 py-1.5 font-semibold">Period end</th>
+                      <th className="border-b border-neutral-200 px-2 py-1.5 font-semibold">Generated</th>
+                      <th className="border-b border-neutral-200 px-2 py-1.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archived!.map((r) => (
+                      <tr key={r.id} className="hover:bg-white">
+                        <td className="border-b border-neutral-100 px-2 py-1.5 text-neutral-800">{r.title}</td>
+                        <td className="border-b border-neutral-100 px-2 py-1.5 text-neutral-600">{r.period_end ? formatDate(r.period_end) : '—'}</td>
+                        <td className="border-b border-neutral-100 px-2 py-1.5 text-neutral-600">{formatDate(r.created_at)}</td>
+                        <td className="border-b border-neutral-100 px-2 py-1.5 text-right">
+                          <Button size="sm" variant="ghost" onClick={() => loadSnapshot(r)}>View</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Facility setup tab */}
+        {showFacility && (
+          <div className="mx-auto max-w-[900px] px-4 pb-3">
+            <FacilitySettingsCard
+              projectId={projectId}
+              facility={facility ?? null}
+              onSaved={() => { mutateFacility(); setShowFacility(false) }}
+            />
           </div>
         )}
 
         {snapshot && (
           <div className="mx-auto max-w-[900px] px-4 pb-3">
             <div className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              <span>Viewing an archived snapshot. Generate a new report to see current data.</span>
-              <Button size="sm" variant="ghost" onClick={() => setSnapshot(null)}>Dismiss</Button>
+              <span>Archived snapshot — data as of {snapshotAsOf ? formatDate(snapshotAsOf) : formatDate(snapshot.generatedAt)}. Generate a new report to see current data.</span>
+              <Button size="sm" variant="ghost" onClick={() => { setSnapshot(null); setSnapshotAsOf(null) }}>Dismiss</Button>
             </div>
           </div>
         )}
       </div>
+
+      {/* ── No facility on file: prompt setup prominently (screen only) ── */}
+      {facility === null && !showFacility && (
+        <div className="print:hidden mx-auto mt-4 max-w-[800px] px-4">
+          <div className="flex flex-col gap-3 rounded-lg border border-teal-200 bg-teal-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <Landmark className="mt-0.5 size-5 shrink-0 text-teal-700" />
+              <div>
+                <div className="text-sm font-semibold text-teal-900">No lender facility on file</div>
+                <p className="text-xs text-teal-700">
+                  The report works without it, but adding facility details shows the lender name and facility amount on the cover page.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" className="shrink-0" onClick={() => setShowFacility(true)}>
+              <Settings2 className="size-4" /> Set up facility
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ── Empty / loading state ── */}
       {!data && (
@@ -472,6 +530,168 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
               </p>
             </div>
           </section>
+
+          {/* ===== SECTION 5 — VARIATIONS & CLAIMS ===== */}
+          <section className="print-break-before pt-2">
+            <SectionHeading n={5} title="Variations & Claims" />
+            <div className="mb-5 grid grid-cols-3 gap-3">
+              <KpiCard label="Approved VO impact" value={formatUsdCompact(data.variations.approvedValue)} sub={`${data.variations.byStatus.find((s) => s.name === 'approved')?.value ?? 0} approved`} />
+              <KpiCard label="Pending VO impact" value={formatUsdCompact(data.variations.pendingValue)} sub={`${data.variations.byStatus.find((s) => s.name === 'submitted')?.value ?? 0} pending`} />
+              <KpiCard label="Approved EOT" value={`${data.variations.approvedEotDays} days`} sub="Schedule impact granted" />
+            </div>
+
+            <div className="print-avoid-break mb-6">
+              <h3 className="mb-2 text-sm font-semibold text-neutral-700">Variation orders</h3>
+              {data.variations.rows.length > 0 ? (
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
+                      <Th>VO</Th><Th>Title</Th><Th numeric>Cost impact</Th><Th numeric>Days</Th><Th>Status</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.variations.rows.map((v) => (
+                      <tr key={v.vo_number}>
+                        <Td>{v.vo_number}</Td>
+                        <Td>{v.title}</Td>
+                        <Td numeric>{v.cost_impact == null ? '—' : formatUsd(v.cost_impact)}</Td>
+                        <Td numeric>{v.schedule_impact_days ?? '—'}</Td>
+                        <Td><Pill status={v.status} /></Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-xs text-neutral-500">No variation orders recorded for this project.</p>
+              )}
+            </div>
+
+            {data.claims.rows.length > 0 && (
+              <div className="print-avoid-break">
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Claims</h3>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
+                      <Th>Claim</Th><Th>Title</Th><Th>Type</Th><Th numeric>Amount</Th><Th numeric>EOT days</Th><Th>Status</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.claims.rows.map((c) => (
+                      <tr key={c.claim_number}>
+                        <Td>{c.claim_number}</Td>
+                        <Td>{c.title}</Td>
+                        <Td className="capitalize">{c.type.replace(/_/g, ' ')}</Td>
+                        <Td numeric>{formatUsd(c.amount)}</Td>
+                        <Td numeric>{c.eot_days}</Td>
+                        <Td><Pill status={c.status} /></Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {/* ===== SECTION 6 — HSE ===== */}
+          <section className="print-break-before pt-2">
+            <SectionHeading n={6} title="Health, Safety & Environment" />
+            <div className="mb-4 grid grid-cols-4 gap-3">
+              <KpiCard label="Incidents in period" value={String(data.hse.incidentsInPeriod)} sub={data.hse.incidentsBySeverity.map((s) => `${s.count} ${s.severity}`).join(' · ') || 'None recorded'} />
+              <KpiCard label="Open incidents" value={String(data.hse.openIncidents)} />
+              <KpiCard label="Active permits" value={String(data.hse.activePermits)} />
+              <KpiCard label="Permits expiring ≤30d" value={String(data.hse.permitsExpiring30d)} />
+            </div>
+            <p className="text-sm leading-relaxed text-neutral-800">
+              {data.hse.incidentsInPeriod === 0
+                ? 'No safety incidents were recorded during the reporting period.'
+                : `${data.hse.incidentsInPeriod} incident(s) were recorded during the period.`}{' '}
+              {data.hse.openIncidents > 0
+                ? `${data.hse.openIncidents} incident(s) remain open.`
+                : 'All incidents are closed.'}{' '}
+              {data.hse.activePermits} permit(s) are currently active{data.hse.permitsExpiring30d > 0 ? `, of which ${data.hse.permitsExpiring30d} expire within 30 days` : ''}.
+            </p>
+            <p className="mt-3 text-[11px] italic text-neutral-500">Detailed HSE log available in the platform.</p>
+          </section>
+
+          {/* ===== SECTION 7 — QUALITY ===== */}
+          <section className="print-break-before pt-2">
+            <SectionHeading n={7} title="Quality" />
+            <div className="mb-4 grid grid-cols-3 gap-3">
+              <KpiCard label="Open punch items" value={String(data.quality.openPunchItems)} />
+              <KpiCard label="Open inspections" value={String(data.quality.openInspections)} />
+              <KpiCard label="Non-conformances" value={String(data.quality.ncrByStatus.reduce((a, n) => a + n.count, 0))} sub="Across all statuses" />
+            </div>
+            <div className="print-avoid-break">
+              <h3 className="mb-2 text-sm font-semibold text-neutral-700">Non-conformance reports by status</h3>
+              {data.quality.ncrByStatus.length > 0 ? (
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr><Th>Status</Th><Th numeric>Count</Th></tr>
+                  </thead>
+                  <tbody>
+                    {data.quality.ncrByStatus.map((n) => (
+                      <tr key={n.status}>
+                        <Td><Pill status={n.status} /></Td>
+                        <Td numeric>{n.count}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-xs text-neutral-500">No non-conformance reports raised for this project.</p>
+              )}
+            </div>
+          </section>
+
+          {/* ===== SECTION 8 — RISKS ===== */}
+          <section className="print-break-before pt-2">
+            <SectionHeading n={8} title="Top Risks" />
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-neutral-500">
+              <span className="font-medium text-neutral-600">Exposure = probability × impact (1–5 each):</span>
+              <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-red-500" /> High (≥15)</span>
+              <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-amber-500" /> Medium (8–14)</span>
+              <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-emerald-500" /> Low (≤7)</span>
+            </div>
+            {data.risks.length > 0 ? (
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <Th>Code</Th><Th>Title</Th><Th>Prob.</Th><Th>Impact</Th><Th>Mitigation</Th><Th>Owner</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.risks.map((r) => (
+                    <tr key={r.risk_number} className="print-avoid-break">
+                      <Td>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={`size-2 shrink-0 rounded-full ${r.exposure >= 15 ? 'bg-red-500' : r.exposure >= 8 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                          {r.risk_number}
+                        </span>
+                      </Td>
+                      <Td>{r.title}</Td>
+                      <Td className="capitalize">{r.probability ?? '—'}</Td>
+                      <Td className="capitalize">{r.impact ?? '—'}</Td>
+                      <Td className="text-neutral-600">{r.mitigation ?? '—'}</Td>
+                      <Td>{r.owner ?? '—'}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-xs text-neutral-500">No open risks recorded for this project.</p>
+            )}
+          </section>
+
+          {/* ===== SIGN-OFF ===== */}
+          <section className="print-avoid-break mt-10 border-t-2 border-neutral-900 pt-6">
+            <p className="text-sm text-neutral-700">
+              Prepared by <span className="font-semibold text-neutral-900">{data.preparedBy ?? 'GridMind Capital'}</span> on {formatDate(data.generatedAt)}.
+            </p>
+            <div className="mt-10 grid grid-cols-2 gap-10">
+              <SignatureLine role="Project Manager" />
+              <SignatureLine role="Lender's Engineer" />
+            </div>
+          </section>
         </div>
       )}
     </div>
@@ -498,5 +718,106 @@ function EvmRow({ k, v, note }: { k: keyof typeof EVM_CAPTIONS | string; v: stri
         {note && <span className="text-neutral-700"> {note}</span>}
       </Td>
     </tr>
+  )
+}
+
+function SignatureLine({ role }: { role: string }) {
+  return (
+    <div>
+      <div className="h-10 border-b border-neutral-400" />
+      <div className="mt-1 text-xs font-medium text-neutral-700">{role}</div>
+      <div className="text-[11px] text-neutral-400">Name / Signature / Date</div>
+    </div>
+  )
+}
+
+// ─── Facility setup card (screen only) ─────────────────────────────────────────
+const FREQUENCIES = ['monthly', 'quarterly', 'semi-annual', 'annual']
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'SAR', 'AED']
+
+function FacilitySettingsCard({
+  projectId,
+  facility,
+  onSaved,
+}: {
+  projectId: string
+  facility: LenderFacility | null
+  onSaved: () => void
+}) {
+  const { toast } = useToast()
+  const [lenderName, setLenderName] = useState(facility?.lender_name ?? '')
+  const [amount, setAmount] = useState(facility?.facility_amount ? String(facility.facility_amount) : '')
+  const [currency, setCurrency] = useState(facility?.currency ?? 'USD')
+  const [frequency, setFrequency] = useState(facility?.reporting_frequency ?? 'quarterly')
+  const [email, setEmail] = useState(facility?.contact_email ?? '')
+  const [saving, setSaving] = useState(false)
+
+  // Keep the form in sync if the facility loads/changes after mount.
+  useEffect(() => {
+    setLenderName(facility?.lender_name ?? '')
+    setAmount(facility?.facility_amount ? String(facility.facility_amount) : '')
+    setCurrency(facility?.currency ?? 'USD')
+    setFrequency(facility?.reporting_frequency ?? 'quarterly')
+    setEmail(facility?.contact_email ?? '')
+  }, [facility])
+
+  const save = useCallback(async () => {
+    setSaving(true)
+    const res = await upsertFacility(projectId, {
+      lender_name: lenderName.trim() || undefined,
+      facility_amount: amount ? Number(amount) : undefined,
+      currency,
+      reporting_frequency: frequency,
+      contact_email: email.trim() || undefined,
+    })
+    setSaving(false)
+    if (res.error) toast({ title: 'Could not save facility', description: res.error, variant: 'danger' })
+    else {
+      toast({ title: 'Facility saved', variant: 'success' })
+      onSaved()
+    }
+  }, [projectId, lenderName, amount, currency, frequency, email, toast, onSaved])
+
+  const field = 'rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900'
+
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Landmark className="size-4 text-neutral-600" />
+        <span className="text-sm font-medium text-neutral-700">Lender facility details</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-neutral-500">Lender name</span>
+          <input className={field} value={lenderName} onChange={(e) => setLenderName(e.target.value)} placeholder="e.g. Green Infrastructure Bank" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-neutral-500">Facility amount</span>
+          <input className={field} type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="250000000" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-neutral-500">Currency</span>
+          <select className={field} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-neutral-500">Reporting frequency</span>
+          <select className={field} value={frequency} onChange={(e) => setFrequency(e.target.value)}>
+            {FREQUENCIES.map((f) => <option key={f} value={f} className="capitalize">{f}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 sm:col-span-2">
+          <span className="text-[11px] font-medium text-neutral-500">Contact email</span>
+          <input className={field} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="agent@lender.com" />
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Button size="sm" onClick={save} disabled={saving}>
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+          Save facility
+        </Button>
+      </div>
+    </div>
   )
 }
