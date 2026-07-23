@@ -6,11 +6,11 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Wrench, AlertTriangle, CheckCircle2, Clock, RefreshCw, Database } from 'lucide-react'
+import { Wrench, AlertTriangle, CheckCircle2, Clock, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { loadOmDashboard, updateAssetStatusAction, completeMaintenanceAction, seedOmDemoAction } from '@/app/actions/om'
+import { loadOmDashboard, updateAssetStatusAction, completeMaintenanceAction } from '@/app/actions/om'
 import type { Asset, MaintenancePlan } from '@/lib/types/action-types'
 
 const STATUS_META: Record<Asset['status'], { label: string; color: string }> = {
@@ -136,15 +136,7 @@ function PlanRow({ plan, onUpdate }: { plan: MaintenancePlan; onUpdate: () => vo
 
 export function OmPage() {
   const [tab, setTab] = useState<'assets' | 'maintenance'>('assets')
-  const [seeding, setSeeding] = useState(false)
   const { data, mutate, isLoading } = useSWR('om-dashboard', loadOmDashboard)
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedOmDemoAction()
-    await mutate()
-    setSeeding(false)
-  }
 
   const isLive = (data?.stats.totalAssets ?? 0) > 0
   const s = data?.stats
@@ -167,12 +159,6 @@ export function OmPage() {
         </div>
         <div className="flex items-center gap-2">
           <LiveBadge live={isLive} />
-          {!isLive && (
-            <Button size="sm" variant="outline" onClick={handleSeed} disabled={seeding}>
-              <Database className={cn('size-3.5 mr-1.5', seeding && 'animate-spin')} />
-              {seeding ? 'Seeding…' : 'Seed Demo'}
-            </Button>
-          )}
           <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
             <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
           </Button>

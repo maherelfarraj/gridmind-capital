@@ -107,15 +107,14 @@ function ReportTable({ headers, children, empty }: {
 
 // ─── Individual report views ──────────────────────────────────────────────────
 
-function ProjectStatusReport({ dateRange }: { dateRange: DateRange }) {
+function ProjectStatusReport({ dateRange: _dateRange }: { dateRange: DateRange }) {
   const { data, isLoading } = useSWR('report-projects', () => getProjects())
-  const from  = cutoff(dateRange)
-  const rows  = (data ?? []).filter((p) => withinRange(p.created_at ?? null, from))
+  const rows  = data ?? []
 
-  if (isLoading) return <LoadingRows cols={7} />
+  if (isLoading) return <LoadingRows cols={6} />
   return (
     <ReportTable
-      headers={['Code', 'Name', 'Technology', 'Capacity (MW)', 'Gate', 'Budget (USD)', 'Status']}
+      headers={['Code', 'Name', 'Technology', 'Gate', 'Budget (USD)', 'Status']}
       empty={!rows.length}
     >
       {rows.map((p) => (
@@ -123,7 +122,6 @@ function ProjectStatusReport({ dateRange }: { dateRange: DateRange }) {
           <td className="px-3 py-2.5 font-mono text-xs font-medium text-foreground">{p.code}</td>
           <td className="px-3 py-2.5 font-medium text-foreground">{p.name}</td>
           <td className="px-3 py-2.5 text-muted-foreground">{p.technology ?? '—'}</td>
-          <td className="px-3 py-2.5 text-right tabular-nums">{p.capacity_mw ?? '—'}</td>
           <td className="px-3 py-2.5">
             <Badge variant="outline" className="text-[11px] font-mono">{p.gate}</Badge>
           </td>
@@ -170,7 +168,7 @@ function FinancialSummaryReport({ dateRange }: { dateRange: DateRange }) {
   if (isLoading) return <LoadingRows cols={7} />
   return (
     <ReportTable
-      headers={['Period', 'Category', 'Budget (BAC)', 'PV', 'EV', 'AC', 'CPI']}
+      headers={['Period', 'Project', 'Budget (BAC)', 'PV', 'EV', 'AC', 'CPI']}
       empty={!rows.length}
     >
       {rows.map((r, i) => {
@@ -179,7 +177,7 @@ function FinancialSummaryReport({ dateRange }: { dateRange: DateRange }) {
         return (
           <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors print:hover:bg-transparent">
             <td className="px-3 py-2.5 font-mono text-xs text-foreground">{r.period}</td>
-            <td className="px-3 py-2.5 text-muted-foreground capitalize">{r.category?.replace(/_/g, ' ')}</td>
+            <td className="px-3 py-2.5 text-muted-foreground">{r.project_name ?? '—'}</td>
             <td className="px-3 py-2.5 text-right tabular-nums">${((r.bac ?? 0) / 1e6).toFixed(2)}M</td>
             <td className="px-3 py-2.5 text-right tabular-nums">${((r.pv  ?? 0) / 1e6).toFixed(2)}M</td>
             <td className="px-3 py-2.5 text-right tabular-nums">${((r.ev  ?? 0) / 1e6).toFixed(2)}M</td>

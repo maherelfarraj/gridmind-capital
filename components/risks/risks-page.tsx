@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
-  loadRisksDashboard, createRisk, closeRisk, seedRisksDemoData,
+  loadRisksDashboard, createRisk, closeRisk,
 } from '@/app/actions/risks'
 import type { RiskRecord } from '@/lib/types/action-types'
 
@@ -196,7 +196,6 @@ function RiskRow({ item, onClose }: { item: RiskRecord; onClose: (id: string) =>
 export function RisksPage({ projectId }: { projectId?: string }) {
   const { toast } = useToast()
   const [modalOpen, setModalOpen] = React.useState(false)
-  const [seeding,   setSeeding]   = React.useState(false)
   const [tab, setTab] = React.useState<'register' | 'matrix'>('register')
 
   const { data, isLoading, mutate } = useSWR(
@@ -209,15 +208,6 @@ export function RisksPage({ projectId }: { projectId?: string }) {
     const { error } = await closeRisk(id)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'Risk closed', variant: 'success' })
-    mutate()
-  }
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedRisksDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
     mutate()
   }
 
@@ -239,9 +229,6 @@ export function RisksPage({ projectId }: { projectId?: string }) {
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()}><RefreshCw className="size-3.5" /></Button>
-            <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
-              {seeding ? <Loader2 className="size-3.5 animate-spin" /> : 'Seed Demo'}
-            </Button>
             <Button size="sm" onClick={() => setModalOpen(true)}><Plus className="size-4" /> New Risk</Button>
           </div>
         </div>
@@ -335,10 +322,7 @@ export function RisksPage({ projectId }: { projectId?: string }) {
                 <div className="flex flex-col items-center justify-center py-16">
                   <TrendingDown className="size-12 text-muted-foreground/30 mb-3" />
                   <p className="text-sm font-semibold text-foreground">No risks registered</p>
-                  <div className="flex gap-2 mt-4">
-                    <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
-                    <Button size="sm" onClick={() => setModalOpen(true)}><Plus className="size-4" /> New Risk</Button>
-                  </div>
+                  <Button size="sm" className="mt-4" onClick={() => setModalOpen(true)}><Plus className="size-4" /> New Risk</Button>
                 </div>
               ) : (
                 data!.items.map((r) => <RiskRow key={r.id} item={r} onClose={handleClose} />)

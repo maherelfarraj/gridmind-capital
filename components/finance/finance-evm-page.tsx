@@ -6,10 +6,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar,
 } from 'recharts'
-import { TrendingUp, TrendingDown, RefreshCw, Database } from 'lucide-react'
+import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { loadFinanceEvmDashboard, seedFinanceEvmDemoAction } from '@/app/actions/finance-evm'
+import { loadFinanceEvmDashboard } from '@/app/actions/finance-evm'
 
 function fmt(n: number) {
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
@@ -58,15 +58,7 @@ const ILLUS_CASH = [
 
 export function FinanceEvmPage() {
   const [tab, setTab] = useState<'evm' | 'cashflow' | 'register'>('evm')
-  const [seeding, setSeeding] = useState(false)
   const { data, mutate, isLoading } = useSWR('finance-evm-dashboard', loadFinanceEvmDashboard)
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedFinanceEvmDemoAction()
-    await mutate()
-    setSeeding(false)
-  }
 
   const isLive = (data?.records.length ?? 0) > 0
   const s = data?.summary
@@ -86,12 +78,6 @@ export function FinanceEvmPage() {
         </div>
         <div className="flex items-center gap-2">
           <LiveBadge live={isLive} />
-          {!isLive && (
-            <Button size="sm" variant="outline" onClick={handleSeed} disabled={seeding}>
-              <Database className={cn('size-3.5 mr-1.5', seeding && 'animate-spin')} />
-              {seeding ? 'Seeding…' : 'Seed Demo'}
-            </Button>
-          )}
           <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
             <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
           </Button>

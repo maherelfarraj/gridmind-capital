@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import useSWR from 'swr'
 import {
-  ShoppingCart, FileText, Package, Truck, Plus, Search, Download,
+  ShoppingCart, FileText, Package, Truck, Plus, Search,
   RefreshCw, Loader2, X, ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import {
-  loadProcurementDashboard, issueRFQ, advancePOStatus, seedProcurementDemoData,
+  loadProcurementDashboard, issueRFQ, advancePOStatus,
 } from '@/app/actions/procurement'
 import type { RFQRecord, PORecord } from '@/lib/types/action-types'
 
@@ -288,30 +288,19 @@ function VendorTab({ pos, rfqs, loading }: { pos: PORecord[]; rfqs: RFQRecord[];
   )
 }
 
-// ── Main export ────────────────────────────────────────────────────────────
+// ── Main export ──────────────────────────────────────────��─────────────────
 
 export type ProcurementTab = 'rfqs' | 'pos' | 'vendors'
 
 export function ProcurementCockpit({ initialTab = 'rfqs' }: { initialTab?: ProcurementTab }) {
   const { toast } = useToast()
   const { data, isLoading, mutate } = useSWR('procurement-dashboard', loadProcurementDashboard, { revalidateOnFocus: true })
-  const [seeding, setSeeding] = useState(false)
-
   const rfqs = data?.rfqs ?? []
   const pos = data?.pos ?? []
   const totalPOs = data?.totalPOs ?? 0
   const poValue = data?.poValue ?? 0
   const openRFQs = data?.openRFQs ?? 0
   const uniqueVendors = useMemo(() => new Set([...rfqs.map(r => r.vendor), ...pos.map(p => p.vendor)]).size, [rfqs, pos])
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedProcurementDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
-    mutate()
-  }
 
   return (
     <div className="p-6 space-y-6">
@@ -326,9 +315,6 @@ export function ProcurementCockpit({ initialTab = 'rfqs' }: { initialTab?: Procu
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw size={14} /></Button>
-          <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding} className="gap-1.5">
-            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Seed Demo
-          </Button>
         </div>
       </div>
 

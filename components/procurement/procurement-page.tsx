@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
-  loadProcurementDashboard, issueRFQ, advancePOStatus, seedProcurementDemoData,
+  loadProcurementDashboard, issueRFQ, advancePOStatus,
 } from '@/app/actions/procurement'
 import type { RFQRecord, PORecord } from '@/lib/types/action-types'
 
@@ -110,23 +110,12 @@ export function ProcurementPage() {
   const { toast } = useToast()
   const [tab, setTab]         = React.useState<'rfqs' | 'pos'>('rfqs')
   const [rfqModal, setRfqModal] = React.useState(false)
-  const [seeding,  setSeeding]  = React.useState(false)
-
   const { data, isLoading, mutate } = useSWR('procurement-dashboard', loadProcurementDashboard, { revalidateOnFocus: true })
 
   async function handleAdvancePO(id: string) {
     const { error } = await advancePOStatus(id)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'PO status advanced', variant: 'success' })
-    mutate()
-  }
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedProcurementDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
     mutate()
   }
 
@@ -150,9 +139,6 @@ export function ProcurementPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()}><RefreshCw className="size-3.5" /></Button>
-            <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
-              {seeding ? <Loader2 className="size-3.5 animate-spin" /> : 'Seed Demo'}
-            </Button>
             <Button size="sm" onClick={() => setRfqModal(true)}><Plus className="size-4" /> Issue RFQ</Button>
           </div>
         </div>
@@ -248,10 +234,7 @@ export function ProcurementPage() {
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                   <ClipboardList className="size-12 text-muted-foreground/30" />
                   <p className="text-sm font-semibold text-foreground">No RFQs issued</p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
-                    <Button size="sm" onClick={() => setRfqModal(true)}><Plus className="size-4" /> Issue RFQ</Button>
-                  </div>
+                  <Button size="sm" className="mt-1" onClick={() => setRfqModal(true)}><Plus className="size-4" /> Issue RFQ</Button>
                 </div>
               ) : (
                 <table className="w-full min-w-[700px] text-sm" role="table">
@@ -305,7 +288,7 @@ export function ProcurementPage() {
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                   <Package className="size-12 text-muted-foreground/30" />
                   <p className="text-sm font-semibold text-foreground">No purchase orders</p>
-                  <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
+                  <p className="text-xs text-muted-foreground">Purchase orders appear here once issued.</p>
                 </div>
               ) : (
                 <table className="w-full min-w-[760px] text-sm" role="table">

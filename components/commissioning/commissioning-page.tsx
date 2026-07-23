@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import {
   CheckCircle2, XCircle, Clock, AlertTriangle, FileText, Plus,
-  RefreshCw, Database, ChevronDown,
+  RefreshCw, ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +16,6 @@ import { cn } from '@/lib/utils'
 import {
   loadCommissioningDashboard,
   updateTestStatusAction,
-  seedCommissioningDemoAction,
   approveHandoverDocAction,
 } from '@/app/actions/commissioning'
 import type { CommissioningTest, HandoverRecord } from '@/lib/types/action-types'
@@ -163,15 +162,7 @@ function DocRow({ doc, onUpdate }: { doc: HandoverRecord; onUpdate: () => void }
 // ── Main component ────────────────────────────────────────────
 export function CommissioningPage() {
   const [tab, setTab] = useState<'tests' | 'handover'>('tests')
-  const [seeding, setSeeding] = useState(false)
   const { data, mutate, isLoading } = useSWR('commissioning-dashboard', loadCommissioningDashboard)
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedCommissioningDemoAction()
-    await mutate()
-    setSeeding(false)
-  }
 
   const isLive = (data?.stats.totalTests ?? 0) > 0
   const s = data?.stats
@@ -199,12 +190,6 @@ export function CommissioningPage() {
         </div>
         <div className="flex items-center gap-2">
           <LiveBadge live={isLive} />
-          {!isLive && (
-            <Button size="sm" variant="outline" onClick={handleSeed} disabled={seeding}>
-              <Database className={cn('size-3.5 mr-1.5', seeding && 'animate-spin')} />
-              {seeding ? 'Seeding…' : 'Seed Demo'}
-            </Button>
-          )}
           <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
             <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
           </Button>
