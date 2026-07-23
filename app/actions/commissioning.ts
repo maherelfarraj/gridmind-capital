@@ -104,6 +104,88 @@ export async function approveHandoverDocAction(id: string) {
   return { error: error?.message ?? null }
 }
 
+// ─── G6 gate detail page ──────────────────────────────────────────────────────
+
+export interface G6TestPackage {
+  id: string; code: string; title: string; description: string
+  system: string; priority: string; status: string
+  tests_total: number; tests_complete: number; pass: number; fail: number; retest: number
+  next_test: string | null; lead: string; updated: string
+  procedures: never[]; records: never[]; failures: never[]; sign_offs: never[]
+  ref_docs: string[]; planned_start: string; planned_end: string
+  actual_start: string | null; actual_end: string | null
+}
+
+export interface G6DataResult {
+  testPackages: G6TestPackage[]
+  gateFormData: Record<string, unknown> | null
+}
+
+const COMM_STATUS_REMAP: Record<string, string> = {
+  pending:     'not_started',
+  in_progress: 'in_progress',
+  passed:      'complete',
+  failed:      'failed',
+  complete:    'complete',
+}
+
+export async function getG6Data(projectId: string): Promise<G6DataResult> {
+  const sb = createAdminClient()
+
+  const [testRes, gateRes] = await Promise.all([
+    sb.from('commissioning_tests')
+      .select('id, test_number, description, system, test_type, status, scheduled_date, completed_date, lead_engineer, reference_doc, defects_raised, witness_required')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false }),
+    sb.from('gate_submissions')
+      .select('form_data')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .eq('gate_number', 6)
+      .maybeSingle(),
+  ])
+
+  const testPackages: G6TestPackage[] = (testRes.data ?? []).map((r) => {
+    const mappedStatus = COMM_STATUS_REMAP[r.status ?? 'pending'] ?? 'not_started'
+    const isComplete   = mappedStatus === 'complete'
+    const isFailed     = mappedStatus === 'failed'
+    return {
+      id:             r.id,
+      code:           r.test_number ?? `TP-${r.id.slice(0, 4).toUpperCase()}`,
+      title:          r.description ?? 'Commissioning Test',
+      description:    '',
+      system:         'control_instrumentation',   // default valid TestSystem key
+      priority:       r.witness_required ? 'high' : 'medium',
+      status:         mappedStatus,
+      tests_total:    1,
+      tests_complete: isComplete ? 1 : 0,
+      pass:           isComplete && !isFailed ? 1 : 0,
+      fail:           isFailed ? 1 : 0,
+      retest:         0,
+      next_test:      null,
+      lead:           (r as Record<string, unknown>).lead_engineer as string ?? '',
+      updated:        r.completed_date ? 'completed' : 'scheduled',
+      procedures:     [],
+      records:        [],
+      failures:       [],
+      sign_offs:      [],
+      ref_docs:       (r as Record<string, unknown>).reference_doc
+                        ? [(r as Record<string, unknown>).reference_doc as string]
+                        : [],
+      planned_start:  r.scheduled_date ?? '',
+      planned_end:    r.scheduled_date ?? '',
+      actual_start:   r.scheduled_date ?? null,
+      actual_end:     r.completed_date ?? null,
+    }
+  })
+
+  return {
+    testPackages,
+    gateFormData: (gateRes.data?.form_data as Record<string, unknown>) ?? null,
+  }
+}
+
 // ─── Seed ─────────────────────────────────────────────────────
 export async function seedCommissioningDemoAction() {
   const gate = await requireWriter()

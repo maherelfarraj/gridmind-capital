@@ -11,6 +11,7 @@ import {
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
 import { G5GateApprovalButton } from '@/components/g5/gate-approval-dialog'
 import { getNcrs } from '@/app/actions/ncrs'
+import { getG5Data } from '@/app/actions/construction'
 
 import { Tab, KpiCard } from '@/components/g5/shared'
 import { InspectionsTab }   from '@/components/g5/inspections-tab'
@@ -49,6 +50,16 @@ export default function G5MechanicalCompletionPage() {
   const { data: ncrData } = useSWR(`g5-ncrs-${projectId}`, () => getNcrs(projectId))
   const liveOpenNcrs = ncrData?.kpis.open
 
+  // G5 inspections + punch items from DB; fall back to mock while loading / empty
+  const { data: g5Data } = useSWR(
+    projectId ? `g5-data-${projectId}` : null,
+    () => getG5Data(projectId),
+  )
+  const inspections = ((g5Data && g5Data.inspections.length > 0
+    ? g5Data.inspections : null) ?? MOCK_INSPECTIONS) as unknown as typeof MOCK_INSPECTIONS
+  const punchItems  = ((g5Data && g5Data.punchItems.length > 0
+    ? g5Data.punchItems : null) ?? MOCK_PUNCH_ITEMS) as unknown as typeof MOCK_PUNCH_ITEMS
+
   // Project name for the completion certificate.
   const { data: project } = useSWR(`project-${projectId}`, () => getProject(projectId))
   const certDeliverables = MC_PROGRESS.map((m) => ({
@@ -57,7 +68,7 @@ export default function G5MechanicalCompletionPage() {
   }))
 
   const totalMC     = Math.round(MC_PROGRESS.reduce((s, r) => s + r.pct, 0) / MC_PROGRESS.length)
-  const openPunchA  = MOCK_PUNCH_ITEMS.filter((p) => p.category === 'A' && p.status !== 'closed').length
+  const openPunchA  = punchItems.filter((p) => p.category === 'A' && p.status !== 'closed').length
   const openNcrs    = liveOpenNcrs ?? MOCK_NCRS.filter((n) => n.status !== 'closed').length
   const issuedCerts = MOCK_MC_CERTS.filter((c) => c.status === 'issued').length
 
@@ -124,8 +135,8 @@ export default function G5MechanicalCompletionPage() {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'inspections' && <InspectionsTab    inspections={MOCK_INSPECTIONS} projectId={projectId} />}
-          {activeTab === 'punch'       && <PunchListTab      items={MOCK_PUNCH_ITEMS}        />}
+          {activeTab === 'inspections' && <InspectionsTab    inspections={inspections} projectId={projectId} />}
+          {activeTab === 'punch'       && <PunchListTab      items={punchItems}         />}
           {activeTab === 'ncr'         && <NcrTab            ncrs={MOCK_NCRS}                />}
           {activeTab === 'testplans'   && <TestPlansTab      plans={MOCK_TEST_PLANS}         />}
           {activeTab === 'certs'       && (

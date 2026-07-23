@@ -2,6 +2,8 @@
 import React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import useSWR from 'swr'
+import { getG6Data } from '@/app/actions/commissioning'
 import { ChevronRight, Plus, TrendingUp, Zap, AlertTriangle, FlaskConical, CheckCircle, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
@@ -26,15 +28,6 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TabId = 'testpackages' | 'performance' | 'energization' | 'failures' | 'training' | 'documentation'
-
-const TABS: { id: TabId; label: string; count?: number }[] = [
-  { id: 'testpackages',  label: 'Test Packages',      count: MOCK_TEST_PACKAGES.length },
-  { id: 'performance',   label: 'Performance Tests',  count: MOCK_PERF_TESTS.length },
-  { id: 'energization',  label: 'Energization',       count: MOCK_ENERGIZATION.length },
-  { id: 'failures',      label: 'Failures',           count: MOCK_FAILURES.filter((f) => f.status !== 'closed').length },
-  { id: 'training',      label: 'Training Records',   count: MOCK_TRAINING.length },
-  { id: 'documentation', label: 'Documentation',      count: MOCK_COMM_DOCS.length },
-]
 
 // ─── Stats bar ────────────────────────────────────────────────────────────────
 function StatsBar() {
@@ -64,6 +57,23 @@ function StatsBar() {
 export default function G6Page() {
   const { id } = useParams<{ id: string }>()
   const [activeTab, setActiveTab] = React.useState<TabId>('testpackages')
+
+  const { data: g6Data } = useSWR(
+    id ? `g6-data-${id}` : null,
+    () => getG6Data(id!),
+  )
+
+  const testPackages = ((g6Data && g6Data.testPackages.length > 0
+    ? g6Data.testPackages : null) ?? MOCK_TEST_PACKAGES) as unknown as typeof MOCK_TEST_PACKAGES
+
+  const TABS: { id: TabId; label: string; count?: number }[] = [
+    { id: 'testpackages',  label: 'Test Packages',      count: testPackages.length },
+    { id: 'performance',   label: 'Performance Tests',  count: MOCK_PERF_TESTS.length },
+    { id: 'energization',  label: 'Energization',       count: MOCK_ENERGIZATION.length },
+    { id: 'failures',      label: 'Failures',           count: MOCK_FAILURES.filter((f) => f.status !== 'closed').length },
+    { id: 'training',      label: 'Training Records',   count: MOCK_TRAINING.length },
+    { id: 'documentation', label: 'Documentation',      count: MOCK_COMM_DOCS.length },
+  ]
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -145,7 +155,7 @@ export default function G6Page() {
           </div>
 
           {/* Tab content */}
-          {activeTab === 'testpackages'  && <TestPackagesTab  packages={MOCK_TEST_PACKAGES} />}
+          {activeTab === 'testpackages'  && <TestPackagesTab  packages={testPackages} />}
           {activeTab === 'performance'   && <PerformanceTab   tests={MOCK_PERF_TESTS}        />}
           {activeTab === 'energization'  && <EnergizationTab  records={MOCK_ENERGIZATION}    />}
           {activeTab === 'failures'      && <FailuresTab       failures={MOCK_FAILURES}       />}

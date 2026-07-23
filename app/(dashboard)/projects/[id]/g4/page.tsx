@@ -3,6 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import useSWR from 'swr'
 import {
   ChevronRight, Plus, AlertTriangle, FileText, Camera, HardHat,
   TrendingUp, FileCheck, ShieldCheck, BarChart3, MapPin, Users, X,
@@ -15,6 +16,7 @@ import {
   SITE_READINESS_ITEMS, MOCK_PERSONNEL, MOCK_EQUIPMENT, MOCK_MATERIALS,
   MOCK_SUBCONTRACTORS, DISCIPLINE_PROGRESS,
 } from '@/components/g4/data'
+import { getG4Data } from '@/app/actions/construction'
 import { WorkPackagesTab }  from '@/components/g4/work-packages-tab'
 import { HSETab }           from '@/components/g4/hse-tab'
 import { PermitsTab }       from '@/components/g4/permits-tab'
@@ -34,20 +36,32 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
   )
 }
 
-const TABS = [
-  { id: 'work-packages', label: 'Work Packages',    count: MOCK_WORK_PACKAGES.length,                                   icon: <HardHat    className="size-3.5" /> },
-  { id: 'hse',           label: 'HSE Management',   count: MOCK_INCIDENTS.filter((i) => i.status === 'Open').length,    icon: <ShieldCheck className="size-3.5" /> },
-  { id: 'permits',       label: 'Permits & Licenses', count: MOCK_PERMITS.filter((p) => p.status !== 'Approved').length, icon: <FileCheck  className="size-3.5" /> },
-  { id: 'site',          label: 'Site Readiness',   count: null,                                                         icon: <MapPin     className="size-3.5" /> },
-  { id: 'resources',     label: 'Resources',        count: null,                                                         icon: <Users      className="size-3.5" /> },
-  { id: 'progress',      label: 'Progress',         count: null,                                                         icon: <BarChart3  className="size-3.5" /> },
-]
-
 export default function G4ConstructionPage() {
   const params = useParams()
   const projectId = (params?.id as string) ?? 'SOL-2026-001'
   const [activeTab, setActiveTab] = React.useState('work-packages')
   const [newWPOpen, setNewWPOpen] = React.useState(false)
+
+  const { data: g4Data } = useSWR(
+    projectId ? `g4-data-${projectId}` : null,
+    () => getG4Data(projectId),
+  )
+
+  const workPackages = (g4Data && g4Data.workPackages.length > 0
+    ? g4Data.workPackages : null) as unknown as typeof MOCK_WORK_PACKAGES ?? MOCK_WORK_PACKAGES
+  const incidents    = (g4Data && g4Data.incidents.length > 0
+    ? g4Data.incidents : null) as unknown as typeof MOCK_INCIDENTS ?? MOCK_INCIDENTS
+  const permits      = (g4Data && g4Data.permits.length > 0
+    ? g4Data.permits : null) as unknown as typeof MOCK_PERMITS ?? MOCK_PERMITS
+
+  const TABS = [
+    { id: 'work-packages', label: 'Work Packages',      count: workPackages.length,                                      icon: <HardHat    className="size-3.5" /> },
+    { id: 'hse',           label: 'HSE Management',     count: incidents.filter((i) => i.status === 'Open').length,      icon: <ShieldCheck className="size-3.5" /> },
+    { id: 'permits',       label: 'Permits & Licenses', count: permits.filter((p) => p.status !== 'Approved').length,    icon: <FileCheck  className="size-3.5" /> },
+    { id: 'site',          label: 'Site Readiness',     count: null,                                                     icon: <MapPin     className="size-3.5" /> },
+    { id: 'resources',     label: 'Resources',          count: null,                                                     icon: <Users      className="size-3.5" /> },
+    { id: 'progress',      label: 'Progress',           count: null,                                                     icon: <BarChart3  className="size-3.5" /> },
+  ]
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -127,9 +141,9 @@ export default function G4ConstructionPage() {
         </div>
 
         {/* Tab content */}
-        {activeTab === 'work-packages' && <WorkPackagesTab packages={MOCK_WORK_PACKAGES} />}
-        {activeTab === 'hse'           && <HSETab planItems={MOCK_HSE_PLAN} incidents={MOCK_INCIDENTS} />}
-        {activeTab === 'permits'       && <PermitsTab permits={MOCK_PERMITS} />}
+        {activeTab === 'work-packages' && <WorkPackagesTab packages={workPackages} />}
+        {activeTab === 'hse'           && <HSETab planItems={MOCK_HSE_PLAN} incidents={incidents} />}
+        {activeTab === 'permits'       && <PermitsTab permits={permits} />}
         {activeTab === 'site'          && <SiteReadinessTab items={SITE_READINESS_ITEMS} />}
         {activeTab === 'resources'     && (
           <ResourcesTab
