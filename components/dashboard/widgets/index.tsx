@@ -13,6 +13,7 @@ import { CalendarWidget }       from './calendar'
 import { QuickActionsWidget }   from './quick-actions'
 import { KpiCardsWidget }       from './kpi-cards'
 import { AnnouncementsWidget }  from './announcements'
+import { LenderReportsWidget }  from './lender-reports'
 
 export function WidgetRenderer({ config }: { config: WidgetConfig }) {
   switch (config.widgetId) {
@@ -28,6 +29,7 @@ export function WidgetRenderer({ config }: { config: WidgetConfig }) {
     case 'quick-actions':   return <QuickActionsWidget   config={config} />
     case 'kpi-cards':       return <KpiCardsWidget       config={config} />
     case 'announcements':   return <AnnouncementsWidget  config={config} />
+    case 'lender-reports':  return <LenderReportsWidget  config={config} />
     default:                return <div className="p-4 text-sm text-muted-foreground">Unknown widget</div>
   }
 }

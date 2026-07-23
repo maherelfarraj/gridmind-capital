@@ -10,7 +10,7 @@ import { getPaymentCertificates } from '@/app/actions/payments'
 import { getVariationOrders } from '@/app/actions/variation-orders'
 import { getClaims } from '@/app/actions/claims'
 import { getProjectGateState } from '@/app/actions/phase-gates'
-import { sendEmail, NOTIFICATION_EMAIL, heading, para, kvTable, btn } from '@/lib/email/send'
+import { sendEmail, NOTIFICATION_EMAIL, wrapHtml, heading, para, kvTable, btn } from '@/lib/email/send'
 import { maybeCreateLenderRiskInsight } from '@/app/actions/ai-insights'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -617,7 +617,7 @@ export async function sendLenderReportEmail(
   const bullets = executiveBullets(snapshot)
   const archiveUrl = `${SITE_URL}/projects/${projectId}/lender-report?archive=${reportId}`
 
-  const html = [
+  const html = wrapHtml([
     heading('Lender Progress Report'),
     para(`Please find the latest lender progress report for <strong style="color:#e6f1ff">${snapshot.project.name}</strong> (${snapshot.project.code}), covering ${periodLabel}.`),
     `<ul style="margin:0 0 16px;padding-left:18px;color:#8892b0;font-size:14px;line-height:1.6">${bullets.map((x) => `<li style="margin-bottom:6px">${x}</li>`).join('')}</ul>`,
@@ -628,7 +628,7 @@ export async function sendLenderReportEmail(
       ['CPI / SPI', `${snapshot.cost.cpi.toFixed(2)} / ${snapshot.cost.spi.toFixed(2)}`],
     ]),
     btn('View full report', archiveUrl),
-  ].join('\n')
+  ].join('\n'))
 
   // Fire-and-forget: a failed send must never break the caller.
   const res = await sendEmail({

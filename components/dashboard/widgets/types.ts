@@ -13,6 +13,7 @@ export type WidgetId =
   | 'quick-actions'
   | 'kpi-cards'
   | 'announcements'
+  | 'lender-reports'
 
 export type ColSpan = 1 | 2 | 3 | 4
 export type RowSpan = 1 | 2
@@ -138,6 +139,14 @@ export const WIDGET_CATALOG: WidgetDefinition[] = [
     icon: 'Megaphone',
     defaultColSpan: 1, defaultRowSpan: 1, minColSpan: 1,
     category: 'custom',
+  },
+  {
+    id: 'lender-reports',
+    label: 'Lender Reports',
+    description: 'Most recent lender progress reports across projects, linking to each saved snapshot.',
+    icon: 'Landmark',
+    defaultColSpan: 1, defaultRowSpan: 1, minColSpan: 1,
+    category: 'finance',
   },
 ]
 
