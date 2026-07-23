@@ -187,6 +187,8 @@ function getGateState(gateCode: string, currentGate: string, completedGates: str
   if (gateCode === currentGate) return 'current'
   const currentIdx = GATE_DEFINITIONS.findIndex((g) => g.code === currentGate)
   const gateIdx = GATE_DEFINITIONS.findIndex((g) => g.code === gateCode)
+  // Guard: unknown currentGate (e.g. project not started) — nothing is unlocked yet
+  if (currentIdx === -1) return 'locked'
   // Gates before current that weren't explicitly completed are locked
   if (gateIdx < currentIdx && !completedGates.includes(gateCode)) return 'locked'
   // The immediately next gate is 'future' (accessible info); gates 2+ ahead are 'locked'
@@ -428,6 +430,17 @@ const STATE_BANNERS: Record<GateState, { bg: string; text: string; icon: React.R
 function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
   const banner = state ? STATE_BANNERS[state] : null
 
+  // Track viewport after mount so animation direction is decided without
+  // reading `window` during render (prevents SSR/hydration mismatch).
+  const [isMobile, setIsMobile] = React.useState(false)
+  React.useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mql.matches)
+    update()
+    mql.addEventListener('change', update)
+    return () => mql.removeEventListener('change', update)
+  }, [])
+
   // Close on Escape
   React.useEffect(() => {
     if (!gate) return
@@ -459,9 +472,9 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
             aria-modal="true"
             aria-label={gate ? `${gate.code} Gate Details` : 'Gate Details'}
             // Desktop: slide in from right. Mobile: slide up from bottom.
-            initial={{ x: typeof window !== 'undefined' && window.innerWidth < 768 ? 0 : '100%', y: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : 0 }}
+            initial={{ x: isMobile ? 0 : '100%', y: isMobile ? '100%' : 0 }}
             animate={{ x: 0, y: 0 }}
-            exit={{ x: typeof window !== 'undefined' && window.innerWidth < 768 ? 0 : '100%', y: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : 0 }}
+            exit={{ x: isMobile ? 0 : '100%', y: isMobile ? '100%' : 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
               'fixed z-50 bg-card shadow-2xl flex flex-col',
@@ -588,11 +601,9 @@ function DetailPanel({ gate, state, onClose }: DetailPanelProps) {
                   </h3>
                   <dl className="space-y-1.5 text-sm">
                     <div className="flex items-center gap-2">
-                      <dt className="text-muted-foreground min-w-[80px] text-xs">Date</dt>
-                      <dd className="text-foreground font-medium font-mono text-xs">
-                        {/* Approximate completion date based on gate index */}
-                        {new Date(Date.now() - (9 - gate.id) * 45 * 24 * 60 * 60 * 1000)
-                          .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      <dt className="text-muted-foreground min-w-[80px] text-xs">Status</dt>
+                      <dd className="text-foreground font-medium text-xs">
+                        Recorded on gate approval
                       </dd>
                     </div>
                     <div className="flex items-center gap-2">
@@ -676,6 +687,12 @@ export function PhaseGateStepper({
   const [activeTooltip, setActiveTooltip] = React.useState<number | null>(null)
   const [activePanel, setActivePanel] = React.useState<{ gate: GateDef; state: GateState } | null>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
+  const tooltipTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear any pending tooltip timeout on unmount
+  React.useEffect(() => () => {
+    if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current)
+  }, [])
 
   // Translated gate definitions (names/purpose/phase in active locale)
   const translatedGates = useTranslatedGates()
@@ -688,7 +705,8 @@ export function PhaseGateStepper({
     // Locked/future gates show a tooltip only — do not open the full detail panel
     if (state === 'locked' || state === 'future') {
       setActiveTooltip(gate.id)
-      setTimeout(() => setActiveTooltip(null), 2500)
+      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current)
+      tooltipTimeoutRef.current = setTimeout(() => setActiveTooltip(null), 2500)
       onGateClick?.(gate, state)
       return
     }
@@ -741,7 +759,7 @@ export function PhaseGateStepper({
               style={{ width: `${(completedGates.length / 10) * 100}%` }}
             />
           </div>
-          <p className="mt-1.5 text-[10px] text-muted-foreground">
+          <p className="mt-1.5 text-[10px] text-muted-foreground" aria-live="polite">
             {Math.round((completedGates.length / 10) * 100)}% of gate milestones reached
           </p>
         </div>
