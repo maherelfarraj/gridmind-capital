@@ -7,7 +7,6 @@ import {
   GitBranch,
   Sparkles,
   FileText,
-  Building2,
   Wrench,
   Hammer,
   Zap,
@@ -264,12 +263,6 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Documents',
         href: '/documents',
         icon: FileText,
-      },
-      {
-        id: 'commercial',
-        label: 'Commercial',
-        href: '/commercial',
-        icon: Building2,
       },
       {
         id: 'finance',

@@ -15,7 +15,6 @@ import {
   ArrowUpCircle,
   Calendar,
   ArrowRight,
-  BarChart3,
   Users,
   Settings,
   PlusCircle,
@@ -388,7 +387,6 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   { icon: PlusCircle, iconColor: '#0a192f', label: 'Create Project',   desc: 'Start a new EPC project',          href: '/projects/new'  },
-  { icon: BarChart3,  iconColor: '#059669', label: 'View Reports',     desc: 'Financial and progress reports',   href: '/reports'       },
   { icon: Users,      iconColor: '#2563eb', label: 'Team Management',  desc: 'Manage users and roles',           href: '/admin/users'   },
   { icon: Settings,   iconColor: '#64748b', label: 'System Settings',  desc: 'Configure platform settings',      href: '/settings'      },
 ]

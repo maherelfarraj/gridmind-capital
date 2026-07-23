@@ -379,7 +379,7 @@ function RiskSummaryCard({ risks }: { risks: Risk[] }) {
         </ul>
 
         <a
-          href="/risk/register"
+          href="/risks"
           className="inline-flex items-center gap-1 text-sm text-sky-600 hover:underline dark:text-sky-400"
         >
           View Risk Register

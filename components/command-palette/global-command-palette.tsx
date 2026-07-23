@@ -8,7 +8,7 @@ import { getProjects } from '@/app/actions/projects'
 import {
   Search, X, Folder, Shield, CheckSquare, FileText, Users,
   ArrowRight, Clock, Zap, ChevronRight, Keyboard,
-  Navigation, Settings, Plus, LogIn, BarChart3, AlertCircle,
+  Navigation, Settings, Plus, LogIn, AlertCircle,
   FolderOpen, Gavel, ClipboardList, LayoutDashboard, User,
   Terminal, Star, Hash
 } from 'lucide-react'
@@ -79,30 +79,27 @@ const COMMANDS: CommandItem[] = [
   { id: 'nav-dashboard', category: 'Navigation', title: 'Go to Dashboard', icon: LayoutDashboard, href: '/', kbd: 'G D' },
   { id: 'nav-projects',  category: 'Navigation', title: 'Go to Projects', icon: FolderOpen, href: '/projects', kbd: 'G P' },
   { id: 'nav-approvals', category: 'Navigation', title: 'Go to Approvals', icon: Gavel, href: '/approvals', kbd: 'G A' },
-  { id: 'nav-gates',     category: 'Navigation', title: 'Go to Stage Gates', icon: Shield, href: '/greos/stage-gates', kbd: 'G G' },
-  { id: 'nav-risk',      category: 'Navigation', title: 'Go to Risk Register', icon: AlertCircle, href: '/risk/register' },
-  { id: 'nav-reports',   category: 'Navigation', title: 'Go to Analytics', icon: BarChart3, href: '/executive/kpis' },
+  { id: 'nav-gates',     category: 'Navigation', title: 'Go to Stage Gates', icon: Shield, href: '/stage-gates', kbd: 'G G' },
+  { id: 'nav-risk',      category: 'Navigation', title: 'Go to Risk Register', icon: AlertCircle, href: '/risks' },
   // Actions
   { id: 'act-project',   category: 'Actions', title: 'Create New Project', icon: Plus, href: '/projects', kbd: 'N P' },
   { id: 'act-task',      category: 'Actions', title: 'Create New Task', icon: CheckSquare, href: '/approvals' },
   { id: 'act-doc',       category: 'Actions', title: 'Upload Document', icon: FileText, href: '/documents' },
-  { id: 'act-report',    category: 'Actions', title: 'Export Report', icon: BarChart3, description: 'Generate PDF/Excel report', href: '/executive' },
   { id: 'act-invite',    category: 'Actions', title: 'Invite User', icon: User, href: '/admin/users' },
   // Settings
   { id: 'set-profile',   category: 'Settings', title: 'Open Profile Settings', icon: User, href: '/settings', kbd: 'G S' },
   { id: 'set-theme',     category: 'Settings', title: 'Toggle Dark Mode', icon: Settings, action: undefined },
   // Admin
   { id: 'adm-users',     category: 'Admin', title: 'Manage Users & Roles', icon: Users, href: '/admin/users' },
-  { id: 'adm-doa',       category: 'Admin', title: 'View DOA Matrix', icon: ClipboardList, href: '/admin/doa-matrix' },
   { id: 'adm-audit',     category: 'Admin', title: 'View Audit Logs', icon: ClipboardList, href: '/admin/audit' },
 ]
 
 const RECENT_SEARCHES = ['Sirius 400MW', 'G4 gate review', 'Aisha Al-Rashidi', 'EPC Contract']
 const SUGGESTED_ACTIONS = [
-  { label: 'Go to current gate', icon: Shield, href: '/greos/stage-gates' },
+  { label: 'Go to current gate', icon: Shield, href: '/stage-gates' },
   { label: 'View my approvals', icon: Gavel, href: '/approvals' },
   { label: 'Create new task', icon: Plus, href: '/approvals' },
-  { label: 'View risk register', icon: AlertCircle, href: '/risk/register' },
+  { label: 'View risk register', icon: AlertCircle, href: '/risks' },
 ]
 
 const FILTER_TABS: { id: FilterTab; label: string }[] = [
