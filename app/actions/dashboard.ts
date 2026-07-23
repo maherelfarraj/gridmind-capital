@@ -392,8 +392,8 @@ export async function getTeamActivity(): Promise<ActivityEntry[]> {
     const sa = STATUS_ACTION[a.status] ?? { action: 'updated', type: 'comment' as const }
     return {
       id:       a.id,
-      actor:    label.replace(/\b\w/g, (c) => c.toUpperCase()),
-      initials: label.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase(),
+      actor:    label.replace(/\b\w/g, (c: string) => c.toUpperCase()),
+      initials: label.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase(),
       color:    COLORS[idx % COLORS.length],
       action:   sa.action,
       target:   a.title ?? 'Approval',

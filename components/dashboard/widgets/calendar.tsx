@@ -1,26 +1,38 @@
 'use client'
 import * as React from 'react'
+import useSWR from 'swr'
 import { Calendar as CalIcon, Video, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WidgetConfig } from './types'
-
-const EVENTS = [
-  { id: 'e1', title: 'G3 Gate Convene',           project: 'Sirius 400MW', date: 'Jul 23', time: '09:00', type: 'gate',     location: 'Board Room A' },
-  { id: 'e2', title: 'IPA-03 Review Meeting',     project: 'Lyra Grid',    date: 'Jul 24', time: '14:00', type: 'finance',  location: 'Teams Call'   },
-  { id: 'e3', title: 'Site Progress Walk',         project: 'Helios Sub',   date: 'Jul 25', time: '08:00', type: 'site',     location: 'Site Office'  },
-  { id: 'e4', title: 'Earthing Design Review',     project: 'Vega BESS',    date: 'Jul 25', time: '13:00', type: 'design',   location: 'Teams Call'   },
-  { id: 'e5', title: 'Monthly HSE Committee',      project: 'All Projects', date: 'Jul 28', time: '10:00', type: 'hse',      location: 'Board Room B' },
-  { id: 'e6', title: 'G1 Approval Workshop',       project: 'Orion Wind',   date: 'Jul 30', time: '11:00', type: 'gate',     location: 'Teams Call'   },
-]
+import { getUpcomingMilestones } from '@/app/actions/dashboard'
 
 const TYPE_COLOR: Record<string, string> = {
-  gate:    '#6366f1', finance: '#22c55e', site: '#f59e0b',
-  design:  '#3b82f6', hse:     '#ef4444',
+  gate:    '#6366f1', milestone: '#22c55e', deadline: '#ef4444',
+}
+
+interface CalEvent { id: string; title: string; project: string; date: string; type: string; location: string }
+
+function fmtDay(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export function CalendarWidget({ config }: { config: WidgetConfig }) {
-  // Build day groupings
-  const grouped = EVENTS.reduce<Record<string, typeof EVENTS>>((acc, e) => {
+  const { data, isLoading } = useSWR('widget-milestones', getUpcomingMilestones)
+
+  // Reuse the upcoming-milestones feed as scheduled calendar events
+  const EVENTS: CalEvent[] = (data ?? []).map((m) => ({
+    id:       m.id,
+    title:    m.label,
+    project:  m.project,
+    date:     fmtDay(m.date),
+    type:     m.type,
+    location: m.type === 'gate' ? 'Gate Review' : m.type === 'deadline' ? 'Deadline' : 'Milestone',
+  }))
+
+  // Build day groupings (preserves the date order from the sorted feed)
+  const grouped = EVENTS.reduce<Record<string, CalEvent[]>>((acc, e) => {
     acc[e.date] = acc[e.date] ? [...acc[e.date], e] : [e]
     return acc
   }, {})
@@ -33,6 +45,10 @@ export function CalendarWidget({ config }: { config: WidgetConfig }) {
         <span className="ml-auto bg-muted/50 text-muted-foreground rounded-full px-1.5 text-[10px]">{EVENTS.length} events</span>
       </div>
       <div className="flex flex-col gap-3 flex-1 overflow-auto">
+        {isLoading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 rounded-lg bg-muted/20 animate-pulse" />)}
+        {!isLoading && EVENTS.length === 0 && (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No scheduled events</div>
+        )}
         {Object.entries(grouped).map(([date, events]) => (
           <div key={date}>
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 sticky top-0 bg-card py-0.5">{date}</p>
@@ -45,7 +61,6 @@ export function CalendarWidget({ config }: { config: WidgetConfig }) {
                     <div className="flex-1 min-w-0 pl-1.5">
                       <p className="text-xs font-semibold text-foreground truncate">{e.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-muted-foreground">{e.time}</span>
                         <span className="text-[10px] text-muted-foreground truncate">{e.project}</span>
                       </div>
                       <div className="flex items-center gap-1 mt-0.5">

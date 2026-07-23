@@ -33,7 +33,7 @@ export function RiskHeatmapWidget({ config }: { config: WidgetConfig }) {
         <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
       )}
       {(isLoading || RISKS.length > 0) && (
-      {/* 3×3 grid */}
+      /* 3×3 grid */
       <div className="flex-1 flex flex-col gap-1">
         {/* Y-axis label row */}
         <div className="grid grid-cols-4 gap-1 text-[9px] text-muted-foreground mb-1">
@@ -74,6 +74,7 @@ export function RiskHeatmapWidget({ config }: { config: WidgetConfig }) {
         </div>
         <div className="text-center text-[9px] text-muted-foreground">Impact →</div>
       </div>
+      )}
     </div>
   )
 }
