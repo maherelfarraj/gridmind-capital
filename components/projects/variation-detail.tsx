@@ -26,6 +26,8 @@ import {
 
 const PM_ROLES = ['project_manager', 'project_director', 'pmo_director', 'tenant_admin', 'system_admin']
 const FINANCE_ROLES = ['finance_manager', 'finance_controller']
+// Roles allowed to approve/reject a submitted VO (mirrors the server guard in decideVariationOrder).
+const DECISION_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'finance_manager']
 
 // ─── Stepper ──────────────────────────────────────────────────
 
@@ -320,6 +322,7 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
   const roles = session.roles ?? []
   const canEditAll = session.isSuperAdmin || roles.some((r) => PM_ROLES.includes(r))
   const canEditCost = canEditAll || roles.some((r) => FINANCE_ROLES.includes(r))
+  const canApprove = session.isSuperAdmin || roles.some((r) => DECISION_ROLES.includes(r))
 
   const { data: vo, isLoading, mutate } = useSWR(
     `variation-${voId}`,
@@ -365,7 +368,7 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
   }
 
   const canSubmit = vo.status === 'draft'
-  const canDecide = vo.status === 'submitted'
+  const canDecide = vo.status === 'submitted' && canApprove
   const canUpdateBaseline = vo.status === 'approved' && !vo.baseline_updated
   const canExecute = vo.status === 'approved' && vo.baseline_updated && !vo.executed
   const submitBlocked = canSubmit && (vo.cost_impact == null || vo.time_impact_days == null)
@@ -493,6 +496,9 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
               )}
               {(vo.status === 'rejected' || vo.status === 'withdrawn') && (
                 <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Ban className="size-4" /> This VO was {STATUS_LABELS[vo.status].toLowerCase()} — no further actions.</p>
+              )}
+              {vo.status === 'submitted' && !canApprove && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Clock className="size-4" /> Submitted — awaiting a client decision from an authorized approver.</p>
               )}
               {vo.status === 'approved' && !vo.baseline_updated && !canUpdateBaseline && (
                 <p className="text-xs text-muted-foreground">Awaiting baseline update.</p>

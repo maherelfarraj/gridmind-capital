@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendVoEmail } from '@/lib/email/send'
 import { maybeCreateCostOverrunInsight } from '@/app/actions/ai-insights'
 import { createApproval } from '@/app/actions/approvals'
+import { requireRole } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -400,6 +401,10 @@ export async function decideVariationOrder(
   decision: 'approved' | 'rejected' | 'withdrawn',
   comment?: string,
 ): Promise<ActionResult<VariationOrder>> {
+  // Only approving roles may decide a submitted VO (segregation of duties).
+  const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director', 'finance_manager'])
+  if ('error' in gate) return gate
+
   const actor = await getActor()
   const admin = createAdminClient()
   const vo = await getVariationOrder(id)
