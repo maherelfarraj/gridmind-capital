@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendVoEmail } from '@/lib/email/send'
 import { maybeCreateCostOverrunInsight } from '@/app/actions/ai-insights'
+import { createApproval } from '@/app/actions/approvals'
 import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
@@ -368,6 +369,27 @@ export async function submitVariationOrder(id: string): Promise<ActionResult<Var
     type: 'approval',
     voTitle: vo.title, status: 'Submitted', costImpact: vo.cost_impact ?? 0,
   })
+
+  // Route the VO through the shared approval inbox. Best-effort: the VO is
+  // already submitted, so a guard rejection here must not roll that back.
+  try {
+    const { data: proj } = await admin
+      .from('projects').select('code, name').eq('id', vo.project_id).maybeSingle()
+    const res = await createApproval({
+      title:       `${vo.vo_number} — ${vo.title}`,
+      description: `Variation order submitted for approval. Cost impact ${formatUsd(vo.cost_impact)}, ${vo.time_impact_days} day(s).`,
+      objectType:  'variation',
+      priority:    (vo.cost_impact ?? 0) >= 250_000 ? 'high' : 'normal',
+      amount:      vo.cost_impact ?? 0,
+      requestedBy: actor.userId ?? undefined,
+      projectCode: (proj?.code as string) ?? undefined,
+      projectName: (proj?.name as string) ?? vo.title,
+    })
+    if ('error' in res) console.warn('[variation-orders] approval creation skipped:', res.error)
+  } catch (e) {
+    console.warn('[variation-orders] approval creation failed:', e)
+  }
+
   revalidate(vo.project_id)
   return { data: mapRow(data) }
 }

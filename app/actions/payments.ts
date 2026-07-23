@@ -336,7 +336,7 @@ export async function updatePaymentCertificateStatus(
   const admin = createAdminClient()
   const { data: current, error: readErr } = await admin
     .from('payment_certificates')
-    .select('status, project_id')
+    .select('status, project_id, pc_number, net_amount')
     .eq('id', id)
     .single()
   if (readErr || !current) return { error: 'Certificate not found' }
@@ -354,6 +354,23 @@ export async function updatePaymentCertificateStatus(
 
   const { error } = await admin.from('payment_certificates').update(patch).eq('id', id)
   if (error) return { error: error.message }
+
+  // On final payment, record a paid client-payment cashflow entry so the money
+  // shows up in the finance / cashflow roll-ups. Best-effort: never block the
+  // status change if the ledger insert fails.
+  if (next === 'paid') {
+    const { error: finErr } = await admin.from('finance_records').insert({
+      tenant_id:   DEMO_TENANT,
+      project_id:  current.project_id,
+      type:        'cashflow',
+      category:    'client_payment',
+      description: `Payment received — ${current.pc_number as string}`,
+      amount:      num(current.net_amount),
+      status:      'paid',
+      period:      today.slice(0, 7),
+    })
+    if (finErr) console.warn('[payments] cashflow record insert skipped:', finErr.message)
+  }
 
   revalidatePath(`/projects/${current.project_id}/payments`)
   return {}
