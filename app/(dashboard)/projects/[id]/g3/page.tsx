@@ -3,6 +3,8 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import useSWR from 'swr'
+import { getG3Data } from '@/app/actions/procurement'
 import { motion } from 'framer-motion'
 import {
   BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
@@ -1336,11 +1338,17 @@ export default function G3ProcurementPage() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = React.useState<TabId>('rfqs')
 
-  const rfqs      = MOCK_RFQS
-  const vendors   = MOCK_VENDORS
-  const bids      = MOCK_BIDS
-  const pos       = MOCK_POS
-  const contracts = MOCK_CONTRACTS
+  const { data: g3Data } = useSWR(
+    id ? `g3-data-${id}` : null,
+    () => getG3Data(id!),
+  )
+
+  // Fall back to mock while data loads; cast to page-local types (compatible shapes)
+  const rfqs      = ((g3Data && g3Data.rfqs.length      > 0 ? g3Data.rfqs      : null) ?? MOCK_RFQS)      as unknown as RFQ[]
+  const vendors   = ((g3Data && g3Data.vendors.length   > 0 ? g3Data.vendors   : null) ?? MOCK_VENDORS)   as unknown as Vendor[]
+  const bids      = ((g3Data && g3Data.bids.length      > 0 ? g3Data.bids      : null) ?? MOCK_BIDS)      as unknown as Bid[]
+  const pos       = ((g3Data && g3Data.pos.length       > 0 ? g3Data.pos       : null) ?? MOCK_POS)       as unknown as PurchaseOrder[]
+  const contracts = ((g3Data && g3Data.contracts.length > 0 ? g3Data.contracts : null) ?? MOCK_CONTRACTS) as unknown as Contract[]
 
   const totalCommitted = pos.reduce((s, p) => s + p.total_amount, 0)
   const openRFQs       = rfqs.filter((r) => r.status === 'published' || r.status === 'draft').length

@@ -1185,12 +1185,12 @@ export default function G2EngineeringPage() {
 
       {/* Tab content */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        {tab === 'packages'     && <PackagesTab        packages={MOCK_PACKAGES}         />}
-        {tab === 'drawings'     && <DrawingRegisterTab  drawings={MOCK_DRAWINGS}          />}
-        {tab === 'transmittals' && <TransmittalsTab     transmittals={MOCK_TRANSMITTALS}  />}
-        {tab === 'rfis'         && <RFIsTab             rfis={MOCK_RFIS}                  />}
-        {tab === 'doccontrol'   && <DocumentControlTab                                    />}
-        {tab === 'designreview' && <DesignReviewTab     packages={MOCK_PACKAGES}          />}
+        {tab === 'packages'     && <PackagesTab        packages={packages}        />}
+        {tab === 'drawings'     && <DrawingRegisterTab  drawings={drawings}        />}
+        {tab === 'transmittals' && <TransmittalsTab     transmittals={transmittals}/>}
+        {tab === 'rfis'         && <RFIsTab             rfis={rfis}               />}
+        {tab === 'doccontrol'   && <DocumentControlTab                             />}
+        {tab === 'designreview' && <DesignReviewTab     packages={packages}        />}
       </div>
     </div>
   )
