@@ -1,15 +1,15 @@
 import { Metadata } from 'next'
-import { AuditTrail } from '@/components/notifications/audit-trail'
+import { AuditLogViewer } from '@/components/admin/audit-log-viewer'
 
 export const metadata: Metadata = {
-  title: 'Audit Trail — GridMind Capital',
-  description: 'Immutable workflow event log for governance and compliance.',
+  title: 'Audit Log — GridMind Capital',
+  description: 'Row-level change history for audited tables — inserts, updates, and deletes written by database triggers.',
 }
 
 export default function AuditPage() {
   return (
     <main className="flex flex-col h-full p-6">
-      <AuditTrail />
+      <AuditLogViewer />
     </main>
   )
 }

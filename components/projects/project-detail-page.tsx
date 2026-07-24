@@ -23,6 +23,7 @@ import {
   Send,
   RefreshCw,
   HardHat,
+  History,
 } from 'lucide-react'
 import { useRouter as useNextRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -34,6 +35,7 @@ import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-g
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
+import { RecordHistoryPanel } from '@/components/admin/audit-log-viewer'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
 import type {
   Project,
@@ -252,7 +254,8 @@ function GateStatusCard({
 // Project Info card
 // ─────────────────────────────────────────────────────────────
 
-function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { project?: Project }) {
+function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { project?: Project; projectId?: string }) {
+  const [historyOpen, setHistoryOpen] = React.useState(false)
   const info = {
     technology:     project.technology    ?? SPEC_PROJECT_INFO.technology,
     capacity:       project.capacity      ?? SPEC_PROJECT_INFO.capacity,
@@ -290,6 +293,18 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
   ]
 
   return (
+    <>
+      {historyOpen && project.id && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" onClick={() => setHistoryOpen(false)} aria-hidden />
+          <RecordHistoryPanel
+            tableName="projects"
+            recordId={project.id}
+            label={project.code ?? project.name}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </>
+      )}
     <Card className="rounded-xl border border-slate-200 shadow-sm dark:border-border">
       <CardHeader className="px-5 py-4 border-b border-slate-100 dark:border-border">
         <div className="flex items-center gap-2">
@@ -297,6 +312,17 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
           <CardTitle className="text-base font-semibold text-slate-900 dark:text-foreground">
             Project Information
           </CardTitle>
+          {project.id && (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="ms-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              aria-label="View project change history"
+            >
+              <History className="size-3.5" aria-hidden />
+              History
+            </button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-5 flex flex-col gap-4">
@@ -311,6 +337,7 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
         ))}
       </CardContent>
     </Card>
+    </>
   )
 }
 

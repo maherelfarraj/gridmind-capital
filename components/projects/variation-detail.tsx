@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import {
   ArrowLeft, Loader2, X, Check, Send, RefreshCw, AlertTriangle,
-  CircleDot, CheckCircle2, Clock, Ban, Hammer, DollarSign, Pencil,
+  CircleDot, CheckCircle2, Clock, Ban, Hammer, DollarSign, Pencil, History,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,7 @@ import {
 import {
   ORIGIN_LABELS, STATUS_LABELS, STATUS_COLORS, formatUsd, formatDate,
 } from '@/lib/variation-orders/ui'
+import { RecordHistoryPanel } from '@/components/admin/audit-log-viewer'
 
 // ─── Role gating (UX convenience; server enforces the real rules) ──
 
@@ -334,6 +335,7 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
   const [editOpen, setEditOpen] = React.useState(false)
   const [decisionOpen, setDecisionOpen] = React.useState(false)
   const [baselineOpen, setBaselineOpen] = React.useState(false)
+  const [historyOpen, setHistoryOpen] = React.useState(false)
 
   async function handleSubmit() {
     if (!vo) return
@@ -381,6 +383,19 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
       <DecisionModal open={decisionOpen} onClose={() => setDecisionOpen(false)} vo={vo} onDone={() => mutate()} />
       <BaselineModal open={baselineOpen} onClose={() => setBaselineOpen(false)} vo={vo} onDone={() => mutate()} />
 
+      {/* Record history side panel */}
+      {historyOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" onClick={() => setHistoryOpen(false)} aria-hidden />
+          <RecordHistoryPanel
+            tableName="variation_orders"
+            recordId={vo.id}
+            label={vo.vo_number}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </>
+      )}
+
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -401,10 +416,12 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
                 </span>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-foreground mt-2 text-balance">{vo.title}</h1>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw className="size-3.5" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)} aria-label="View change history">
+              <History className="size-3.5" /> History
+            </Button>
             {vo.status === 'draft' && (
               <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}><Pencil className="size-3.5" /> Edit</Button>
             )}
