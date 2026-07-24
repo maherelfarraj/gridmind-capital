@@ -170,6 +170,22 @@ export interface LenderReportData {
     activePlans?: number
     ncrBySeverity?: { severity: string; count: number }[]
   }
+  /** Optional — only present when energy_production rows exist for the project */
+  energy?: {
+    mtd_actual:        number
+    ytd_actual:        number
+    p50_total:         number
+    pct_of_p50:        number
+    availability_avg:  number
+    curtailment_total: number
+    /** Optional — only present when bess_metrics rows exist */
+    bess?: {
+      cycles_used:          number
+      warranty_cycle_limit: number
+      pct_consumed:         number
+      soh_latest:           number | null
+    }
+  }
   /** Optional — only present when contracts table has rows for this project */
   contracts?: {
     totalValue: number
@@ -499,6 +515,62 @@ export async function getLenderReportData(
     .filter(([, c]) => c > 0)
     .map(([severity, count]) => ({ severity, count }))
 
+  // ── Energy performance (optional) ───────────────────────────────────────────
+  let energyBlock: LenderReportData['energy'] | undefined
+  const startOfMonthStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    .toISOString().slice(0, 10)
+  const startOfYearStr  = `${new Date().getFullYear()}-01-01`
+  const { data: energyRows } = await admin
+    .from('energy_production')
+    .select('date, energy_mwh, availability_pct, curtailment_mwh, p50_mwh')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+    .gte('date', startOfYearStr)
+  if (energyRows && energyRows.length > 0) {
+    const ytd     = energyRows
+    const mtd     = ytd.filter((r) => (r.date as string) >= startOfMonthStr)
+    const ytdAct  = ytd.reduce((s, r) => s + num(r.energy_mwh),       0)
+    const mtdAct  = mtd.reduce((s, r) => s + num(r.energy_mwh),       0)
+    const p50Tot  = ytd.reduce((s, r) => s + num(r.p50_mwh),          0)
+    const curtTot = ytd.reduce((s, r) => s + num(r.curtailment_mwh),  0)
+    const availRs = ytd.filter((r) => r.availability_pct != null)
+    const availAvg = availRs.length > 0
+      ? availRs.reduce((s, r) => s + num(r.availability_pct), 0) / availRs.length
+      : 0
+    const pctP50 = p50Tot > 0 ? (ytdAct / p50Tot) * 100 : 0
+
+    // BESS (optional sub-block)
+    const { data: bessRows } = await admin
+      .from('bess_metrics')
+      .select('soc_pct, cycles_cumulative, soh_pct, warranty_cycle_limit')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .order('date', { ascending: false })
+      .limit(1)
+    const bLatest = bessRows?.[0] ?? null
+    const bessBlock: LenderReportData['energy'] extends undefined ? never : NonNullable<LenderReportData['energy']>['bess'] =
+      bLatest
+        ? {
+            cycles_used:          num(bLatest.cycles_cumulative),
+            warranty_cycle_limit: num(bLatest.warranty_cycle_limit),
+            pct_consumed:         num(bLatest.warranty_cycle_limit) > 0
+              ? (num(bLatest.cycles_cumulative) / num(bLatest.warranty_cycle_limit)) * 100
+              : 0,
+            soh_latest: bLatest.soh_pct != null ? num(bLatest.soh_pct) : null,
+          }
+        : undefined
+
+    energyBlock = {
+      mtd_actual:        mtdAct,
+      ytd_actual:        ytdAct,
+      p50_total:         p50Tot,
+      pct_of_p50:        pctP50,
+      availability_avg:  availAvg,
+      curtailment_total: curtTot,
+      bess:              bessBlock,
+    }
+  }
+
   // ── Contracts & securities (optional) ───────────────────────────────────────
   let contractsBlock: LenderReportData['contracts'] | undefined
   const { data: contractRows } = await admin
@@ -667,6 +739,7 @@ export async function getLenderReportData(
     hse,
     risks,
     quality: { openPunchItems, openInspections, ncrByStatus, ncrBySeverity: ncrBySeverity.length > 0 ? ncrBySeverity : undefined, itpCompletionPct, activePlans },
+    energy:   energyBlock,
     contracts: contractsBlock,
     preparedBy,
   }

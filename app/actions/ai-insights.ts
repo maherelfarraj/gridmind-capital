@@ -446,6 +446,140 @@ export async function maybeCreateContractsInsight(
   }
 }
 
+/**
+ * Fire-and-forget energy production watchdog.
+ * Trigger: rolling 7-day actual < 90% of P50 (both must be > 0).
+ * Module: 'anomaly_detection', severity: 'high'.
+ * Skipped if any open insight of that module+project already exists.
+ * Never throws.
+ */
+export async function maybeCreateEnergyInsight(
+  projectId: string,
+  rolling7dActual: number,
+  rolling7dP50:    number,
+): Promise<void> {
+  try {
+    if (rolling7dP50 <= 0 || rolling7dActual <= 0) return
+    const pct = (rolling7dActual / rolling7dP50) * 100
+    if (pct >= 90) return
+
+    const sb = createAdminClient()
+    const { data: proj } = await sb
+      .from('projects')
+      .select('name')
+      .eq('id', projectId)
+      .maybeSingle()
+    const projectName = (proj?.name as string | null) ?? 'project'
+
+    const { data: existing } = await sb
+      .from('ai_insights')
+      .select('id')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .eq('module', 'anomaly_detection')
+      .eq('status', 'open')
+      .limit(1)
+
+    if (existing && existing.length > 0) return
+
+    await sb.from('ai_insights').insert({
+      tenant_id:  DEMO_TENANT,
+      project_id: projectId,
+      module:     'anomaly_detection',
+      title:      `Low production — 7-day yield at ${pct.toFixed(1)}% of P50 on ${projectName}`,
+      description: `Rolling 7-day production (${rolling7dActual.toFixed(1)} MWh) is ${pct.toFixed(1)}% of the P50 target (${rolling7dP50.toFixed(1)} MWh). Sustained under-performance below 90% of P50 may indicate inverter faults, soiling, shading, curtailment, or availability issues.`,
+      confidence: 85,
+      severity:   'high',
+      status:     'open',
+      recommended_action: 'Review SCADA data for inverter trips, string faults, or clipping. Check curtailment logs and soiling index. Dispatch O&M crew if fault not cleared within 24 hours. Notify the asset manager if under-performance persists for 3+ days.',
+    })
+    revalidatePath('/ai-insights')
+  } catch (e) {
+    console.error('[ai-insights] energy insight generator failed:', e)
+  }
+}
+
+/**
+ * Fire-and-forget BESS watchdog.
+ * Trigger A: SOH drops > 2% in 30 days → module 'predictive_maintenance', severity 'high'.
+ * Trigger B: cycles > 90% of warranty limit → module 'predictive_maintenance', severity 'critical'.
+ * Each trigger deduped independently via ilike on title.
+ * Never throws.
+ */
+export async function maybeCreateBessInsight(
+  projectId: string,
+  sohDrop30d:      number,   // SOH percentage points dropped over last 30 days (positive = drop)
+  pctWarrantyUsed: number,   // cycles_used / warranty_limit × 100
+): Promise<void> {
+  try {
+    const sb = createAdminClient()
+    const { data: proj } = await sb
+      .from('projects')
+      .select('name')
+      .eq('id', projectId)
+      .maybeSingle()
+    const projectName = (proj?.name as string | null) ?? 'project'
+
+    // ── Trigger A: SOH degradation ───────────────────────────────────────────
+    if (sohDrop30d > 2) {
+      const { data: existingSoh } = await sb
+        .from('ai_insights')
+        .select('id')
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('project_id', projectId)
+        .eq('module', 'predictive_maintenance')
+        .eq('status', 'open')
+        .ilike('title', '%SOH%')
+        .limit(1)
+
+      if (!existingSoh || existingSoh.length === 0) {
+        await sb.from('ai_insights').insert({
+          tenant_id:  DEMO_TENANT,
+          project_id: projectId,
+          module:     'predictive_maintenance',
+          title:      `Rapid BESS SOH degradation — ${sohDrop30d.toFixed(1)}pp drop in 30 days on ${projectName}`,
+          description: `State of health has declined by ${sohDrop30d.toFixed(1)} percentage points over the last 30 days. A degradation rate exceeding 2pp per month is above typical calendar-ageing norms and may indicate accelerated capacity fade due to thermal stress, deep cycling, or cell imbalance.`,
+          confidence: 82,
+          severity:   'high',
+          status:     'open',
+          recommended_action: 'Request a capacity test from the BESS OEM. Review thermal management logs and recent dispatch profiles. Check BMS cell-level voltage balance. Notify the asset manager and consider reducing depth of discharge limits until investigation is complete.',
+        })
+        revalidatePath('/ai-insights')
+      }
+    }
+
+    // ── Trigger B: warranty cycle consumption > 90% ──────────────────────────
+    if (pctWarrantyUsed > 90) {
+      const { data: existingCycles } = await sb
+        .from('ai_insights')
+        .select('id')
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('project_id', projectId)
+        .eq('module', 'predictive_maintenance')
+        .eq('status', 'open')
+        .ilike('title', '%warranty cycle%')
+        .limit(1)
+
+      if (!existingCycles || existingCycles.length === 0) {
+        await sb.from('ai_insights').insert({
+          tenant_id:  DEMO_TENANT,
+          project_id: projectId,
+          module:     'predictive_maintenance',
+          title:      `BESS warranty cycle limit at ${pctWarrantyUsed.toFixed(1)}% on ${projectName}`,
+          description: `Cumulative cycles have consumed ${pctWarrantyUsed.toFixed(1)}% of the contractual warranty cycle limit. Exceeding the limit may void the OEM warranty and require early battery replacement or an extended-warranty negotiation.`,
+          confidence: 95,
+          severity:   'critical',
+          status:     'open',
+          recommended_action: 'Contact the BESS OEM to initiate warranty extension or replacement planning. Reduce cycling depth and frequency to extend remaining warranty life. Escalate to Project Director and Finance Manager for budget provisioning.',
+        })
+        revalidatePath('/ai-insights')
+      }
+    }
+  } catch (e) {
+    console.error('[ai-insights] BESS insight generator failed:', e)
+  }
+}
+
 export async function acknowledgeInsightAction(id: string) {
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }

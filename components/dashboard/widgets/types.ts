@@ -14,6 +14,7 @@ export type WidgetId =
   | 'kpi-cards'
   | 'announcements'
   | 'lender-reports'
+  | 'energy-yield'
 
 export type ColSpan = 1 | 2 | 3 | 4
 export type RowSpan = 1 | 2
@@ -147,6 +148,14 @@ export const WIDGET_CATALOG: WidgetDefinition[] = [
     icon: 'Landmark',
     defaultColSpan: 1, defaultRowSpan: 1, minColSpan: 1,
     category: 'finance',
+  },
+  {
+    id: 'energy-yield',
+    label: 'Energy Yield',
+    description: "Today's production (MWh) with a % of P50 gauge — green ≥ 100%, amber 90–100%, red below.",
+    icon: 'Zap',
+    defaultColSpan: 1, defaultRowSpan: 1, minColSpan: 1,
+    category: 'operations',
   },
 ]
 

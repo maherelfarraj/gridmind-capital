@@ -66,7 +66,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
   const in30d   = new Date(now.getTime() + 30 * 86_400_000).toISOString()
   const in7d    = new Date(now.getTime() +  7 * 86_400_000).toISOString()
 
-  const [permitRes, transRes, dailyRes, photoRes, holdRes, critNcrRes, secExpiryRes, msDueRes] = await Promise.all([
+  const [permitRes, transRes, dailyRes, photoRes, holdRes, critNcrRes, secExpiryRes, msDueRes, complianceFailRes] = await Promise.all([
     admin
       .from('work_permits')
       .select('id, permit_no, title, project_id, valid_to')
@@ -134,6 +134,14 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       .gte('due_date', today)
       .lte('due_date', in7d)
       .order('due_date', { ascending: true })
+      .limit(20),
+    // Grid compliance tests that failed (result = 'fail', no completed_date read-back needed)
+    admin
+      .from('grid_compliance_tests')
+      .select('id, test_name, category, completed_date, project_id')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('result', 'fail')
+      .order('completed_date', { ascending: false })
       .limit(20),
   ])
 
@@ -248,6 +256,21 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       is_read:   false,
       link:      projectId ? `/projects/${projectId}/contracts` : '/projects',
       created_at: due,
+    })
+  }
+
+  // Grid compliance test failures.
+  for (const t of complianceFailRes.data ?? []) {
+    const categoryLabel = String(t.category ?? 'grid compliance').replace(/_/g, ' ')
+    const completedDate = t.completed_date as string | null
+    out.push({
+      id:        `compliance-fail-${t.id}`,
+      title:     `Compliance test failed — ${(t.test_name as string) ?? categoryLabel}`,
+      body:      `"${(t.test_name as string) ?? 'Grid compliance test'}" (${categoryLabel}) failed${completedDate ? ` on ${new Date(completedDate).toLocaleDateString()}` : ''}. A re-test must be scheduled and the certificate reference updated before grid connection sign-off.`,
+      type:      'urgent',
+      is_read:   false,
+      link:      `/projects/${t.project_id}/energy`,
+      created_at: (completedDate ?? nowIso),
     })
   }
 

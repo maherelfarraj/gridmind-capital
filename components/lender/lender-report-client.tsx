@@ -747,10 +747,61 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
             </div>
           </section>
 
-          {/* ===== SECTION 8 — CONTRACTS & SECURITIES (optional) ===== */}
+          {/* ===== SECTION 8 — ENERGY PERFORMANCE (optional) ===== */}
+          {data.energy && (
+            <section className="print-break-before pt-2">
+              <SectionHeading n={8} title="Energy Performance" />
+              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <KpiCard label="MTD production"   value={`${data.energy.mtd_actual.toFixed(1)} MWh`} />
+                <KpiCard label="YTD production"   value={`${data.energy.ytd_actual.toFixed(1)} MWh`} />
+                <KpiCard label="Yield vs P50"     value={data.energy.p50_total > 0 ? `${data.energy.pct_of_p50.toFixed(1)}%` : 'N/A'} />
+                <KpiCard label="Availability avg" value={data.energy.availability_avg > 0 ? `${data.energy.availability_avg.toFixed(1)}%` : 'N/A'} />
+                <KpiCard label="YTD curtailment"  value={`${data.energy.curtailment_total.toFixed(1)} MWh`} />
+                {data.energy.p50_total > 0 && (
+                  <KpiCard label="P50 target (YTD)" value={`${data.energy.p50_total.toFixed(1)} MWh`} />
+                )}
+              </div>
+
+              {data.energy.bess && (
+                <div className="print-avoid-break mb-4">
+                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">BESS performance</h3>
+                  <table className="w-full border-collapse">
+                    <thead><tr><Th>Metric</Th><Th numeric>Value</Th></tr></thead>
+                    <tbody>
+                      <tr>
+                        <Td>Cycles used / limit</Td>
+                        <Td numeric>
+                          {Math.round(data.energy.bess.cycles_used).toLocaleString()}
+                          {data.energy.bess.warranty_cycle_limit > 0 && ` / ${Math.round(data.energy.bess.warranty_cycle_limit).toLocaleString()}`}
+                        </Td>
+                      </tr>
+                      <tr>
+                        <Td>Warranty consumed</Td>
+                        <Td numeric>
+                          <span style={{ fontWeight: data.energy.bess.pct_consumed > 85 ? 700 : 400,
+                                         color:      data.energy.bess.pct_consumed > 85 ? '#dc2626' :
+                                                     data.energy.bess.pct_consumed > 60 ? '#d97706' : 'inherit' }}>
+                            {data.energy.bess.pct_consumed.toFixed(1)}%
+                          </span>
+                        </Td>
+                      </tr>
+                      {data.energy.bess.soh_latest != null && (
+                        <tr>
+                          <Td>State of health (latest)</Td>
+                          <Td numeric>{data.energy.bess.soh_latest.toFixed(1)}%</Td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ===== SECTION 9 — CONTRACTS & SECURITIES (optional) ===== */}
           {data.contracts && (
             <section className="print-break-before pt-2">
-              <SectionHeading n={8} title="Contracts &amp; Securities" />
+              <SectionHeading n={data.energy ? 9 : 8} title="Contracts &amp; Securities" />
               <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <KpiCard label="Total contract value"   value={`$${(data.contracts.totalValue / 1_000_000).toFixed(1)}M`} />
                 <KpiCard label="Active contracts"       value={String(data.contracts.activeCount)} />
@@ -816,9 +867,9 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
             </section>
           )}
 
-          {/* ===== SECTION 9 — RISKS ===== */}
+          {/* ===== SECTION — RISKS (number shifts with optional sections) ===== */}
           <section className="print-break-before pt-2">
-            <SectionHeading n={data.contracts ? 9 : 8} title="Top Risks" />
+            <SectionHeading n={8 + (data.energy ? 1 : 0) + (data.contracts ? 1 : 0)} title="Top Risks" />
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-neutral-500">
               <span className="font-medium text-neutral-600">Exposure = probability × impact (1–5 each):</span>
               <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-red-500" /> High (≥15)</span>

@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter }     from '@/lib/auth/guard'
 import { revalidatePath }    from 'next/cache'
+import { maybeCreateEnergyInsight, maybeCreateBessInsight } from '@/app/actions/ai-insights'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
@@ -162,6 +163,15 @@ export async function getEnergyDashboard(projectId: string): Promise<EnergyDashb
     : 0
 
   const pct_of_p50 = p50_total > 0 ? (ytd_actual / p50_total) * 100 : 0
+
+  // ── Fire-and-forget AI insight: rolling 7-day vs P50 ──────────────────────
+  void (async () => {
+    const since7d = daysAgo(7)
+    const last7   = history.filter(r => r.date >= since7d)
+    const r7Act   = last7.reduce((s, r) => s + num(r.energy_mwh), 0)
+    const r7P50   = last7.reduce((s, r) => s + num(r.p50_mwh),    0)
+    await maybeCreateEnergyInsight(projectId, r7Act, r7P50).catch(() => {})
+  })()
 
   return {
     history,
@@ -328,6 +338,22 @@ export async function getBessDashboard(projectId: string): Promise<BessDashboard
   }
 
   const throughput_total = history.reduce((s, r) => s + num(r.throughput_mwh), 0)
+
+  // ── Fire-and-forget AI insights: SOH degradation + warranty cycle ──────────
+  void (async () => {
+    // SOH drop over last 30 days: compare newest vs oldest row in last 30d.
+    const since30d   = daysAgo(30)
+    const last30     = [...history].filter(r => r.date >= since30d).reverse() // oldest first
+    let sohDrop30d   = 0
+    if (last30.length >= 2) {
+      const oldestSoh = last30.find(r  => r.soh_pct != null)?.soh_pct ?? null
+      const newestSoh = [...last30].reverse().find(r => r.soh_pct != null)?.soh_pct ?? null
+      if (oldestSoh != null && newestSoh != null) {
+        sohDrop30d = Math.max(0, oldestSoh - newestSoh)
+      }
+    }
+    await maybeCreateBessInsight(projectId, sohDrop30d, pct_consumed).catch(() => {})
+  })()
 
   return {
     latest,

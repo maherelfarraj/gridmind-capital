@@ -14,6 +14,7 @@ import { QuickActionsWidget }   from './quick-actions'
 import { KpiCardsWidget }       from './kpi-cards'
 import { AnnouncementsWidget }  from './announcements'
 import { LenderReportsWidget }  from './lender-reports'
+import { EnergyYieldWidget }     from './energy-yield'
 
 export function WidgetRenderer({ config }: { config: WidgetConfig }) {
   switch (config.widgetId) {
@@ -30,6 +31,7 @@ export function WidgetRenderer({ config }: { config: WidgetConfig }) {
     case 'kpi-cards':       return <KpiCardsWidget       config={config} />
     case 'announcements':   return <AnnouncementsWidget  config={config} />
     case 'lender-reports':  return <LenderReportsWidget  config={config} />
+    case 'energy-yield':    return <EnergyYieldWidget    config={config} />
     default:                return <div className="p-4 text-sm text-muted-foreground">Unknown widget</div>
   }
 }
