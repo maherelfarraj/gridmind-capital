@@ -437,7 +437,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
             onClick={onRetry}
             className="mt-3 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
           >
-            <RefreshCw className="size-3.5 mr-1.5" aria-hidden="true" />
+            <RefreshCw className="size-3.5 me-1.5" aria-hidden="true" />
             Retry
           </Button>
         )}

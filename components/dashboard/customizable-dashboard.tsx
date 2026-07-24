@@ -54,7 +54,7 @@ function UndoToast({ label, onUndo, onDismiss }: { label: string; onUndo: () => 
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-2xl shadow-black/30 animate-in slide-in-from-bottom-4">
       <span className="text-sm text-foreground">{label}</span>
       <button onClick={onUndo} className="text-xs font-semibold text-primary hover:opacity-80 transition-opacity">Undo</button>
-      <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground transition-colors ml-1">
+      <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground transition-colors ms-1">
         <X className="size-3.5" />
       </button>
     </div>
@@ -69,7 +69,7 @@ function SavedToast({ onDismiss }: { onDismiss: () => void }) {
     return () => clearTimeout(t)
   }, [onDismiss])
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 shadow-xl animate-in slide-in-from-bottom-4">
+    <div className="fixed bottom-6 end-6 z-50 flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 shadow-xl animate-in slide-in-from-bottom-4">
       <Check className="size-4 text-green-500" />
       <span className="text-sm text-green-500 font-medium">Layout saved</span>
     </div>
@@ -256,9 +256,9 @@ export function CustomizableDashboard() {
         <div className="flex items-center gap-1.5">
           <LayoutGrid className="size-4 text-muted-foreground" />
           <span className="text-sm font-semibold text-foreground">My Dashboard</span>
-          <span className="text-xs text-muted-foreground ml-1">· {layout.length} widgets</span>
+          <span className="text-xs text-muted-foreground ms-1">· {layout.length} widgets</span>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ms-auto flex items-center gap-2">
           {editMode && (
             <>
               <button

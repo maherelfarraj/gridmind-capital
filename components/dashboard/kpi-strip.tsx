@@ -12,7 +12,7 @@ import type { KpiData } from './dashboard-data'
 function KpiCardSkeleton() {
   return (
     <div className="relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 overflow-hidden animate-pulse">
-      <div className="absolute left-0 inset-y-0 w-0.5 bg-border rounded-full" />
+      <div className="absolute start-0 inset-y-0 w-0.5 bg-border rounded-full" />
       <div className="h-3 w-24 rounded bg-muted" />
       <div className="h-7 w-20 rounded bg-muted" />
       <div className="h-3 w-16 rounded bg-muted" />
@@ -49,9 +49,9 @@ function KpiCard({ data, loading }: KpiCardProps) {
       )}
       aria-label={`${data.label}: ${data.value}`}
     >
-      {/* Accent left border */}
+      {/* Accent border on the leading edge (left in LTR, right in RTL) */}
       <span
-        className="absolute left-0 inset-y-0 w-[3px] rounded-r-full"
+        className="absolute start-0 inset-y-0 w-[3px] rounded-e-full"
         style={{ backgroundColor: data.accentColor }}
         aria-hidden="true"
       />

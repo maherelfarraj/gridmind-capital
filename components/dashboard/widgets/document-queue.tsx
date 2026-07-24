@@ -53,7 +53,7 @@ export function DocumentQueueWidget({ config }: { config: WidgetConfig }) {
               </div>
               <button
                 onClick={() => setDismissed(prev => [...prev, d.id])}
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all ml-1"
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all ms-1"
                 aria-label="Dismiss"
               >
                 <span className="text-[10px]">✕</span>

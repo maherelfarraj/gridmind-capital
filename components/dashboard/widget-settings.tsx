@@ -45,7 +45,7 @@ function Pills<T extends string>({ options, value, onSelect }: { options: readon
 
 export function WidgetSettings({ config, onUpdate, onClose }: WidgetSettingsProps) {
   return (
-    <div className="absolute top-8 right-0 z-50 w-72 rounded-xl border border-border bg-card shadow-xl shadow-black/20 p-4 flex flex-col gap-4">
+    <div className="absolute top-8 end-0 z-50 w-72 rounded-xl border border-border bg-card shadow-xl shadow-black/20 p-4 flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center gap-2">
         <Settings className="size-3.5 text-muted-foreground" />
