@@ -54,8 +54,8 @@ function ActionBadge({ action }: { action: string }) {
 
 function DiffPanel({ entry }: { entry: AuditEntry }) {
   const action = entry.action.toUpperCase()
-  const oldData = entry.old_data ?? {}
-  const newData = entry.new_data ?? {}
+  const oldData = entry.old_values ?? {}
+  const newData = entry.new_values ?? {}
 
   // Collect all field keys
   const allKeys = [...new Set([...Object.keys(oldData), ...Object.keys(newData)])].sort()
@@ -82,13 +82,13 @@ function DiffPanel({ entry }: { entry: AuditEntry }) {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/30">
         <ActionBadge action={entry.action} />
-        <span className="font-mono text-xs text-muted-foreground">{entry.entity_type}</span>
+        <span className="font-mono text-xs text-muted-foreground">{entry.table_name}</span>
         <ChevronRight className="size-3 text-muted-foreground/50" aria-hidden />
-        <span className="font-mono text-xs text-foreground truncate max-w-[200px]" title={entry.entity_id ?? ''}>
-          {entry.entity_id ? entry.entity_id.slice(0, 8) + '…' : '—'}
+        <span className="font-mono text-xs text-foreground truncate max-w-[200px]" title={entry.record_id ?? ''}>
+          {entry.record_id ? entry.record_id.slice(0, 8) + '…' : '—'}
         </span>
         <span className="ms-auto text-xs text-muted-foreground">
-          {entry.changed_by ?? 'System'} · {new Date(entry.changed_at).toLocaleString()}
+          {entry.changed_by_name ?? 'System'} · {new Date(entry.changed_at).toLocaleString()}
         </span>
       </div>
 
@@ -452,7 +452,7 @@ export function AuditLogViewer() {
                       onClick={() => setSelected(isActive ? null : entry)}
                       role="button"
                       tabIndex={0}
-                      aria-label={`View diff for ${entry.action} on ${entry.entity_type}`}
+                      aria-label={`View diff for ${entry.action} on ${entry.table_name}`}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(isActive ? null : entry) } }}
                     >
                       <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
@@ -461,15 +461,15 @@ export function AuditLogViewer() {
                           hour: '2-digit', minute: '2-digit',
                         })}
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-foreground">{entry.entity_type}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-foreground">{entry.table_name}</td>
                       <td className="px-4 py-2.5">
                         <ActionBadge action={entry.action} />
                       </td>
                       <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                        {entry.entity_id ? entry.entity_id.slice(0, 8) + '…' : '—'}
+                        {entry.record_id ? entry.record_id.slice(0, 8) + '…' : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-foreground">
-                        {entry.changed_by ?? <span className="text-muted-foreground/60 italic">System</span>}
+                        {entry.changed_by_name ?? <span className="text-muted-foreground/60 italic">System</span>}
                       </td>
                       <td className="px-4 py-2.5">
                         <ChevronRight
