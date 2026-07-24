@@ -3,20 +3,22 @@
 import { useState, useRef } from 'react'
 import useSWR from 'swr'
 import { ClipboardList, Plus, Camera, Loader2, MapPin, X, Check } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useFieldProject } from '@/components/field/field-context'
 import { getFieldHome, createFieldPunchItem, type FieldPunchItem } from '@/app/actions/field'
 import { uploadFieldPhoto } from '@/components/field/use-field-upload'
 import { useToast } from '@/components/ui/toast'
 
-const CAT_META: Record<string, { label: string; cls: string }> = {
-  A: { label: 'Cat A · Critical', cls: 'bg-red-500/15 text-red-600 border-red-500/30' },
-  B: { label: 'Cat B · Major',    cls: 'bg-amber-500/15 text-amber-600 border-amber-500/30' },
-  C: { label: 'Cat C · Minor',    cls: 'bg-sky-500/15 text-sky-600 border-sky-500/30' },
+const CAT_CLS: Record<string, string> = {
+  A: 'bg-red-500/15 text-red-600 border-red-500/30',
+  B: 'bg-amber-500/15 text-amber-600 border-amber-500/30',
+  C: 'bg-sky-500/15 text-sky-600 border-sky-500/30',
 }
 
 export default function PunchPage() {
   const { activeProjectId } = useFieldProject()
   const { toast } = useToast()
+  const t = useTranslations('field.punch')
   const { data, isLoading, mutate } = useSWR(
     activeProjectId ? `field-home-${activeProjectId}` : null,
     () => getFieldHome(activeProjectId as string),
@@ -25,32 +27,45 @@ export default function PunchPage() {
 
   const punch = data?.punchItems ?? []
 
+  /** Category label from translation keys */
+  function catLabel(cat: string) {
+    if (cat === 'A') return t('catA')
+    if (cat === 'C') return t('catC')
+    return t('catB')
+  }
+
   return (
-    <div className="px-4 py-4">
+    <div className="py-4">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-semibold text-foreground flex items-center gap-2">
-          <ClipboardList className="size-5 text-primary" /> My Punch List
+          <ClipboardList className="size-5 text-primary" aria-hidden="true" />
+          {t('title')}
         </h1>
         <button
           onClick={() => setOpen(true)}
           disabled={!activeProjectId}
           className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
         >
-          <Plus className="size-4" /> Raise
+          <Plus className="size-4" aria-hidden="true" />
+          {t('raise')}
         </button>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-16">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
       ) : punch.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border px-6 py-14 text-center">
-          <ClipboardList className="size-8 text-muted-foreground/50 mx-auto mb-3" />
-          <p className="text-sm font-medium text-foreground">No open punch items</p>
-          <p className="text-xs text-muted-foreground mt-1">Items assigned to you appear here. Tap Raise to log a new one.</p>
+          <ClipboardList className="size-8 text-muted-foreground/50 mx-auto mb-3" aria-hidden="true" />
+          <p className="text-sm font-medium text-foreground">{t('noItems')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{t('noItemsDetail')}</p>
         </div>
       ) : (
         <ul className="space-y-2.5">
-          {punch.map((p) => <PunchCard key={p.id} item={p} />)}
+          {punch.map((p) => (
+            <PunchCard key={p.id} item={p} catLabel={catLabel(p.punch_cat)} />
+          ))}
         </ul>
       )}
 
@@ -58,24 +73,36 @@ export default function PunchPage() {
         <RaisePunchSheet
           projectId={activeProjectId}
           onClose={() => setOpen(false)}
-          onSaved={() => { setOpen(false); mutate(); toast({ title: 'Punch item raised', variant: 'success' }) }}
+          onSaved={() => {
+            setOpen(false)
+            mutate()
+            toast({ title: t('raised'), variant: 'success' })
+          }}
         />
       )}
     </div>
   )
 }
 
-function PunchCard({ item }: { item: FieldPunchItem }) {
-  const cat = CAT_META[item.punch_cat] ?? CAT_META.B
+function PunchCard({ item, catLabel }: { item: FieldPunchItem; catLabel: string }) {
+  const cls = CAT_CLS[item.punch_cat] ?? CAT_CLS.B
   return (
     <li className="rounded-xl border border-border bg-card p-3.5">
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium text-foreground leading-snug">{item.title}</p>
-        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cat.cls}`}>{item.punch_cat}</span>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+          {item.punch_cat}
+        </span>
       </div>
       <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
         <span className="capitalize">{item.status.replace(/_/g, ' ')}</span>
-        {item.location && <span className="flex items-center gap-1"><MapPin className="size-3" /> {item.location}</span>}
+        {item.location && (
+          <span className="flex items-center gap-1">
+            <MapPin className="size-3" aria-hidden="true" />
+            {item.location}
+          </span>
+        )}
+        <span className="text-[10px] text-muted-foreground/60">{catLabel}</span>
       </div>
     </li>
   )
@@ -89,6 +116,7 @@ function RaisePunchSheet({
   onSaved: () => void
 }) {
   const { toast } = useToast()
+  const t = useTranslations('field.punch')
   const [title, setTitle] = useState('')
   const [location, setLocation] = useState('')
   const [cat, setCat] = useState('B')
@@ -98,6 +126,12 @@ function RaisePunchSheet({
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  const CATS = [
+    { key: 'A', label: t('catA') },
+    { key: 'B', label: t('catB') },
+    { key: 'C', label: t('catC') },
+  ] as const
+
   function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
@@ -106,7 +140,7 @@ function RaisePunchSheet({
   }
 
   async function submit() {
-    if (!title.trim()) { toast({ title: 'Add a title first', variant: 'warning' }); return }
+    if (!title.trim()) { toast({ title: t('titleRequired'), variant: 'warning' }); return }
     setBusy(true)
     const res = await createFieldPunchItem(projectId, {
       title: title.trim(),
@@ -118,7 +152,7 @@ function RaisePunchSheet({
 
     if (photo) {
       const up = await uploadFieldPhoto(projectId, photo, { caption: title.trim(), ticketId: res.id })
-      if (up.error) toast({ title: `Item saved, photo failed: ${up.error}`, variant: 'warning' })
+      if (up.error) toast({ title: `${t('raised')}, photo failed: ${up.error}`, variant: 'warning' })
     }
     setBusy(false)
     onSaved()
@@ -131,39 +165,45 @@ function RaisePunchSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-foreground">Raise Punch Item</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted"><X className="size-5 text-muted-foreground" /></button>
+          <h2 className="text-base font-semibold text-foreground">{t('sheetTitle')}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted" aria-label="Close">
+            <X className="size-5 text-muted-foreground" aria-hidden="true" />
+          </button>
         </div>
 
-        <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">{t('labelTitle')}</label>
         <input
-          value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Cable tray support missing at grid C4"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder={t('titlePlaceholder')}
           className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm mb-3"
         />
 
-        <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">{t('labelCategory')}</label>
         <div className="grid grid-cols-3 gap-2 mb-3">
-          {(['A', 'B', 'C'] as const).map((c) => (
+          {CATS.map(({ key, label }) => (
             <button
-              key={c} onClick={() => setCat(c)}
-              className={`rounded-lg border px-2 py-2 text-xs font-semibold ${cat === c ? CAT_META[c].cls : 'border-border text-muted-foreground'}`}
+              key={key}
+              onClick={() => setCat(key)}
+              className={`rounded-lg border px-2 py-2 text-xs font-semibold ${cat === key ? CAT_CLS[key] : 'border-border text-muted-foreground'}`}
             >
-              {CAT_META[c].label}
+              {label}
             </button>
           ))}
         </div>
 
-        <label className="block text-xs font-medium text-muted-foreground mb-1">Location</label>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">{t('labelLocation')}</label>
         <input
-          value={location} onChange={(e) => setLocation(e.target.value)}
-          placeholder="Area / grid ref"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder={t('locationPlaceholder')}
           className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm mb-3"
         />
 
-        <label className="block text-xs font-medium text-muted-foreground mb-1">Notes</label>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">{t('labelNotes')}</label>
         <textarea
-          value={description} onChange={(e) => setDescription(e.target.value)}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
           rows={2}
           className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm mb-3 resize-none"
         />
@@ -175,24 +215,29 @@ function RaisePunchSheet({
             <img src={preview} alt="Punch item" className="w-full h-40 object-cover rounded-lg" />
             <button
               onClick={() => { setPhoto(null); setPreview(null) }}
-              className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5"
-            ><X className="size-4 text-white" /></button>
+              className="absolute top-2 end-2 rounded-full bg-black/60 p-1.5"
+              aria-label="Remove photo"
+            >
+              <X className="size-4 text-white" aria-hidden="true" />
+            </button>
           </div>
         ) : (
           <button
             onClick={() => fileRef.current?.click()}
             className="w-full mb-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-border py-3 text-sm text-muted-foreground"
           >
-            <Camera className="size-4" /> Attach photo
+            <Camera className="size-4" aria-hidden="true" />
+            {t('attachPhoto')}
           </button>
         )}
 
         <button
-          onClick={submit} disabled={busy}
+          onClick={submit}
+          disabled={busy}
           className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-          {busy ? 'Saving…' : 'Save punch item'}
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" aria-hidden="true" />}
+          {busy ? t('saving') : t('save')}
         </button>
       </div>
     </div>

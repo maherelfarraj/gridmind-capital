@@ -3,7 +3,7 @@
 import * as React from 'react'
 import useSWR from 'swr'
 import {
-  FileText, Loader2, Plus, Download, CheckCircle2, ShieldCheck, History, Eye,
+  FileText, Loader2, Plus, Download, CheckCircle2, ShieldCheck, History, Eye, Globe,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
@@ -36,6 +36,8 @@ export function ClientReport({ projectId }: { projectId: string }) {
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState<'generate' | 'issue' | null>(null)
+  // Report language — defaults to English (PDF always renders in reportLocale)
+  const [reportLocale, setReportLocale] = React.useState<'en' | 'ar'>('en')
 
   // The report currently shown: the selected version, else the newest, else live preview.
   const selected: ClientReport | null = React.useMemo(() => {
@@ -145,6 +147,25 @@ export function ClientReport({ projectId }: { projectId: string }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Language toggle — screen only, not in printable div */}
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-0.5" aria-label="Report language">
+            <Globe className="ms-1.5 size-3.5 text-muted-foreground" aria-hidden="true" />
+            {(['en', 'ar'] as const).map((loc) => (
+              <button
+                key={loc}
+                type="button"
+                onClick={() => setReportLocale(loc)}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                  reportLocale === loc
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {loc.toUpperCase()}
+              </button>
+            ))}
+          </div>
           <Button variant="outline" size="sm" onClick={handleDownload} disabled={!snapshot}>
             <Download className="mr-1.5 size-4" /> Download PDF
           </Button>
@@ -178,13 +199,19 @@ export function ClientReport({ projectId }: { projectId: string }) {
               <Loader2 className="size-6 animate-spin" />
             </div>
           ) : (
-            <div id="client-report-printable" className="relative bg-white p-8 text-slate-900">
+            <div
+              id="client-report-printable"
+              dir={reportLocale === 'ar' ? 'rtl' : 'ltr'}
+              lang={reportLocale}
+              className="relative bg-white p-8 text-slate-900"
+            >
               <PrintableReport
                 snapshot={snapshot}
-                periodLabel={selected?.periodLabel ?? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                periodLabel={selected?.periodLabel ?? new Date().toLocaleDateString(reportLocale === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' })}
                 version={selected?.version ?? null}
                 status={selected?.status ?? 'draft'}
                 issuedAt={selected?.issuedAt ?? null}
+                locale={reportLocale}
               />
             </div>
           )}
@@ -247,13 +274,14 @@ export function ClientReport({ projectId }: { projectId: string }) {
   )
 
   function PrintableReport({
-    snapshot, periodLabel, version, status, issuedAt,
+    snapshot, periodLabel, version, status, issuedAt, locale: rLocale = 'en',
   }: {
     snapshot: ClientReportSnapshot
     periodLabel: string
     version: number | null
     status: string
     issuedAt: string | null
+    locale?: 'en' | 'ar'
   }) {
     const s = snapshot
     return (
