@@ -535,6 +535,8 @@ export interface QualityNcr {
   root_cause: string | null
   /** disposition = closure_note (required to close per existing state machine) */
   disposition: string | null
+  /** Estimated cost impact in USD (nullable — no value recorded yet) */
+  cost_impact: number | null
   raised_at: string
   closed_at: string | null
   days_open: number
@@ -564,10 +566,12 @@ function mapNcrRow(r: Record<string, unknown>): QualityNcr {
     title: r.title as string,
     description: (r.description as string | null) ?? null,
     category: source as NcrCategory,
-    severity: deriveSeverity(source),
+    // Explicit severity wins; fall back to the category-derived value.
+    severity: (r.severity as NcrSeverity | null) ?? deriveSeverity(source),
     status: status as QualityNcrStatus,
     root_cause: (r.root_cause as string | null) ?? null,
     disposition: (r.closure_note as string | null) ?? null,
+    cost_impact: r.cost_impact != null ? Number(r.cost_impact) : null,
     raised_at: raisedAt,
     closed_at: closedAt,
     days_open: daysOpen,
@@ -581,7 +585,7 @@ export async function getNcrRegister(projectId: string): Promise<QualityNcrRegis
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('ncrs')
-    .select('id, ncr_number, title, description, source, root_cause, corrective_action, closure_note, status, raised_at, closed_at, created_at')
+    .select('id, ncr_number, title, description, source, severity, cost_impact, root_cause, corrective_action, closure_note, status, raised_at, closed_at, created_at')
     .eq('project_id', projectId)
     .eq('tenant_id', tenantId)
     .order('ncr_number', { ascending: true })
@@ -596,6 +600,8 @@ export async function createNcr(input: {
   projectId: string
   title: string
   category: NcrCategory
+  severity?: NcrSeverity
+  cost_impact?: number
   description?: string
 }): Promise<{ error?: string; id?: string }> {
   const tenantId = await getCurrentTenantId()
@@ -610,6 +616,12 @@ export async function createNcr(input: {
       tenant_id: tenantId,
       title: input.title,
       source: input.category,
+      // Explicit severity wins; otherwise derive from the category.
+      severity: input.severity ?? deriveSeverity(input.category),
+      cost_impact:
+        input.cost_impact != null && !Number.isNaN(input.cost_impact)
+          ? input.cost_impact
+          : null,
       description: input.description ?? null,
       status: 'open',
       cycle: 1,
@@ -626,9 +638,8 @@ export async function createNcr(input: {
 
 /**
  * Set root_cause + disposition (stored in closure_note) — a prerequisite to
- * closing the NCR. Disposition must be one of rework/repair/use_as_is/scrap.
- * The ncrs table has no cost_impact column, so any supplied cost is appended
- * to the closure note for the audit trail rather than dropped silently.
+ * closing the NCR. Any supplied cost impact is persisted to the dedicated
+ * cost_impact column.
  */
 export type NcrDisposition = 'rework' | 'repair' | 'use_as_is' | 'scrap'
 
@@ -640,19 +651,19 @@ export async function setNcrDisposition(
   if ('error' in gate) return gate
   const tenantId = await getCurrentTenantId()
 
-  const closureNote =
-    input.cost_impact != null && !Number.isNaN(input.cost_impact)
-      ? `${input.disposition} — est. cost impact $${input.cost_impact.toLocaleString('en-US')}`
-      : input.disposition
+  const patch: Record<string, unknown> = {
+    root_cause: input.root_cause,
+    closure_note: input.disposition,
+    updated_at: new Date().toISOString(),
+  }
+  if (input.cost_impact != null && !Number.isNaN(input.cost_impact)) {
+    patch.cost_impact = input.cost_impact
+  }
 
   const admin = createAdminClient()
   const { error } = await admin
     .from('ncrs')
-    .update({
-      root_cause: input.root_cause,
-      closure_note: closureNote,
-      updated_at: new Date().toISOString(),
-    })
+    .update(patch)
     .eq('id', ncrId)
     .eq('tenant_id', tenantId)
 

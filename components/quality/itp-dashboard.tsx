@@ -27,9 +27,9 @@ import {
 import { useToast } from '@/components/ui/toast'
 import {
   getItpDashboard, createItpPlan, updateActivityResult, activateItpPlan, voidItpPlan, seedItpDemoData,
-  getNcrRegister, createNcr, setNcrDisposition,
+  getNcrRegister, createNcr, setNcrDisposition, updateNcrStatus,
   type ItpPlan, type ItpActivity, type InspectionType, type ActivityStatus, type PlanStatus,
-  type QualityNcr, type NcrCategory,
+  type QualityNcr, type NcrCategory, type NcrSeverity,
 } from '@/app/actions/quality'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -865,17 +865,51 @@ function NcrDetailPanel({
   const { toast } = useToast()
   const [rootCause, setRootCause] = React.useState(ncr.root_cause ?? '')
   const [disposition, setDisposition] = React.useState(ncr.disposition ?? '')
+  const [costImpact, setCostImpact] = React.useState(ncr.cost_impact != null ? String(ncr.cost_impact) : '')
   const [saving, setSaving] = React.useState(false)
 
   const canClose = rootCause.trim().length > 0 && disposition.trim().length > 0
   const isClosed = ncr.status === 'closed'
+  const isOpen = ncr.status === 'open'
+
+  function parsedCost(): number | undefined {
+    const t = costImpact.trim()
+    if (!t) return undefined
+    const n = Number(t)
+    return Number.isNaN(n) ? undefined : n
+  }
+
+  function persistDisposition() {
+    return setNcrDisposition(ncr.id, { root_cause: rootCause, disposition, cost_impact: parsedCost() })
+  }
 
   async function handleSaveDisposition() {
     setSaving(true)
-    const res = await setNcrDisposition(ncr.id, { root_cause: rootCause, disposition })
+    const res = await persistDisposition()
     setSaving(false)
     if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
     toast({ title: 'Saved', description: 'Root cause and disposition updated.', variant: 'success' })
+    onRefresh()
+  }
+
+  async function handleStartProgress() {
+    setSaving(true)
+    const res = await updateNcrStatus(ncr.id, 'in_progress')
+    setSaving(false)
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'NCR in progress', description: 'Rectification started.', variant: 'success' })
+    onRefresh()
+  }
+
+  async function handleClose() {
+    setSaving(true)
+    // Persist root cause + disposition first so the server-side close guard passes.
+    const save = await persistDisposition()
+    if (save.error) { setSaving(false); toast({ title: 'Error', description: save.error, variant: 'danger' }); return }
+    const res = await updateNcrStatus(ncr.id, 'closed')
+    setSaving(false)
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'NCR closed', description: 'Non-conformance resolved and closed.', variant: 'success' })
     onRefresh()
   }
 
@@ -901,6 +935,9 @@ function NcrDetailPanel({
             <p className="font-semibold text-foreground text-sm">{ncr.title}</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               {CATEGORY_LABELS[ncr.category]} · {meta.label} severity · {ncr.days_open}d open
+              {ncr.cost_impact != null && ncr.cost_impact > 0
+                ? ` · $${ncr.cost_impact.toLocaleString('en-US')} cost impact`
+                : ''}
             </p>
           </div>
         </div>
@@ -934,31 +971,63 @@ function NcrDetailPanel({
               className="text-sm resize-none"
             />
           </div>
-          <div className="space-y-1">
-            <Label htmlFor={`disp-${ncr.id}`} className="text-xs">Disposition</Label>
-            <Select
-              id={`disp-${ncr.id}`}
-              value={disposition}
-              onValueChange={v => setDisposition(v ?? '')}
-              placeholder="Select disposition..."
-              options={[
-                { value: 'use_as_is',           label: 'Use As-Is' },
-                { value: 'repair',               label: 'Repair' },
-                { value: 'rework',               label: 'Rework' },
-                { value: 'reject',               label: 'Reject & Replace' },
-                { value: 'accept_with_deviation', label: 'Accept with Deviation' },
-              ]}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor={`disp-${ncr.id}`} className="text-xs">Disposition</Label>
+              <Select
+                id={`disp-${ncr.id}`}
+                value={disposition}
+                onValueChange={v => setDisposition(v ?? '')}
+                placeholder="Select disposition..."
+                options={[
+                  { value: 'use_as_is',           label: 'Use As-Is' },
+                  { value: 'repair',               label: 'Repair' },
+                  { value: 'rework',               label: 'Rework' },
+                  { value: 'reject',               label: 'Reject & Replace' },
+                  { value: 'accept_with_deviation', label: 'Accept with Deviation' },
+                ]}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`cost-${ncr.id}`} className="text-xs">Cost Impact ($)</Label>
+              <Input
+                id={`cost-${ncr.id}`}
+                type="number"
+                min={0}
+                step={100}
+                value={costImpact}
+                onChange={e => setCostImpact(e.target.value)}
+                placeholder="0"
+                className="text-sm"
+              />
+            </div>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={saving || (!rootCause.trim() && !disposition)}
-            onClick={handleSaveDisposition}
-          >
-            {saving ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : null}
-            Save
-          </Button>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={saving || (!rootCause.trim() && !disposition)}
+              onClick={handleSaveDisposition}
+            >
+              {saving ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : null}
+              Save
+            </Button>
+            {isOpen && (
+              <Button size="sm" variant="outline" disabled={saving} onClick={handleStartProgress}>
+                <Clock className="size-3.5 mr-1.5" aria-hidden />
+                Start progress
+              </Button>
+            )}
+            <Button
+              size="sm"
+              disabled={saving || !canClose}
+              title={!canClose ? 'Record a root cause and disposition first' : undefined}
+              onClick={handleClose}
+            >
+              <CheckCircle2 className="size-3.5 mr-1.5" aria-hidden />
+              Close
+            </Button>
+          </div>
         </div>
       )}
 
@@ -967,6 +1036,9 @@ function NcrDetailPanel({
         <div className="space-y-2 rounded-lg bg-muted/30 px-3 py-2.5 text-sm">
           {ncr.root_cause && <p><span className="font-medium text-muted-foreground">Root Cause: </span>{ncr.root_cause}</p>}
           {ncr.disposition && <p><span className="font-medium text-muted-foreground">Disposition: </span>{ncr.disposition}</p>}
+          {ncr.cost_impact != null && ncr.cost_impact > 0 && (
+            <p><span className="font-medium text-muted-foreground">Cost Impact: </span>${ncr.cost_impact.toLocaleString('en-US')}</p>
+          )}
         </div>
       )}
 
@@ -984,6 +1056,7 @@ function NcrDetailPanel({
 const newNcrSchema = z.object({
   title:       z.string().min(3, 'Title required'),
   category:    z.enum(['failed_inspection', 'audit', 'site_observation']),
+  severity:    z.enum(['critical', 'major', 'minor']),
   description: z.string().optional(),
 })
 type NewNcrFormValues = z.infer<typeof newNcrSchema>
@@ -994,14 +1067,21 @@ function NewNcrDialog({
   const { toast } = useToast()
   const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<NewNcrFormValues>({
     resolver: zodResolver(newNcrSchema),
-    defaultValues: { category: 'site_observation' },
+    defaultValues: { category: 'site_observation', severity: 'minor' },
   })
+  const [costImpact, setCostImpact] = React.useState('')
 
   async function onSubmit(values: NewNcrFormValues) {
-    const res = await createNcr({ projectId, ...values })
+    const cost = costImpact.trim() ? Number(costImpact) : undefined
+    const res = await createNcr({
+      projectId,
+      ...values,
+      cost_impact: cost != null && !Number.isNaN(cost) ? cost : undefined,
+    })
     if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
     toast({ title: 'NCR raised', description: 'NCR created successfully.', variant: 'success' })
     reset()
+    setCostImpact('')
     onClose()
     globalMutate(`ncr-register-${projectId}`)
   }
@@ -1031,6 +1111,33 @@ function NewNcrDialog({
                 { value: 'site_observation',  label: 'Site Observation' },
               ]}
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="ncr-severity">Severity</Label>
+              <Select
+                id="ncr-severity"
+                value={watch('severity')}
+                onValueChange={v => v && setValue('severity', v as NcrSeverity)}
+                options={[
+                  { value: 'critical', label: 'Critical' },
+                  { value: 'major',    label: 'Major' },
+                  { value: 'minor',    label: 'Minor' },
+                ]}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ncr-cost">Cost Impact <span className="text-muted-foreground">($)</span></Label>
+              <Input
+                id="ncr-cost"
+                type="number"
+                min={0}
+                step={100}
+                value={costImpact}
+                onChange={e => setCostImpact(e.target.value)}
+                placeholder="0"
+              />
+            </div>
           </div>
           <div className="space-y-1">
             <Label htmlFor="ncr-desc">Description <span className="text-muted-foreground">(optional)</span></Label>
@@ -1107,6 +1214,7 @@ function NcrSection({ projectId }: { projectId: string }) {
                 <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Severity</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Status</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Raised</th>
+                <th className="py-3 px-4 text-right text-xs font-semibold text-muted-foreground">Cost Impact</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Age</th>
               </tr>
             </thead>
@@ -1140,6 +1248,11 @@ function NcrSection({ projectId }: { projectId: string }) {
                     </td>
                     <td className="py-3 px-4 text-xs text-muted-foreground">
                       {new Date(ncr.raised_at).toLocaleDateString()}
+                    </td>
+                    <td className="py-3 px-4 text-right text-xs tabular-nums text-foreground">
+                      {ncr.cost_impact != null && ncr.cost_impact > 0
+                        ? `$${ncr.cost_impact.toLocaleString('en-US')}`
+                        : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="py-3 px-4">
                       <AgingBadge aging={ncr.aging} daysOpen={ncr.days_open} />
