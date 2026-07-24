@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendNcrEmail } from '@/lib/email/send'
 import { revalidatePath } from 'next/cache'
 
-import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -68,10 +68,11 @@ type ActionResult<T = void> = { data?: T; error?: string }
 interface Actor { userId: string | null; tenantId: string; role: string | null; fullName: string | null }
 
 async function getActor(): Promise<Actor> {
+  const tenantId = await getCurrentTenantId()
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
+    if (!user) return { userId: null, tenantId: tenantId, role: null, fullName: null }
     const { data: profile } = await supabase
       .from('profiles')
       .select('tenant_id, role, full_name')
@@ -79,12 +80,12 @@ async function getActor(): Promise<Actor> {
       .single()
     return {
       userId: user.id,
-      tenantId: profile?.tenant_id ?? DEMO_TENANT_FALLBACK,
+      tenantId: profile?.tenant_id ?? tenantId,
       role: profile?.role ?? null,
       fullName: profile?.full_name ?? null,
     }
   } catch {
-    return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
+    return { userId: null, tenantId: tenantId, role: null, fullName: null }
   }
 }
 

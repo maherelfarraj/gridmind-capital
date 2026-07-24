@@ -13,7 +13,7 @@ import { getProjectGateState } from '@/app/actions/phase-gates'
 import { sendEmail, NOTIFICATION_EMAIL, wrapHtml, heading, para, kvTable, btn } from '@/lib/email/send'
 import { maybeCreateLenderRiskInsight } from '@/app/actions/ai-insights'
 
-import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
+import { getCurrentTenantId } from '@/lib/tenant'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gridmind-gules.vercel.app'
 
 // Roles allowed to distribute a lender report to the lender by email.
@@ -25,10 +25,11 @@ const LENDER_DISTRIBUTION_ROLES = ['system_admin', 'tenant_admin', 'project_dire
 interface Actor { userId: string | null; role: string | null; tenantId: string }
 
 async function getUser(): Promise<Actor> {
+  const tenantId = await getCurrentTenantId()
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null, role: null, tenantId: DEMO_TENANT_FALLBACK }
+    if (!user) return { userId: null, role: null, tenantId }
     const { data: profile } = await supabase
       .from('profiles')
       .select('role, tenant_id')
@@ -37,10 +38,10 @@ async function getUser(): Promise<Actor> {
     return {
       userId: user.id,
       role: profile?.role ?? 'viewer',
-      tenantId: profile?.tenant_id ?? DEMO_TENANT_FALLBACK,
+      tenantId,
     }
   } catch {
-    return { userId: null, role: null, tenantId: DEMO_TENANT_FALLBACK }
+    return { userId: null, role: null, tenantId }
   }
 }
 
@@ -240,15 +241,16 @@ function parseLooseDate(v: unknown): number | null {
   return Number.isNaN(t) ? null : t
 }
 
-// ─── 1. Facility ────────────────────────────────────────────────────────────────
+// ─── 1. Facility ────────────���───────────────────────────────────────────────────
 
 export async function getFacility(projectId: string): Promise<LenderFacility | null> {
   await getUser() // reads allow viewers
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data } = await admin
     .from('lender_facilities')
     .select('lender_name, facility_amount, currency, reporting_frequency, contact_email')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .maybeSingle()
 
@@ -271,6 +273,7 @@ export async function upsertFacility(
   if (denied) return denied
 
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const payload = {
     lender_name: data.lender_name ?? null,
     facility_amount: data.facility_amount ?? null,
@@ -286,13 +289,13 @@ export async function upsertFacility(
   const { data: existing } = await admin
     .from('lender_facilities')
     .select('id')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .maybeSingle()
 
   const { error } = existing?.id
     ? await admin.from('lender_facilities').update(payload).eq('id', existing.id)
-    : await admin.from('lender_facilities').insert({ tenant_id: DEMO_TENANT_FALLBACK, project_id: projectId, ...payload })
+    : await admin.from('lender_facilities').insert({ tenant_id: tenantId, project_id: projectId, ...payload })
 
   if (error) return { error: error.message }
   revalidatePath(`/projects/${projectId}/lender-report`)
@@ -308,6 +311,7 @@ export async function getLenderReportData(
 ): Promise<LenderReportData> {
   const actor = await getUser() // reads allow viewers
   const admin = createAdminClient()
+  const tenantId = actor.tenantId
 
   const startMs = parseLooseDate(periodStart)
   const endMs = parseLooseDate(periodEnd)
@@ -333,7 +337,7 @@ export async function getLenderReportData(
   ] = await Promise.all([
     admin.from('projects')
       .select('id, name, code, technology, capacity_mw, country, location, budget_usd, health, current_phase')
-      .eq('id', projectId).eq('tenant_id', DEMO_TENANT_FALLBACK).maybeSingle(),
+      .eq('id', projectId).eq('tenant_id', tenantId).maybeSingle(),
     getFacility(projectId),
     getProjectProgress(projectId),
     getSCurveData(projectId),
@@ -352,7 +356,7 @@ export async function getLenderReportData(
   const { data: acts } = await admin
     .from('schedule_activities')
     .select('name, planned_start, planned_finish, actual_finish, status, percent_complete')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
 
   const activities = acts ?? []
@@ -381,7 +385,7 @@ export async function getLenderReportData(
   const { data: latestReportRow } = await admin
     .from('daily_reports')
     .select('report_date, workforce_count, work_performed')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .eq('status', 'submitted')
     .order('report_date', { ascending: false })
@@ -429,11 +433,11 @@ export async function getLenderReportData(
   const [{ data: incRows }, { data: permRows }] = await Promise.all([
     admin.from('hse_incidents')
       .select('severity, status, incident_date')
-      .eq('tenant_id', DEMO_TENANT_FALLBACK)
+      .eq('tenant_id', tenantId)
       .eq('project_code', projectCode),
     admin.from('hse_permits')
       .select('status, expiry_date')
-      .eq('tenant_id', DEMO_TENANT_FALLBACK)
+      .eq('tenant_id', tenantId)
       .eq('project_code', projectCode),
   ])
 
@@ -463,7 +467,7 @@ export async function getLenderReportData(
   const { data: riskRows } = await admin
     .from('risks')
     .select('risk_number, title, category, probability, impact, status, mitigation, owner_id')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
 
   const topRisks = (riskRows ?? [])
@@ -498,7 +502,7 @@ export async function getLenderReportData(
   const { data: ncrRows } = await admin
     .from('ncrs')
     .select('status, source')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
   const ncrCount: Record<string, number> = {}
   const ncrSevCount: Record<string, number> = { critical: 0, major: 0, minor: 0 }
@@ -523,7 +527,7 @@ export async function getLenderReportData(
   const { data: energyRows } = await admin
     .from('energy_production')
     .select('date, energy_mwh, availability_pct, curtailment_mwh, p50_mwh')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .gte('date', startOfYearStr)
   if (energyRows && energyRows.length > 0) {
@@ -543,7 +547,7 @@ export async function getLenderReportData(
     const { data: bessRows } = await admin
       .from('bess_metrics')
       .select('soc_pct, cycles_cumulative, soh_pct, warranty_cycle_limit')
-      .eq('tenant_id', DEMO_TENANT_FALLBACK)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('date', { ascending: false })
       .limit(1)
@@ -576,7 +580,7 @@ export async function getLenderReportData(
   const { data: contractRows } = await admin
     .from('contracts')
     .select('id, type, status, value')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
   if (contractRows && contractRows.length > 0) {
     // Contract milestones
@@ -584,7 +588,7 @@ export async function getLenderReportData(
     const { data: msRows } = await admin
       .from('contract_milestones')
       .select('status')
-      .eq('tenant_id', DEMO_TENANT_FALLBACK)
+      .eq('tenant_id', tenantId)
       .in('contract_id', contractIds)
     const msAchieved = (msRows ?? []).filter((m) => m.status === 'achieved' || m.status === 'paid').length
     const msMissed   = (msRows ?? []).filter((m) => m.status === 'missed').length
@@ -593,7 +597,7 @@ export async function getLenderReportData(
     const { data: ldContracts } = await admin
       .from('contracts')
       .select('value, completion, ld_rate_per_day, ld_cap_pct, status')
-      .eq('tenant_id', DEMO_TENANT_FALLBACK)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('status', 'active')
     let totalLdExposure = 0
@@ -609,7 +613,7 @@ export async function getLenderReportData(
     const { data: secRows } = await admin
       .from('securities')
       .select('amount, status, expiry_date')
-      .eq('tenant_id', DEMO_TENANT_FALLBACK)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
     const activeSecs    = (secRows ?? []).filter((s) => s.status === 'active')
     const bondedValue   = activeSecs.reduce((t, s) => t + num(s.amount), 0)
@@ -638,7 +642,7 @@ export async function getLenderReportData(
   const { data: itpPlanRows } = await admin
     .from('itp_plans')
     .select('id, status')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
   if (itpPlanRows && itpPlanRows.length > 0) {
     activePlans = itpPlanRows.filter((p) => p.status === 'active').length
@@ -663,7 +667,7 @@ export async function getLenderReportData(
   const { data: qualityRows } = await admin
     .from('tickets')
     .select('type, status')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
 
   const qTickets = qualityRows ?? []
@@ -760,10 +764,11 @@ export async function saveLenderReport(
   const snapshot = await getLenderReportData(projectId, periodStart, periodEnd)
 
   const admin = createAdminClient()
+  const tenantId = actor.tenantId
   const { data, error } = await admin
     .from('lender_reports')
     .insert({
-      tenant_id: DEMO_TENANT_FALLBACK,
+      tenant_id: tenantId,
       project_id: projectId,
       period_start: periodStart,
       period_end: periodEnd,
@@ -856,10 +861,11 @@ export interface RecentLenderReport {
 export async function listRecentLenderReports(limit = 3): Promise<RecentLenderReport[]> {
   await getUser() // reads allow viewers
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data } = await admin
     .from('lender_reports')
     .select('id, title, period_end, created_at, project_id')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -886,10 +892,11 @@ export async function listRecentLenderReports(limit = 3): Promise<RecentLenderRe
 export async function listLenderReports(projectId: string): Promise<LenderReportListItem[]> {
   await getUser() // reads allow viewers
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data } = await admin
     .from('lender_reports')
     .select('id, title, period_end, created_at, generated_by')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
 
@@ -909,10 +916,11 @@ export async function getLenderReportSnapshot(
 ): Promise<LenderReportData | null> {
   await getUser() // reads allow viewers
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data } = await admin
     .from('lender_reports')
     .select('snapshot')
-    .eq('tenant_id', DEMO_TENANT_FALLBACK)
+    .eq('tenant_id', tenantId)
     .eq('id', reportId)
     .maybeSingle()
 
