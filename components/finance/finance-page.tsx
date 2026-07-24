@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   Receipt,
+  FileText,
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -256,6 +257,15 @@ export function FinancePage() {
             >
               <Receipt className="size-4" aria-hidden />
               Payment Certificates
+            </Link>
+          )}
+          {paymentsProjectId && (
+            <Link
+              href={`/projects/${paymentsProjectId}/contracts`}
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+            >
+              <FileText className="size-4" aria-hidden />
+              Contracts
             </Link>
           )}
           <Button variant="outline" size="sm">

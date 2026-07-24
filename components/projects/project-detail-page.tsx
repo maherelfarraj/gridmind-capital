@@ -457,6 +457,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'ITP register',
           ariaLabel: 'Open Quality ITP register', href: `/projects/${projectId}/quality`,
         },
+        {
+          label: 'Contracts', icon: FileText, iconColor: '#1d4ed8',
+          bgColor: 'bg-blue-100 dark:bg-blue-900/30', count: 'Milestones & LDs',
+          ariaLabel: 'Open contracts register', href: `/projects/${projectId}/contracts`,
+        },
       ]
     : QUICK_ACTIONS
   return (
