@@ -8,7 +8,8 @@ import { z } from 'zod'
 import {
   ClipboardCheck, AlertTriangle, CheckCircle2, Percent, Plus, Trash2,
   ChevronDown, ChevronRight, Lock, Loader2, GripVertical, Flame,
-  Eye, ShieldCheck, FileSearch, ArrowLeft, X,
+  Eye, ShieldCheck, FileSearch, ArrowLeft, X, Clock, AlertOctagon,
+  ShieldAlert, Info,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -26,7 +27,9 @@ import {
 import { useToast } from '@/components/ui/toast'
 import {
   getItpDashboard, createItpPlan, updateActivityResult, activateItpPlan, voidItpPlan, seedItpDemoData,
+  getNcrRegister, createNcr, setNcrDisposition,
   type ItpPlan, type ItpActivity, type InspectionType, type ActivityStatus, type PlanStatus,
+  type QualityNcr, type NcrCategory,
 } from '@/app/actions/quality'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -774,6 +777,361 @@ export function ItpDashboard({ projectId, canManage }: { projectId: string; canM
       )}
 
       <NewPlanDialog open={newPlanOpen} onClose={() => setNewPlanOpen(false)} projectId={projectId} />
+
+      {/* ── NCR Register ────────────────────────────────────────────────── */}
+      <NcrSection projectId={projectId} />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NCR Section
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SEVERITY_META: Record<QualityNcr['severity'], { label: string; color: string; bg: string; icon: React.ElementType }> = {
+  critical: { label: 'Critical', color: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20',   icon: AlertOctagon },
+  major:    { label: 'Major',    color: '#f59e0b', bg: 'bg-amber-50 dark:bg-amber-900/20', icon: ShieldAlert  },
+  minor:    { label: 'Minor',    color: '#64748b', bg: 'bg-slate-50 dark:bg-slate-800/40', icon: Info         },
+}
+
+const CATEGORY_LABELS: Record<NcrCategory, string> = {
+  failed_inspection: 'Failed Inspection',
+  audit:             'Audit',
+  site_observation:  'Site Observation',
+}
+
+const NCR_STATUS_LABELS: Record<QualityNcr['status'], string> = {
+  open:              'Open',
+  in_rectification:  'In Rectification',
+  're_inspection':   'Re-Inspection',
+  closed:            'Closed',
+}
+
+const NCR_STATUS_COLORS: Record<QualityNcr['status'], string> = {
+  open:             'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  in_rectification: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  're_inspection':  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  closed:           'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+}
+
+function AgingBadge({ aging, daysOpen }: { aging: QualityNcr['aging']; daysOpen: number }) {
+  if (aging === 'none') return null
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium',
+      aging === 'red'
+        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    )}>
+      <Clock className="size-3" aria-hidden />
+      {daysOpen}d
+    </span>
+  )
+}
+
+function NcrDetailPanel({
+  ncr,
+  onClose,
+  onRefresh,
+}: {
+  ncr: QualityNcr
+  onClose: () => void
+  onRefresh: () => void
+}) {
+  const { toast } = useToast()
+  const [rootCause, setRootCause] = React.useState(ncr.root_cause ?? '')
+  const [disposition, setDisposition] = React.useState(ncr.disposition ?? '')
+  const [saving, setSaving] = React.useState(false)
+
+  const canClose = rootCause.trim().length > 0 && disposition.trim().length > 0
+  const isClosed = ncr.status === 'closed'
+
+  async function handleSaveDisposition() {
+    setSaving(true)
+    const res = await setNcrDisposition(ncr.id, { root_cause: rootCause, disposition })
+    setSaving(false)
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Saved', description: 'Root cause and disposition updated.', variant: 'success' })
+    onRefresh()
+  }
+
+  const meta = SEVERITY_META[ncr.severity]
+  const Icon = meta.icon
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className={cn('size-9 rounded-lg flex items-center justify-center shrink-0', meta.bg)}>
+            <Icon className="size-4.5" style={{ color: meta.color }} aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-0.5">
+              <span className="font-mono text-xs font-semibold text-muted-foreground">{ncr.ncr_number}</span>
+              <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', NCR_STATUS_COLORS[ncr.status])}>
+                {NCR_STATUS_LABELS[ncr.status]}
+              </span>
+              <AgingBadge aging={ncr.aging} daysOpen={ncr.days_open} />
+            </div>
+            <p className="font-semibold text-foreground text-sm">{ncr.title}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {CATEGORY_LABELS[ncr.category]} · {meta.label} severity · {ncr.days_open}d open
+            </p>
+          </div>
+        </div>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Close detail">
+          <X className="size-4" aria-hidden />
+        </button>
+      </div>
+
+      {/* Description */}
+      {ncr.description && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Description</p>
+          <p className="text-sm text-foreground">{ncr.description}</p>
+        </div>
+      )}
+
+      {/* Root Cause + Disposition */}
+      {!isClosed && (
+        <div className="space-y-3 pt-1">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Required to close
+          </p>
+          <div className="space-y-1">
+            <Label htmlFor={`rc-${ncr.id}`} className="text-xs">Root Cause</Label>
+            <Textarea
+              id={`rc-${ncr.id}`}
+              value={rootCause}
+              onChange={e => setRootCause(e.target.value)}
+              placeholder="Describe the root cause..."
+              rows={2}
+              className="text-sm resize-none"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`disp-${ncr.id}`} className="text-xs">Disposition</Label>
+            <Select
+              id={`disp-${ncr.id}`}
+              value={disposition}
+              onValueChange={v => setDisposition(v ?? '')}
+              placeholder="Select disposition..."
+              options={[
+                { value: 'use_as_is',           label: 'Use As-Is' },
+                { value: 'repair',               label: 'Repair' },
+                { value: 'rework',               label: 'Rework' },
+                { value: 'reject',               label: 'Reject & Replace' },
+                { value: 'accept_with_deviation', label: 'Accept with Deviation' },
+              ]}
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saving || (!rootCause.trim() && !disposition)}
+            onClick={handleSaveDisposition}
+          >
+            {saving ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : null}
+            Save
+          </Button>
+        </div>
+      )}
+
+      {/* Closed details */}
+      {isClosed && (
+        <div className="space-y-2 rounded-lg bg-muted/30 px-3 py-2.5 text-sm">
+          {ncr.root_cause && <p><span className="font-medium text-muted-foreground">Root Cause: </span>{ncr.root_cause}</p>}
+          {ncr.disposition && <p><span className="font-medium text-muted-foreground">Disposition: </span>{ncr.disposition}</p>}
+        </div>
+      )}
+
+      {/* Linked hold-point note */}
+      {ncr.linked_activity_id && (
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <Lock className="size-3.5" aria-hidden />
+          Auto-created from failed ITP hold point
+        </p>
+      )}
+    </div>
+  )
+}
+
+const newNcrSchema = z.object({
+  title:       z.string().min(3, 'Title required'),
+  category:    z.enum(['failed_inspection', 'audit', 'site_observation']),
+  description: z.string().optional(),
+})
+type NewNcrFormValues = z.infer<typeof newNcrSchema>
+
+function NewNcrDialog({
+  open, onClose, projectId,
+}: { open: boolean; onClose: () => void; projectId: string }) {
+  const { toast } = useToast()
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<NewNcrFormValues>({
+    resolver: zodResolver(newNcrSchema),
+    defaultValues: { category: 'site_observation' },
+  })
+
+  async function onSubmit(values: NewNcrFormValues) {
+    const res = await createNcr({ projectId, ...values })
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'NCR raised', description: 'NCR created successfully.', variant: 'success' })
+    reset()
+    onClose()
+    globalMutate(`ncr-register-${projectId}`)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Raise New NCR</DialogTitle>
+          <DialogDescription>Non-Conformance Report — fills the NCR register for this project.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-1">
+          <div className="space-y-1">
+            <Label htmlFor="ncr-title">Title</Label>
+            <Input id="ncr-title" {...register('title')} placeholder="Describe the non-conformance" />
+            {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ncr-category">Category</Label>
+            <Select
+              id="ncr-category"
+              value={watch('category')}
+              onValueChange={v => v && setValue('category', v as NcrCategory)}
+              options={[
+                { value: 'failed_inspection', label: 'Failed Inspection' },
+                { value: 'audit',             label: 'Audit' },
+                { value: 'site_observation',  label: 'Site Observation' },
+              ]}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ncr-desc">Description <span className="text-muted-foreground">(optional)</span></Label>
+            <Textarea id="ncr-desc" {...register('description')} rows={3} placeholder="Detailed description..." className="resize-none" />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="size-4 mr-2 animate-spin" /> : null}
+              Raise NCR
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function NcrSection({ projectId }: { projectId: string }) {
+  const { data, mutate } = useSWR(`ncr-register-${projectId}`, () => getNcrRegister(projectId))
+  const [selected, setSelected] = React.useState<QualityNcr | null>(null)
+  const [newOpen, setNewOpen] = React.useState(false)
+
+  const rows = data?.rows ?? []
+  const isLive = rows.length > 0
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">NCR Register</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Non-conformance reports for this project</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            'rounded-full px-2 py-0.5 text-xs font-medium',
+            isLive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                   : 'bg-muted text-muted-foreground',
+          )}>
+            {isLive ? 'Live' : 'Illustrative'}
+          </span>
+          <Button size="sm" onClick={() => setNewOpen(true)}>
+            <Plus className="size-3.5 mr-1.5" aria-hidden />
+            New NCR
+          </Button>
+        </div>
+      </div>
+
+      {/* Selected NCR detail */}
+      {selected && (
+        <NcrDetailPanel
+          ncr={selected}
+          onClose={() => setSelected(null)}
+          onRefresh={() => { mutate(); setSelected(null) }}
+        />
+      )}
+
+      {/* Table or empty state */}
+      {rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-muted/20 py-12 text-center">
+          <ClipboardCheck className="size-8 text-muted-foreground/40 mx-auto mb-3" aria-hidden />
+          <p className="text-sm font-medium text-muted-foreground">No NCRs yet</p>
+          <p className="text-xs text-muted-foreground/70 mt-1">Raise an NCR to start tracking non-conformances</p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">NCR No.</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Title</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Category</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Severity</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Raised</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground">Age</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(ncr => {
+                const meta = SEVERITY_META[ncr.severity]
+                const Icon = meta.icon
+                return (
+                  <tr
+                    key={ncr.id}
+                    onClick={() => setSelected(ncr)}
+                    className="border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer transition-colors group"
+                  >
+                    <td className="py-3 px-4">
+                      <span className="font-mono text-xs font-semibold text-muted-foreground">{ncr.ncr_number}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <p className="font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">{ncr.title}</p>
+                    </td>
+                    <td className="py-3 px-4 text-muted-foreground text-xs">{CATEGORY_LABELS[ncr.category]}</td>
+                    <td className="py-3 px-4">
+                      <span className={cn('inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium', meta.bg)}>
+                        <Icon className="size-3" style={{ color: meta.color }} aria-hidden />
+                        {meta.label}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', NCR_STATUS_COLORS[ncr.status])}>
+                        {NCR_STATUS_LABELS[ncr.status]}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-xs text-muted-foreground">
+                      {new Date(ncr.raised_at).toLocaleDateString()}
+                    </td>
+                    <td className="py-3 px-4">
+                      <AgingBadge aging={ncr.aging} daysOpen={ncr.days_open} />
+                      {ncr.aging === 'none' && ncr.status !== 'closed' && (
+                        <span className="text-xs text-muted-foreground">{ncr.days_open}d</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <NewNcrDialog open={newOpen} onClose={() => setNewOpen(false)} projectId={projectId} />
     </div>
   )
 }

@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireRole } from '@/lib/auth/guard'
+import { revalidatePath } from 'next/cache'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
@@ -352,4 +353,146 @@ export async function seedItpDemoData(projectId: string): Promise<{ error?: stri
   }
 
   return { seeded: true }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NCR REGISTER  (thin view layer on top of the existing ncrs table)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type NcrSeverity = 'critical' | 'major' | 'minor'
+export type NcrCategory = 'failed_inspection' | 'audit' | 'site_observation'
+export type QualityNcrStatus = 'open' | 'in_rectification' | 're_inspection' | 'closed'
+
+/** Severity is derived from source — the ncrs table has no dedicated column. */
+function deriveSeverity(source: string): NcrSeverity {
+  if (source === 'failed_inspection') return 'critical'
+  if (source === 'audit') return 'major'
+  return 'minor'
+}
+
+/** Days between raised_at and now (or closed_at when closed). */
+function ncrDaysOpen(raisedAt: string, status: string, closedAt: string | null): number {
+  const end = status === 'closed' && closedAt ? new Date(closedAt).getTime() : Date.now()
+  return Math.max(0, Math.floor((end - new Date(raisedAt).getTime()) / 86400000))
+}
+
+export interface QualityNcr {
+  id: string
+  ncr_number: string
+  title: string
+  description: string | null
+  /** Maps to source column — free text category label */
+  category: NcrCategory
+  severity: NcrSeverity
+  status: QualityNcrStatus
+  root_cause: string | null
+  /** disposition = closure_note (required to close per existing state machine) */
+  disposition: string | null
+  raised_at: string
+  closed_at: string | null
+  days_open: number
+  /** Aging bucket derived from days_open (only set when status != 'closed') */
+  aging: 'none' | 'amber' | 'red'
+  /** ITP activity that caused this NCR (if auto-created from a failed HOLD point) */
+  linked_activity_id: string | null
+}
+
+export interface QualityNcrRegister {
+  rows: QualityNcr[]
+  open_count: number
+  critical_count: number
+}
+
+function mapNcrRow(r: Record<string, unknown>): QualityNcr {
+  const status = (r.status as string) ?? 'open'
+  const raisedAt = (r.raised_at as string) ?? (r.created_at as string)
+  const closedAt = (r.closed_at as string | null) ?? null
+  const daysOpen = ncrDaysOpen(raisedAt, status, closedAt)
+  const isOpen = status !== 'closed'
+  const aging: QualityNcr['aging'] = !isOpen ? 'none' : daysOpen > 30 ? 'red' : daysOpen > 14 ? 'amber' : 'none'
+  const source = (r.source as string) ?? 'site_observation'
+  return {
+    id: r.id as string,
+    ncr_number: r.ncr_number as string,
+    title: r.title as string,
+    description: (r.description as string | null) ?? null,
+    category: source as NcrCategory,
+    severity: deriveSeverity(source),
+    status: status as QualityNcrStatus,
+    root_cause: (r.root_cause as string | null) ?? null,
+    disposition: (r.closure_note as string | null) ?? null,
+    raised_at: raisedAt,
+    closed_at: closedAt,
+    days_open: daysOpen,
+    aging,
+    linked_activity_id: null, // populated below when available
+  }
+}
+
+export async function getNcrRegister(projectId: string): Promise<QualityNcrRegister> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('ncrs')
+    .select('id, ncr_number, title, description, source, root_cause, corrective_action, closure_note, status, raised_at, closed_at, created_at')
+    .eq('project_id', projectId)
+    .eq('tenant_id', DEMO_TENANT)
+    .order('ncr_number', { ascending: true })
+
+  const rows = (error || !data ? [] : data).map(r => mapNcrRow(r as Record<string, unknown>))
+  const open_count = rows.filter(r => r.status !== 'closed').length
+  const critical_count = rows.filter(r => r.status !== 'closed' && r.severity === 'critical').length
+  return { rows, open_count, critical_count }
+}
+
+export async function createNcr(input: {
+  projectId: string
+  title: string
+  category: NcrCategory
+  description?: string
+}): Promise<{ error?: string; id?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const admin = createAdminClient()
+  const { error, data } = await admin
+    .from('ncrs')
+    .insert({
+      project_id: input.projectId,
+      tenant_id: DEMO_TENANT,
+      title: input.title,
+      source: input.category,
+      description: input.description ?? null,
+      status: 'open',
+      cycle: 1,
+      reinspection_passed: false,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) return { error: error?.message ?? 'Failed to create NCR' }
+  revalidatePath(`/projects/${input.projectId}/quality`)
+  revalidatePath(`/projects/${input.projectId}/g5`)
+  return { id: (data as Record<string, unknown>).id as string }
+}
+
+/** Set root_cause + disposition (closure_note) — a prerequisite to closing the NCR. */
+export async function setNcrDisposition(
+  ncrId: string,
+  input: { root_cause: string; disposition: string },
+): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('ncrs')
+    .update({
+      root_cause: input.root_cause,
+      closure_note: input.disposition,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', ncrId)
+    .eq('tenant_id', DEMO_TENANT)
+
+  return error ? { error: error.message } : {}
 }

@@ -101,10 +101,10 @@ export default function G5MechanicalCompletionPage() {
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <ClipboardList className="size-4" /> Gate Submission Form
             </Link>
-            <button type="button"
+            <Link href={`/projects/${projectId}/quality`}
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <FileText className="size-4" /> ITP Register
-            </button>
+            </Link>
             <button type="button"
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <Download className="size-4" /> Export Report
@@ -124,6 +124,54 @@ export default function G5MechanicalCompletionPage() {
           <KpiCard label="Open NCRs"        value={openNcrs}         color="#f59e0b"  sub={openNcrs > 0 ? 'blocks G5 approval' : 'none — G5 clear'} />
           <KpiCard label="MC Certs Issued"  value={`${issuedCerts}/${MOCK_MC_CERTS.length}`} color="#22c55e" sub="systems certified" />
         </div>
+
+        {/* NCR subsection — open NCRs inline alongside punch-item summary */}
+        {ncrData && ncrData.rows.filter(r => r.status !== 'closed').length > 0 && (
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+              <span className="text-sm font-semibold text-foreground">Open NCRs</span>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setActiveTab('ncr')}
+              >
+                View all in NCRs tab
+              </button>
+            </div>
+            <div className="divide-y divide-border">
+              {ncrData.rows
+                .filter(r => r.status !== 'closed')
+                .slice(0, 6)
+                .map(ncr => {
+                  const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(ncr.raised_at).getTime()) / 86400000))
+                  const aging = daysOpen > 30 ? 'red' : daysOpen > 14 ? 'amber' : 'none'
+                  const sevColor = ncr.source === 'failed_inspection' ? '#ef4444' : ncr.source === 'audit' ? '#f59e0b' : '#64748b'
+                  const sevLabel = ncr.source === 'failed_inspection' ? 'Critical' : ncr.source === 'audit' ? 'Major' : 'Minor'
+                  return (
+                    <div key={ncr.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="font-mono text-xs text-muted-foreground w-20 shrink-0">{ncr.ncr_number}</span>
+                      <span className="text-sm text-foreground flex-1 line-clamp-1">{ncr.title}</span>
+                      <span
+                        className="rounded-full px-1.5 py-0.5 text-xs font-medium shrink-0"
+                        style={{ backgroundColor: `${sevColor}22`, color: sevColor }}
+                      >
+                        {sevLabel}
+                      </span>
+                      {aging !== 'none' && (
+                        <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium shrink-0 ${
+                          aging === 'red'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        }`}>
+                          {daysOpen}d
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        )}
 
         {/* Tab bar */}
         <div className="flex flex-wrap gap-2 border-b border-border pb-4">
