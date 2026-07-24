@@ -130,7 +130,7 @@ function NotificationBell({ count = 0, onClick }: { count?: number; onClick?: ()
       <Bell size={15} aria-hidden="true" />
       {count > 0 && (
         <span
-          className="absolute right-1 top-1 flex items-center justify-center h-4 min-w-[1rem] rounded-full bg-sidebar-primary px-0.5 text-[9px] font-bold leading-none text-sidebar-primary-foreground"
+          className="absolute end-1 top-1 flex items-center justify-center h-4 min-w-[1rem] rounded-full bg-sidebar-primary px-0.5 text-[9px] font-bold leading-none text-sidebar-primary-foreground"
           aria-hidden="true"
         >
           {count > 9 ? '9+' : count}
@@ -183,7 +183,7 @@ function Breadcrumbs({ items }: { items: Breadcrumb[] }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────���────────────────────
 // TopBar
 // ─────────────────────────────────────────────────────────────
 

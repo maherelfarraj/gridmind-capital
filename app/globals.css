@@ -275,79 +275,89 @@
 
 /* ── RTL / Arabic layout overrides ───────────────────────── */
 
-/* Arabic body font via CSS variable set by next/font */
+/*
+ * RTL strategy
+ * ────────────
+ * 1. Tailwind logical utilities (ms-*, me-*, ps-*, pe-*, start-*, end-*)
+ *    flip automatically when dir="rtl" is set on <html> — no extra CSS needed.
+ *
+ * 2. For cases where a physical utility cannot be replaced in JSX (e.g. Recharts
+ *    internal layout, print rules) we use [dir='rtl'] selectors here.
+ *
+ * 3. The sidebar desktop <aside> uses `fixed inset-inline-start-0` via a
+ *    Tailwind `[dir=rtl]:right-0 [dir=rtl]:left-auto` pair added in sidebar.tsx —
+ *    no CSS needed here.
+ *
+ * 4. The AppShell main column already uses `md:ms-16` / `md:ms-64` (logical margin-
+ *    inline-start), so it pushes away from the sidebar on both LTR and RTL.
+ */
+
+/* Arabic body font — loaded via next/font; applied when dir=rtl is set. */
 [dir='rtl'],
 [dir='rtl'] .font-sans {
-  font-family: var(--font-arabic, 'Noto Sans Arabic'), 'Inter', system-ui, sans-serif;
+  font-family: var(--font-arabic, 'Noto Sans Arabic'), ui-sans-serif, system-ui, sans-serif;
   line-height: 1.75;
 }
 
-[dir='rtl'] {
-  /* ── Sidebar: move from left edge to right edge ── */
-  /* The sidebar itself uses position:fixed on small screens.
-     On desktop the main-column uses margin-left; we override to margin-right. */
-  .sidebar-fixed {
-    left: auto;
-    right: 0;
-  }
-
-  /* ── Main content margin: sidebar is now on the right ── */
-  .main-column-collapsed  { margin-left: 0; margin-right: 4rem;  }
-  .main-column-expanded   { margin-left: 0; margin-right: 16rem; }
-
-  /* ── Breadcrumb / list chevrons flip direction ── */
-  .lucide-chevron-right { transform: scaleX(-1); }
-  .lucide-chevron-left  { transform: scaleX(-1); }
-
-  /* ── Back-arrow buttons (history.back, Back link) ── */
-  .icon-back { transform: scaleX(-1); }
-
-  /* ── Table: mirror column order so first column is on the right ── */
-  table { direction: rtl; }
-  /* Keep numeric columns (amounts, percentages) visually LTR */
-  td[data-numeric], th[data-numeric] { direction: ltr; text-align: left; }
-
-  /* ── Form inputs: right-align placeholder text ── */
-  input, textarea, select {
-    text-align: start;
-  }
-
-  /* ── Badge / pill: swap padding so text reads correctly ── */
-  .badge-ltr { direction: ltr; display: inline-block; }
-
-  /* ── Notification badge: move to inline-start corner ── */
-  .notif-badge {
-    left: auto;
-    right: 0.25rem;
-  }
-
-  /* ── Stepper connectors: drawn by CSS, flip so flow is right→left ── */
-  .stepper-connector-ltr { display: none; }
-  .stepper-connector-rtl { display: block; }
-
-  /* ── Gate pack / certificate printable: set Arabic direction ── */
-  #gate-pack-printable,
-  #cert-printable {
-    direction: rtl;
-    font-family: var(--font-arabic, 'Noto Sans Arabic'), sans-serif;
-  }
-
-  /* ── Drawer / side panels: swap inset ── */
-  .drawer-right {
-    left: 0;
-    right: auto;
-  }
-
-  /* ── Mobile bottom tab bar: icon order stays the same (icons are symmetric),
-        but text labels read RTL ── */
-  .bottom-tab-bar { direction: rtl; }
-
-  /* ── Dropdown menus: align to inline-start ── */
-  .dropdown-end {
-    left: 0;
-    right: auto;
-  }
+/* Form inputs: honour logical text alignment */
+[dir='rtl'] input,
+[dir='rtl'] textarea,
+[dir='rtl'] select {
+  text-align: start;
 }
+
+/* Tables: mirror direction so the first data column appears on the right.
+   Numeric/code cells carry data-numeric (set by <NumericCell>) to stay LTR. */
+[dir='rtl'] table {
+  direction: rtl;
+}
+[dir='rtl'] td[data-numeric],
+[dir='rtl'] th[data-numeric],
+[dir='rtl'] span[data-numeric] {
+  direction: ltr;
+  text-align: start;
+}
+
+/* Lucide directional icons that need mirroring in RTL.
+   Applied via the `rtl:scale-x-[-1]` Tailwind utility in JSX; this
+   fallback covers any remaining hard-coded SVG uses. */
+[dir='rtl'] .icon-directional {
+  transform: scaleX(-1);
+}
+
+/* Skip-to-content: logical inset */
+[dir='rtl'] #main-content > a[href='#main-content'] {
+  left: auto;
+  right: 0.5rem;
+}
+
+/* Recharts + Gantt: these components have their own internal LTR coordinate
+   system and must NOT inherit the RTL direction, but their wrapper containers
+   are mirrored by flex/grid automatically. Force their internals to LTR. */
+[dir='rtl'] .recharts-wrapper,
+[dir='rtl'] .recharts-surface,
+[dir='rtl'] .gantt-inner {
+  direction: ltr;
+}
+
+/* Gate pack / certificate printable areas: set Arabic direction for PDF export */
+[dir='rtl'] #gate-pack-printable,
+[dir='rtl'] #cert-printable {
+  direction: rtl;
+  font-family: var(--font-arabic, 'Noto Sans Arabic'), sans-serif;
+}
+
+/* Record-history side panel: slides in from inline-end (right in LTR, left in RTL).
+   The component uses `inset-inline-end: 0` — this ensures the slide-in
+   animation also flips. */
+[dir='rtl'] .record-history-panel {
+  left: 0;
+  right: auto;
+}
+
+/* Stepper helpers (gate flow, phase stepper) */
+[dir='rtl'] .stepper-connector-ltr { display: none; }
+[dir='rtl'] .stepper-connector-rtl { display: block; }
 
 /* ─── Lender report: print-to-PDF via the browser print dialog ───────────────── */
 @media print {

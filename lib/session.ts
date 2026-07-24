@@ -41,6 +41,8 @@ export type AppPermission =
   | 'admin.settings'
   | 'admin.audit'
 
+export type AppDigitStyle = 'western' | 'arabic_indic'
+
 export interface AppSession {
   userId: string
   tenantId: string
@@ -49,6 +51,10 @@ export interface AppSession {
   fullName: string
   email: string
   isSuperAdmin: boolean
+  /** BCP-47 locale read from profiles.locale ('en' | 'ar'). Defaults to 'en'. */
+  locale: string
+  /** Digit style read from profiles.digit_style. Defaults to 'western'. */
+  digitStyle: AppDigitStyle
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -64,6 +70,8 @@ export const mockSession: AppSession = {
   fullName: 'John Doe',
   email: 'john@example.com',
   isSuperAdmin: false,
+  locale: 'en',
+  digitStyle: 'western',
 }
 
 // ─────────────────────────────────────────────────────────────

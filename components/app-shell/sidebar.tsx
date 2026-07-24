@@ -88,7 +88,7 @@ function NavGroup({
         title={collapsed ? item.label : undefined}
       >
         {isChildActive && !collapsed && (
-          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-sidebar-primary" />
+          <span className="absolute start-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-sidebar-primary" />
         )}
         <Icon
           className={cn(
@@ -102,7 +102,7 @@ function NavGroup({
         />
         {!collapsed && (
           <>
-            <span className="flex-1 text-left">{item.label}</span>
+            <span className="flex-1 text-start">{item.label}</span>
             <ChevronRight
               size={13}
               className={cn(
@@ -124,7 +124,7 @@ function NavGroup({
             open ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0',
           )}
         >
-          <ul className="ml-2 mt-0.5 space-y-0.5 border-l border-sidebar-border/60 pl-3 pb-1">
+          <ul className="ms-2 mt-0.5 space-y-0.5 border-s border-sidebar-border/60 ps-3 pb-1">
             {item.children?.map((child) => (
               <NavChildItem key={child.id} child={child} pathname={pathname} />
             ))}
@@ -204,7 +204,7 @@ function NavLeafItem({
       title={collapsed ? item.label : undefined}
     >
       {isActive && (
-        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-sidebar-primary" />
+        <span className="absolute start-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-sidebar-primary" />
       )}
       <Icon
         className={cn(
@@ -231,7 +231,7 @@ function NavLeafItem({
       )}
       {collapsed && item.badge != null && item.badge > 0 && (
         <span
-          className="absolute right-1 top-1 h-2 w-2 rounded-full bg-sidebar-primary"
+          className="absolute end-1 top-1 h-2 w-2 rounded-full bg-sidebar-primary"
           aria-hidden="true"
         />
       )}
@@ -299,7 +299,7 @@ function SidebarContent({
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold leading-tight tracking-tight text-sidebar-foreground">
               GridMind
-              <span className="ml-1 text-sidebar-primary">Capital</span>
+              <span className="ms-1 text-sidebar-primary">Capital</span>
             </p>
             <p className="truncate text-[9px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/30">
               EPC Operating System
@@ -312,7 +312,7 @@ function SidebarContent({
             type="button"
             onClick={onClose}
             aria-label="Close navigation"
-            className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+            className="ms-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
           >
             <X size={15} />
           </button>
@@ -322,7 +322,7 @@ function SidebarContent({
               type="button"
               onClick={() => onCollapse(true)}
               aria-label="Collapse sidebar"
-              className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+              className="ms-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
             >
               <PanelLeftClose size={15} />
             </button>
@@ -463,8 +463,10 @@ export function Sidebar(props: SidebarProps) {
       {/* Desktop */}
       <aside
         className={cn(
-          'hidden md:flex flex-col fixed left-0 top-0 h-screen z-30',
-          'bg-sidebar border-r border-sidebar-border',
+          // Logical inset: start-0 = left in LTR, right in RTL.
+          // border-s = border-left in LTR, border-right in RTL.
+          'hidden md:flex flex-col fixed start-0 top-0 h-screen z-30',
+          'bg-sidebar border-e border-sidebar-border',
           'transition-[width] duration-200 ease-out overflow-hidden',
           collapsed ? 'w-16' : 'w-64',
         )}
@@ -484,16 +486,23 @@ export function Sidebar(props: SidebarProps) {
         onClick={onMobileClose}
       />
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer
+          Logical positioning: start-0 = left in LTR / right in RTL.
+          The slide-in direction also flips: in LTR the drawer enters from the
+          left (-translate-x-full hidden → 0 visible); in RTL the drawer must
+          enter from the right (translate-x-full hidden → 0 visible).
+          We achieve this with the rtl: variant. */}
       <aside
         role="dialog"
         aria-modal="true"
         aria-label="Navigation menu"
         className={cn(
-          'md:hidden fixed left-0 top-0 h-screen w-64 z-50',
-          'bg-sidebar border-r border-sidebar-border',
+          'md:hidden fixed start-0 top-0 h-screen w-64 z-50',
+          'bg-sidebar border-e border-sidebar-border',
           'transition-transform duration-200 ease-out',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          mobileOpen
+            ? 'translate-x-0'
+            : '-translate-x-full rtl:translate-x-full',
         )}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}

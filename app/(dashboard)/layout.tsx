@@ -9,6 +9,7 @@ import {
   type AppSession,
   type AppRole,
   type AppPermission,
+  type AppDigitStyle,
 } from '@/lib/session'
 
 // Map DB user_role → AppRole
@@ -58,10 +59,10 @@ async function getSession(): Promise<AppSession | null> {
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) return null
 
-  // Fetch profile + tenant
+  // Fetch profile + tenant + i18n preferences
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, email, role, tenant_id')
+    .select('id, full_name, email, role, tenant_id, locale, digit_style')
     .eq('id', user.id)
     .single()
 
@@ -73,6 +74,14 @@ async function getSession(): Promise<AppSession | null> {
   const appRole: AppRole = ROLE_MAP[profile.role] ?? 'viewer'
   const isSuperAdmin = appRole === 'super_admin'
 
+  // Resolve i18n preferences from profile columns. These columns may not exist
+  // yet in older migrations — coerce nulls to safe defaults.
+  const locale: string     = (profile as Record<string, unknown>).locale as string | null ?? 'en'
+  const digitStyle: AppDigitStyle =
+    ((profile as Record<string, unknown>).digit_style as string | null) === 'arabic_indic'
+      ? 'arabic_indic'
+      : 'western'
+
   return {
     userId:      profile.id,
     tenantId:    profile.tenant_id,
@@ -83,6 +92,8 @@ async function getSession(): Promise<AppSession | null> {
     fullName:    profile.full_name || user.email?.split('@')[0] || 'User',
     email:       profile.email || user.email || '',
     isSuperAdmin,
+    locale,
+    digitStyle,
   }
 }
 
