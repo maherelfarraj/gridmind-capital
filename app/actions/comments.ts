@@ -116,11 +116,11 @@ export async function getComments(
 }
 
 export async function addComment(input: {
-  const tenantId = await getCurrentTenantId()
   entityType: string
   entityId: string
   body: string
 }): Promise<{ comment?: Comment; error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const supabase = await createClient()
   const {
     data: { user },

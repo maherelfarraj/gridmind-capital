@@ -10,7 +10,7 @@ import type {
 
 import { getCurrentTenantId } from '@/lib/tenant'
 
-export async function getHseDashboard(tenantId: string = tenantId): Promise<HseDashboard> {
+export async function getHseDashboard(): Promise<HseDashboard> {
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
@@ -58,13 +58,13 @@ export async function getHseDashboard(tenantId: string = tenantId): Promise<HseD
 }
 
 export async function createHseIncident(data: {
-  const tenantId = await getCurrentTenantId()
   title: string; projectCode: string; severity: HseIncidentSeverity
   reportedBy: string; location: string; description: string
   actionCount?: number; closedActions?: number
 }): Promise<{ error?: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
   const ref = `INC-${Date.now().toString(36).toUpperCase().slice(-4)}`
@@ -102,10 +102,10 @@ export async function updateHseIncidentStatus(id: string, status: HseIncidentSta
 }
 
 export async function createHsePermit(data: {
-  const tenantId = await getCurrentTenantId()
   type: string; scope: string; projectCode: string
   issuedTo: string; issuedDate: string; expiryDate: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

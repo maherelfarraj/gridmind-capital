@@ -196,7 +196,6 @@ export async function logProduction(
   projectId: string,
   date: string,   // YYYY-MM-DD
   data: {
-    const tenantId = await getCurrentTenantId()
     energy_mwh:       number
     availability_pct?: number | null
     curtailment_mwh?:  number | null
@@ -204,6 +203,7 @@ export async function logProduction(
     p90_mwh?:          number | null
   },
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -375,7 +375,6 @@ export async function logBessMetrics(
   projectId: string,
   date: string,   // YYYY-MM-DD
   data: {
-    const tenantId = await getCurrentTenantId()
     soc_pct?:              number | null
     cycles_cumulative?:    number | null
     throughput_mwh?:       number | null
@@ -383,6 +382,7 @@ export async function logBessMetrics(
     warranty_cycle_limit?: number | null
   },
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -456,13 +456,13 @@ export async function getGridCompliance(projectId: string): Promise<GridComplian
 export async function addComplianceTest(
   projectId: string,
   data: {
-    const tenantId = await getCurrentTenantId()
     category:       ComplianceCategory
     test_name:      string
     scheduled_date?: string | null
     notes?:          string | null
   },
 ): Promise<{ id?: string; error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

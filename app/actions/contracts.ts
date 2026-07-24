@@ -293,7 +293,6 @@ export async function getContractsRegister(projectId: string): Promise<Contracts
 export async function createContract(
   projectId: string,
   data: {
-    const tenantId = await getCurrentTenantId()
     title: string
     party?: string
     type: ContractType
@@ -308,6 +307,7 @@ export async function createContract(
   },
   milestones: { title: string; due_date: string; amount: number }[] = [],
 ): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -514,7 +514,6 @@ export async function getSecuritiesRegister(projectId: string): Promise<Securiti
 export async function createSecurity(
   projectId: string,
   data: {
-    const tenantId = await getCurrentTenantId()
     type: SecurityType
     issuer?: string
     reference?: string
@@ -525,6 +524,7 @@ export async function createSecurity(
     contract_id?: string | null
   },
 ): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

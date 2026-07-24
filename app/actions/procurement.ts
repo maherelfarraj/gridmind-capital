@@ -247,9 +247,9 @@ export async function loadProcurementDashboard(): Promise<ProcurementDashboard> 
 }
 
 export async function issueRFQ(data: {
-  const tenantId = await getCurrentTenantId()
   title: string; vendor: string; amount_usd: number; close_date: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

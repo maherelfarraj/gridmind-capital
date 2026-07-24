@@ -80,10 +80,10 @@ export async function loadRisksDashboard(projectId?: string): Promise<RisksDashb
 }
 
 export async function createRisk(data: {
-  const tenantId = await getCurrentTenantId()
   title: string; category: string; probability: number; impact: number
   owner: string; mitigation: string; project_id?: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

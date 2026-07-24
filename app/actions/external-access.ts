@@ -215,16 +215,16 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
   return { userId, inviteLink, isExisting: !!existing }
 }
 
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────���─────────────
 // Grant / Revoke
 // ─────────────────────────────────���─────────────────��─────────
 
 export async function assignProjectAccess(args: {
-  const tenantId = await getCurrentTenantId()
   userId: string
   projectId: string
   organizationName: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { error } = await admin.from('external_access').upsert({
     tenant_id:         tenantId,
@@ -240,10 +240,10 @@ export async function assignProjectAccess(args: {
 }
 
 export async function revokeProjectAccess(args: {
-  const tenantId = await getCurrentTenantId()
   userId: string
   projectId: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { error } = await admin
     .from('external_access')
@@ -394,7 +394,7 @@ export async function seedClientPortalDemo(projectId: string): Promise<{
     return { error: 'Only project managers and above can seed demo data' }
   }
 
-  const tenantId = profile.tenant_id ?? tenantId
+  const tenantId = profile.tenant_id ?? await getCurrentTenantId()
 
   // Flag up to 4 approved/submitted VOs as client-visible.
   const { data: vos } = await admin

@@ -357,7 +357,6 @@ export async function markAllReadAction(): Promise<void> {
 
 /** Seed demo notifications for the current user (dev helper) */
 export async function seedNotificationsAction(): Promise<void> {
-  const tenantId = await getCurrentTenantId()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return

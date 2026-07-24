@@ -185,7 +185,6 @@ export async function getItpPlan(planId: string): Promise<ItpPlan | null> {
 // ── mutations ──────────────────────────────────────────────────────────────
 
 export async function createItpPlan(input: {
-  const tenantId = await getCurrentTenantId()
   projectId: string
   title: string
   work_package?: string
@@ -197,6 +196,7 @@ export async function createItpPlan(input: {
     responsible?: string
   }>
 }): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -463,12 +463,12 @@ export async function getNcrRegister(projectId: string): Promise<QualityNcrRegis
 }
 
 export async function createNcr(input: {
-  const tenantId = await getCurrentTenantId()
   projectId: string
   title: string
   category: NcrCategory
   description?: string
 }): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -498,10 +498,10 @@ export async function createNcr(input: {
 export async function setNcrDisposition(
   ncrId: string,
   input: { root_cause: string; disposition: string },
-const tenantId = await getCurrentTenantId()
 ): Promise<{ error?: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   const admin = createAdminClient()
   const { error } = await admin

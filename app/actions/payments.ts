@@ -246,13 +246,13 @@ export async function getPortfolioCostExposure(): Promise<PortfolioCostExposure>
  * advance recovery.
  */
 export async function draftPaymentCertificate(opts: {
-  const tenantId = await getCurrentTenantId()
   projectId: string
   period_start: string
   period_end: string
   retention_pct?: number
   advance_recovery?: number
 }): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 

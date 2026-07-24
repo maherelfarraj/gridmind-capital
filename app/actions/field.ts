@@ -379,6 +379,7 @@ export async function registerFieldPhoto(
   reportId?: string,
   ticketId?: string,
 ): Promise<{ id: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

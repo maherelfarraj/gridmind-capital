@@ -120,13 +120,13 @@ export async function updateHandoverStatus(
 }
 
 export async function createHandoverItem(data: {
-  const tenantId = await getCurrentTenantId()
   project_id: string
   category: HandoverItem['category']
   title: string
   description?: string
   due_date?: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

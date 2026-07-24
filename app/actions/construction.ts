@@ -121,11 +121,11 @@ export async function closePunchItem(id: string): Promise<{ error?: string }> {
 }
 
 export async function recordInspection(data: {
-  const tenantId = await getCurrentTenantId()
   title: string; type: string; result: string; location: string
 }): Promise<{ error?: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('inspections').insert({

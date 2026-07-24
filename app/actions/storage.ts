@@ -49,12 +49,12 @@ export async function ensureStorageBucket() {
 
 /** Generate a signed upload URL for the client to PUT directly. */
 export async function createUploadUrl(opts: {
-  const tenantId = await getCurrentTenantId()
   fileName: string
   projectId: string | null
   projectCode: string | null
   uploadedBy: string
 }): Promise<{ uploadUrl: string; storagePath: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -77,7 +77,6 @@ export async function createUploadUrl(opts: {
 
 /** Register a completed upload in the document_files table. */
 export async function registerDocument(opts: {
-  const tenantId = await getCurrentTenantId()
   storagePath: string
   fileName: string
   title: string
@@ -88,6 +87,7 @@ export async function registerDocument(opts: {
   projectCode: string | null
   uploadedBy: string
 }): Promise<{ id: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -236,13 +236,13 @@ export interface FieldPhoto {
  * @param linkId   the id of the NCR / inspection it documents
  */
 export async function uploadFieldPhoto(opts: {
-  const tenantId = await getCurrentTenantId()
   dataUrl: string
   projectId: string
   linkType: string
   linkId: string
   uploadedBy: string
 }): Promise<{ photo: FieldPhoto } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

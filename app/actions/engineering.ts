@@ -253,9 +253,9 @@ export async function getG2Data(projectId: string): Promise<G2DataResult> {
 }
 
 export async function createRFI(data: {
-  const tenantId = await getCurrentTenantId()
   title: string; discipline: string; description: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

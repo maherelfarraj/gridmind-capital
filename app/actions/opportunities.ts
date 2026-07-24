@@ -79,7 +79,6 @@ export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboa
 }
 
 export async function createOpportunity(data: {
-  const tenantId = await getCurrentTenantId()
   name: string
   code: string
   technology: string
@@ -89,6 +88,7 @@ export async function createOpportunity(data: {
   budget_usd: number
   description: string
 }): Promise<{ id?: string; error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 

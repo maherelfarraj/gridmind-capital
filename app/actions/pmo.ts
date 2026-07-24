@@ -142,11 +142,11 @@ export async function loadPmoDashboard(): Promise<PmoDashboard> {
 // ── Create (governed via workflow_events audit) ──────────────────────────────
 
 export async function createPmoItem(input: {
-  const tenantId = await getCurrentTenantId()
   type: 'risk' | 'issue' | 'action' | 'decision' | 'lesson'
   projectId: string; title: string; owner?: string; priority?: string
   category?: string; rationale?: string; phase?: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
   const { type, projectId, title } = input
   if (!projectId || !title) return { error: 'Project and title are required' }
