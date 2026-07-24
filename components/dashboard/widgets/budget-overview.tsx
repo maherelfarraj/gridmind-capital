@@ -7,9 +7,12 @@ import {
 } from 'recharts'
 import type { WidgetConfig } from './types'
 import { getPortfolioCostExposure } from '@/app/actions/payments'
+import { useDigitStyle } from '@/lib/session-context'
+import { toLocaleDigits } from '@/lib/digits'
 
 export function BudgetOverviewWidget({ config: _config }: { config: WidgetConfig }) {
   const { data: exposure, isLoading } = useSWR('widget-cost-exposure', getPortfolioCostExposure)
+  const digitStyle = useDigitStyle()
 
   // Per-project chart rows: contract value (bar) + pending VO exposure (line), in $M.
   const DATA = (exposure?.projects ?? []).map((p) => ({
@@ -40,7 +43,7 @@ export function BudgetOverviewWidget({ config: _config }: { config: WidgetConfig
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         <BarChart2 className="size-3.5" />
         <span>Cost Exposure</span>
-        <span className="ml-auto text-[10px] font-mono font-normal text-foreground">${totalContract.toFixed(0)}M contract</span>
+        <span className="ms-auto text-[10px] font-mono font-normal text-foreground">${toLocaleDigits(totalContract.toFixed(0), digitStyle)}M contract</span>
       </div>
       {DATA.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
@@ -49,9 +52,9 @@ export function BudgetOverviewWidget({ config: _config }: { config: WidgetConfig
       {/* KPI row */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          { label: 'Contract Value', value: `$${totalContract.toFixed(0)}M`, color: 'text-foreground' },
-          { label: '% Certified',    value: `${certifiedPct.toFixed(0)}%`,   color: certifiedPct >= 100 ? 'text-red-500' : certifiedPct >= 85 ? 'text-amber-500' : 'text-green-500' },
-          { label: 'Exposure',       value: `$${totalExposure.toFixed(1)}M`, color: totalExposure > 0 ? 'text-amber-500' : 'text-green-500' },
+          { label: 'Contract Value', value: `$${toLocaleDigits(totalContract.toFixed(0), digitStyle)}M`, color: 'text-foreground' },
+          { label: '% Certified',    value: `${toLocaleDigits(certifiedPct.toFixed(0), digitStyle)}%`,   color: certifiedPct >= 100 ? 'text-red-500' : certifiedPct >= 85 ? 'text-amber-500' : 'text-green-500' },
+          { label: 'Exposure',       value: `$${toLocaleDigits(totalExposure.toFixed(1), digitStyle)}M`, color: totalExposure > 0 ? 'text-amber-500' : 'text-green-500' },
         ].map(k => (
           <div key={k.label} className="rounded-lg bg-muted/20 px-2 py-1.5 text-center">
             <p className={`text-sm font-bold ${k.color}`}>{k.value}</p>
