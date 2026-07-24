@@ -8,7 +8,8 @@ import { z } from 'zod'
 import {
   FileText, Plus, ChevronRight, X, Loader2, AlertTriangle,
   CheckCircle2, Clock, DollarSign, Gavel, Trash2, ArrowLeft,
-  ShieldCheck,
+  ShieldCheck, Shield, ShieldAlert, ShieldOff, BadgeDollarSign,
+  RefreshCw, XCircle, LinkIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -24,8 +25,10 @@ import {
 } from '@/components/ui/dialog'
 import {
   getContractsRegister, createContract, updateMilestoneStatus,
+  getSecuritiesRegister, createSecurity, releaseSecurity, claimSecurity,
   type Contract, type ContractType, type ContractStatus, type MilestoneStatus,
-  type ContractsRegister,
+  type ContractsRegister, type Security, type SecurityType, type SecurityStatus,
+  type SecuritiesRegister,
 } from '@/app/actions/contracts'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -538,6 +541,510 @@ function NewContractDialog({
   )
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECURITIES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SECURITY_TYPE_META: Record<SecurityType, { label: string; icon: React.ElementType; color: string; bg: string }> = {
+  performance_bond:       { label: 'Performance Bond',       icon: Shield,           color: '#1d4ed8', bg: 'bg-blue-100 dark:bg-blue-900/30'    },
+  advance_payment_bond:   { label: 'Advance Payment Bond',   icon: BadgeDollarSign,  color: '#0891b2', bg: 'bg-cyan-100 dark:bg-cyan-900/30'    },
+  retention_bond:         { label: 'Retention Bond',         icon: ShieldCheck,      color: '#0f766e', bg: 'bg-teal-100 dark:bg-teal-900/30'    },
+  bid_bond:               { label: 'Bid Bond',               icon: Gavel,            color: '#7c3aed', bg: 'bg-violet-100 dark:bg-violet-900/30' },
+  warranty_bond:          { label: 'Warranty Bond',          icon: ShieldAlert,      color: '#d97706', bg: 'bg-amber-100 dark:bg-amber-900/30'  },
+  letter_of_credit:       { label: 'Letter of Credit',       icon: FileText,         color: '#be185d', bg: 'bg-pink-100 dark:bg-pink-900/30'    },
+  other:                  { label: 'Other',                  icon: ShieldOff,        color: '#64748b', bg: 'bg-slate-100 dark:bg-slate-800/50'  },
+}
+
+const SECURITY_STATUS_META: Record<SecurityStatus, { label: string; color: string }> = {
+  active:   { label: 'Active',   color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  expired:  { label: 'Expired',  color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'               },
+  released: { label: 'Released', color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'       },
+  claimed:  { label: 'Claimed',  color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'   },
+}
+
+const SECURITY_TYPE_OPTIONS = [
+  { value: 'performance_bond',      label: 'Performance Bond'      },
+  { value: 'advance_payment_bond',  label: 'Advance Payment Bond'  },
+  { value: 'retention_bond',        label: 'Retention Bond'        },
+  { value: 'bid_bond',              label: 'Bid Bond'              },
+  { value: 'warranty_bond',         label: 'Warranty Bond'         },
+  { value: 'letter_of_credit',      label: 'Letter of Credit'      },
+  { value: 'other',                 label: 'Other'                 },
+]
+
+/** Green >90d, amber ≤90d, red ≤30d, black "EXPIRED" */
+function ExpiryCell({ days, status }: { days: number | null; status: SecurityStatus }) {
+  if (status !== 'active' && status !== 'expired') return <span className="text-xs text-muted-foreground/50">—</span>
+  if (status === 'expired' || (days !== null && days < 0)) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-gray-900 px-2 py-0.5 text-[11px] font-bold text-white dark:bg-gray-100 dark:text-gray-900">
+        EXPIRED
+      </span>
+    )
+  }
+  if (days === null) return <span className="text-xs text-muted-foreground">—</span>
+  const isRed   = days <= 30
+  const isAmber = days <= 90
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
+      isRed   ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'     :
+      isAmber ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    )}>
+      <Clock className="size-2.5" aria-hidden />
+      {days}d
+    </span>
+  )
+}
+
+// ─── Security detail inline panel ────────────────────────────────────────────
+
+function SecurityDetail({
+  security, contracts, projectId, onClose, onRefresh,
+}: {
+  security: Security
+  contracts: Contract[]
+  projectId: string
+  onClose: () => void
+  onRefresh: () => void
+}) {
+  const { toast } = useToast()
+  const [acting, setActing] = React.useState<'release' | 'claim' | null>(null)
+
+  const meta   = SECURITY_TYPE_META[security.type]
+  const Icon   = meta.icon
+  const days   = security.days_to_expiry
+  const isExpiredActive = security.status === 'expired' || (security.status === 'active' && days !== null && days < 0)
+  const linked = contracts.find(c => c.id === security.contract_id)
+
+  async function handleRelease() {
+    setActing('release')
+    const res = await releaseSecurity(security.id)
+    setActing(null)
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Released', description: 'Security instrument marked as released.', variant: 'success' })
+    onRefresh()
+    onClose()
+  }
+
+  async function handleClaim() {
+    setActing('claim')
+    const res = await claimSecurity(security.id)
+    setActing(null)
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Claimed', description: 'Security instrument marked as claimed.', variant: 'success' })
+    onRefresh()
+    onClose()
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card divide-y divide-border">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 px-5 py-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className={cn('size-10 rounded-lg flex items-center justify-center shrink-0', meta.bg)}>
+            <Icon className="size-5" style={{ color: meta.color }} aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-0.5">
+              <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', SECURITY_STATUS_META[security.status].color)}>
+                {SECURITY_STATUS_META[security.status].label}
+              </span>
+              <ExpiryCell days={days} status={security.status} />
+            </div>
+            <p className="font-semibold text-foreground">{meta.label}</p>
+            {security.issuer && <p className="text-xs text-muted-foreground mt-0.5">{security.issuer}</p>}
+          </div>
+        </div>
+        <button onClick={onClose} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Close detail">
+          <X className="size-4" aria-hidden />
+        </button>
+      </div>
+
+      {/* Renewal reminder alert */}
+      {isExpiredActive && (
+        <div className="px-5 py-3 bg-red-50 dark:bg-red-900/10 flex items-start gap-3">
+          <AlertTriangle className="size-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" aria-hidden />
+          <div className="text-sm">
+            <p className="font-semibold text-red-700 dark:text-red-400">Renew or release required</p>
+            <p className="text-red-600/80 dark:text-red-400/70 text-xs mt-0.5">
+              This security has expired but is still recorded as active. Obtain a renewed instrument from the issuer, or release it to clear the register.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Terms grid */}
+      <div className="px-5 py-4">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Instrument details</p>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:grid-cols-3">
+          <div>
+            <span className="text-xs text-muted-foreground block">Reference</span>
+            <span className="font-semibold text-foreground font-mono text-xs">{security.reference ?? '—'}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Amount</span>
+            <span className="font-semibold text-foreground">{fmtUsdFull(security.amount)}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Currency</span>
+            <span className="font-semibold text-foreground">{security.currency}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Issue date</span>
+            <span className="font-semibold text-foreground">{fmtDate(security.issue_date)}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Expiry date</span>
+            <span className="font-semibold text-foreground">{fmtDate(security.expiry_date)}</span>
+          </div>
+          {linked && (
+            <div>
+              <span className="text-xs text-muted-foreground block">Linked contract</span>
+              <span className="font-semibold text-foreground flex items-center gap-1">
+                <LinkIcon className="size-3 text-muted-foreground" aria-hidden />
+                {linked.contract_no}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      {(security.status === 'active' || security.status === 'expired') && (
+        <div className="px-5 py-4 flex items-center gap-3 flex-wrap">
+          <Button
+            size="sm" variant="outline"
+            disabled={acting !== null}
+            onClick={handleRelease}
+          >
+            {acting === 'release' ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="size-3.5 mr-1.5" aria-hidden />}
+            Release
+          </Button>
+          {security.status === 'active' && (
+            <Button
+              size="sm" variant="outline"
+              className="border-orange-300 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-900/20"
+              disabled={acting !== null}
+              onClick={handleClaim}
+            >
+              {acting === 'claim' ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <XCircle className="size-3.5 mr-1.5" aria-hidden />}
+              Mark claimed
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── New security dialog ──────────────────────────────────────────────────────
+
+const newSecuritySchema = z.object({
+  type:        z.enum(['performance_bond','advance_payment_bond','retention_bond','bid_bond','warranty_bond','letter_of_credit','other']),
+  issuer:      z.string().optional(),
+  reference:   z.string().optional(),
+  amount:      z.coerce.number().min(1, 'Amount must be > 0'),
+  currency:    z.string().optional(),
+  issue_date:  z.string().optional(),
+  expiry_date: z.string().optional(),
+  contract_id: z.string().optional(),
+})
+
+type NewSecurityFormValues = z.infer<typeof newSecuritySchema>
+
+function NewSecurityDialog({
+  open, onClose, projectId, contracts,
+}: { open: boolean; onClose: () => void; projectId: string; contracts: Contract[] }) {
+  const { toast } = useToast()
+  const {
+    register, handleSubmit, reset, watch, setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<NewSecurityFormValues>({
+    resolver: zodResolver(newSecuritySchema),
+    defaultValues: { type: 'performance_bond', currency: 'USD' },
+  })
+
+  async function onSubmit(values: NewSecurityFormValues) {
+    const res = await createSecurity(projectId, {
+      type:        values.type as SecurityType,
+      issuer:      values.issuer || undefined,
+      reference:   values.reference || undefined,
+      amount:      values.amount,
+      currency:    values.currency ?? 'USD',
+      issue_date:  values.issue_date || null,
+      expiry_date: values.expiry_date || null,
+      contract_id: values.contract_id && values.contract_id !== '__none__' ? values.contract_id : null,
+    })
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Security added', description: 'Security instrument registered.', variant: 'success' })
+    reset()
+    onClose()
+    globalMutate(`securities-register-${projectId}`)
+  }
+
+  const contractOptions = [
+    { value: '__none__', label: 'No linked contract' },
+    ...contracts.map(c => ({ value: c.id, label: `${c.contract_no} — ${c.title}` })),
+  ]
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add Security Instrument</DialogTitle>
+          <DialogDescription>Register a bond, guarantee, or letter of credit for this project.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label>Type</Label>
+            <Select
+              value={watch('type')}
+              onValueChange={v => v && setValue('type', v as SecurityType)}
+              options={SECURITY_TYPE_OPTIONS}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="ns-issuer">Issuer / Bank</Label>
+              <Input id="ns-issuer" {...register('issuer')} placeholder="e.g. HSBC Middle East" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ns-ref">Reference No.</Label>
+              <Input id="ns-ref" {...register('reference')} placeholder="Bond / guarantee number" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="ns-amount">Amount</Label>
+              <Input id="ns-amount" type="number" min="0" step="1000" {...register('amount')} placeholder="0" />
+              {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ns-currency">Currency</Label>
+              <Input id="ns-currency" {...register('currency')} placeholder="USD" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="ns-issue">Issue date</Label>
+              <Input id="ns-issue" type="date" {...register('issue_date')} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ns-expiry">Expiry date</Label>
+              <Input id="ns-expiry" type="date" {...register('expiry_date')} />
+            </div>
+          </div>
+
+          {contracts.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Linked contract</Label>
+              <Select
+                value={watch('contract_id') ?? '__none__'}
+                onValueChange={v => setValue('contract_id', !v || v === '__none__' ? '' : v)}
+                options={contractOptions}
+                placeholder="Select contract (optional)"
+              />
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { reset(); onClose() }}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="size-4 mr-2 animate-spin" /> : null}
+              Add security
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Securities register section ─────────────────────────────────────────────
+
+function SecuritiesSection({
+  projectId, contracts,
+}: { projectId: string; contracts: Contract[] }) {
+  const { data, isLoading, mutate } = useSWR<SecuritiesRegister>(
+    `securities-register-${projectId}`,
+    () => getSecuritiesRegister(projectId),
+  )
+  const [selected, setSelected] = React.useState<Security | null>(null)
+  const [newOpen, setNewOpen]   = React.useState(false)
+
+  const securities = data?.securities ?? []
+  const summary    = data?.summary
+  const isLive     = securities.length > 0
+
+  // Re-sync selected row after refresh
+  React.useEffect(() => {
+    if (!selected || !data) return
+    const fresh = data.securities.find(s => s.id === selected.id)
+    if (fresh) setSelected(fresh)
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalBonded     = summary?.total_bonded_value ?? 0
+  const expiring30      = summary?.expiring_within_30_days ?? 0
+  const expiredNotRel   = summary?.expired_not_released ?? 0
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center justify-between gap-3 pt-2">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">Securities</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Bonds, guarantees, and letters of credit</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            'rounded-full px-2.5 py-0.5 text-xs font-medium',
+            isLive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                   : 'bg-muted text-muted-foreground',
+          )}>
+            {isLive ? 'Live' : 'Illustrative'}
+          </span>
+          <Button size="sm" onClick={() => setNewOpen(true)}>
+            <Plus className="size-3.5 mr-1.5" aria-hidden />
+            New security
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3">
+        <KpiCard
+          label="Total bonded value"
+          value={isLoading ? '—' : fmtUsd(totalBonded)}
+          sub="Active instruments"
+        />
+        <KpiCard
+          label="Expiring in 30 days"
+          value={isLoading ? '—' : String(expiring30)}
+          accent={expiring30 > 0 ? 'amber' : undefined}
+          sub={expiring30 > 0 ? 'Action required' : undefined}
+        />
+        <KpiCard
+          label="Expired, not released"
+          value={isLoading ? '—' : String(expiredNotRel)}
+          accent={expiredNotRel > 0 ? 'red' : undefined}
+          sub={expiredNotRel > 0 ? 'Renew or release' : undefined}
+        />
+      </div>
+
+      {/* Selected detail panel */}
+      {selected && (
+        <SecurityDetail
+          security={selected}
+          contracts={contracts}
+          projectId={projectId}
+          onClose={() => setSelected(null)}
+          onRefresh={() => mutate()}
+        />
+      )}
+
+      {/* Table */}
+      {isLoading ? (
+        <div className="space-y-2">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-11 rounded-lg bg-muted/40 animate-pulse" />
+          ))}
+        </div>
+      ) : securities.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-muted/20 py-12 text-center">
+          <Shield className="size-9 text-muted-foreground/30 mx-auto mb-3" aria-hidden />
+          <p className="text-sm font-semibold text-muted-foreground">No securities registered</p>
+          <p className="text-xs text-muted-foreground/60 mt-1 max-w-xs mx-auto">
+            Add performance bonds, guarantees, and letters of credit to track expiry and release status.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Issuer</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Reference</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Contract</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Expiry</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                <th className="px-4 py-3 sr-only text-xs">Open</th>
+              </tr>
+            </thead>
+            <tbody>
+              {securities.map(s => {
+                const meta     = SECURITY_TYPE_META[s.type]
+                const Icon     = meta.icon
+                const isSelected = selected?.id === s.id
+                const linked   = contracts.find(c => c.id === s.contract_id)
+                return (
+                  <tr
+                    key={s.id}
+                    onClick={() => setSelected(isSelected ? null : s)}
+                    className={cn(
+                      'border-b border-border last:border-0 cursor-pointer transition-colors group',
+                      isSelected ? 'bg-primary/5' : 'hover:bg-muted/30',
+                    )}
+                  >
+                    {/* Type badge with icon */}
+                    <td className="px-4 py-3">
+                      <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium', meta.bg)}>
+                        <Icon className="size-3 shrink-0" style={{ color: meta.color }} aria-hidden />
+                        <span style={{ color: meta.color }}>{meta.label}</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">
+                      {s.issuer ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                      {s.reference ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                      {fmtUsdFull(s.amount)}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {linked ? (
+                        <span className="flex items-center gap-1">
+                          <LinkIcon className="size-3 shrink-0" aria-hidden />
+                          {linked.contract_no}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ExpiryCell days={s.days_to_expiry} status={s.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', SECURITY_STATUS_META[s.status].color)}>
+                        {SECURITY_STATUS_META[s.status].label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <ChevronRight className={cn('size-4 text-muted-foreground/40 transition-transform', isSelected && 'rotate-90')} aria-hidden />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <NewSecurityDialog
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        projectId={projectId}
+        contracts={contracts}
+      />
+    </div>
+  )
+}
+
 // ─── Main register component ──────────────────────────────────────────────────
 
 export function ContractsRegister({ projectId }: { projectId: string }) {
@@ -731,6 +1238,12 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
         onClose={() => setNewOpen(false)}
         projectId={projectId}
       />
+
+      {/* Divider */}
+      <div className="border-t border-border" />
+
+      {/* Securities section */}
+      <SecuritiesSection projectId={projectId} contracts={contracts} />
     </div>
   )
 }
