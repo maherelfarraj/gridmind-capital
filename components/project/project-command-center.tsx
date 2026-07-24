@@ -13,6 +13,7 @@ import {
   FileText,
   Pencil,
   MoreVertical,
+  Landmark,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -135,6 +136,8 @@ export interface ProjectCommandCenterProps {
   onEdit?: () => void
   /** Called when Actions (⋯) dropdown is clicked */
   onActions?: () => void
+  /** When provided, renders a "Lender Report" header button (role-gated by the caller) */
+  onLenderReport?: () => void
   className?: string
 }
 
@@ -324,6 +327,7 @@ export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
   onDocuments,
   onEdit,
   onActions,
+  onLenderReport,
   className,
 }: ProjectCommandCenterProps) {
   // ── Loading state ──
@@ -404,6 +408,20 @@ export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
                 </span>
               )}
             </Button>
+
+            {/* Lender Report — only rendered when the caller passes a handler (role-gated) */}
+            {onLenderReport && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onLenderReport}
+                aria-label="Open lender progress report"
+                className="gap-1.5"
+              >
+                <Landmark className="size-3.5" aria-hidden="true" />
+                <span>Lender Report</span>
+              </Button>
+            )}
 
             {/* Edit */}
             <Button

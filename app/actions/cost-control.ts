@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -74,17 +74,17 @@ async function getActor(): Promise<Actor> {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null, tenantId: DEMO_TENANT, role: null, fullName: null }
+    if (!user) return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
     const { data: profile } = await supabase
       .from('profiles').select('tenant_id, role, full_name').eq('id', user.id).single()
     return {
       userId: user.id,
-      tenantId: profile?.tenant_id ?? DEMO_TENANT,
+      tenantId: profile?.tenant_id ?? DEMO_TENANT_FALLBACK,
       role: profile?.role ?? null,
       fullName: profile?.full_name ?? null,
     }
   } catch {
-    return { userId: null, tenantId: DEMO_TENANT, role: null, fullName: null }
+    return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
   }
 }
 

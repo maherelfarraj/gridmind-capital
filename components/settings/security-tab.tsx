@@ -29,9 +29,14 @@ export function SecurityTab({ onSave }: { onSave: () => void }) {
     <div className="space-y-6">
       {/* Login history */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-border">
-          <h3 className="text-sm font-semibold text-foreground">Login History</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Recent authentication events for your account.</p>
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Login History</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Recent authentication events for your account.</p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold rounded-full px-2 py-0.5 border bg-muted text-muted-foreground border-border flex-shrink-0">
+            Demo data
+          </span>
         </div>
         <div className="divide-y divide-border">
           {LOGIN_HISTORY.map((l) => (

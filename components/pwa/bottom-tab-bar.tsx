@@ -67,7 +67,7 @@ function Badge({ count }: { count?: number }) {
   if (!count || count <= 0) return null
   return (
     <span
-      className="absolute right-[22%] top-1.5 inline-flex min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white"
+      className="absolute end-[22%] top-1.5 inline-flex min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white"
       aria-hidden="true"
     >
       {count > 9 ? '9+' : count}

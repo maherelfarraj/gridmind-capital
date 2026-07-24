@@ -7,16 +7,18 @@ import {
 } from 'recharts'
 import {
   Plus, RefreshCw, Loader2, Hammer, HardHat, ClipboardList,
-  CheckCircle2, AlertTriangle, X,
+  CheckCircle2, AlertTriangle, X, ClipboardCheck, ChevronRight,
 } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
-  loadConstructionDashboard, closePunchItem, recordInspection, seedConstructionDemoData,
+  loadConstructionDashboard, closePunchItem, recordInspection,
 } from '@/app/actions/construction'
 import type { WorkPackage, InspectionRecord, PunchItem } from '@/lib/types/action-types'
+import { DailyReportsSection } from './daily-reports-section'
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -153,29 +155,18 @@ function PunchRow({ item, onClose }: { item: PunchItem; onClose: (id: string) =>
   )
 }
 
-// ─── Main page ────────────────────────────────────────────────
+// ��── Main page ────────────────────────────────────────────────
 
 export function ConstructionPage() {
   const { toast } = useToast()
   const [tab, setTab]       = React.useState<'wp' | 'inspections' | 'punch'>('wp')
   const [inspModal, setInspModal] = React.useState(false)
-  const [seeding,   setSeeding]   = React.useState(false)
-
   const { data, isLoading, mutate } = useSWR('construction-dashboard', loadConstructionDashboard, { revalidateOnFocus: true })
 
   async function handleClosePunch(id: string) {
     const { error } = await closePunchItem(id)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'Punch item closed', variant: 'success' })
-    mutate()
-  }
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedConstructionDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
     mutate()
   }
 
@@ -204,9 +195,6 @@ export function ConstructionPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()}><RefreshCw className="size-3.5" /></Button>
-            <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
-              {seeding ? <Loader2 className="size-3.5 animate-spin" /> : 'Seed Demo'}
-            </Button>
             <Button size="sm" onClick={() => setInspModal(true)}><Plus className="size-4" /> Record Inspection</Button>
           </div>
         </div>
@@ -314,7 +302,7 @@ export function ConstructionPage() {
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                   <Hammer className="size-12 text-muted-foreground/30" />
                   <p className="text-sm font-semibold text-foreground">No work packages</p>
-                  <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
+                  <p className="text-xs text-muted-foreground">Create work packages via the construction module.</p>
                 </div>
               ) : (
                 <table className="w-full min-w-[700px] text-sm" role="table">
@@ -389,7 +377,7 @@ export function ConstructionPage() {
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                   <ClipboardList className="size-12 text-muted-foreground/30" />
                   <p className="text-sm font-semibold text-foreground">No punch items</p>
-                  <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
+                  <p className="text-xs text-muted-foreground">Punch items appear here once recorded.</p>
                 </div>
               ) : (
                 <table className="w-full min-w-[700px] text-sm" role="table">
@@ -406,6 +394,34 @@ export function ConstructionPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Quality / ITP nav card */}
+        <Card className="rounded-xl border border-border">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-lg bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center shrink-0">
+                  <ClipboardCheck className="size-5 text-teal-700 dark:text-teal-400" aria-hidden />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Quality / ITP Register</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Inspection &amp; Test Plans, hold points, pass rates and open NCRs per project.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/projects"
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors shrink-0"
+              >
+                Open ITP <ChevronRight className="size-3.5" aria-hidden />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Daily reports (field mode → construction) */}
+        <DailyReportsSection />
       </div>
     </>
   )

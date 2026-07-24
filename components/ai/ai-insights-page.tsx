@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Brain, AlertTriangle, CheckCircle2, RefreshCw, Database, Star, Plug } from 'lucide-react'
+import { Brain, AlertTriangle, CheckCircle2, RefreshCw, Star, Plug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -15,7 +15,6 @@ import {
   acknowledgeInsightAction,
   dismissInsightAction,
   connectProviderAction,
-  seedAiMarketplaceDemoAction,
 } from '@/app/actions/ai-insights'
 import type { AiInsight, MarketplaceProvider } from '@/lib/types/action-types'
 
@@ -150,15 +149,7 @@ function ProviderCard({ provider, onUpdate }: { provider: MarketplaceProvider; o
 
 export function AiInsightsPage() {
   const [tab, setTab] = useState<'insights' | 'marketplace'>('insights')
-  const [seeding, setSeeding] = useState(false)
   const { data, mutate, isLoading } = useSWR('ai-marketplace-dashboard', loadAiMarketplaceDashboard)
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedAiMarketplaceDemoAction()
-    await mutate()
-    setSeeding(false)
-  }
 
   const isLive = (data?.insights.length ?? 0) > 0 || (data?.providers.length ?? 0) > 0
   const s = data?.insightStats
@@ -187,12 +178,6 @@ export function AiInsightsPage() {
         </div>
         <div className="flex items-center gap-2">
           <LiveBadge live={isLive} />
-          {!isLive && (
-            <Button size="sm" variant="outline" onClick={handleSeed} disabled={seeding}>
-              <Database className={cn('size-3.5 mr-1.5', seeding && 'animate-spin')} />
-              {seeding ? 'Seeding…' : 'Seed Demo'}
-            </Button>
-          )}
           <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
             <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
           </Button>

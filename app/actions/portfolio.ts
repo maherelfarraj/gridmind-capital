@@ -9,7 +9,7 @@ function svc() {
   )
 }
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export interface PortfolioProject {
   id: string
@@ -37,18 +37,19 @@ export interface PortfolioStats {
 }
 
 export async function getPortfolioStats(): Promise<PortfolioStats> {
+  const tenantId = await getCurrentTenantId()
   const supabase = svc()
 
   const [projectsRes, approvalsRes] = await Promise.all([
     supabase
       .from('projects')
       .select('id,code,name,status,technology,capacity_mw,budget_usd,spent_usd,current_phase,health,location,country,target_completion,project_manager')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     supabase
       .from('approvals')
       .select('id,status')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('status', 'pending'),
   ])
 

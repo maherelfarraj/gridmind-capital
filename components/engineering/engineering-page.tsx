@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
-  loadEngineeringDashboard, createRFI, closeRFI, seedEngineeringDemoData,
+  loadEngineeringDashboard, createRFI, closeRFI,
 } from '@/app/actions/engineering'
 import type { IFCPackage, RFIRecord } from '@/lib/types/action-types'
 
@@ -147,29 +147,18 @@ function RFIRow({ item, onClose }: { item: RFIRecord; onClose: (id: string) => v
   )
 }
 
-// ─── Main page ────────────────────────────────────────────────
+// ─── Main page ─────────────────────────────────────���──────────
 
 export function EngineeringPage() {
   const { toast } = useToast()
   const [tab, setTab] = React.useState<'packages' | 'rfis' | 'drawings'>('packages')
   const [rfiModal, setRfiModal] = React.useState(false)
-  const [seeding,  setSeeding]  = React.useState(false)
-
   const { data, isLoading, mutate } = useSWR('engineering-dashboard', loadEngineeringDashboard, { revalidateOnFocus: true })
 
   async function handleCloseRFI(id: string) {
     const { error } = await closeRFI(id)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'RFI closed', variant: 'success' })
-    mutate()
-  }
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedEngineeringDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
     mutate()
   }
 
@@ -192,9 +181,6 @@ export function EngineeringPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()}><RefreshCw className="size-3.5" /></Button>
-            <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
-              {seeding ? <Loader2 className="size-3.5 animate-spin" /> : 'Seed Demo'}
-            </Button>
             <Button size="sm" onClick={() => setRfiModal(true)}><Plus className="size-4" /> New RFI</Button>
           </div>
         </div>
@@ -290,7 +276,7 @@ export function EngineeringPage() {
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                   <FileText className="size-12 text-muted-foreground/30" />
                   <p className="text-sm font-semibold text-foreground">No IFC packages</p>
-                  <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
+                  <p className="text-xs text-muted-foreground">Upload packages via the Engineering cockpit.</p>
                 </div>
               ) : (
                 <table className="w-full min-w-[640px] text-sm" role="table">

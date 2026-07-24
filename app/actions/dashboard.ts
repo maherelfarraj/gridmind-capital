@@ -13,18 +13,19 @@ function getServiceClient() {
   )
 }
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
 // Dashboard stats
 // ─────────────────────────────────────────────────────────────
 
 export async function getDashboardStats(): Promise<DashboardStats> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
 
   const [projectsRes, approvalsRes] = await Promise.all([
-    supabase.from('projects').select('id, status').eq('tenant_id', DEMO_TENANT),
-    supabase.from('approvals').select('id, status, created_at').eq('tenant_id', DEMO_TENANT),
+    supabase.from('projects').select('id, status').eq('tenant_id', tenantId),
+    supabase.from('approvals').select('id, status, created_at').eq('tenant_id', tenantId),
   ])
 
   const projects  = projectsRes.data ?? []
@@ -55,12 +56,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 // ─────────────────────────────────────────────────────────────
 
 export async function getDashboardProjects(): Promise<DashboardProject[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
 
   const { data, error } = await supabase
     .from('projects')
     .select('id, code, name, status, technology, capacity_mw, budget_usd, current_phase, health, country, location, target_completion')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
     .limit(10)
 
@@ -101,12 +103,13 @@ export async function getDashboardProjects(): Promise<DashboardProject[]> {
 // ─────────────────────────────────────────────────────────────
 
 export async function getDashboardApprovals(): Promise<ApprovalItem[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
 
   const { data, error } = await supabase
     .from('approvals')
     .select('id, object_type, title, status, priority, created_at, description, amount')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .in('status', ['pending', 'under_review'])
     .order('created_at', { ascending: false })
     .limit(20)
@@ -166,11 +169,12 @@ export interface WidgetStats {
 }
 
 export async function getWidgetStats(): Promise<WidgetStats> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const [projRes, apprRes, riskRes] = await Promise.all([
-    supabase.from('projects').select('status, budget_usd, health').eq('tenant_id', DEMO_TENANT),
-    supabase.from('approvals').select('status').eq('tenant_id', DEMO_TENANT),
-    supabase.from('risks').select('status').eq('tenant_id', DEMO_TENANT),
+    supabase.from('projects').select('status, budget_usd, health').eq('tenant_id', tenantId),
+    supabase.from('approvals').select('status').eq('tenant_id', tenantId),
+    supabase.from('risks').select('status').eq('tenant_id', tenantId),
   ])
   const projects  = projRes.data ?? []
   const approvals = apprRes.data ?? []
@@ -202,11 +206,12 @@ export interface WidgetTask {
 }
 
 export async function getMyTasks(): Promise<WidgetTask[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('approvals')
     .select('id, title, object_type, priority, due_date, created_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .in('status', ['pending', 'delegated'])
     .limit(50)
 
@@ -238,11 +243,12 @@ export interface WidgetGate {
 }
 
 export async function getActiveGates(): Promise<WidgetGate[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('phase_gates')
     .select('id, project_id, phase_number, phase_name, status, projects!inner(name, current_phase, tenant_id)')
-    .eq('projects.tenant_id', DEMO_TENANT)
+    .eq('projects.tenant_id', tenantId)
 
   if (error || !data) return []
 
@@ -279,11 +285,12 @@ export interface BudgetGroup { category: string; planned: number; actual: number
 export interface BudgetOverview { groups: BudgetGroup[]; totalPlanned: number; totalActual: number }
 
 export async function getBudgetOverview(): Promise<BudgetOverview> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('finance_records')
     .select('record_type, status, amount')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error || !data || data.length === 0) return { groups: [], totalPlanned: 0, totalActual: 0 }
 
@@ -310,11 +317,12 @@ export async function getBudgetOverview(): Promise<BudgetOverview> {
 export interface HeatmapRisk { id: string; label: string; p: number; i: number }
 
 export async function getRiskHeatmap(): Promise<HeatmapRisk[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('risks')
     .select('id, title, probability, impact')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error || !data) return []
 
@@ -334,11 +342,12 @@ export interface QueueDoc {
 }
 
 export async function getDocumentQueue(): Promise<QueueDoc[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('document_files')
     .select('id, title, file_name, project_code, status, created_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
     .limit(8)
 
@@ -369,11 +378,12 @@ export interface ActivityEntry {
 }
 
 export async function getTeamActivity(): Promise<ActivityEntry[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('approvals')
     .select('id, title, object_type, status, updated_at, created_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('updated_at', { ascending: false })
     .limit(10)
 
@@ -410,6 +420,7 @@ export interface UpcomingMilestone {
 }
 
 export async function getUpcomingMilestones(): Promise<UpcomingMilestone[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const now   = new Date()
   const in30  = new Date(now.getTime() + 30 * 86_400_000)
@@ -419,14 +430,14 @@ export async function getUpcomingMilestones(): Promise<UpcomingMilestone[]> {
     supabase
       .from('schedule_milestones')
       .select('id, name, planned_end, gate_number, projects(name)')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .gte('planned_end', today)
       .lte('planned_end', in30.toISOString().slice(0, 10))
       .order('planned_end', { ascending: true }),
     supabase
       .from('projects')
       .select('id, name, target_completion')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .not('target_completion', 'is', null)
       .order('target_completion', { ascending: true }),
   ])
@@ -459,12 +470,96 @@ export async function getUpcomingMilestones(): Promise<UpcomingMilestone[]> {
   return out.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 12)
 }
 
+// ─── Calendar events (milestones + permit expiries + transmittal due dates) ───
+export interface CalendarEvent {
+  id: string
+  project: string
+  label: string
+  date: string
+  type: 'gate' | 'milestone' | 'deadline' | 'permit' | 'transmittal'
+  status: 'today' | 'upcoming' | 'overdue'
+  location: string
+  link: string | null
+}
+
+/**
+ * Merged calendar feed for the dashboard widget:
+ * – upcoming schedule milestones & COD deadlines (existing feed)
+ * – work-permit expiries (issued, valid_to within 14 days)
+ * – transmittal response_due dates within 14 days
+ */
+export async function getCalendarEvents(): Promise<CalendarEvent[]> {
+  const tenantId = await getCurrentTenantId()
+  const supabase = getServiceClient()
+  const now   = new Date()
+  const today = now.toISOString().slice(0, 10)
+  const in14  = new Date(now.getTime() + 14 * 86_400_000).toISOString().slice(0, 10)
+
+  const [milestones, permitRes, transRes, projRes] = await Promise.all([
+    getUpcomingMilestones(),
+    supabase
+      .from('work_permits')
+      .select('id, permit_no, project_id, valid_to, status')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'issued')
+      .gte('valid_to', today)
+      .lte('valid_to', in14),
+    supabase
+      .from('transmittals')
+      .select('id, transmittal_no, project_id, response_due, status')
+      .eq('tenant_id', tenantId)
+      .in('status', ['issued', 'acknowledged'])
+      .gte('response_due', today)
+      .lte('response_due', in14),
+    supabase.from('projects').select('id, name').eq('tenant_id', tenantId),
+  ])
+
+  const pm = Object.fromEntries((projRes.data ?? []).map((p) => [p.id as string, p.name as string]))
+
+  const out: CalendarEvent[] = milestones.map((m) => ({
+    ...m,
+    location: m.type === 'gate' ? 'Gate Review' : m.type === 'deadline' ? 'Deadline' : 'Milestone',
+    link: null,
+  }))
+
+  for (const p of permitRes.data ?? []) {
+    const vt = p.valid_to as string
+    out.push({
+      id:       `permit-${p.id}`,
+      project:  pm[p.project_id as string] ?? '—',
+      label:    `Permit expiry — ${(p.permit_no as string) ?? 'PTW'}`,
+      date:     vt.slice(0, 10),
+      type:     'permit',
+      status:   dayStatus(vt, now),
+      location: 'Permit to Work',
+      link:     `/projects/${p.project_id}/permits`,
+    })
+  }
+
+  for (const t of transRes.data ?? []) {
+    const rd = t.response_due as string
+    out.push({
+      id:       `transmittal-${t.id}`,
+      project:  pm[t.project_id as string] ?? '—',
+      label:    `Response due — ${(t.transmittal_no as string) ?? 'Transmittal'}`,
+      date:     rd.slice(0, 10),
+      type:     'transmittal',
+      status:   dayStatus(rd, now),
+      location: 'Transmittals',
+      link:     `/projects/${t.project_id}/transmittals`,
+    })
+  }
+
+  return out.sort((a, b) => a.date.localeCompare(b.date))
+}
+
 // ─── Health score ─────────────────────────────────────────────
 export interface HealthScore { score: number; green: number; amber: number; red: number; total: number }
 
 export async function getHealthScore(): Promise<HealthScore> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
-  const { data, error } = await supabase.from('projects').select('health').eq('tenant_id', DEMO_TENANT)
+  const { data, error } = await supabase.from('projects').select('health').eq('tenant_id', tenantId)
 
   if (error || !data || data.length === 0) return { score: 0, green: 0, amber: 0, red: 0, total: 0 }
 
@@ -483,11 +578,12 @@ export interface SystemAlert {
 }
 
 export async function getSystemAlerts(): Promise<SystemAlert[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('ai_insights')
     .select('id, title, description, severity, module, created_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .in('severity', ['critical', 'high'])
     .order('created_at', { ascending: false })
     .limit(8)

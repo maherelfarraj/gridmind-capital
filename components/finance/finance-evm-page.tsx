@@ -6,10 +6,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar,
 } from 'recharts'
-import { TrendingUp, TrendingDown, RefreshCw, Database } from 'lucide-react'
+import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { loadFinanceEvmDashboard, seedFinanceEvmDemoAction } from '@/app/actions/finance-evm'
+import { loadFinanceEvmDashboard } from '@/app/actions/finance-evm'
 
 function fmt(n: number) {
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
@@ -58,15 +58,7 @@ const ILLUS_CASH = [
 
 export function FinanceEvmPage() {
   const [tab, setTab] = useState<'evm' | 'cashflow' | 'register'>('evm')
-  const [seeding, setSeeding] = useState(false)
   const { data, mutate, isLoading } = useSWR('finance-evm-dashboard', loadFinanceEvmDashboard)
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedFinanceEvmDemoAction()
-    await mutate()
-    setSeeding(false)
-  }
 
   const isLive = (data?.records.length ?? 0) > 0
   const s = data?.summary
@@ -84,14 +76,20 @@ export function FinanceEvmPage() {
           <h1 className="text-2xl font-bold text-foreground">Finance — EVM & Cash Flow</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Earned Value Management, cost performance, and cash flow analysis</p>
         </div>
-        <div className="flex items-center gap-2">
-          <LiveBadge live={isLive} />
-          {!isLive && (
-            <Button size="sm" variant="outline" onClick={handleSeed} disabled={seeding}>
-              <Database className={cn('size-3.5 mr-1.5', seeding && 'animate-spin')} />
-              {seeding ? 'Seeding…' : 'Seed Demo'}
-            </Button>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {isLive && s?.acSource === 'certificates' && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <span className="size-1.5 rounded-full bg-blue-500" />
+              AC from payment certificates
+            </span>
           )}
+          {isLive && (s?.approvedVoCount ?? 0) > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <span className="size-1.5 rounded-full bg-amber-500" />
+              BAC includes {s?.approvedVoCount} approved VO{(s?.approvedVoCount ?? 0) === 1 ? '' : 's'}
+            </span>
+          )}
+          <LiveBadge live={isLive} />
           <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading}>
             <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
           </Button>

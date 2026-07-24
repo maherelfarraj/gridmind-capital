@@ -35,9 +35,7 @@ export async function updateSession(request: NextRequest) {
   // Redirect authenticated users away from auth pages → dashboard
   const isAuthPage =
     pathname === '/login' ||
-    pathname === '/auth/login' ||
-    pathname === '/auth/signup' ||
-    pathname === '/auth/forgot-password'
+    pathname.startsWith('/auth/')
 
   if (isAuthPage && user) {
     const url = request.nextUrl.clone()
@@ -45,16 +43,36 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Protect all dashboard routes — redirect to login if no session
-  const isDashboardRoute =
-    pathname.startsWith('/dashboard') ||
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/projects') ||
-    pathname.startsWith('/greos') ||
-    pathname.startsWith('/portal') ||
-    pathname.startsWith('/client')
+  // ── Public / self-authenticating paths ───────────────────────────────────
+  // These paths bypass the proxy auth gate for one of two reasons:
+  //
+  //   a) They are genuinely unauthenticated (login, auth callbacks, public APIs,
+  //      static assets, PWA shell files).
+  //
+  //   b) They carry their own layout-level auth guard and should not be
+  //      double-intercepted here:
+  //        /field   — app/field/layout.tsx  → resolveSession() → redirect
+  //        /portal  — NOT bypassed; the portal layout also guards itself but
+  //                   middleware provides an extra layer for external partners
+  //        /client  — same: kept protected by middleware for defence-in-depth
+  //
+  // If you add a new route with its own auth guard, add it here with a comment.
+  const isPublic =
+    pathname === '/login' ||
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/icons/') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/manifest.json' ||
+    pathname === '/sw.js' ||
+    pathname === '/offline.html' ||
+    // /field has its own layout-level auth (resolveSession + redirect).
+    // Bypassing here avoids a redundant Supabase round-trip per request.
+    pathname.startsWith('/field')
 
-  if (isDashboardRoute && !user) {
+  // Protect everything else — redirect to login if no session
+  if (!isPublic && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
     return NextResponse.redirect(url)

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import {
   ArrowLeft, Loader2, X, Check, Send, RefreshCw, AlertTriangle,
-  CircleDot, CheckCircle2, Clock, Ban, Hammer, DollarSign, Pencil,
+  CircleDot, CheckCircle2, Clock, Ban, Hammer, DollarSign, Pencil, History,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -21,11 +21,14 @@ import {
 import {
   ORIGIN_LABELS, STATUS_LABELS, STATUS_COLORS, formatUsd, formatDate,
 } from '@/lib/variation-orders/ui'
+import { RecordHistoryPanel } from '@/components/admin/audit-log-viewer'
 
 // ─── Role gating (UX convenience; server enforces the real rules) ──
 
 const PM_ROLES = ['project_manager', 'project_director', 'pmo_director', 'tenant_admin', 'system_admin']
 const FINANCE_ROLES = ['finance_manager', 'finance_controller']
+// Roles allowed to approve/reject a submitted VO (mirrors the server guard in decideVariationOrder).
+const DECISION_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'finance_manager']
 
 // ─── Stepper ──────────────────────────────────────────────────
 
@@ -320,6 +323,7 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
   const roles = session.roles ?? []
   const canEditAll = session.isSuperAdmin || roles.some((r) => PM_ROLES.includes(r))
   const canEditCost = canEditAll || roles.some((r) => FINANCE_ROLES.includes(r))
+  const canApprove = session.isSuperAdmin || roles.some((r) => DECISION_ROLES.includes(r))
 
   const { data: vo, isLoading, mutate } = useSWR(
     `variation-${voId}`,
@@ -331,6 +335,7 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
   const [editOpen, setEditOpen] = React.useState(false)
   const [decisionOpen, setDecisionOpen] = React.useState(false)
   const [baselineOpen, setBaselineOpen] = React.useState(false)
+  const [historyOpen, setHistoryOpen] = React.useState(false)
 
   async function handleSubmit() {
     if (!vo) return
@@ -365,7 +370,7 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
   }
 
   const canSubmit = vo.status === 'draft'
-  const canDecide = vo.status === 'submitted'
+  const canDecide = vo.status === 'submitted' && canApprove
   const canUpdateBaseline = vo.status === 'approved' && !vo.baseline_updated
   const canExecute = vo.status === 'approved' && vo.baseline_updated && !vo.executed
   const submitBlocked = canSubmit && (vo.cost_impact == null || vo.time_impact_days == null)
@@ -377,6 +382,19 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
         canEditAll={canEditAll} canEditCost={canEditCost} onDone={() => mutate()} />
       <DecisionModal open={decisionOpen} onClose={() => setDecisionOpen(false)} vo={vo} onDone={() => mutate()} />
       <BaselineModal open={baselineOpen} onClose={() => setBaselineOpen(false)} vo={vo} onDone={() => mutate()} />
+
+      {/* Record history side panel */}
+      {historyOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" onClick={() => setHistoryOpen(false)} aria-hidden />
+          <RecordHistoryPanel
+            tableName="variation_orders"
+            recordId={vo.id}
+            label={vo.vo_number}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </>
+      )}
 
       <div className="space-y-6">
         {/* Header */}
@@ -398,10 +416,12 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
                 </span>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-foreground mt-2 text-balance">{vo.title}</h1>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw className="size-3.5" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)} aria-label="View change history">
+              <History className="size-3.5" /> History
+            </Button>
             {vo.status === 'draft' && (
               <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}><Pencil className="size-3.5" /> Edit</Button>
             )}
@@ -493,6 +513,9 @@ export function VariationDetail({ projectId, voId }: { projectId: string; voId: 
               )}
               {(vo.status === 'rejected' || vo.status === 'withdrawn') && (
                 <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Ban className="size-4" /> This VO was {STATUS_LABELS[vo.status].toLowerCase()} — no further actions.</p>
+              )}
+              {vo.status === 'submitted' && !canApprove && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Clock className="size-4" /> Submitted — awaiting a client decision from an authorized approver.</p>
               )}
               {vo.status === 'approved' && !vo.baseline_updated && !canUpdateBaseline && (
                 <p className="text-xs text-muted-foreground">Awaiting baseline update.</p>

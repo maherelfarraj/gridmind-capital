@@ -3,9 +3,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendVoEmail } from '@/lib/email/send'
+import { maybeCreateCostOverrunInsight } from '@/app/actions/ai-insights'
+import { createApproval } from '@/app/actions/approvals'
+import { requireRole } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -43,6 +46,12 @@ export interface VoKpis {
   pendingValue: number
   totalCount: number
   byStatus: { name: VoStatus; value: number }[]
+  /** Sum of time_impact_days across approved VOs. */
+  approvedTimeImpactDays: number
+  /** Baseline project budget + approved VO cost impact. */
+  currentContractValue: number
+  /** Baseline project budget (budget_usd) before VO adjustments. */
+  baselineBudget: number
 }
 
 export interface VoRegister {
@@ -63,7 +72,7 @@ async function getActor(): Promise<Actor> {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null, tenantId: DEMO_TENANT, role: null, fullName: null }
+    if (!user) return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
     const { data: profile } = await supabase
       .from('profiles')
       .select('tenant_id, role, full_name')
@@ -71,12 +80,12 @@ async function getActor(): Promise<Actor> {
       .single()
     return {
       userId: user.id,
-      tenantId: profile?.tenant_id ?? DEMO_TENANT,
+      tenantId: profile?.tenant_id ?? DEMO_TENANT_FALLBACK,
       role: profile?.role ?? null,
       fullName: profile?.full_name ?? null,
     }
   } catch {
-    return { userId: null, tenantId: DEMO_TENANT, role: null, fullName: null }
+    return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
   }
 }
 
@@ -209,12 +218,28 @@ export async function getVariationOrders(projectId: string): Promise<VoRegister>
 
   const rows = (error || !data ? [] : data).map(mapRow)
 
-  const approvedValue = rows.filter(r => r.status === 'approved').reduce((s, r) => s + (r.cost_impact ?? 0), 0)
+  const approvedRows = rows.filter(r => r.status === 'approved')
+  const approvedValue = approvedRows.reduce((s, r) => s + (r.cost_impact ?? 0), 0)
   const pendingValue  = rows.filter(r => r.status === 'submitted').reduce((s, r) => s + (r.cost_impact ?? 0), 0)
+  const approvedTimeImpactDays = approvedRows.reduce((s, r) => s + (r.time_impact_days ?? 0), 0)
   const statusOrder: VoStatus[] = ['draft', 'submitted', 'approved', 'rejected', 'withdrawn']
   const byStatus = statusOrder.map(s => ({ name: s, value: rows.filter(r => r.status === s).length }))
 
-  return { rows, kpis: { approvedValue, pendingValue, totalCount: rows.length, byStatus } }
+  // Baseline budget for the current contract value (budget + approved VOs).
+  const { data: proj } = await admin.from('projects').select('budget_usd').eq('id', projectId).maybeSingle()
+  const baselineBudget = proj?.budget_usd == null ? 0 : Number(proj.budget_usd)
+  const currentContractValue = baselineBudget + approvedValue
+
+  // Fire-and-forget: raise a cost_overrun AI insight if pending VO impact > 5% of budget.
+  void maybeCreateCostOverrunInsight(projectId)
+
+  return {
+    rows,
+    kpis: {
+      approvedValue, pendingValue, totalCount: rows.length, byStatus,
+      approvedTimeImpactDays, currentContractValue, baselineBudget,
+    },
+  }
 }
 
 export async function getVariationOrder(id: string): Promise<VariationOrder | null> {
@@ -345,6 +370,27 @@ export async function submitVariationOrder(id: string): Promise<ActionResult<Var
     type: 'approval',
     voTitle: vo.title, status: 'Submitted', costImpact: vo.cost_impact ?? 0,
   })
+
+  // Route the VO through the shared approval inbox. Best-effort: the VO is
+  // already submitted, so a guard rejection here must not roll that back.
+  try {
+    const { data: proj } = await admin
+      .from('projects').select('code, name').eq('id', vo.project_id).maybeSingle()
+    const res = await createApproval({
+      title:       `${vo.vo_number} — ${vo.title}`,
+      description: `Variation order submitted for approval. Cost impact ${formatUsd(vo.cost_impact)}, ${vo.time_impact_days} day(s).`,
+      objectType:  'variation',
+      priority:    (vo.cost_impact ?? 0) >= 250_000 ? 'high' : 'normal',
+      amount:      vo.cost_impact ?? 0,
+      requestedBy: actor.userId ?? undefined,
+      projectCode: (proj?.code as string) ?? undefined,
+      projectName: (proj?.name as string) ?? vo.title,
+    })
+    if ('error' in res) console.warn('[variation-orders] approval creation skipped:', res.error)
+  } catch (e) {
+    console.warn('[variation-orders] approval creation failed:', e)
+  }
+
   revalidate(vo.project_id)
   return { data: mapRow(data) }
 }
@@ -355,6 +401,10 @@ export async function decideVariationOrder(
   decision: 'approved' | 'rejected' | 'withdrawn',
   comment?: string,
 ): Promise<ActionResult<VariationOrder>> {
+  // Only approving roles may decide a submitted VO (segregation of duties).
+  const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director', 'finance_manager'])
+  if ('error' in gate) return gate
+
   const actor = await getActor()
   const admin = createAdminClient()
   const vo = await getVariationOrder(id)

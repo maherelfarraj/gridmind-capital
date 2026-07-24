@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 const BUCKET = 'documents'
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
 
 export interface CertificateDeliverable {
   label: string
@@ -30,7 +30,7 @@ async function getActor() {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null as string | null, tenantId: DEMO_TENANT, fullName: null as string | null }
+    if (!user) return { userId: null as string | null, tenantId: DEMO_TENANT_FALLBACK, fullName: null as string | null }
     const { data: profile } = await supabase
       .from('profiles')
       .select('tenant_id, full_name')
@@ -38,11 +38,11 @@ async function getActor() {
       .single()
     return {
       userId: user.id,
-      tenantId: profile?.tenant_id ?? DEMO_TENANT,
+      tenantId: profile?.tenant_id ?? DEMO_TENANT_FALLBACK,
       fullName: profile?.full_name ?? null,
     }
   } catch {
-    return { userId: null as string | null, tenantId: DEMO_TENANT, fullName: null as string | null }
+    return { userId: null as string | null, tenantId: DEMO_TENANT_FALLBACK, fullName: null as string | null }
   }
 }
 
@@ -125,7 +125,7 @@ export async function attachCertificatePdf(opts: {
     .single()
   const verId = cert?.verification_id ?? opts.certificateId
 
-  const storagePath = `certificates/${DEMO_TENANT}/${opts.projectId}/${verId}.pdf`
+  const storagePath = `certificates/${DEMO_TENANT_FALLBACK}/${opts.projectId}/${verId}.pdf`
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
     .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true })

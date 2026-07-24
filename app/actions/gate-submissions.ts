@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import { sendApprovalRequestEmail } from '@/lib/email/send'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -214,8 +215,6 @@ export interface G7FormData {
 
 // ─── Shared submit helper for G2–G7 ───────────────────────────
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
 /**
  * Saves a gate submission (upsert on project_id + gate_number) and creates a
  * paired approvals row — mirrors the G0/G1 pattern for gates 2 through 7.
@@ -228,6 +227,7 @@ async function submitGateForm(
 ): Promise<{ error: string | null }> {
   const guard = await requireWriter()
   if ('error' in guard) return guard
+  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
 
@@ -246,7 +246,7 @@ async function submitGateForm(
 
   // Create the approval request for this submission
   const { error: apprError } = await supabase.from('approvals').insert({
-    tenant_id:   DEMO_TENANT,
+    tenant_id:   tenantId,
     object_type: 'gate_submission',
     object_id:   projectId,
     title:       `G${gateNumber} Submission — ${projectName}`,
@@ -281,6 +281,118 @@ export async function submitG7FormAction(formData: G7FormData, projectId: string
 }
 
 // ─── Reads ────────────────────────────────────────────────────
+
+// ─── G0 data shape (returned to the gate detail page) ────────────────────────
+
+export interface G0LiveStakeholder {
+  id: string; name: string; role: string; title: string; organisation: string
+  email: string; phone: string; influence: 'high' | 'medium' | 'low'
+  interest: 'high' | 'medium' | 'low'; charter_signatory: boolean
+  signed: boolean; signed_date: string | null
+}
+
+export interface G0LiveRisk {
+  id: string; category: string; description: string
+  level: 'low' | 'medium' | 'high' | 'critical'
+  probability: number; impact: number; mitigation: string; owner: string
+}
+
+export interface G0LiveMilestone {
+  id: string; name: string; target_date: string; actual_date: string | null
+  status: 'pending' | 'in_progress' | 'complete' | 'at_risk'
+  gate: string; owner: string
+}
+
+export interface G0DataResult {
+  hasSubmission: boolean
+  formData: G0FormData | null
+  stakeholders: G0LiveStakeholder[]
+  risks: G0LiveRisk[]
+  milestones: G0LiveMilestone[]
+}
+
+/** Loads all live data for the G0 gate detail page in a single round-trip. */
+export async function getG0Data(projectId: string): Promise<G0DataResult> {
+  const supabase = createAdminClient()
+
+  const [subRes, membersRes, risksRes, gatesRes] = await Promise.all([
+    supabase
+      .from('gate_submissions')
+      .select('form_data')
+      .eq('project_id', projectId)
+      .eq('gate_number', 0)
+      .maybeSingle(),
+    supabase
+      .from('project_members')
+      .select('id, name, role')
+      .eq('project_id', projectId),
+    supabase
+      .from('risks')
+      .select('id, title, description, probability, impact, status, category')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('phase_gates')
+      .select('id, phase_number, phase_name, status, updated_at')
+      .eq('project_id', projectId)
+      .order('phase_number', { ascending: true }),
+  ])
+
+  const formData = subRes.data?.form_data as G0FormData | null ?? null
+
+  const stakeholders: G0LiveStakeholder[] = (membersRes.data ?? []).map((m) => {
+    const n = (m as { name?: string }).name ?? 'Unknown'
+    return {
+      id: m.id, name: n, role: m.role ?? 'team',
+      title: '', organisation: '', email: '', phone: '',
+      influence: 'medium', interest: 'medium',
+      charter_signatory: false, signed: false, signed_date: null,
+    }
+  })
+
+  const riskScoreToLevel = (p: number, imp: number): 'low' | 'medium' | 'high' | 'critical' => {
+    const score = p * imp
+    if (score >= 16) return 'critical'
+    if (score >= 9)  return 'high'
+    if (score >= 4)  return 'medium'
+    return 'low'
+  }
+
+  const risks: G0LiveRisk[] = (risksRes.data ?? []).map((r) => {
+    const p   = Math.min(5, Math.max(1, Number(r.probability) || 3))
+    const imp = Math.min(5, Math.max(1, Number(r.impact)      || 3))
+    return {
+      id:          r.id,
+      category:    (r as { category?: string }).category ?? 'General',
+      description: (r as { description?: string }).description ?? r.title ?? 'Risk',
+      level:       riskScoreToLevel(p, imp),
+      probability: Math.round((p / 5) * 100),
+      impact:      Math.round((imp / 5) * 100),
+      mitigation:  '',
+      owner:       '',
+    }
+  })
+
+  const GATE_STATUS_MAP: Record<string, G0LiveMilestone['status']> = {
+    approved:  'complete',
+    in_review: 'in_progress',
+    pending:   'pending',
+  }
+
+  const milestones: G0LiveMilestone[] = (gatesRes.data ?? []).map((g) => ({
+    id:          g.id,
+    name:        (g as { phase_name?: string }).phase_name ?? `Gate ${g.phase_number}`,
+    target_date: (g as { updated_at?: string }).updated_at?.slice(0, 10) ?? '',
+    actual_date: (g as { status?: string }).status === 'approved'
+      ? (g as { updated_at?: string }).updated_at?.slice(0, 10) ?? null
+      : null,
+    status:      GATE_STATUS_MAP[(g as { status?: string }).status ?? 'pending'] ?? 'pending',
+    gate:        `G${(g as { phase_number?: number }).phase_number ?? 0}`,
+    owner:       '',
+  }))
+
+  return { hasSubmission: !!subRes.data, formData, stakeholders, risks, milestones }
+}
 
 /**
  * Returns the gate numbers that already have a saved submission for a project.

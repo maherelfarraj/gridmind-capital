@@ -20,6 +20,7 @@ import {
   PlusCircle,
   Briefcase,
   RefreshCw,
+  BarChart3,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -389,6 +390,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   { icon: PlusCircle, iconColor: '#0a192f', label: 'Create Project',   desc: 'Start a new EPC project',          href: '/projects/new'  },
   { icon: Users,      iconColor: '#2563eb', label: 'Team Management',  desc: 'Manage users and roles',           href: '/admin/users'   },
   { icon: Settings,   iconColor: '#64748b', label: 'System Settings',  desc: 'Configure platform settings',      href: '/settings'      },
+  { icon: BarChart3,  iconColor: '#0ea5e9', label: 'Reports Center',   desc: 'Generate and export project reports', href: '/reports'    },
 ]
 
 function QuickActions({ onNavigate }: { onNavigate?: (href: string) => void }) {

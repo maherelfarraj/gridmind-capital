@@ -4,22 +4,24 @@ import { CheckCircle2, Circle, Clock, ChevronDown, ChevronUp, Plus, Star } from 
 import { cn } from '@/lib/utils'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { MOCK_DELIVERABLES, DELIVERABLE_STATUS_META } from './data'
-import type { DeliverableStatus } from './types'
+import type { DeliverableStatus, CharterDeliverable } from './types'
 
 const STATUS_ORDER: DeliverableStatus[] = ['not_started', 'in_progress', 'complete', 'approved']
 
-export function DeliverablesTab() {
+export function DeliverablesTab({ liveData }: { liveData?: CharterDeliverable[] }) {
   const [filter, setFilter] = React.useState<DeliverableStatus | 'all'>('all')
   const [expanded, setExpanded] = React.useState<string | null>(null)
 
-  const filtered = MOCK_DELIVERABLES.filter((d) => filter === 'all' || d.status === filter)
-  const total     = MOCK_DELIVERABLES.length
-  const done      = MOCK_DELIVERABLES.filter((d) => d.status === 'approved' || d.status === 'complete').length
-  const pct       = Math.round((done / total) * 100)
+  const deliverables = liveData ?? MOCK_DELIVERABLES
+
+  const filtered = deliverables.filter((d) => filter === 'all' || d.status === filter)
+  const total     = deliverables.length
+  const done      = deliverables.filter((d) => d.status === 'approved' || d.status === 'complete').length
+  const pct       = total > 0 ? Math.round((done / total) * 100) : 0
 
   const chartData = STATUS_ORDER.map((s) => ({
     name: DELIVERABLE_STATUS_META[s].label,
-    count: MOCK_DELIVERABLES.filter((d) => d.status === s).length,
+    count: deliverables.filter((d) => d.status === s).length,
     color: DELIVERABLE_STATUS_META[s].color,
   })).filter((d) => d.count > 0)
 

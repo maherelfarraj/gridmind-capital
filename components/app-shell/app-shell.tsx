@@ -189,7 +189,7 @@ export function AppShell({
           {/* Skip-to-content target */}
           <a
             href="#main-content"
-            className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-sidebar-primary focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-sidebar-primary-foreground"
+            className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:start-2 focus:z-50 focus:rounded-lg focus:bg-sidebar-primary focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-sidebar-primary-foreground"
           >
             Skip to main content
           </a>

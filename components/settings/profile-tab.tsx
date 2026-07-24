@@ -1,8 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { User, Upload, Phone, Globe, Link2, Mail, Hash, Plus, X, Eye } from 'lucide-react'
+import useSWR from 'swr'
+import { User, Upload, Phone, Globe, Link2, Hash, Plus, X, Eye, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getProfileSettings, updateProfileSettings } from '@/app/actions/settings'
+import { useToast } from '@/components/ui/toast'
 
 const SKILL_SUGGESTIONS = [
   'Project Management', 'Risk Management', 'Contract Administration', 'HSE Management',
@@ -22,19 +25,37 @@ const DEPARTMENTS = [
 ]
 
 export function ProfileTab({ onSave }: { onSave: () => void }) {
-  const [name, setName]           = React.useState('James Morgan')
-  const [title, setTitle]         = React.useState('PMO Director')
+  const { toast } = useToast()
+  const { data: profile, mutate } = useSWR('profile-settings', () => getProfileSettings())
+
+  const [name, setName]           = React.useState('')
+  const [title, setTitle]         = React.useState('')
   const [dept, setDept]           = React.useState('PMO')
-  const [phone, setPhone]         = React.useState('+966 50 123 4567')
-  const [timezone, setTimezone]   = React.useState('Asia/Riyadh')
-  const [bio, setBio]             = React.useState('Capital project governance professional with 18 years in EPC and renewables.')
-  const [skills, setSkills]       = React.useState(['Project Management', 'Risk Management', 'Commissioning'])
+  const [phone, setPhone]         = React.useState('')
+  const [timezone, setTimezone]   = React.useState('UTC')
+  const [bio, setBio]             = React.useState('')
+  const [skills, setSkills]       = React.useState<string[]>([])
   const [skillInput, setSkillInput] = React.useState('')
-  const [linkedin, setLinkedin]   = React.useState('james-morgan-pmo')
-  const [slack, setSlack]         = React.useState('@james.morgan')
+  const [linkedin, setLinkedin]   = React.useState('')
+  const [slack, setSlack]         = React.useState('')
   const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null)
   const [dragging, setDragging]   = React.useState(false)
+  const [saving, setSaving]       = React.useState(false)
   const fileRef = React.useRef<HTMLInputElement>(null)
+
+  // Seed form from DB once loaded
+  React.useEffect(() => {
+    if (!profile) return
+    setName(profile.fullName)
+    setTitle(profile.title)
+    setDept(profile.dept || 'PMO')
+    setPhone(profile.phone)
+    setTimezone(profile.timezone || 'UTC')
+    setBio(profile.bio)
+    setSkills(profile.skills)
+    setLinkedin(profile.linkedin)
+    setSlack(profile.slack)
+  }, [profile])
 
   function handleFile(file: File) {
     const reader = new FileReader()
@@ -199,8 +220,23 @@ export function ProfileTab({ onSave }: { onSave: () => void }) {
         <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
           <Eye className="size-3.5" /> View Public Profile
         </button>
-        <button onClick={onSave}
-          className="px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+        <button
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true)
+            const res = await updateProfileSettings({ fullName: name, title, dept, phone, timezone, bio, skills, linkedin, slack })
+            setSaving(false)
+            if (res?.error) {
+              toast({ title: 'Save failed', description: res.error, variant: 'danger' })
+            } else {
+              mutate()
+              toast({ title: 'Profile saved', variant: 'success' })
+              onSave()
+            }
+          }}
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
+        >
+          {saving && <Loader2 className="size-3.5 animate-spin" />}
           Save Changes
         </button>
       </div>

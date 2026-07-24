@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { sendDocumentUploadEmail } from '@/lib/email/send'
 
 const BUCKET = 'documents'
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export interface StoredDocument {
   id: string
@@ -54,6 +54,7 @@ export async function createUploadUrl(opts: {
   projectCode: string | null
   uploadedBy: string
 }): Promise<{ uploadUrl: string; storagePath: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -63,8 +64,8 @@ export async function createUploadUrl(opts: {
   const ext = opts.fileName.split('.').pop()?.toLowerCase() ?? 'bin'
   const stamp = Date.now()
   const storagePath = opts.projectCode
-    ? `${DEMO_TENANT}/${opts.projectCode}/${stamp}-${opts.fileName}`
-    : `${DEMO_TENANT}/general/${stamp}-${opts.fileName}`
+    ? `${tenantId}/${opts.projectCode}/${stamp}-${opts.fileName}`
+    : `${tenantId}/general/${stamp}-${opts.fileName}`
 
   const { data, error } = await supabase.storage
     .from(BUCKET)
@@ -86,6 +87,7 @@ export async function registerDocument(opts: {
   projectCode: string | null
   uploadedBy: string
 }): Promise<{ id: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -98,7 +100,7 @@ export async function registerDocument(opts: {
   const { data, error } = await supabase
     .from('document_files')
     .insert({
-      tenant_id:    DEMO_TENANT,
+      tenant_id:    tenantId,
       project_id:   opts.projectId,
       project_code: opts.projectCode,
       storage_path: opts.storagePath,
@@ -143,12 +145,13 @@ export async function getDownloadUrl(storagePath: string): Promise<{ url: string
 
 /** List all documents for a tenant, optionally filtered by project. */
 export async function listDocuments(projectCode?: string): Promise<StoredDocument[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   let query = supabase
     .from('document_files')
     .select('*')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
 
   if (projectCode) query = query.eq('project_code', projectCode)
@@ -239,6 +242,7 @@ export async function uploadFieldPhoto(opts: {
   linkId: string
   uploadedBy: string
 }): Promise<{ photo: FieldPhoto } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -261,7 +265,7 @@ export async function uploadFieldPhoto(opts: {
 
   const stamp = Date.now()
   const fileName = `${opts.linkType}-${opts.linkId}-${stamp}.jpg`
-  const storagePath = `field-photos/${DEMO_TENANT}/${projectCode}/${fileName}`
+  const storagePath = `field-photos/${tenantId}/${projectCode}/${fileName}`
 
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
@@ -272,7 +276,7 @@ export async function uploadFieldPhoto(opts: {
   const { data, error } = await supabase
     .from('document_files')
     .insert({
-      tenant_id:    DEMO_TENANT,
+      tenant_id:    tenantId,
       project_id:   opts.projectId,
       project_code: projectCode,
       storage_path: storagePath,

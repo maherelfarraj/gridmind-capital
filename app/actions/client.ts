@@ -21,7 +21,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const DOC_BUCKET = 'documents'
 const REPORT_BUCKET = 'reports'
 
@@ -141,6 +141,7 @@ export interface ClientReportRef {
 /** Resolve the current client-portal actor. Returns null when unauthenticated
  * or not a `client_viewer` — callers redirect. */
 export async function getClientActor(): Promise<ClientActor | null> {
+  const tenantId = await getCurrentTenantId()
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -163,7 +164,7 @@ export async function getClientActor(): Promise<ClientActor | null> {
 
     return {
       userId: user.id,
-      tenantId: profile.tenant_id ?? DEMO_TENANT,
+      tenantId: profile.tenant_id ?? tenantId,
       fullName: profile.full_name ?? '',
       email: profile.email ?? user.email ?? '',
       projectIds: (grants ?? []).map((g) => g.project_id),
@@ -215,6 +216,7 @@ async function notifyPm(admin: Admin, args: {
   body: string
   link: string
 }) {
+  const tenantId = await getCurrentTenantId()
   const { data: recipients } = await admin
     .from('profiles').select('id')
     .eq('tenant_id', args.tenantId).eq('is_active', true)
@@ -603,15 +605,16 @@ export async function submitInformationRequest(args: {
 
 interface InternalActor { userId: string | null; role: string | null; tenantId: string }
 async function getInternalActor(): Promise<InternalActor> {
+  const tenantId = await getCurrentTenantId()
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null, role: null, tenantId: DEMO_TENANT }
+    if (!user) return { userId: null, role: null, tenantId: tenantId }
     const admin = createAdminClient()
     const { data: p } = await admin.from('profiles').select('role, tenant_id').eq('id', user.id).maybeSingle()
-    return { userId: user.id, role: p?.role ?? null, tenantId: p?.tenant_id ?? DEMO_TENANT }
+    return { userId: user.id, role: p?.role ?? null, tenantId: p?.tenant_id ?? tenantId }
   } catch {
-    return { userId: null, role: null, tenantId: DEMO_TENANT }
+    return { userId: null, role: null, tenantId: tenantId }
   }
 }
 const WRITE_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const PORTAL_BUCKET = 'portal-uploads'
 
 // Internal roles notified about partner actions.
@@ -139,6 +139,7 @@ export interface PortalRfqResponse {
  * authenticated or is not an external (subcontractor) role — callers redirect.
  */
 export async function getPortalActor(): Promise<PortalActor | null> {
+  const tenantId = await getCurrentTenantId()
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -164,7 +165,7 @@ export async function getPortalActor(): Promise<PortalActor | null> {
 
     return {
       userId: user.id,
-      tenantId: profile.tenant_id ?? DEMO_TENANT,
+      tenantId: profile.tenant_id ?? tenantId,
       organizationName,
       fullName: profile.full_name ?? '',
       email: profile.email ?? user.email ?? '',
@@ -215,6 +216,7 @@ async function notifyInternal(admin: ReturnType<typeof createAdminClient>, args:
   link: string
   type?: string
 }) {
+  const tenantId = await getCurrentTenantId()
   const { data: recipients } = await admin
     .from('profiles')
     .select('id')
@@ -466,7 +468,7 @@ export async function getPortalFileUrl(storagePath: string): Promise<{ url: stri
 
 // ─────────────────────────────────────────────────────────────
 // Invoices
-// ────────────────────────────────────────────────────────────��
+// ─────────────────────────────────���──────────────────────────��
 
 export async function getPortalInvoices(): Promise<PortalInvoice[]> {
   const actor = await getPortalActor()
@@ -811,7 +813,7 @@ export async function seedPortalDemo(args: {
   const INTERNAL = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']
   if (role && !INTERNAL.includes(role)) return { error: 'Only internal managers can seed demo data' }
 
-  const tenantId = profile?.tenant_id ?? DEMO_TENANT
+  const tenantId = profile?.tenant_id ?? await getCurrentTenantId()
   const org = args.organizationName.trim()
   if (!org) return { error: 'Organization name is required' }
 

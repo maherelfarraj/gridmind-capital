@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export type HandoverStatus = 'not_started' | 'in_progress' | 'submitted' | 'accepted' | 'rejected'
 
@@ -41,6 +41,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export async function loadHandoverDashboard(): Promise<HandoverDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const { data } = await supabase
@@ -50,7 +51,7 @@ export async function loadHandoverDashboard(): Promise<HandoverDashboard> {
       status, completion_pct, due_date, accepted_by, created_at,
       projects!handover_items_project_id_fkey(name, code)
     `)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('due_date', { ascending: true })
 
   const rows = (data ?? []).map((r): HandoverItem => ({
@@ -100,6 +101,7 @@ export async function updateHandoverStatus(
   status: HandoverStatus,
   completion_pct?: number,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -113,7 +115,7 @@ export async function updateHandoverStatus(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   return { error: error?.message }
 }
 
@@ -124,12 +126,13 @@ export async function createHandoverItem(data: {
   description?: string
   due_date?: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('handover_items').insert({
-    tenant_id:      DEMO_TENANT,
+    tenant_id:      tenantId,
     project_id:     data.project_id,
     category:       data.category,
     title:          data.title,
@@ -141,7 +144,141 @@ export async function createHandoverItem(data: {
   return { error: error?.message }
 }
 
+// ─── G7 gate detail page ──────────────────────────────────────────────────────
+
+export interface G7Milestone {
+  id: string; order: number; title: string; description: string
+  status: 'not-started' | 'in-progress' | 'complete' | 'blocked'
+  responsible_party: string; responsible_role: string; responsible_initials: string
+  completion_date: string | null; target_date: string
+  docs: never[]; blocker: string | null
+}
+
+export interface G7Asset {
+  id: string; asset_id: string; name: string
+  category: 'Electrical' | 'Mechanical' | 'Civil' | 'IT' | 'Safety'
+  location: string; condition: 'New' | 'Good' | 'Fair' | 'Poor'
+  manufacturer: string; model: string; serial_number: string
+  installation_date: string; warranty_expiry: string
+  om_manual_url: string | null; is_operational: boolean
+  maintenance_tasks: never[]; specs: Record<string, string>
+}
+
+export interface G7MaintenanceEvent {
+  id: string; title: string; asset_id: string; asset_name: string
+  type: 'preventive' | 'inspection' | 'calibration'
+  scheduled_date: string; duration_hours: number; assigned_to: string
+}
+
+export interface G7DataResult {
+  milestones:   G7Milestone[]
+  assets:       G7Asset[]
+  maintenance:  G7MaintenanceEvent[]
+  gateFormData: Record<string, unknown> | null
+}
+
+const HANDOVER_STATUS_REMAP: Record<string, G7Milestone['status']> = {
+  not_started: 'not-started',
+  in_progress: 'in-progress',
+  submitted:   'in-progress',
+  accepted:    'complete',
+  rejected:    'blocked',
+}
+
+const ASSET_CATEGORY_SAFE = new Set(['Electrical', 'Mechanical', 'Civil', 'IT', 'Safety'])
+
+export async function getG7Data(projectId: string): Promise<G7DataResult> {
+  const tenantId = await getCurrentTenantId()
+  const supabase = createAdminClient()
+
+  const [hiRes, assetRes, planRes, gateRes] = await Promise.all([
+    supabase.from('handover_items')
+      .select('id, category, title, description, status, completion_pct, due_date')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .order('due_date', { ascending: true }),
+    supabase.from('assets')
+      .select('id, name, category, status, warranty_expiry, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false }),
+    supabase.from('maintenance_plans')
+      .select('id, asset_id, title, plan_type, next_due, assigned_to')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .order('next_due', { ascending: true })
+      .limit(50),
+    supabase.from('gate_submissions')
+      .select('form_data')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .eq('gate_number', 7)
+      .maybeSingle(),
+  ])
+
+  const milestones: G7Milestone[] = (hiRes.data ?? []).map((r, i) => ({
+    id:                  r.id,
+    order:               i + 1,
+    title:               r.title,
+    description:         r.description ?? '',
+    status:              HANDOVER_STATUS_REMAP[r.status ?? 'not_started'] ?? 'not-started',
+    responsible_party:   '',
+    responsible_role:    (r.category as string ?? 'general').replace(/_/g, ' '),
+    responsible_initials:'',
+    completion_date:     r.status === 'accepted' ? (r.due_date ?? null) : null,
+    target_date:         r.due_date ?? '',
+    docs:                [],
+    blocker:             null,
+  }))
+
+  const assets: G7Asset[] = (assetRes.data ?? []).map((r) => {
+    const rawCat = r.category as string
+    const category = (ASSET_CATEGORY_SAFE.has(rawCat)
+      ? rawCat : 'Electrical') as G7Asset['category']
+    const isOp = (r.status as string) === 'operational'
+    return {
+      id:               r.id,
+      asset_id:         `AST-${r.id.slice(0, 4).toUpperCase()}`,
+      name:             r.name ?? 'Asset',
+      category,
+      location:         '',
+      condition:        'New' as G7Asset['condition'],
+      manufacturer:     '',
+      model:            '',
+      serial_number:    '',
+      installation_date:r.created_at?.slice(0, 10) ?? '',
+      warranty_expiry:  r.warranty_expiry ?? '',
+      om_manual_url:    null,
+      is_operational:   isOp,
+      maintenance_tasks:[],
+      specs:            {},
+    }
+  })
+
+  const assetNameMap = new Map(assets.map((a) => [a.id, a.name]))
+
+  const maintenance: G7MaintenanceEvent[] = (planRes.data ?? []).map((r) => ({
+    id:             r.id,
+    title:          (r.title as string) ?? 'Maintenance',
+    asset_id:       r.asset_id ?? '',
+    asset_name:     assetNameMap.get(r.asset_id ?? '') ?? 'Asset',
+    type:           (r.plan_type as string ?? 'preventive') === 'inspection'
+                      ? 'inspection' : 'preventive' as G7MaintenanceEvent['type'],
+    scheduled_date: r.next_due ?? '',
+    duration_hours: 2,
+    assigned_to:    (r.assigned_to as string) ?? '',
+  }))
+
+  return {
+    milestones,
+    assets,
+    maintenance,
+    gateFormData: (gateRes.data?.form_data as Record<string, unknown>) ?? null,
+  }
+}
+
 export async function seedHandoverDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -151,7 +288,7 @@ export async function seedHandoverDemoData(): Promise<{ error?: string }> {
   const { data: projects } = await supabase
     .from('projects')
     .select('id, name, code')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .limit(1)
 
   const projectId = projects?.[0]?.id
@@ -176,7 +313,7 @@ export async function seedHandoverDemoData(): Promise<{ error?: string }> {
   ]
 
   for (const d of demos) {
-    await supabase.from('handover_items').insert({ tenant_id: DEMO_TENANT, ...d })
+    await supabase.from('handover_items').insert({ tenant_id: tenantId, ...d })
   }
 
   return {}

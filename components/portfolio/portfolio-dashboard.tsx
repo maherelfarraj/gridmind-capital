@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button'
 import { getPortfolioStats, type PortfolioProject } from '@/app/actions/portfolio'
 import { ExcelExportButton } from '@/components/shared/excel-export-button'
 import { cn } from '@/lib/utils'
+import { useLocalePrefs } from '@/lib/session-context'
+import { formatNumber, formatDate } from '@/lib/i18n/format'
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -78,6 +80,7 @@ export function PortfolioDashboard() {
     revalidateOnFocus: true,
     refreshInterval: 60_000,
   })
+  const { locale, digitStyle } = useLocalePrefs()
 
   const [search, setSearch] = React.useState('')
   const [filterGate, setFilterGate] = React.useState('All')
@@ -325,13 +328,13 @@ export function PortfolioDashboard() {
                         <span className="text-xs capitalize text-muted-foreground">{p.health ?? 'green'}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-sm text-foreground">
-                      {p.budget_usd ? `$${(p.budget_usd / 1_000_000).toFixed(0)}M` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {p.target_completion
-                        ? new Date(p.target_completion).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                    <td className="px-4 py-3 text-right tabular-nums text-sm text-foreground" dir="ltr">
+                      {p.budget_usd
+                        ? `$${formatNumber(p.budget_usd / 1_000_000, locale, digitStyle, { maximumFractionDigits: 0 })}M`
                         : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap" dir="ltr">
+                      {formatDate(p.target_completion, locale, digitStyle, { month: 'short', year: 'numeric' })}
                     </td>
                   </tr>
                 ))

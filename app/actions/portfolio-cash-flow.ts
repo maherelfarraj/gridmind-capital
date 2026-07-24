@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
 
 // Roles allowed to see the company-level cash view.
 // (DB user_role enum has no literal sponsor/financial — mapped to the closest real roles.)
@@ -143,7 +143,7 @@ export async function loadPortfolioCashFlow(): Promise<PortfolioCashFlowData> {
   const { data: projectRows } = await admin
     .from('projects')
     .select('id, code, name, status')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', DEMO_TENANT_FALLBACK)
     .eq('status', 'active')
 
   const projects = projectRows ?? []

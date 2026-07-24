@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { type AppSession, mockSession } from './session'
+import type { AppDigitStyle } from './session'
 
 // ─────────────────────────────────────────────────────────────
 // Context
@@ -37,4 +38,29 @@ export function SessionProvider({
  */
 export function useSession(): AppSession {
   return React.useContext(SessionContext)
+}
+
+/**
+ * Convenience hook: returns the user's digit style ('western' | 'arabic_indic').
+ * Use in KPI cards and tables to call lib/digits.ts formatNumber().
+ *
+ * @example
+ *   const digitStyle = useDigitStyle()
+ *   <span dir="ltr">{formatNumber(1_234_567, digitStyle)}</span>
+ */
+export function useDigitStyle(): AppDigitStyle {
+  return React.useContext(SessionContext).digitStyle
+}
+
+/**
+ * Convenience hook: returns { locale, digitStyle } together.
+ * Useful when a component needs both for the lib/i18n/format.ts helpers.
+ *
+ * @example
+ *   const { locale, digitStyle } = useLocalePrefs()
+ *   <LtrSpan>{formatCurrency(row.amount, locale, digitStyle)}</LtrSpan>
+ */
+export function useLocalePrefs(): { locale: string; digitStyle: AppDigitStyle } {
+  const session = React.useContext(SessionContext)
+  return { locale: session.locale, digitStyle: session.digitStyle }
 }

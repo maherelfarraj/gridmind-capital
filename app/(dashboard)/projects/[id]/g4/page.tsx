@@ -3,6 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import useSWR from 'swr'
 import {
   ChevronRight, Plus, AlertTriangle, FileText, Camera, HardHat,
   TrendingUp, FileCheck, ShieldCheck, BarChart3, MapPin, Users, X,
@@ -15,6 +16,7 @@ import {
   SITE_READINESS_ITEMS, MOCK_PERSONNEL, MOCK_EQUIPMENT, MOCK_MATERIALS,
   MOCK_SUBCONTRACTORS, DISCIPLINE_PROGRESS,
 } from '@/components/g4/data'
+import { getG4Data } from '@/app/actions/construction'
 import { WorkPackagesTab }  from '@/components/g4/work-packages-tab'
 import { HSETab }           from '@/components/g4/hse-tab'
 import { PermitsTab }       from '@/components/g4/permits-tab'
@@ -22,32 +24,45 @@ import { SiteReadinessTab } from '@/components/g4/site-readiness-tab'
 import { ResourcesTab }     from '@/components/g4/resources-tab'
 import { ProgressTab }      from '@/components/g4/progress-tab'
 
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
+function StatCard({ icon, label, value, color, sub }: { icon: React.ReactNode; label: string; value: string; color: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 px-4 py-4 flex items-center gap-3 bg-white shadow-sm">
       <div className={cn('rounded-lg p-2.5', color)}>{icon}</div>
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 leading-none mb-0.5">{label}</p>
         <p className="text-xl font-bold text-slate-900 leading-none">{value}</p>
+        {sub && <p className="text-[10px] text-slate-400 mt-1 leading-none">{sub}</p>}
       </div>
     </div>
   )
 }
-
-const TABS = [
-  { id: 'work-packages', label: 'Work Packages',    count: MOCK_WORK_PACKAGES.length,                                   icon: <HardHat    className="size-3.5" /> },
-  { id: 'hse',           label: 'HSE Management',   count: MOCK_INCIDENTS.filter((i) => i.status === 'Open').length,    icon: <ShieldCheck className="size-3.5" /> },
-  { id: 'permits',       label: 'Permits & Licenses', count: MOCK_PERMITS.filter((p) => p.status !== 'Approved').length, icon: <FileCheck  className="size-3.5" /> },
-  { id: 'site',          label: 'Site Readiness',   count: null,                                                         icon: <MapPin     className="size-3.5" /> },
-  { id: 'resources',     label: 'Resources',        count: null,                                                         icon: <Users      className="size-3.5" /> },
-  { id: 'progress',      label: 'Progress',         count: null,                                                         icon: <BarChart3  className="size-3.5" /> },
-]
 
 export default function G4ConstructionPage() {
   const params = useParams()
   const projectId = (params?.id as string) ?? 'SOL-2026-001'
   const [activeTab, setActiveTab] = React.useState('work-packages')
   const [newWPOpen, setNewWPOpen] = React.useState(false)
+
+  const { data: g4Data } = useSWR(
+    projectId ? `g4-data-${projectId}` : null,
+    () => getG4Data(projectId),
+  )
+
+  const workPackages = (g4Data && g4Data.workPackages.length > 0
+    ? g4Data.workPackages : null) as unknown as typeof MOCK_WORK_PACKAGES ?? MOCK_WORK_PACKAGES
+  const incidents    = (g4Data && g4Data.incidents.length > 0
+    ? g4Data.incidents : null) as unknown as typeof MOCK_INCIDENTS ?? MOCK_INCIDENTS
+  const permits      = (g4Data && g4Data.permits.length > 0
+    ? g4Data.permits : null) as unknown as typeof MOCK_PERMITS ?? MOCK_PERMITS
+
+  const TABS = [
+    { id: 'work-packages', label: 'Work Packages',      count: workPackages.length,                                      icon: <HardHat    className="size-3.5" /> },
+    { id: 'hse',           label: 'HSE Management',     count: incidents.filter((i) => i.status === 'Open').length,      icon: <ShieldCheck className="size-3.5" /> },
+    { id: 'permits',       label: 'Permits & Licenses', count: permits.filter((p) => p.status !== 'Approved').length,    icon: <FileCheck  className="size-3.5" /> },
+    { id: 'site',          label: 'Site Readiness',     count: null,                                                     icon: <MapPin     className="size-3.5" /> },
+    { id: 'resources',     label: 'Resources',          count: null,                                                     icon: <Users      className="size-3.5" /> },
+    { id: 'progress',      label: 'Progress',           count: null,                                                     icon: <BarChart3  className="size-3.5" /> },
+  ]
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -97,11 +112,18 @@ export default function G4ConstructionPage() {
 
         <PhaseGateStepper currentGate="G4" completedGates={['G0', 'G1', 'G2', 'G3']} projectId={projectId} />
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard icon={<HardHat    className="size-5 text-orange-600" />}  label="Work Packages"     value="24"      color="bg-orange-100" />
           <StatCard icon={<TrendingUp className="size-5 text-amber-600" />}   label="Mobilization %"   value="65%"     color="bg-amber-100"  />
           <StatCard icon={<FileCheck  className="size-5 text-green-600" />}   label="Permits Approved" value="8 of 12" color="bg-green-100"  />
           <StatCard icon={<ShieldCheck className="size-5 text-green-600" />}  label="HSE Incidents"    value="0"       color="bg-green-100"  />
+          <StatCard
+            icon={<FileText className="size-5 text-sky-600" />}
+            label="Daily Reports"
+            value={String(g4Data?.dailyReportCount ?? 0)}
+            sub={g4Data?.latestReportDate ? `Latest ${new Date(g4Data.latestReportDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : 'None yet'}
+            color="bg-sky-100"
+          />
         </div>
 
         {/* Tab bar */}
@@ -127,9 +149,9 @@ export default function G4ConstructionPage() {
         </div>
 
         {/* Tab content */}
-        {activeTab === 'work-packages' && <WorkPackagesTab packages={MOCK_WORK_PACKAGES} />}
-        {activeTab === 'hse'           && <HSETab planItems={MOCK_HSE_PLAN} incidents={MOCK_INCIDENTS} />}
-        {activeTab === 'permits'       && <PermitsTab permits={MOCK_PERMITS} />}
+        {activeTab === 'work-packages' && <WorkPackagesTab packages={workPackages} />}
+        {activeTab === 'hse'           && <HSETab planItems={MOCK_HSE_PLAN} incidents={incidents} />}
+        {activeTab === 'permits'       && <PermitsTab permits={permits} workPermits={g4Data?.workPermits ?? []} projectId={projectId} />}
         {activeTab === 'site'          && <SiteReadinessTab items={SITE_READINESS_ITEMS} />}
         {activeTab === 'resources'     && (
           <ResourcesTab

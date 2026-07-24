@@ -2,29 +2,33 @@
 import * as React from 'react'
 import useSWR from 'swr'
 import { BarChart2 } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
+import {
+  ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Cell,
+} from 'recharts'
 import type { WidgetConfig } from './types'
-import { getBudgetOverview } from '@/app/actions/dashboard'
+import { getPortfolioCostExposure } from '@/app/actions/payments'
 
-export function BudgetOverviewWidget({ config }: { config: WidgetConfig }) {
-  const { data: overview, isLoading } = useSWR('widget-budget', getBudgetOverview)
+export function BudgetOverviewWidget({ config: _config }: { config: WidgetConfig }) {
+  const { data: exposure, isLoading } = useSWR('widget-cost-exposure', getPortfolioCostExposure)
 
-  // Chart rows keyed by finance record type (budget vs actual spend)
-  const DATA = (overview?.groups ?? []).map((g) => ({
-    phase:  g.category,
-    budget: Math.round((g.planned / 1_000_000) * 10) / 10,
-    actual: Math.round((g.actual  / 1_000_000) * 10) / 10,
+  // Per-project chart rows: contract value (bar) + pending VO exposure (line), in $M.
+  const DATA = (exposure?.projects ?? []).map((p) => ({
+    code:      p.code,
+    contract:  Math.round((p.contractValue / 1_000_000) * 10) / 10,
+    exposure:  Math.round((p.pendingVoImpact / 1_000_000) * 10) / 10,
+    certified: p.certifiedPct,
   }))
-  const totalBudget = (overview?.totalPlanned ?? 0) / 1_000_000
-  const totalActual = (overview?.totalActual  ?? 0) / 1_000_000
-  const pct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0
+
+  const totalContract = (exposure?.totals.contractValue ?? 0) / 1_000_000
+  const certifiedPct  = exposure?.totals.certifiedPct ?? 0
+  const totalExposure = (exposure?.totals.pendingVoImpact ?? 0) / 1_000_000
 
   if (isLoading) {
     return (
       <div className="flex flex-col h-full p-4 gap-3">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           <BarChart2 className="size-3.5" />
-          <span>Budget Overview</span>
+          <span>Cost Exposure</span>
         </div>
         <div className="flex-1 rounded-lg bg-muted/20 animate-pulse" />
       </div>
@@ -35,8 +39,8 @@ export function BudgetOverviewWidget({ config }: { config: WidgetConfig }) {
     <div className="flex flex-col h-full p-4 gap-3">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         <BarChart2 className="size-3.5" />
-        <span>Budget Overview</span>
-        <span className="ml-auto text-[10px] font-mono font-normal text-foreground">${totalActual.toFixed(0)}M / ${totalBudget.toFixed(0)}M</span>
+        <span>Cost Exposure</span>
+        <span className="ml-auto text-[10px] font-mono font-normal text-foreground">${totalContract.toFixed(0)}M contract</span>
       </div>
       {DATA.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No data yet</div>
@@ -45,9 +49,9 @@ export function BudgetOverviewWidget({ config }: { config: WidgetConfig }) {
       {/* KPI row */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          { label: 'Total Budget',  value: `$${totalBudget.toFixed(0)}M`, color: 'text-foreground' },
-          { label: 'Actual Spend',  value: `$${totalActual.toFixed(0)}M`, color: pct > 100 ? 'text-red-500' : 'text-green-500' },
-          { label: 'Utilisation',   value: `${pct}%`,                      color: pct > 100 ? 'text-red-500' : pct > 85 ? 'text-amber-500' : 'text-green-500' },
+          { label: 'Contract Value', value: `$${totalContract.toFixed(0)}M`, color: 'text-foreground' },
+          { label: '% Certified',    value: `${certifiedPct.toFixed(0)}%`,   color: certifiedPct >= 100 ? 'text-red-500' : certifiedPct >= 85 ? 'text-amber-500' : 'text-green-500' },
+          { label: 'Exposure',       value: `$${totalExposure.toFixed(1)}M`, color: totalExposure > 0 ? 'text-amber-500' : 'text-green-500' },
         ].map(k => (
           <div key={k.label} className="rounded-lg bg-muted/20 px-2 py-1.5 text-center">
             <p className={`text-sm font-bold ${k.color}`}>{k.value}</p>
@@ -57,20 +61,21 @@ export function BudgetOverviewWidget({ config }: { config: WidgetConfig }) {
       </div>
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={DATA} margin={{ top: 0, right: 0, bottom: 0, left: -20 }} barGap={2}>
-            <XAxis dataKey="phase" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+          <ComposedChart data={DATA} margin={{ top: 4, right: 0, bottom: 0, left: -20 }} barGap={2}>
+            <XAxis dataKey="code" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
             <Tooltip
               contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 11 }}
-              formatter={(v) => [`$${v}M`, '']}
+              formatter={(v, name) => [`$${v}M`, name === 'contract' ? 'Contract' : 'Exposure']}
             />
-            <Bar dataKey="budget"  name="Budget" fill="#3b82f680" radius={[3,3,0,0]} />
-            <Bar dataKey="actual"  name="Actual" radius={[3,3,0,0]}>
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+            <Bar dataKey="contract" name="Contract" fill="#3b82f680" radius={[3,3,0,0]}>
               {DATA.map((d, i) => (
-                <Cell key={i} fill={d.actual > d.budget ? '#ef4444' : '#22c55e'} />
+                <Cell key={i} fill={d.certified >= 100 ? '#ef444480' : '#3b82f680'} />
               ))}
             </Bar>
-          </BarChart>
+            <Line dataKey="exposure" name="Exposure" type="monotone" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
       </>

@@ -7,7 +7,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import {
-  Plug, Star, RefreshCw, Database, CheckCircle2, Clock, AlertTriangle,
+  Plug, Star, RefreshCw, CheckCircle2, Clock, AlertTriangle,
   ArrowDownToLine, ArrowUpFromLine, Globe, Wifi, WifiOff, Activity,
   Search, Filter,
 } from 'lucide-react'
@@ -16,7 +16,6 @@ import {
   loadMarketplaceDashboard,
   connectProviderAction,
   disconnectProviderAction,
-  seedMarketplaceDemoData,
 } from '@/app/actions/marketplace'
 import type { MarketplaceProvider, IntegrationSystem, DataExchangeEvent } from '@/app/actions/marketplace'
 import type { MarketplaceDashboard } from '@/app/actions/marketplace'
@@ -254,18 +253,9 @@ export function MarketplacePage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
-  const [seeding, setSeeding] = useState(false)
-
   const { data, mutate, isLoading } = useSWR('marketplace-dashboard', loadMarketplaceDashboard)
   const d = data ?? (isLoading ? null : ILLUSTRATIVE)
   const isLive = (data?.providers.length ?? 0) > 0
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedMarketplaceDemoData()
-    await mutate()
-    setSeeding(false)
-  }
 
   // Derived provider list
   const providers = isLive ? (data?.providers ?? []) : ILLUSTRATIVE_PROVIDERS
@@ -303,17 +293,6 @@ export function MarketplacePage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <LiveBadge live={isLive} />
-          {!isLive && (
-            <button
-              type="button"
-              onClick={handleSeed}
-              disabled={seeding}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#0a192f] dark:bg-slate-700 text-slate-100 hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              <Database className="size-3.5" />
-              {seeding ? 'Seeding...' : 'Seed Demo'}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => mutate()}

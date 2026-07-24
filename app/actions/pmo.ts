@@ -2,7 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -52,17 +52,18 @@ function riskPriority(prob: string, impact: string): string {
 }
 
 export async function loadPmoDashboard(): Promise<PmoDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [projRes, riskRes, ticketRes, profRes] = await Promise.all([
-    supabase.from('projects').select('id, name, health').eq('tenant_id', DEMO_TENANT),
+    supabase.from('projects').select('id, name, health').eq('tenant_id', tenantId),
     supabase.from('risks')
       .select('id, project_id, title, category, status, probability, impact, owner_id, created_at')
-      .eq('tenant_id', DEMO_TENANT).order('created_at', { ascending: false }),
+      .eq('tenant_id', tenantId).order('created_at', { ascending: false }),
     supabase.from('tickets')
       .select('id, project_id, title, type, status, priority, assigned_to, description, resolved_at, created_at')
-      .eq('tenant_id', DEMO_TENANT).order('created_at', { ascending: false }),
-    supabase.from('profiles').select('id, full_name').eq('tenant_id', DEMO_TENANT),
+      .eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+    supabase.from('profiles').select('id, full_name').eq('tenant_id', tenantId),
   ])
 
   const projects = projRes.data ?? []
@@ -145,13 +146,14 @@ export async function createPmoItem(input: {
   projectId: string; title: string; owner?: string; priority?: string
   category?: string; rationale?: string; phase?: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
   const { type, projectId, title } = input
   if (!projectId || !title) return { error: 'Project and title are required' }
 
   if (type === 'risk') {
     const { error } = await supabase.from('risks').insert({
-      tenant_id: DEMO_TENANT, project_id: projectId, title,
+      tenant_id: tenantId, project_id: projectId, title,
       category: input.category || 'General',
       probability: input.priority === 'critical' || input.priority === 'high' ? 'high' : 'medium',
       impact: input.priority === 'critical' ? 'high' : input.priority === 'low' ? 'low' : 'medium',
@@ -162,7 +164,7 @@ export async function createPmoItem(input: {
 
   // issue / action / decision / lesson all live in tickets, keyed by `type`
   const { error } = await supabase.from('tickets').insert({
-    tenant_id: DEMO_TENANT, project_id: projectId, title, type,
+    tenant_id: tenantId, project_id: projectId, title, type,
     description: type === 'decision' ? (input.rationale || '') : type === 'lesson' ? (input.category || 'General') : '',
     status: type === 'decision' ? 'pending' : 'open',
     priority: type === 'lesson' ? (input.phase || 'General') : (input.priority || 'medium'),
@@ -172,13 +174,14 @@ export async function createPmoItem(input: {
 }
 
 export async function seedPmoDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
-  const { data: projects } = await supabase.from('projects').select('id').eq('tenant_id', DEMO_TENANT).limit(3)
+  const { data: projects } = await supabase.from('projects').select('id').eq('tenant_id', tenantId).limit(3)
   if (!projects || projects.length === 0) return { error: 'No projects found to attach PMO items to.' }
   const pid = (i: number) => projects[i % projects.length].id
 
-  const { data: exRisk } = await supabase.from('risks').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: exRisk } = await supabase.from('risks').select('id').eq('tenant_id', tenantId).limit(1)
   if ((exRisk?.length ?? 0) === 0) {
     const riskSeed = [
       { title: 'Grid connection permit delayed', category: 'Regulatory',  probability: 'high', impact: 'high' },
@@ -188,13 +191,13 @@ export async function seedPmoDemoData(): Promise<{ error?: string }> {
     ]
     for (let i = 0; i < riskSeed.length; i++) {
       await supabase.from('risks').insert({
-        tenant_id: DEMO_TENANT, project_id: pid(i),
+        tenant_id: tenantId, project_id: pid(i),
         status: i === 3 ? 'escalated' : 'open', created_by: DEMO_USER, ...riskSeed[i],
       })
     }
   }
 
-  const { data: exTicket } = await supabase.from('tickets').select('id').eq('tenant_id', DEMO_TENANT).eq('type', 'issue').limit(1)
+  const { data: exTicket } = await supabase.from('tickets').select('id').eq('tenant_id', tenantId).eq('type', 'issue').limit(1)
   if ((exTicket?.length ?? 0) === 0) {
     const ticketSeed: { title: string; type: string; status: string; priority: string; description?: string }[] = [
       { title: 'Connection agreement not signed', type: 'issue', status: 'escalated', priority: 'critical' },
@@ -208,7 +211,7 @@ export async function seedPmoDemoData(): Promise<{ error?: string }> {
     ]
     for (let i = 0; i < ticketSeed.length; i++) {
       await supabase.from('tickets').insert({
-        tenant_id: DEMO_TENANT, project_id: pid(i), created_by: DEMO_USER, ...ticketSeed[i],
+        tenant_id: tenantId, project_id: pid(i), created_by: DEMO_USER, ...ticketSeed[i],
       })
     }
   }

@@ -14,12 +14,16 @@ import {
   Clock,
   ArrowRight,
   GitBranch,
+  Receipt,
+  Landmark,
   Info,
   Activity,
   Zap,
   ClipboardCheck,
   Send,
   RefreshCw,
+  HardHat,
+  History,
 } from 'lucide-react'
 import { useRouter as useNextRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -31,6 +35,7 @@ import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-g
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
+import { RecordHistoryPanel } from '@/components/admin/audit-log-viewer'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
 import type {
   Project,
@@ -127,12 +132,14 @@ function GateStatusCard({
   overallProgress,
   onSubmitApproval,
   onRequestChanges,
+  hideActions = false,
 }: {
   gateProgress?: Record<string, boolean>
   deliverables?: { name: string; completed: boolean }[]
   overallProgress?: number
   onSubmitApproval?: () => void
   onRequestChanges?: () => void
+  hideActions?: boolean
 }) {
   const completed    = deliverables.filter((d) => d.completed).length
   const total        = deliverables.length
@@ -211,31 +218,33 @@ function GateStatusCard({
           </p>
         </div>
 
-        {/* Next Actions */}
-        <div className="border-t border-slate-100 dark:border-border pt-4 space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-muted-foreground mb-2">
-            Next Actions
-          </p>
-          <Button
-            className="w-full bg-[#0a192f] hover:bg-slate-800 text-white dark:bg-[#64ffda] dark:text-[#0a192f] dark:hover:bg-[#64ffda]/90"
-            size="sm"
-            aria-label="Submit G2 package for approval"
-            onClick={onSubmitApproval}
-          >
-            <Send className="size-4 mr-2" aria-hidden />
-            Submit for Approval
-          </Button>
-          <Button
-            variant="outline"
-            className="w-full border-slate-200 hover:bg-slate-50 dark:border-border dark:hover:bg-muted"
-            size="sm"
-            aria-label="Request changes to G2 deliverables"
-            onClick={onRequestChanges}
-          >
-            <RefreshCw className="size-4 mr-2" aria-hidden />
-            Request Changes
-          </Button>
-        </div>
+        {/* Next Actions — hidden for read-only viewers */}
+        {!hideActions && (
+          <div className="border-t border-slate-100 dark:border-border pt-4 space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-muted-foreground mb-2">
+              Next Actions
+            </p>
+            <Button
+              className="w-full bg-[#0a192f] hover:bg-slate-800 text-white dark:bg-[#64ffda] dark:text-[#0a192f] dark:hover:bg-[#64ffda]/90"
+              size="sm"
+              aria-label="Submit gate package for approval"
+              onClick={onSubmitApproval}
+            >
+              <Send className="size-4 mr-2" aria-hidden />
+              Submit for Approval
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full border-slate-200 hover:bg-slate-50 dark:border-border dark:hover:bg-muted"
+              size="sm"
+              aria-label="Request changes to gate deliverables"
+              onClick={onRequestChanges}
+            >
+              <RefreshCw className="size-4 mr-2" aria-hidden />
+              Request Changes
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -245,7 +254,8 @@ function GateStatusCard({
 // Project Info card
 // ─────────────────────────────────────────────────────────────
 
-function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { project?: Project }) {
+function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { project?: Project; projectId?: string }) {
+  const [historyOpen, setHistoryOpen] = React.useState(false)
   const info = {
     technology:     project.technology    ?? SPEC_PROJECT_INFO.technology,
     capacity:       project.capacity      ?? SPEC_PROJECT_INFO.capacity,
@@ -283,6 +293,18 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
   ]
 
   return (
+    <>
+      {historyOpen && project.id && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" onClick={() => setHistoryOpen(false)} aria-hidden />
+          <RecordHistoryPanel
+            tableName="projects"
+            recordId={project.id}
+            label={project.code ?? project.name}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </>
+      )}
     <Card className="rounded-xl border border-slate-200 shadow-sm dark:border-border">
       <CardHeader className="px-5 py-4 border-b border-slate-100 dark:border-border">
         <div className="flex items-center gap-2">
@@ -290,6 +312,17 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
           <CardTitle className="text-base font-semibold text-slate-900 dark:text-foreground">
             Project Information
           </CardTitle>
+          {project.id && (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="ms-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              aria-label="View project change history"
+            >
+              <History className="size-3.5" aria-hidden />
+              History
+            </button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-5 flex flex-col gap-4">
@@ -304,6 +337,7 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
         ))}
       </CardContent>
     </Card>
+    </>
   )
 }
 
@@ -416,9 +450,49 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
     ? [
         ...QUICK_ACTIONS,
         {
+          label: 'Variations & Claims', icon: GitBranch, iconColor: '#0891b2',
+          bgColor: 'bg-cyan-100 dark:bg-cyan-900/30', count: 'VOs & claims',
+          ariaLabel: 'Open Variations and Claims', href: `/projects/${projectId}/variations`,
+        },
+        {
+          label: 'Payment Certificates', icon: Receipt, iconColor: '#0891b2',
+          bgColor: 'bg-emerald-100 dark:bg-emerald-900/30', count: 'IPCs',
+          ariaLabel: 'Open Payment Certificates', href: `/projects/${projectId}/payments`,
+        },
+        {
           label: 'Client Report', icon: FileText, iconColor: '#7c3aed',
           bgColor: 'bg-violet-100 dark:bg-violet-900/30', count: 'Monthly PDF',
           ariaLabel: 'Open Client Report', href: `/projects/${projectId}/client-report`,
+        },
+        {
+          label: 'Lender Report', icon: Landmark, iconColor: '#0f766e',
+          bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'Print PDF',
+          ariaLabel: 'Open Lender Progress Report', href: `/projects/${projectId}/lender-report`,
+        },
+        {
+          label: 'Transmittals', icon: Send, iconColor: '#0891b2',
+          bgColor: 'bg-sky-100 dark:bg-sky-900/30', count: 'Document log',
+          ariaLabel: 'Open Transmittals register', href: `/projects/${projectId}/transmittals`,
+        },
+        {
+          label: 'Permit to Work', icon: HardHat, iconColor: '#ea580c',
+          bgColor: 'bg-orange-100 dark:bg-orange-900/30', count: 'PTW board',
+          ariaLabel: 'Open Permit to Work board', href: `/projects/${projectId}/permits`,
+        },
+        {
+          label: 'Quality / ITP', icon: ClipboardCheck, iconColor: '#0f766e',
+          bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'ITP register',
+          ariaLabel: 'Open Quality ITP register', href: `/projects/${projectId}/quality`,
+        },
+        {
+          label: 'Contracts', icon: FileText, iconColor: '#1d4ed8',
+          bgColor: 'bg-blue-100 dark:bg-blue-900/30', count: 'Milestones & LDs',
+          ariaLabel: 'Open contracts register', href: `/projects/${projectId}/contracts`,
+        },
+        {
+          label: 'Energy', icon: Zap, iconColor: '#0d9488',
+          bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'Production & yield',
+          ariaLabel: 'Open energy performance dashboard', href: `/projects/${projectId}/energy`,
         },
       ]
     : QUICK_ACTIONS
@@ -463,9 +537,9 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────���───────────
 // Activity Timeline card
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────���──────────────────────
 
 function ActivityTimelineCard({ logs, loading }: { logs: WorkflowLogEntry[]; loading?: boolean }) {
   return (
@@ -568,10 +642,14 @@ export interface ProjectDetailPageProps {
   onSettings: () => void
   onSubmitApproval: () => void
   onRequestChanges: () => void
+  /** When provided, renders a role-gated "Lender Report" header button */
+  onLenderReport?: () => void
   /** Suppress the built-in PhaseGateStepper when the parent renders one */
   hideStepper?: boolean
   /** Suppress the built-in ActivityTimeline when the parent renders one */
   hideTimeline?: boolean
+  /** Hide the Submit/Request Changes action buttons (e.g. for read-only viewers) */
+  hideActions?: boolean
 }
 
 /** Adapt spec Approval → internal ApprovalItem for ApprovalQueue */
@@ -646,8 +724,10 @@ export function ProjectDetailPage({
   onSettings,
   onSubmitApproval,
   onRequestChanges,
+  onLenderReport,
   hideStepper  = false,
   hideTimeline = false,
+  hideActions  = false,
 }: ProjectDetailPageProps) {
   const gateNumber      = project.gate ?? 2
   const currentGateCode = `G${gateNumber}`
@@ -699,7 +779,7 @@ export function ProjectDetailPage({
       )}
 
       {/* Project Command Center */}
-      <ProjectCommandCenter project={projectData} loading={isLoading} onBack={onBack} />
+      <ProjectCommandCenter project={projectData} loading={isLoading} onBack={onBack} onLenderReport={onLenderReport} />
 
       {/* Phase Gate Stepper */}
       {!hideStepper && (
@@ -740,6 +820,7 @@ export function ProjectDetailPage({
             deliverables={deliverables}
             onSubmitApproval={onSubmitApproval}
             onRequestChanges={onRequestChanges}
+            hideActions={hideActions}
           />
           <ProjectInfoCard project={project} />
           <ClientAnnouncementsPanel projectId={project.id} isManager />

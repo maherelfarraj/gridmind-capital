@@ -8,13 +8,13 @@ import {
 } from 'recharts'
 import {
   CheckCircle2, Clock, AlertTriangle, FolderCheck,
-  ChevronDown, Database, RefreshCw, Plus, X,
+  ChevronDown, RefreshCw, Plus, X,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import {
-  loadHandoverDashboard, updateHandoverStatus, seedHandoverDemoData,
+  loadHandoverDashboard, updateHandoverStatus,
   createHandoverItem,
 } from '@/app/actions/handover'
 import type { HandoverItem, HandoverDashboard, HandoverStatus } from '@/app/actions/handover'
@@ -349,20 +349,12 @@ function AddItemModal({
 
 export function HandoverPage() {
   const { data, mutate, isLoading } = useSWR('handover-dashboard', loadHandoverDashboard)
-  const [seeding,     setSeeding]     = React.useState(false)
   const [showAdd,     setShowAdd]     = React.useState(false)
   const [catFilter,   setCatFilter]   = React.useState<string>('all')
   const [statusFilter, setStatusFilter] = React.useState<string>('all')
 
   const d      = data ?? (isLoading ? null : ILLUSTRATIVE)
   const isLive = !!data
-
-  async function handleSeed() {
-    setSeeding(true)
-    await seedHandoverDemoData()
-    await mutate()
-    setSeeding(false)
-  }
 
   async function handleAccept(id: string) {
     await updateHandoverStatus(id, 'accepted', 100)
@@ -401,17 +393,6 @@ export function HandoverPage() {
           )}>
             {isLive ? 'Live' : 'Illustrative'}
           </span>
-          {!isLive && (
-            <button
-              type="button"
-              onClick={handleSeed}
-              disabled={seeding}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-800 dark:bg-slate-700 text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-50"
-            >
-              <Database className="size-3.5" aria-hidden />
-              {seeding ? 'Seeding...' : 'Seed Demo'}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setShowAdd(true)}

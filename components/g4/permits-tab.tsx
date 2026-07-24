@@ -1,13 +1,31 @@
 'use client'
 
 import React from 'react'
-import { Plus, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, RefreshCw, ShieldCheck, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Permit, PERMIT_STATUS_META } from './data'
+import type { G4WorkPermit } from '@/app/actions/construction'
 
-export function PermitsTab({ permits }: { permits: Permit[] }) {
+const PTW_STATUS_COLOR: Record<string, string> = {
+  requested: 'bg-amber-100 text-amber-700',
+  issued:    'bg-green-100 text-green-700',
+  suspended: 'bg-red-100 text-red-700',
+  expired:   'bg-slate-100 text-slate-600',
+  closed:    'bg-slate-100 text-slate-600',
+  cancelled: 'bg-slate-100 text-slate-600',
+}
+
+function fmtPtwDate(d: string | null): string {
+  if (!d) return '—'
+  const dt = new Date(d)
+  return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+export function PermitsTab({ permits, workPermits = [], projectId }: { permits: Permit[]; workPermits?: G4WorkPermit[]; projectId?: string }) {
   const [view, setView] = React.useState<'list' | 'calendar'>('list')
+  const activeWorkPermits = workPermits.filter((p) => p.active).length
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   type CalEntry = { code: string; label: string; color: string }
@@ -130,6 +148,52 @@ export function PermitsTab({ permits }: { permits: Permit[] }) {
           </div>
         </div>
       )}
+
+      {/* Work permits (PTW) subsection — live from the Permit-to-Work board */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-4 text-orange-500" />
+            <p className="text-sm font-semibold text-slate-800">Work Permits (PTW)</p>
+            <Badge className="bg-green-100 text-green-700">{activeWorkPermits} active</Badge>
+          </div>
+          {projectId && (
+            <Link href={`/projects/${projectId}/permits`}
+              className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 transition-colors">
+              Open PTW board <ChevronRight className="size-3.5" />
+            </Link>
+          )}
+        </div>
+        {workPermits.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-400">No work permits raised for this project yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                  {['Permit No','Type','Title','Location','Status','Valid From','Valid To','Issuer'].map((h) => (
+                    <th key={h} className="px-4 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {workPermits.map((p) => (
+                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs text-orange-500 whitespace-nowrap">{p.permit_no}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600 capitalize whitespace-nowrap">{p.type.replace(/_/g, ' ')}</td>
+                    <td className="px-4 py-3 text-sm text-slate-800 max-w-[220px] truncate">{p.title}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{p.location ?? '—'}</td>
+                    <td className="px-4 py-3"><Badge className={cn('capitalize', PTW_STATUS_COLOR[p.status] ?? PTW_STATUS_COLOR.requested)}>{p.status}</Badge></td>
+                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtPtwDate(p.valid_from)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtPtwDate(p.valid_to)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{p.issuer ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

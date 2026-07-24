@@ -3,8 +3,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
 export interface LogExportArgs {
   /** Null/undefined for portfolio-wide exports. */
   projectId?: string | null

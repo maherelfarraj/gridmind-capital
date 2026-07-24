@@ -22,6 +22,7 @@ import {
   formatUsd, formatUsdCompact, formatDate,
 } from '@/lib/variation-orders/ui'
 import { ExcelExportButton } from '@/components/shared/excel-export-button'
+import { ClaimsSection } from '@/components/commercial/claims-section'
 
 // ─── Create modal ─────────────────────────────────────────────
 
@@ -161,10 +162,10 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
   }
 
   const statCards = [
-    { label: 'Approved VO Value', value: formatUsdCompact(kpis?.approvedValue ?? 0), icon: CheckCircle2, color: '#22c55e' },
-    { label: 'Pending VO Value',  value: formatUsdCompact(kpis?.pendingValue ?? 0),  icon: Clock,        color: '#f59e0b' },
-    { label: 'Total VOs',         value: String(kpis?.totalCount ?? 0),              icon: ClipboardList,color: '#64ffda' },
-    { label: 'Approved / Pending',value: `${kpis?.byStatus.find(s => s.name === 'approved')?.value ?? 0} / ${kpis?.byStatus.find(s => s.name === 'submitted')?.value ?? 0}`, icon: DollarSign, color: '#3b82f6' },
+    { label: 'Approved VO Impact', value: formatUsdCompact(kpis?.approvedValue ?? 0),               icon: CheckCircle2,  color: '#22c55e' },
+    { label: 'Pending VO Impact',  value: formatUsdCompact(kpis?.pendingValue ?? 0),                icon: Clock,         color: '#f59e0b' },
+    { label: 'Approved Time Impact', value: `${kpis?.approvedTimeImpactDays ?? 0}d`,                icon: ClipboardList, color: '#3b82f6' },
+    { label: 'Current Contract Value', value: formatUsdCompact(kpis?.currentContractValue ?? 0),    icon: DollarSign,    color: '#64ffda' },
   ]
 
   return (
@@ -337,6 +338,9 @@ export function VariationsRegister({ projectId }: { projectId: string }) {
             )}
           </CardContent>
         </Card>
+
+        {/* Claims register — cost & EOT claims for this project */}
+        <ClaimsSection projectId={projectId} />
       </div>
     </>
   )

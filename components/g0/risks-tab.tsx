@@ -3,18 +3,32 @@ import * as React from 'react'
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts'
 import { cn } from '@/lib/utils'
 import { MOCK_RISKS, RISK_META } from './data'
-import type { RiskLevel } from './types'
+import type { RiskLevel, InitiationRisk } from './types'
+import type { G0LiveRisk } from '@/app/actions/gate-submissions'
 
 const LEVEL_ORDER: RiskLevel[] = ['critical', 'high', 'medium', 'low']
 
-export function RisksTab() {
+export function RisksTab({ liveData }: { liveData?: G0LiveRisk[] }) {
   const [selectedLevel, setSelectedLevel] = React.useState<RiskLevel | 'all'>('all')
 
-  const filtered = MOCK_RISKS.filter((r) => selectedLevel === 'all' || r.level === selectedLevel)
+  const risks: InitiationRisk[] = liveData === undefined
+    ? MOCK_RISKS
+    : liveData.map((r) => ({ ...r, id: r.id || String(Math.random()) } as InitiationRisk))
+
+  if (liveData !== undefined && liveData.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-10 text-center">
+        <p className="text-sm font-medium text-foreground">No records yet</p>
+        <p className="text-xs text-muted-foreground mt-1">No initiation risks recorded — use the gate form to add risks.</p>
+      </div>
+    )
+  }
+
+  const filtered = risks.filter((r) => selectedLevel === 'all' || r.level === selectedLevel)
 
   const pieData = LEVEL_ORDER.map((l) => ({
     name: RISK_META[l].label,
-    value: MOCK_RISKS.filter((r) => r.level === l).length,
+    value: risks.filter((r) => r.level === l).length,
     color: RISK_META[l].color,
   })).filter((d) => d.value > 0)
 
@@ -24,7 +38,7 @@ export function RisksTab() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1 grid grid-cols-2 gap-3">
           {LEVEL_ORDER.map((l) => {
-            const count = MOCK_RISKS.filter((r) => r.level === l).length
+            const count = risks.filter((r) => r.level === l).length
             return (
               <button key={l} type="button" onClick={() => setSelectedLevel(selectedLevel === l ? 'all' : l)}
                 className={cn('rounded-xl border p-3 text-center transition-colors',

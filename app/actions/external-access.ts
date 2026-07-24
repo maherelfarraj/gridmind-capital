@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -39,12 +39,13 @@ export interface ExternalAccessGrant {
 
 /** All external users (subcontractor | client_viewer) in the tenant. */
 export async function getExternalUsers(): Promise<ExternalUser[]> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
   const { data: profiles } = await admin
     .from('profiles')
     .select('id, email, full_name, role, last_active')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .in('role', ['subcontractor', 'client_viewer'])
     .order('created_at', { ascending: false })
 
@@ -55,7 +56,7 @@ export async function getExternalUsers(): Promise<ExternalUser[]> {
   const { data: grants } = await admin
     .from('external_access')
     .select('user_id, project_id, organization_name, revoked_at, projects(code, name)')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .in('user_id', userIds)
 
   const grantsByUser = (grants ?? []).reduce<Record<string, typeof grants>>((acc, g) => {
@@ -86,12 +87,13 @@ export async function getExternalUsers(): Promise<ExternalUser[]> {
 
 /** Access grants for a single external user. */
 export async function getExternalAccessGrants(userId: string): Promise<ExternalAccessGrant[]> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
   const { data } = await admin
     .from('external_access')
     .select('id, project_id, organization_name, granted_at, revoked_at, projects(code, name), profiles!granted_by(full_name)')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('user_id', userId)
     .order('granted_at', { ascending: false })
 
@@ -135,6 +137,7 @@ export interface InviteResult {
  *  4. Create external_access grants for the specified projects.
  */
 export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<InviteResult> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
   // Step 1 — check for existing profile.
@@ -142,7 +145,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
     .from('profiles')
     .select('id, email, role')
     .eq('email', args.email)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .maybeSingle()
 
   let userId: string
@@ -158,7 +161,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
       {
         data: {
           role: args.role,
-          tenant_id: DEMO_TENANT,
+          tenant_id: tenantId,
           organization_name: args.organizationName,
           full_name: '',
         },
@@ -175,7 +178,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
     // but it may not have fired yet for an invite flow).
     await admin.from('profiles').upsert({
       id:               userId,
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       email:            args.email,
       full_name:        '',
       role:             args.role,
@@ -198,7 +201,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
   if (args.projectIds.length > 0) {
     await admin.from('external_access').upsert(
       args.projectIds.map((pid) => ({
-        tenant_id:         DEMO_TENANT,
+        tenant_id:         tenantId,
         user_id:           userId,
         project_id:        pid,
         organization_name: args.organizationName,
@@ -212,7 +215,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
   return { userId, inviteLink, isExisting: !!existing }
 }
 
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────���─────────────
 // Grant / Revoke
 // ─────────────────────────────────���─────────────────��─────────
 
@@ -221,9 +224,10 @@ export async function assignProjectAccess(args: {
   projectId: string
   organizationName: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { error } = await admin.from('external_access').upsert({
-    tenant_id:         DEMO_TENANT,
+    tenant_id:         tenantId,
     user_id:           args.userId,
     project_id:        args.projectId,
     organization_name: args.organizationName,
@@ -239,13 +243,14 @@ export async function revokeProjectAccess(args: {
   userId: string
   projectId: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { error } = await admin
     .from('external_access')
     .update({ revoked_at: new Date().toISOString() })
     .eq('user_id', args.userId)
     .eq('project_id', args.projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
   revalidatePath('/admin/users')
@@ -253,13 +258,14 @@ export async function revokeProjectAccess(args: {
 }
 
 export async function revokeAllAccess(userId: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const now = new Date().toISOString()
   const { error } = await admin
     .from('external_access')
     .update({ revoked_at: now })
     .eq('user_id', userId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .is('revoked_at', null)
 
   if (error) return { error: error.message }
@@ -268,7 +274,7 @@ export async function revokeAllAccess(userId: string): Promise<{ error?: string 
     .from('profiles')
     .update({ role: 'viewer', is_active: false })
     .eq('id', userId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   revalidatePath('/admin/users')
   return {}
@@ -388,7 +394,7 @@ export async function seedClientPortalDemo(projectId: string): Promise<{
     return { error: 'Only project managers and above can seed demo data' }
   }
 
-  const tenantId = profile.tenant_id ?? DEMO_TENANT
+  const tenantId = profile.tenant_id ?? await getCurrentTenantId()
 
   // Flag up to 4 approved/submitted VOs as client-visible.
   const { data: vos } = await admin

@@ -17,7 +17,6 @@ import {
   loadOpportunitiesDashboard,
   createOpportunity,
   submitOpportunityForReview,
-  seedOpportunitiesDemoData,
 } from '@/app/actions/opportunities'
 import type { Opportunity } from '@/lib/types/action-types'
 
@@ -182,8 +181,6 @@ export function OpportunitiesPage() {
   const { toast } = useToast()
   const [modalOpen, setModalOpen] = React.useState(false)
   const [search, setSearch]       = React.useState('')
-  const [seeding, setSeeding]     = React.useState(false)
-
   const { data, isLoading, mutate } = useSWR('opportunities-dashboard', loadOpportunitiesDashboard, { revalidateOnFocus: true })
 
   const filtered = React.useMemo(() => {
@@ -202,15 +199,6 @@ export function OpportunitiesPage() {
     const { error } = await submitOpportunityForReview(id)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'Submitted for G0 review', variant: 'success' })
-    mutate()
-  }
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedOpportunitiesDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
     mutate()
   }
 
@@ -239,9 +227,6 @@ export function OpportunitiesPage() {
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh">
               <RefreshCw className="size-3.5" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
-              {seeding ? <Loader2 className="size-3.5 animate-spin" /> : 'Seed Demo'}
             </Button>
             <Button size="sm" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" /> New Opportunity
@@ -353,7 +338,6 @@ export function OpportunitiesPage() {
             <p className="text-base font-semibold text-foreground">No opportunities</p>
             <p className="text-sm text-muted-foreground mt-1">Create your first opportunity or seed demo data.</p>
             <div className="flex gap-2 mt-4">
-              <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>Seed Demo</Button>
               <Button size="sm" onClick={() => setModalOpen(true)}><Plus className="size-4" /> New Opportunity</Button>
             </div>
           </div>

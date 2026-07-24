@@ -8,9 +8,10 @@ import type {
   HseIncidentSeverity, HseIncidentStatus, HsePermitStatus,
 } from '@/lib/types/action-types'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
-export async function getHseDashboard(tenantId: string = DEMO_TENANT): Promise<HseDashboard> {
+export async function getHseDashboard(): Promise<HseDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [{ data: incRows }, { data: permRows }] = await Promise.all([
@@ -63,11 +64,12 @@ export async function createHseIncident(data: {
 }): Promise<{ error?: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
   const ref = `INC-${Date.now().toString(36).toUpperCase().slice(-4)}`
   const { error } = await supabase.from('hse_incidents').insert({
-    tenant_id:     DEMO_TENANT,
+    tenant_id:     tenantId,
     ref,
     title:         data.title,
     project_code:  data.projectCode,
@@ -85,6 +87,7 @@ export async function createHseIncident(data: {
 }
 
 export async function updateHseIncidentStatus(id: string, status: HseIncidentStatus): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -93,7 +96,7 @@ export async function updateHseIncidentStatus(id: string, status: HseIncidentSta
     .from('hse_incidents')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   revalidatePath('/hse')
   return { error: error?.message }
 }
@@ -102,13 +105,14 @@ export async function createHsePermit(data: {
   type: string; scope: string; projectCode: string
   issuedTo: string; issuedDate: string; expiryDate: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
   const ref = `PTW-${Date.now().toString(36).toUpperCase().slice(-4)}`
   const { error } = await supabase.from('hse_permits').insert({
-    tenant_id:    DEMO_TENANT,
+    tenant_id:    tenantId,
     ref,
     type:         data.type,
     scope:        data.scope,
@@ -123,6 +127,7 @@ export async function createHsePermit(data: {
 }
 
 export async function updateHsePermitStatus(id: string, status: HsePermitStatus): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -131,17 +136,18 @@ export async function updateHsePermitStatus(id: string, status: HsePermitStatus)
     .from('hse_permits')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   revalidatePath('/hse')
   return { error: error?.message }
 }
 
 export async function seedHseDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  const { data: ex } = await supabase.from('hse_incidents').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: ex } = await supabase.from('hse_incidents').select('id').eq('tenant_id', tenantId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
   const incidents = [
@@ -162,10 +168,10 @@ export async function seedHseDemoData(): Promise<{ error?: string }> {
   ]
 
   for (const d of incidents) {
-    await supabase.from('hse_incidents').insert({ tenant_id: DEMO_TENANT, ...d })
+    await supabase.from('hse_incidents').insert({ tenant_id: tenantId, ...d })
   }
   for (const p of permits) {
-    await supabase.from('hse_permits').insert({ tenant_id: DEMO_TENANT, ...p })
+    await supabase.from('hse_permits').insert({ tenant_id: tenantId, ...p })
   }
 
   revalidatePath('/hse')

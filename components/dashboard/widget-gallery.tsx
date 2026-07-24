@@ -1,12 +1,12 @@
 'use client'
 import * as React from 'react'
-import { X, Search, Plus, Activity, Shield, CheckSquare, BarChart2, CalendarRange, Users, AlertTriangle, FileText, Calendar, Zap, TrendingUp, Megaphone } from 'lucide-react'
+import { X, Search, Plus, Activity, Shield, CheckSquare, BarChart2, CalendarRange, Users, AlertTriangle, FileText, Calendar, Zap, TrendingUp, Megaphone, Landmark } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WIDGET_CATALOG, type WidgetDefinition } from './widgets/types'
 
 const ICON_MAP: Record<string, React.ComponentType<{className?: string}>> = {
   Activity, Shield, CheckSquare, BarChart2, CalendarRange, Users,
-  AlertTriangle, FileText, Calendar, Zap, TrendingUp, Megaphone,
+  AlertTriangle, FileText, Calendar, Zap, TrendingUp, Megaphone, Landmark,
 }
 
 const CATEGORIES = [

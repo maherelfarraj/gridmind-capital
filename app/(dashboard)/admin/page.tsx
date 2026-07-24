@@ -4,6 +4,7 @@ import * as React from 'react'
 import useSWR from 'swr'
 import { formatDistanceToNow } from 'date-fns'
 import { AdminConsole } from '@/components/admin/admin-console'
+import { PlatformHealthCard } from '@/components/admin/platform-health-card'
 import { getUsers, updateUserRole } from '@/app/actions/admin'
 import type { UserProfile, UserRole } from '@/components/admin/users-roles-page'
 
@@ -48,11 +49,14 @@ export default function AdminConsolePage() {
   }
 
   return (
-    <AdminConsole
-      users={isLoading ? [] : users}
-      totalCount={users.length}
-      isLoading={isLoading}
-      onUpdateRole={handleUpdateRole}
-    />
+    <div className="flex flex-col gap-6 p-6">
+      <PlatformHealthCard />
+      <AdminConsole
+        users={isLoading ? [] : users}
+        totalCount={users.length}
+        isLoading={isLoading}
+        onUpdateRole={handleUpdateRole}
+      />
+    </div>
   )
 }

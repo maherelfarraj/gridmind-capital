@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
 
@@ -25,16 +25,176 @@ const PO_STATUS_COLORS: Record<string, string> = {
   disputed:    '#ef4444',
 }
 
+// ─── G3 gate detail page data ─────────────────────────────────────────────────
+
+/** Minimal shapes the G3 tab components expect (mirroring the inline types). */
+export interface G3RFQ {
+  id: string; code: string; title: string; description: string
+  category: string; status: string; value_min: number; value_max: number
+  currency: string; bid_deadline: string; evaluation_period_days: number
+  publish_date: string | null; invited_vendors: string[]; responded_vendors: string[]
+  specifications: { section: string; requirement: string; mandatory: boolean }[]
+  evaluation_criteria: { criterion: string; weight: number; max_score: number }[]
+  bids: G3Bid[]; created_at: string
+}
+
+export interface G3Bid {
+  id: string; rfq_id: string; vendor_id: string; vendor_name: string
+  total_price: number; currency: string; technical_score: number
+  commercial_score: number; delivery_score: number; past_performance_score: number
+  total_score: number; rank: number; status: string; submission_date: string
+  validity_days: number
+  line_items: { code: string; description: string; qty: number; unit: string; unit_price: number; total: number }[]
+  clarifications: { date: string; question: string; response: string | null }[]
+}
+
+export interface G3PO {
+  id: string; code: string; vendor_id: string; vendor_name: string
+  description: string; total_amount: number; currency: string; status: string
+  delivery_date: string; incoterms: string
+  payment_terms: { milestone: string; percentage: number; due_days: number }[]
+  line_items: { code: string; description: string; qty: number; unit: string; unit_price: number; total: number }[]
+  milestones: { name: string; due_date: string; completed: boolean }[]
+  changes: { co_number: string; description: string; value: number; status: string }[]
+  created_at: string
+}
+
+export interface G3Vendor {
+  id: string; code: string; name: string; country: string
+  categories: string[]; status: string; qualification_score: number
+  projects_completed: number; rating: number
+  contacts: { name: string; title: string; email: string; phone: string }[]
+  qualifications: { area: string; status: string; expiry: string | null; notes: string }[]
+  performance_history: { project: string; year: number; on_time: boolean; quality_score: number; safety_score: number }[]
+  documents: { type: string; name: string; expiry: string | null; status: string }[]
+}
+
+export interface G3Contract {
+  id: string; code: string; vendor_id: string; vendor_name: string
+  title: string; type: string; value: number; currency: string
+  status: string; start_date: string; end_date: string
+  retention_pct: number; created_at: string
+  variations: { vo_number: string; description: string; value: number; status: string; submitted_date: string }[]
+}
+
+export interface G3DataResult {
+  rfqs:      G3RFQ[]
+  bids:      G3Bid[]
+  pos:       G3PO[]
+  vendors:   G3Vendor[]
+  contracts: G3Contract[]
+}
+
+const RFQ_STATUS_REMAP: Record<string, string> = {
+  issued:     'published',
+  closed:     'closed',
+  evaluated:  'evaluated',
+  awarded:    'awarded',
+  cancelled:  'cancelled',
+  draft:      'draft',
+}
+
+/** Loads all procurement data for the G3 gate detail page in one call. */
+export async function getG3Data(projectId: string): Promise<G3DataResult> {
+  const tenantId = await getCurrentTenantId()
+  const supabase = createAdminClient()
+
+  const [rfqRes, poRes] = await Promise.all([
+    supabase
+      .from('rfqs')
+      .select('id, rfq_number, title, category, status, budget_max, currency, bid_deadline, created_at, organization_name')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('purchase_orders')
+      .select('id, po_number, vendor_name, description, amount_usd, status, expected_delivery, created_at, organization_name')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false }),
+  ])
+
+  const rfqs: G3RFQ[] = (rfqRes.data ?? []).map((r) => ({
+    id:                    r.id,
+    code:                  r.rfq_number ?? r.id.slice(0, 12).toUpperCase(),
+    title:                 r.title ?? 'RFQ',
+    description:           '',
+    category:              r.category ?? 'General',
+    status:                RFQ_STATUS_REMAP[r.status ?? 'draft'] ?? 'draft',
+    value_min:             0,
+    value_max:             Number(r.budget_max ?? 0),
+    currency:              r.currency ?? 'USD',
+    bid_deadline:          r.bid_deadline ?? '',
+    evaluation_period_days:14,
+    publish_date:          null,
+    invited_vendors:       r.organization_name ? [r.organization_name] : [],
+    responded_vendors:     [],
+    specifications:        [],
+    evaluation_criteria:   [],
+    bids:                  [],
+    created_at:            r.created_at,
+  }))
+
+  const pos: G3PO[] = (poRes.data ?? []).map((p) => ({
+    id:            p.id,
+    code:          p.po_number ?? p.id.slice(0, 12).toUpperCase(),
+    vendor_id:     p.organization_name ?? '',
+    vendor_name:   p.vendor_name ?? p.organization_name ?? 'Unknown Vendor',
+    description:   p.description ?? '',
+    total_amount:  Number(p.amount_usd ?? 0),
+    currency:      'USD',
+    status:        p.status ?? 'draft',
+    delivery_date: p.expected_delivery ?? '',
+    incoterms:     'DDP',
+    payment_terms: [],
+    line_items:    [],
+    milestones:    [],
+    changes:       [],
+    created_at:    p.created_at,
+  }))
+
+  // Vendors: aggregate unique vendor names from POs; no dedicated vendors table
+  const vendorMap = new Map<string, G3Vendor>()
+  for (const p of pos) {
+    if (!vendorMap.has(p.vendor_name)) {
+      vendorMap.set(p.vendor_name, {
+        id:                  p.vendor_id || p.vendor_name,
+        code:                `VEN-${String(vendorMap.size + 1).padStart(3, '0')}`,
+        name:                p.vendor_name,
+        country:             '',
+        categories:          [],
+        status:              'approved',
+        qualification_score: 80,
+        projects_completed:  0,
+        rating:              4.0,
+        contacts:            [],
+        qualifications:      [],
+        performance_history: [],
+        documents:           [],
+      })
+    }
+  }
+
+  return {
+    rfqs,
+    bids:      [],   // bids not stored separately — nested in rfqs in real use
+    pos,
+    vendors:   Array.from(vendorMap.values()),
+    contracts: [],
+  }
+}
+
 export async function loadProcurementDashboard(): Promise<ProcurementDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
   const [rfqRes, poRes] = await Promise.all([
     supabase.from('rfqs')
       .select('id, rfq_number, title, vendor, status, issue_date, close_date, amount_usd, score')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     supabase.from('purchase_orders')
       .select('id, po_number, vendor, description, amount_usd, status, issued_date, expected_delivery')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
   ])
 
@@ -89,13 +249,14 @@ export async function loadProcurementDashboard(): Promise<ProcurementDashboard> 
 export async function issueRFQ(data: {
   title: string; vendor: string; amount_usd: number; close_date: string
 }): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
   const rfq_number = `RFQ-${Date.now().toString(36).toUpperCase().slice(-6)}`
   const { error } = await supabase.from('rfqs').insert({
-    tenant_id:  DEMO_TENANT,
+    tenant_id:  tenantId,
     project_id: DEMO_PROJECT,
     rfq_number,
     title:      data.title,
@@ -109,6 +270,7 @@ export async function issueRFQ(data: {
 }
 
 export async function advancePOStatus(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -120,16 +282,17 @@ export async function advancePOStatus(id: string): Promise<{ error?: string }> {
   if (!next) return {}
   const { error } = await supabase.from('purchase_orders')
     .update({ status: next, updated_at: new Date().toISOString() })
-    .eq('id', id).eq('tenant_id', DEMO_TENANT)
+    .eq('id', id).eq('tenant_id', tenantId)
   return { error: error?.message }
 }
 
 export async function seedProcurementDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  const { data: ex } = await supabase.from('rfqs').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: ex } = await supabase.from('rfqs').select('id').eq('tenant_id', tenantId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
   const rfqData = [
@@ -141,7 +304,7 @@ export async function seedProcurementDemoData(): Promise<{ error?: string }> {
   ]
   for (const d of rfqData) {
     await supabase.from('rfqs').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT,
+      tenant_id: tenantId, project_id: DEMO_PROJECT,
       issue_date: '2026-03-01', close_date: '2026-04-15', ...d,
     })
   }
@@ -154,7 +317,7 @@ export async function seedProcurementDemoData(): Promise<{ error?: string }> {
   ]
   for (const d of poData) {
     await supabase.from('purchase_orders').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT, ...d,
+      tenant_id: tenantId, project_id: DEMO_PROJECT, ...d,
     })
   }
   return {}

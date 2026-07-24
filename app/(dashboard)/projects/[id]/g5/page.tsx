@@ -11,6 +11,7 @@ import {
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
 import { G5GateApprovalButton } from '@/components/g5/gate-approval-dialog'
 import { getNcrs } from '@/app/actions/ncrs'
+import { getG5Data } from '@/app/actions/construction'
 
 import { Tab, KpiCard } from '@/components/g5/shared'
 import { InspectionsTab }   from '@/components/g5/inspections-tab'
@@ -49,6 +50,16 @@ export default function G5MechanicalCompletionPage() {
   const { data: ncrData } = useSWR(`g5-ncrs-${projectId}`, () => getNcrs(projectId))
   const liveOpenNcrs = ncrData?.kpis.open
 
+  // G5 inspections + punch items from DB; fall back to mock while loading / empty
+  const { data: g5Data } = useSWR(
+    projectId ? `g5-data-${projectId}` : null,
+    () => getG5Data(projectId),
+  )
+  const inspections = ((g5Data && g5Data.inspections.length > 0
+    ? g5Data.inspections : null) ?? MOCK_INSPECTIONS) as unknown as typeof MOCK_INSPECTIONS
+  const punchItems  = ((g5Data && g5Data.punchItems.length > 0
+    ? g5Data.punchItems : null) ?? MOCK_PUNCH_ITEMS) as unknown as typeof MOCK_PUNCH_ITEMS
+
   // Project name for the completion certificate.
   const { data: project } = useSWR(`project-${projectId}`, () => getProject(projectId))
   const certDeliverables = MC_PROGRESS.map((m) => ({
@@ -57,7 +68,7 @@ export default function G5MechanicalCompletionPage() {
   }))
 
   const totalMC     = Math.round(MC_PROGRESS.reduce((s, r) => s + r.pct, 0) / MC_PROGRESS.length)
-  const openPunchA  = MOCK_PUNCH_ITEMS.filter((p) => p.category === 'A' && p.status !== 'closed').length
+  const openPunchA  = punchItems.filter((p) => p.category === 'A' && p.status !== 'closed').length
   const openNcrs    = liveOpenNcrs ?? MOCK_NCRS.filter((n) => n.status !== 'closed').length
   const issuedCerts = MOCK_MC_CERTS.filter((c) => c.status === 'issued').length
 
@@ -90,10 +101,10 @@ export default function G5MechanicalCompletionPage() {
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <ClipboardList className="size-4" /> Gate Submission Form
             </Link>
-            <button type="button"
+            <Link href={`/projects/${projectId}/quality`}
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <FileText className="size-4" /> ITP Register
-            </button>
+            </Link>
             <button type="button"
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
               <Download className="size-4" /> Export Report
@@ -114,6 +125,54 @@ export default function G5MechanicalCompletionPage() {
           <KpiCard label="MC Certs Issued"  value={`${issuedCerts}/${MOCK_MC_CERTS.length}`} color="#22c55e" sub="systems certified" />
         </div>
 
+        {/* NCR subsection — open NCRs inline alongside punch-item summary */}
+        {ncrData && ncrData.rows.filter(r => r.status !== 'closed').length > 0 && (
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+              <span className="text-sm font-semibold text-foreground">Open NCRs</span>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setActiveTab('ncr')}
+              >
+                View all in NCRs tab
+              </button>
+            </div>
+            <div className="divide-y divide-border">
+              {ncrData.rows
+                .filter(r => r.status !== 'closed')
+                .slice(0, 6)
+                .map(ncr => {
+                  const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(ncr.raised_at).getTime()) / 86400000))
+                  const aging = daysOpen > 30 ? 'red' : daysOpen > 14 ? 'amber' : 'none'
+                  const sevColor = ncr.source === 'failed_inspection' ? '#ef4444' : ncr.source === 'audit' ? '#f59e0b' : '#64748b'
+                  const sevLabel = ncr.source === 'failed_inspection' ? 'Critical' : ncr.source === 'audit' ? 'Major' : 'Minor'
+                  return (
+                    <div key={ncr.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="font-mono text-xs text-muted-foreground w-20 shrink-0">{ncr.ncr_number}</span>
+                      <span className="text-sm text-foreground flex-1 line-clamp-1">{ncr.title}</span>
+                      <span
+                        className="rounded-full px-1.5 py-0.5 text-xs font-medium shrink-0"
+                        style={{ backgroundColor: `${sevColor}22`, color: sevColor }}
+                      >
+                        {sevLabel}
+                      </span>
+                      {aging !== 'none' && (
+                        <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium shrink-0 ${
+                          aging === 'red'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        }`}>
+                          {daysOpen}d
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        )}
+
         {/* Tab bar */}
         <div className="flex flex-wrap gap-2 border-b border-border pb-4">
           {TABS.map((t) => (
@@ -124,8 +183,8 @@ export default function G5MechanicalCompletionPage() {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'inspections' && <InspectionsTab    inspections={MOCK_INSPECTIONS} projectId={projectId} />}
-          {activeTab === 'punch'       && <PunchListTab      items={MOCK_PUNCH_ITEMS}        />}
+          {activeTab === 'inspections' && <InspectionsTab    inspections={inspections} projectId={projectId} />}
+          {activeTab === 'punch'       && <PunchListTab      items={punchItems}         />}
           {activeTab === 'ncr'         && <NcrTab            ncrs={MOCK_NCRS}                />}
           {activeTab === 'testplans'   && <TestPlansTab      plans={MOCK_TEST_PLANS}         />}
           {activeTab === 'certs'       && (

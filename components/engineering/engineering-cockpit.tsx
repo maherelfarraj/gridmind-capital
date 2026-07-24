@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import useSWR from 'swr'
 import {
-  Wrench, FileText, CheckCircle2, AlertTriangle, Plus, Search, Download,
-  RefreshCw, Loader2, Layers, X,
+  Wrench, FileText, CheckCircle2, AlertTriangle, Plus, Search,
+  RefreshCw, Loader2, Layers, X, Send, ChevronRight,
 } from 'lucide-react'
+import { getProjects } from '@/app/actions/projects'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -14,7 +16,7 @@ import { Progress } from '@/components/ui/progress'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import {
-  loadEngineeringDashboard, createRFI, closeRFI, seedEngineeringDemoData,
+  loadEngineeringDashboard, createRFI, closeRFI,
 } from '@/app/actions/engineering'
 import type { DrawingRecord, RFIRecord, IFCPackage } from '@/lib/types/action-types'
 
@@ -276,8 +278,8 @@ export type EngineeringTab = 'drawings' | 'rfis' | 'packages'
 export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: EngineeringTab }) {
   const { toast } = useToast()
   const { data, isLoading, mutate } = useSWR('engineering-dashboard', loadEngineeringDashboard, { revalidateOnFocus: true })
-  const [seeding, setSeeding] = useState(false)
-
+  const { data: projects } = useSWR('projects-for-transmittals', () => getProjects())
+  const transmittalsHref = projects && projects.length > 0 ? `/projects/${projects[0].id}/transmittals` : null
   const drawings = data?.drawings ?? []
   const rfis = data?.rfis ?? []
   const packages = data?.packages ?? []
@@ -285,15 +287,6 @@ export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: E
   const approvedPackages = data?.approvedPackages ?? 0
   const openRFIs = data?.openRFIs ?? 0
   const overdueRFIs = data?.overdueRFIs ?? 0
-
-  async function handleSeed() {
-    setSeeding(true)
-    const { error } = await seedEngineeringDemoData()
-    setSeeding(false)
-    if (error) { toast({ title: 'Seed failed', description: error, variant: 'danger' }); return }
-    toast({ title: 'Demo data seeded', variant: 'success' })
-    mutate()
-  }
 
   return (
     <div className="p-6 space-y-6">
@@ -308,9 +301,6 @@ export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: E
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => mutate()} aria-label="Refresh"><RefreshCw size={14} /></Button>
-          <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding} className="gap-1.5">
-            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Seed Demo
-          </Button>
         </div>
       </div>
 
@@ -321,6 +311,23 @@ export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: E
         <KpiCard label="Open RFIs" value={openRFIs} sub={overdueRFIs > 0 ? `${overdueRFIs} overdue` : 'None overdue'} color={overdueRFIs > 0 ? 'text-red-500' : undefined} />
         <KpiCard label="Drawings" value={drawings.length} sub="In register" />
       </div>
+
+      {/* Transmittals register nav card */}
+      {transmittalsHref && (
+        <Link
+          href={transmittalsHref}
+          className="flex items-center gap-3 rounded-lg border border-border/60 bg-card p-4 hover:bg-muted/40 transition-colors"
+        >
+          <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
+            <Send size={18} className="text-sky-600 dark:text-sky-300" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground">Transmittals</p>
+            <p className="text-xs text-muted-foreground">Formal document transmittal log — issue, track responses & close out.</p>
+          </div>
+          <ChevronRight size={16} className="text-muted-foreground shrink-0" />
+        </Link>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue={initialTab}>

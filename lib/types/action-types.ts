@@ -373,6 +373,10 @@ export interface FinanceEvmDashboard {
     avgSPI: number
     totalEAC: number
     variance: number
+    /** Where Actual Cost was sourced from. */
+    acSource: 'certificates' | 'finance_records'
+    /** Number of approved VOs folded into BAC. */
+    approvedVoCount: number
   }
   evmTrend: { period: string; pv: number; ev: number; ac: number }[]
   cashTrend: { period: string; inflow: number; outflow: number; net: number }[]

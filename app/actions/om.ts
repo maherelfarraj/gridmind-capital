@@ -5,14 +5,15 @@ import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { Asset, MaintenancePlan, OmDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export async function loadOmDashboard(): Promise<OmDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
   const [{ data: assets }, { data: plans }, { data: projects }] = await Promise.all([
-    sb.from('assets').select('*').eq('tenant_id', DEMO_TENANT).order('created_at', { ascending: false }),
-    sb.from('maintenance_plans').select('*').eq('tenant_id', DEMO_TENANT).order('next_due'),
-    sb.from('projects').select('id, name').eq('tenant_id', DEMO_TENANT),
+    sb.from('assets').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+    sb.from('maintenance_plans').select('*').eq('tenant_id', tenantId).order('next_due'),
+    sb.from('projects').select('id, name').eq('tenant_id', tenantId),
   ])
 
   const projectMap = Object.fromEntries((projects ?? []).map(p => [p.id, p.name]))
@@ -72,14 +73,15 @@ export async function completeMaintenanceAction(id: string) {
 }
 
 export async function seedOmDemoAction() {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { seeded: false }
 
   const sb = createAdminClient()
-  const { data: existing } = await sb.from('assets').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: existing } = await sb.from('assets').select('id').eq('tenant_id', tenantId).limit(1)
   if (existing && existing.length > 0) return { seeded: false }
 
-  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(1)
   const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
 
   const assetRows = [
@@ -92,13 +94,13 @@ export async function seedOmDemoAction() {
   ]
 
   const { data: insertedAssets } = await sb.from('assets').insert(
-    assetRows.map(a => ({ ...a, project_id: pid, tenant_id: DEMO_TENANT }))
+    assetRows.map(a => ({ ...a, project_id: pid, tenant_id: tenantId }))
   ).select('id, asset_tag')
 
   if (insertedAssets && insertedAssets.length > 0) {
     const planRows = insertedAssets.slice(0, 4).map((asset, i) => ({
       asset_id: asset.id,
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       title: `${['Quarterly inspection', 'Thermographic scan', 'Annual service', 'Monthly checks'][i]}`,
       frequency: (['quarterly', 'annual', 'annual', 'monthly'] as const)[i],
       last_completed: i < 2 ? '2026-06-01' : null,

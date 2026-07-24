@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import type { WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 const GATE_ORDER = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'] as const
 type GateCode = typeof GATE_ORDER[number]
@@ -20,13 +20,14 @@ export interface ProjectGateState {
  * current_phase is a 0-based integer (0=G0, 1=G1, … 6=G6).
  */
 export async function getProjectGateState(projectId: string): Promise<ProjectGateState> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const { data } = await supabase
     .from('projects')
     .select('current_phase, status')
     .eq('id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .single()
 
   const phase = typeof data?.current_phase === 'number' ? data.current_phase : 0
@@ -45,13 +46,14 @@ export async function getProjectGateState(projectId: string): Promise<ProjectGat
 export async function advanceProjectGate(
   projectId: string,
 ): Promise<{ error?: string; newGate?: GateCode }> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const { data: proj } = await supabase
     .from('projects')
     .select('current_phase')
     .eq('id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .single()
 
   if (!proj) return { error: 'Project not found' }
@@ -77,7 +79,7 @@ export async function advanceProjectGate(
     .from('projects')
     .update({ current_phase: next })
     .eq('id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
 
@@ -271,4 +273,51 @@ async function getModuleEvents(
       created_at: r.created_at,
     }
   })
+}
+
+// ─── Gate Progress Report ─────────────────────────────────────────────────────
+
+export interface GateProgressRow {
+  projectId:   string
+  projectCode: string
+  projectName: string
+  phaseNumber: number
+  phaseName:   string
+  status:      string
+  reviewedAt:  string | null
+  notes:       string | null
+}
+
+/** Returns all phase_gates rows joined with project name/code for the Reports center. */
+export async function getGateProgressReport(): Promise<GateProgressRow[]> {
+  const tenantId = await getCurrentTenantId()
+  const supabase = createAdminClient()
+
+  const { data: gates } = await supabase
+    .from('phase_gates')
+    .select('project_id, phase_number, phase_name, status, reviewed_at, notes')
+    .eq('tenant_id', tenantId)
+    .order('project_id')
+    .order('phase_number')
+
+  if (!gates?.length) return []
+
+  const projectIds = Array.from(new Set(gates.map((g) => g.project_id as string)))
+  const { data: projects } = await supabase
+    .from('projects')
+    .select('id, code, name')
+    .in('id', projectIds)
+
+  const pm = Object.fromEntries((projects ?? []).map((p) => [p.id as string, { code: p.code as string, name: p.name as string }]))
+
+  return gates.map((g) => ({
+    projectId:   g.project_id as string,
+    projectCode: pm[g.project_id as string]?.code  ?? '—',
+    projectName: pm[g.project_id as string]?.name  ?? 'Project',
+    phaseNumber: g.phase_number as number,
+    phaseName:   g.phase_name   as string ?? `G${g.phase_number}`,
+    status:      g.status       as string ?? 'pending',
+    reviewedAt:  g.reviewed_at  as string | null,
+    notes:       g.notes        as string | null,
+  }))
 }
