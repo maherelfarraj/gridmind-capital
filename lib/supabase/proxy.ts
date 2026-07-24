@@ -43,7 +43,20 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Public paths that never require authentication
+  // ── Public / self-authenticating paths ───────────────────────────────────
+  // These paths bypass the proxy auth gate for one of two reasons:
+  //
+  //   a) They are genuinely unauthenticated (login, auth callbacks, public APIs,
+  //      static assets, PWA shell files).
+  //
+  //   b) They carry their own layout-level auth guard and should not be
+  //      double-intercepted here:
+  //        /field   — app/field/layout.tsx  → resolveSession() → redirect
+  //        /portal  — NOT bypassed; the portal layout also guards itself but
+  //                   middleware provides an extra layer for external partners
+  //        /client  — same: kept protected by middleware for defence-in-depth
+  //
+  // If you add a new route with its own auth guard, add it here with a comment.
   const isPublic =
     pathname === '/login' ||
     pathname.startsWith('/auth/') ||
@@ -53,7 +66,10 @@ export async function updateSession(request: NextRequest) {
     pathname === '/favicon.ico' ||
     pathname === '/manifest.json' ||
     pathname === '/sw.js' ||
-    pathname === '/offline.html'
+    pathname === '/offline.html' ||
+    // /field has its own layout-level auth (resolveSession + redirect).
+    // Bypassing here avoids a redundant Supabase round-trip per request.
+    pathname.startsWith('/field')
 
   // Protect everything else — redirect to login if no session
   if (!isPublic && !user) {
