@@ -360,6 +360,92 @@ export async function maybeCreateQualityInsight(
   }
 }
 
+/**
+ * Fire-and-forget contracts watchdog, called from getContractsRegister.
+ * Two independent triggers, each raising ONE insight (module 'cost_overrun',
+ * severity 'high') if none currently open for the project:
+ *  A) total LD exposure > 2% of project budget
+ *  B) any security is expired but still status = 'active' for > 7 days
+ * Never throws.
+ */
+export async function maybeCreateContractsInsight(
+  projectId: string,
+  totalLdExposure: number,
+  oldestExpiredSecurityDays: number,  // 0 if none
+): Promise<void> {
+  try {
+    const sb = createAdminClient()
+    const { data: proj } = await sb
+      .from('projects')
+      .select('name, budget_usd')
+      .eq('id', projectId)
+      .maybeSingle()
+    const projectName = (proj?.name as string | null) ?? 'project'
+    const budgetUsd   = Number(proj?.budget_usd ?? 0)
+
+    // ── Trigger A: LD exposure > 2% of budget ────────────────────────────
+    const ldThreshold = budgetUsd > 0 ? budgetUsd * 0.02 : 0
+    const triggerLd   = ldThreshold > 0 && totalLdExposure > ldThreshold
+    if (triggerLd) {
+      const { data: existing } = await sb
+        .from('ai_insights')
+        .select('id')
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('project_id', projectId)
+        .eq('module', 'cost_overrun')
+        .eq('status', 'open')
+        .limit(1)
+
+      if (!existing || existing.length === 0) {
+        const ldPct = ((totalLdExposure / budgetUsd) * 100).toFixed(1)
+        await sb.from('ai_insights').insert({
+          tenant_id:  DEMO_TENANT,
+          project_id: projectId,
+          module:     'cost_overrun',
+          title:      `LD exposure ${ldPct}% of budget on ${projectName}`,
+          description: `Liquidated damages have accrued to $${Math.round(totalLdExposure).toLocaleString()}, representing ${ldPct}% of the project budget ($${Math.round(budgetUsd).toLocaleString()}). Threshold is 2%. Continued schedule slip will increase financial exposure and may trigger contract clauses.`,
+          confidence: 88,
+          severity:   'high',
+          status:     'open',
+          recommended_action: 'Review milestone status with the Commercial Manager. Identify critical-path delays, assess LD cap position, and initiate EOT claim if delay is excusable. Notify the Project Director if exposure exceeds 5% of budget.',
+        })
+        revalidatePath('/ai-insights')
+      }
+    }
+
+    // ── Trigger B: security expired but not released for > 7 days ────────
+    const triggerExpiredSecurity = oldestExpiredSecurityDays > 7
+    if (triggerExpiredSecurity) {
+      const { data: existingSec } = await sb
+        .from('ai_insights')
+        .select('id')
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('project_id', projectId)
+        .eq('module', 'cost_overrun')
+        .eq('status', 'open')
+        .ilike('title', '%security%')
+        .limit(1)
+
+      if (!existingSec || existingSec.length === 0) {
+        await sb.from('ai_insights').insert({
+          tenant_id:  DEMO_TENANT,
+          project_id: projectId,
+          module:     'cost_overrun',
+          title:      `Expired security not released on ${projectName}`,
+          description: `One or more financial securities (bonds or guarantees) have expired but remain in active status for ${oldestExpiredSecurityDays} days. Expired securities that are not formally released may create incorrect balance-sheet obligations and audit findings.`,
+          confidence: 90,
+          severity:   'high',
+          status:     'open',
+          recommended_action: 'Contact the issuing bank to confirm expiry and obtain formal release documentation. Update the securities register to released status. If renewal is required, initiate the bank guarantee renewal process immediately.',
+        })
+        revalidatePath('/ai-insights')
+      }
+    }
+  } catch (e) {
+    console.error('[ai-insights] contracts insight generator failed:', e)
+  }
+}
+
 export async function acknowledgeInsightAction(id: string) {
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }

@@ -61,10 +61,12 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
   const today  = nowIso.slice(0, 10)
   const last24 = new Date(now.getTime() - 24 * 3_600_000).toISOString()
 
-  const ago3d  = new Date(now.getTime() - 3  * 86_400_000).toISOString()
-  const ago7d  = new Date(now.getTime() - 7  * 86_400_000).toISOString()
+  const ago3d   = new Date(now.getTime() - 3  * 86_400_000).toISOString()
+  const ago7d   = new Date(now.getTime() - 7  * 86_400_000).toISOString()
+  const in30d   = new Date(now.getTime() + 30 * 86_400_000).toISOString()
+  const in7d    = new Date(now.getTime() +  7 * 86_400_000).toISOString()
 
-  const [permitRes, transRes, dailyRes, photoRes, holdRes, critNcrRes] = await Promise.all([
+  const [permitRes, transRes, dailyRes, photoRes, holdRes, critNcrRes, secExpiryRes, msDueRes] = await Promise.all([
     admin
       .from('work_permits')
       .select('id, permit_no, title, project_id, valid_to')
@@ -112,6 +114,26 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       .neq('status', 'closed')
       .lt('raised_at', ago7d)
       .order('raised_at', { ascending: true })
+      .limit(20),
+    // Securities expiring within 30 days (active only)
+    admin
+      .from('securities')
+      .select('id, type, issuer, reference, expiry_date, project_id')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('status', 'active')
+      .gte('expiry_date', nowIso)
+      .lte('expiry_date', in30d)
+      .order('expiry_date', { ascending: true })
+      .limit(20),
+    // Contract milestones due within 7 days and still pending
+    admin
+      .from('contract_milestones')
+      .select('id, title, due_date, amount, contract_id, contracts(project_id, contract_no)')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('status', 'pending')
+      .gte('due_date', today)
+      .lte('due_date', in7d)
+      .order('due_date', { ascending: true })
       .limit(20),
   ])
 
@@ -191,6 +213,41 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       is_read:   false,
       link:      `/projects/${n.project_id}/quality`,
       created_at: (n.raised_at as string) ?? nowIso,
+    })
+  }
+
+  // Securities expiring within 30 days.
+  for (const s of secExpiryRes.data ?? []) {
+    const expiry   = s.expiry_date as string
+    const daysLeft = Math.max(0, Math.floor((new Date(expiry).getTime() - Date.now()) / 86_400_000))
+    const typeLabel = String(s.type ?? 'security').replace(/_/g, ' ')
+    const ref      = s.reference ? ` (${s.reference})` : ''
+    out.push({
+      id:        `security-expiry-${s.id}`,
+      title:     `Security expiring in ${daysLeft}d — ${typeLabel}${ref}`,
+      body:      `${s.issuer ? `${s.issuer} ` : ''}${typeLabel}${ref} expires on ${new Date(expiry).toLocaleDateString()}. Arrange renewal or submit release documentation before expiry.`,
+      type:      daysLeft <= 7 ? 'urgent' : 'alert',
+      is_read:   false,
+      link:      `/projects/${s.project_id}/contracts`,
+      created_at: expiry,
+    })
+  }
+
+  // Contract milestones due this week (pending).
+  for (const m of msDueRes.data ?? []) {
+    const contract = (m.contracts as unknown as Record<string, unknown> | null)
+    const projectId   = (contract?.project_id  as string | null) ?? ''
+    const contractNo  = (contract?.contract_no as string | null) ?? 'Contract'
+    const due = m.due_date as string
+    const daysLeft = Math.max(0, Math.floor((new Date(due).getTime() - Date.now()) / 86_400_000))
+    out.push({
+      id:        `milestone-due-${m.id}`,
+      title:     `Milestone due in ${daysLeft}d — ${contractNo}`,
+      body:      `"${(m.title as string) ?? 'Milestone'}" (${contractNo}) is due ${new Date(due).toLocaleDateString()}. Mark as achieved to prevent LD accrual.`,
+      type:      daysLeft === 0 ? 'urgent' : 'alert',
+      is_read:   false,
+      link:      projectId ? `/projects/${projectId}/contracts` : '/projects',
+      created_at: due,
     })
   }
 

@@ -18,11 +18,12 @@ import { getClaims }             from '@/app/actions/claims'
 import { getTransmittalsRegister } from '@/app/actions/transmittals'
 import { getPermitsBoard }       from '@/app/actions/workpermits'
 import { getItpDashboard, getNcrRegister } from '@/app/actions/quality'
+import { getContractsRegister, getSecuritiesRegister } from '@/app/actions/contracts'
 import type { RiskRecord }       from '@/lib/types/action-types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register' | 'lender-progress' | 'document-control-log' | 'ptw-log' | 'quality-report'
+type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register' | 'lender-progress' | 'document-control-log' | 'ptw-log' | 'quality-report' | 'contracts-securities'
 type DateRange  = '30d' | '90d' | '1y' | 'all'
 
 const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
@@ -35,7 +36,8 @@ const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
   { id: 'lender-progress',   label: 'Lender Progress Report', description: 'Bank-ready progress report per project — compile, save, and export the full lender pack' },
   { id: 'document-control-log', label: 'Document Control Log', description: 'Transmittals for a project with response codes and turnaround days' },
   { id: 'ptw-log',           label: 'PTW Log',            description: 'Permits to work by type and status with validity windows' },
-  { id: 'quality-report',   label: 'Quality Report',     description: 'ITP completion, hold point log, and NCR register with aging by project' },
+  { id: 'quality-report',      label: 'Quality Report',          description: 'ITP completion, hold point log, and NCR register with aging by project' },
+  { id: 'contracts-securities', label: 'Contracts & Securities', description: 'Contract values by type, milestone status, LD exposure, bonded securities with expiry countdown' },
 ]
 
 const DATE_RANGE_OPTIONS: { id: DateRange; label: string }[] = [
@@ -784,6 +786,251 @@ function QualityReport() {
   )
 }
 
+// ── Contracts & Securities ────────────────────────────────────────────────────
+
+const CONTRACT_TYPE_LABELS: Record<string, string> = {
+  epc: 'EPC', lump_sum: 'Lump Sum', cost_reimbursable: 'Cost Reimbursable',
+  framework: 'Framework', supply: 'Supply', service: 'Service', other: 'Other',
+}
+
+const MILESTONE_STATUS_COLOR: Record<string, string> = {
+  pending:  'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400',
+  achieved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400',
+  paid:     'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
+  missed:   'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400',
+}
+
+function ContractsSecuritiesReport() {
+  const { projects, isLoading: projLoading, activeProjectId, setProjectId } = useReportProject()
+  const { data: contractsData, isLoading: contractsLoading } = useSWR(
+    activeProjectId ? `report-contracts-${activeProjectId}` : null,
+    () => getContractsRegister(activeProjectId as string),
+  )
+  const { data: securitiesData, isLoading: secLoading } = useSWR(
+    activeProjectId ? `report-securities-${activeProjectId}` : null,
+    () => getSecuritiesRegister(activeProjectId as string),
+  )
+
+  if (projLoading) return <LoadingRows cols={6} />
+  if (projects.length === 0) {
+    return <div className="rounded-lg border border-border p-10 text-center text-sm text-muted-foreground">No projects available.</div>
+  }
+
+  const isLoading = contractsLoading || secLoading
+  const contracts  = contractsData?.contracts ?? []
+  const summary    = contractsData?.summary
+  const securities = securitiesData?.securities ?? []
+  const secSummary = securitiesData?.summary
+
+  // Flatten all milestones for the milestones table
+  const allMilestones = contracts.flatMap(c =>
+    c.milestones.map(m => ({ ...m, contract_no: c.contract_no, contract_title: c.title })),
+  )
+  const today = new Date()
+  const in7d  = new Date(today.getTime() + 7 * 86_400_000)
+
+  return (
+    <div className="space-y-8">
+      <ReportProjectPicker projects={projects} activeProjectId={activeProjectId} onChange={setProjectId} />
+
+      {isLoading ? <LoadingRows cols={6} /> : (
+        <>
+          {/* ── KPI strip ───────────────────────────────────────────────── */}
+          {summary && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: 'Total contract value',  value: `$${(summary.total_value_by_type.reduce((t, v) => t + v.value, 0) / 1_000_000).toFixed(1)}M` },
+                { label: 'Active contracts',       value: String(summary.active_count) },
+                { label: 'Milestones missed',      value: String(summary.milestone_missed),
+                  highlight: summary.milestone_missed > 0 ? 'text-red-600' : '' },
+                { label: 'LD exposure',
+                  value: summary.total_ld_exposure > 0 ? `$${Math.round(summary.total_ld_exposure).toLocaleString()}` : 'Nil',
+                  highlight: summary.total_ld_exposure > 0 ? 'text-red-600' : 'text-emerald-600' },
+              ].map(k => (
+                <div key={k.label} className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+                  <p className={cn('text-xl font-bold tabular-nums', k.highlight ?? 'text-foreground')}>{k.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{k.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Contracts table ──────────────────────────────────────────── */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">Contracts register</h3>
+            <ReportTable
+              headers={['No.', 'Title', 'Party', 'Type', 'Value', 'Completion', 'LD Exposure', 'Status']}
+              empty={contracts.length === 0}
+
+            >
+              {contracts.map(c => (
+                <tr key={c.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="px-3 py-2 font-mono text-xs text-primary whitespace-nowrap">{c.contract_no}</td>
+                  <td className="px-3 py-2 max-w-[180px] truncate text-sm font-medium">{c.title}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{c.party ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                      {CONTRACT_TYPE_LABELS[c.type] ?? c.type}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                    ${c.value.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                    {c.completion ? new Date(c.completion).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="px-3 py-2">
+                    {c.ld_exposure.ld_amount > 0 ? (
+                      <span className="inline-flex items-center gap-1">
+                        <span className="text-xs font-semibold tabular-nums text-red-600">
+                          ${Math.round(c.ld_exposure.ld_amount).toLocaleString()}
+                        </span>
+                        {c.ld_exposure.capped && (
+                          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:bg-red-900/20">
+                            capped
+                          </span>
+                        )}
+                      </span>
+                    ) : <span className="text-xs text-emerald-600">Nil</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
+                      c.status === 'active'    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' :
+                      c.status === 'completed' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' :
+                      c.status === 'terminated'? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+                      'bg-muted text-muted-foreground')}>
+                      {c.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </ReportTable>
+          </div>
+
+          {/* ── Milestones table ─────────────────────────────────────────── */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">
+              Milestones
+              {allMilestones.filter(m => m.status === 'pending' && new Date(m.due_date) <= in7d).length > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  {allMilestones.filter(m => m.status === 'pending' && new Date(m.due_date) <= in7d).length} due this week
+                </span>
+              )}
+            </h3>
+            <ReportTable
+              headers={['Contract', 'Milestone', 'Due date', 'Amount', 'Status']}
+              empty={allMilestones.length === 0}
+            >
+              {allMilestones.map(m => (
+                <tr key={m.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="px-3 py-2 font-mono text-xs text-primary whitespace-nowrap">{m.contract_no}</td>
+                  <td className="px-3 py-2 max-w-[220px] truncate text-sm">{m.title}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(m.due_date).toLocaleDateString()}
+                  </td>
+                  <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                    {m.amount > 0 ? `$${m.amount.toLocaleString()}` : '—'}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium capitalize', MILESTONE_STATUS_COLOR[m.status] ?? '')}>
+                      {m.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </ReportTable>
+          </div>
+
+          {/* ── Value by type ────────────────────────────────────────────── */}
+          {summary && summary.total_value_by_type.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-foreground">Contract value by type</h3>
+              <ReportTable headers={['Type', 'Total value (USD)']} empty={false}>
+                {summary.total_value_by_type.map(v => (
+                  <tr key={v.type} className="border-b border-border last:border-0 hover:bg-muted/30">
+                    <td className="px-3 py-2 text-sm">{CONTRACT_TYPE_LABELS[v.type] ?? v.type}</td>
+                    <td className="px-3 py-2 font-mono text-sm tabular-nums text-muted-foreground">
+                      ${v.value.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </ReportTable>
+            </div>
+          )}
+
+          {/* ── Securities table ─────────────────────────────────────────── */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">
+              Securities
+              {secSummary && secSummary.expired_not_released > 0 && (
+                <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                  {secSummary.expired_not_released} expired
+                </span>
+              )}
+              {secSummary && secSummary.expiring_within_30_days > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  {secSummary.expiring_within_30_days} expiring ≤30d
+                </span>
+              )}
+            </h3>
+            <ReportTable
+              headers={['Type', 'Issuer', 'Reference', 'Amount', 'Expiry', 'Days left', 'Status']}
+              empty={securities.length === 0}
+
+            >
+              {securities.map(s => {
+                const days = s.days_to_expiry
+                const isExpired = s.status === 'expired' || (days !== null && days < 0)
+                return (
+                  <tr key={s.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                    <td className="px-3 py-2 text-xs text-muted-foreground capitalize">{s.type.replace(/_/g, ' ')}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{s.issuer ?? '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{s.reference ?? '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                      ${s.amount.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                      {s.expiry_date ? new Date(s.expiry_date).toLocaleDateString() : '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      {isExpired ? (
+                        <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] font-bold text-white dark:bg-gray-100 dark:text-gray-900">EXPIRED</span>
+                      ) : days === null ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
+                          days <= 30 ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+                          days <= 90 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' :
+                          'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400')}>
+                          {days}d
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
+                        s.status === 'active'   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' :
+                        s.status === 'expired'  ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+                        s.status === 'released' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400' :
+                        'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400')}>
+                        {s.status}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </ReportTable>
+            {secSummary && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Total bonded value: ${secSummary.total_bonded_value.toLocaleString()} · {secSummary.expiring_within_30_days} expiring ≤30d · {secSummary.expired_not_released} expired not released
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function LoadingRows({ cols }: { cols: number }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -916,7 +1163,8 @@ export default function ReportsPage() {
           {activeType === 'lender-progress'   && <LenderProgressReport />}
           {activeType === 'document-control-log' && <DocumentControlLogReport />}
           {activeType === 'ptw-log'           && <PtwLogReport />}
-          {activeType === 'quality-report'    && <QualityReport />}
+          {activeType === 'quality-report'       && <QualityReport />}
+          {activeType === 'contracts-securities' && <ContractsSecuritiesReport />}
         </div>
       </div>
     </div>

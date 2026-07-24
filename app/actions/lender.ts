@@ -170,6 +170,19 @@ export interface LenderReportData {
     activePlans?: number
     ncrBySeverity?: { severity: string; count: number }[]
   }
+  /** Optional — only present when contracts table has rows for this project */
+  contracts?: {
+    totalValue: number
+    activeCount: number
+    milestoneAchieved: number
+    milestoneMissed: number
+    milestonePending: number
+    totalLdExposure: number
+    valueByType: { type: string; value: number }[]
+    securitiesCount: number
+    bondedValue: number
+    securitiesExpiring30d: number
+  }
   preparedBy: string | null
 }
 
@@ -486,6 +499,67 @@ export async function getLenderReportData(
     .filter(([, c]) => c > 0)
     .map(([severity, count]) => ({ severity, count }))
 
+  // ── Contracts & securities (optional) ───────────────────────────────────────
+  let contractsBlock: LenderReportData['contracts'] | undefined
+  const { data: contractRows } = await admin
+    .from('contracts')
+    .select('id, type, status, value')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+  if (contractRows && contractRows.length > 0) {
+    // Contract milestones
+    const contractIds = contractRows.map((c) => c.id as string)
+    const { data: msRows } = await admin
+      .from('contract_milestones')
+      .select('status')
+      .eq('tenant_id', DEMO_TENANT)
+      .in('contract_id', contractIds)
+    const msAchieved = (msRows ?? []).filter((m) => m.status === 'achieved' || m.status === 'paid').length
+    const msMissed   = (msRows ?? []).filter((m) => m.status === 'missed').length
+    const msPending  = (msRows ?? []).filter((m) => m.status === 'pending').length
+    // LD exposure (active contracts only, inline)
+    const { data: ldContracts } = await admin
+      .from('contracts')
+      .select('value, completion, ld_rate_per_day, ld_cap_pct, status')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+      .eq('status', 'active')
+    let totalLdExposure = 0
+    for (const c of ldContracts ?? []) {
+      if (!c.completion) continue
+      const daysLate = Math.floor((Date.now() - new Date(c.completion as string).getTime()) / 86_400_000)
+      if (daysLate <= 0) continue
+      const raw = daysLate * num(c.ld_rate_per_day)
+      const cap = num(c.value) * (num(c.ld_cap_pct) / 100)
+      totalLdExposure += cap > 0 && raw > cap ? cap : raw
+    }
+    // Securities
+    const { data: secRows } = await admin
+      .from('securities')
+      .select('amount, status, expiry_date')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('project_id', projectId)
+    const activeSecs    = (secRows ?? []).filter((s) => s.status === 'active')
+    const bondedValue   = activeSecs.reduce((t, s) => t + num(s.amount), 0)
+    const in30d         = new Date(Date.now() + 30 * 86_400_000).toISOString()
+    const expiring30d   = activeSecs.filter((s) => s.expiry_date && (s.expiry_date as string) <= in30d).length
+    // Value by type
+    const vbt: Record<string, number> = {}
+    for (const c of contractRows) vbt[c.type as string] = (vbt[c.type as string] ?? 0) + num(c.value)
+    contractsBlock = {
+      totalValue:           contractRows.reduce((t, c) => t + num(c.value), 0),
+      activeCount:          contractRows.filter((c) => c.status === 'active').length,
+      milestoneAchieved:    msAchieved,
+      milestoneMissed:      msMissed,
+      milestonePending:     msPending,
+      totalLdExposure,
+      valueByType:          Object.entries(vbt).map(([type, value]) => ({ type, value })),
+      securitiesCount:      activeSecs.length,
+      bondedValue,
+      securitiesExpiring30d: expiring30d,
+    }
+  }
+
   // ── ITP completion (optional) ────────────────────────────────────────────────
   let itpCompletionPct: number | undefined
   let activePlans: number | undefined
@@ -593,6 +667,7 @@ export async function getLenderReportData(
     hse,
     risks,
     quality: { openPunchItems, openInspections, ncrByStatus, ncrBySeverity: ncrBySeverity.length > 0 ? ncrBySeverity : undefined, itpCompletionPct, activePlans },
+    contracts: contractsBlock,
     preparedBy,
   }
 }

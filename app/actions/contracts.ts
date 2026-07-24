@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireRole } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
+import { maybeCreateContractsInsight } from '@/app/actions/ai-insights'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
@@ -258,6 +259,27 @@ export async function getContractsRegister(projectId: string): Promise<Contracts
     milestone_pending: pending,
     total_ld_exposure: totalLd,
   }
+
+  // Fire-and-forget contracts AI insight check.
+  // Need oldest expired-but-active security age — fetch securities for project.
+  void (async () => {
+    try {
+      const admin2 = createAdminClient()
+      const { data: secRows } = await admin2
+        .from('securities')
+        .select('expiry_date, status')
+        .eq('project_id', projectId)
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('status', 'active')
+      const oldestExpiredDays = (secRows ?? []).reduce((max: number, s: Record<string, unknown>) => {
+        const exp = s.expiry_date as string | null
+        if (!exp) return max
+        const days = Math.floor((Date.now() - new Date(exp).getTime()) / 86_400_000)
+        return days > 0 ? Math.max(max, days) : max
+      }, 0)
+      await maybeCreateContractsInsight(projectId, summary.total_ld_exposure, oldestExpiredDays)
+    } catch { /* best-effort */ }
+  })()
 
   return { contracts, summary }
 }

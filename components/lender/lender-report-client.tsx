@@ -747,9 +747,78 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
             </div>
           </section>
 
-          {/* ===== SECTION 8 — RISKS ===== */}
+          {/* ===== SECTION 8 — CONTRACTS & SECURITIES (optional) ===== */}
+          {data.contracts && (
+            <section className="print-break-before pt-2">
+              <SectionHeading n={8} title="Contracts &amp; Securities" />
+              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <KpiCard label="Total contract value"   value={`$${(data.contracts.totalValue / 1_000_000).toFixed(1)}M`} />
+                <KpiCard label="Active contracts"       value={String(data.contracts.activeCount)} />
+                <KpiCard label="Milestones missed"      value={String(data.contracts.milestoneMissed)} />
+                <KpiCard label="LD exposure"
+                  value={data.contracts.totalLdExposure > 0
+                    ? `$${Math.round(data.contracts.totalLdExposure).toLocaleString()}`
+                    : 'Nil'}
+                />
+              </div>
+
+              {/* Contract value by type */}
+              {data.contracts.valueByType.length > 0 && (
+                <div className="print-avoid-break mb-4">
+                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Contract value by type</h3>
+                  <table className="w-full border-collapse">
+                    <thead><tr><Th>Type</Th><Th numeric>Value (USD)</Th></tr></thead>
+                    <tbody>
+                      {data.contracts.valueByType.map((v) => (
+                        <tr key={v.type}>
+                          <Td className="capitalize">{v.type.replace(/_/g, ' ')}</Td>
+                          <Td numeric>${v.value.toLocaleString()}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Milestone summary */}
+              <div className="print-avoid-break mb-4">
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Milestone status summary</h3>
+                <table className="w-full border-collapse">
+                  <thead><tr><Th>Status</Th><Th numeric>Count</Th></tr></thead>
+                  <tbody>
+                    <tr><Td>Achieved / Paid</Td><Td numeric>{data.contracts.milestoneAchieved}</Td></tr>
+                    <tr><Td>Missed</Td><Td numeric>
+                      <span className={data.contracts.milestoneMissed > 0 ? 'font-bold text-red-600' : ''}>
+                        {data.contracts.milestoneMissed}
+                      </span>
+                    </Td></tr>
+                    <tr><Td>Pending</Td><Td numeric>{data.contracts.milestonePending}</Td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Securities */}
+              <div className="print-avoid-break">
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Financial securities</h3>
+                <table className="w-full border-collapse">
+                  <thead><tr><Th>Metric</Th><Th numeric>Value</Th></tr></thead>
+                  <tbody>
+                    <tr><Td>Active instruments</Td><Td numeric>{data.contracts.securitiesCount}</Td></tr>
+                    <tr><Td>Total bonded value</Td><Td numeric>${data.contracts.bondedValue.toLocaleString()}</Td></tr>
+                    <tr><Td>Expiring within 30 days</Td><Td numeric>
+                      <span className={data.contracts.securitiesExpiring30d > 0 ? 'font-bold text-amber-600' : ''}>
+                        {data.contracts.securitiesExpiring30d}
+                      </span>
+                    </Td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {/* ===== SECTION 9 — RISKS ===== */}
           <section className="print-break-before pt-2">
-            <SectionHeading n={8} title="Top Risks" />
+            <SectionHeading n={data.contracts ? 9 : 8} title="Top Risks" />
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-neutral-500">
               <span className="font-medium text-neutral-600">Exposure = probability × impact (1–5 each):</span>
               <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-red-500" /> High (≥15)</span>
