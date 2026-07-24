@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useSearchParams } from 'next/navigation'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -1160,9 +1161,27 @@ function NcrSection({ projectId }: { projectId: string }) {
   const { data, mutate } = useSWR(`ncr-register-${projectId}`, () => getNcrRegister(projectId))
   const [selected, setSelected] = React.useState<QualityNcr | null>(null)
   const [newOpen, setNewOpen] = React.useState(false)
+  const detailRef = React.useRef<HTMLDivElement | null>(null)
 
   const rows = data?.rows ?? []
   const isLive = rows.length > 0
+
+  // Deep-link support: /projects/[id]/quality?ncr=<id> (e.g. from a notification)
+  // auto-opens that NCR's detail panel once the register has loaded. Runs once
+  // per id so the user can freely close the panel afterwards.
+  const searchParams = useSearchParams()
+  const ncrParam = searchParams.get('ncr')
+  const openedParamRef = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (!ncrParam || openedParamRef.current === ncrParam) return
+    const match = rows.find(r => r.id === ncrParam)
+    if (match) {
+      openedParamRef.current = ncrParam
+      setSelected(match)
+      // Defer scroll until the panel has rendered.
+      requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+    }
+  }, [ncrParam, rows])
 
   return (
     <div className="space-y-4">
@@ -1189,11 +1208,13 @@ function NcrSection({ projectId }: { projectId: string }) {
 
       {/* Selected NCR detail */}
       {selected && (
-        <NcrDetailPanel
-          ncr={selected}
-          onClose={() => setSelected(null)}
-          onRefresh={() => { mutate(); setSelected(null) }}
-        />
+        <div ref={detailRef} className="scroll-mt-4">
+          <NcrDetailPanel
+            ncr={selected}
+            onClose={() => setSelected(null)}
+            onRefresh={() => { mutate(); setSelected(null) }}
+          />
+        </div>
       )}
 
       {/* Table or empty state */}

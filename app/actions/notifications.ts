@@ -220,7 +220,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       body:      `"${(n.title as string) ?? 'Non-conformance'}" (Critical) has been open for ${daysOpen} days without closure. Root cause and disposition required.`,
       type:      'urgent',
       is_read:   false,
-      link:      `/projects/${n.project_id}/quality`,
+      link:      `/projects/${n.project_id}/quality?ncr=${n.id}`,
       created_at: (n.raised_at as string) ?? nowIso,
     })
   }
