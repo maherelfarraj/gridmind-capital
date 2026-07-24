@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   ClipboardCheck, AlertTriangle, CheckCircle2, Percent, Plus, Trash2,
-  ChevronDown, ChevronRight, Lock, Loader2, GripVertical, Flame,
+  ChevronDown, ChevronUp, ChevronRight, Lock, Loader2, GripVertical, Flame,
   Eye, ShieldCheck, FileSearch, ArrowLeft, X, Clock, AlertOctagon,
   ShieldAlert, Info,
 } from 'lucide-react'
@@ -433,7 +433,7 @@ function NewPlanDialog({
       activities: [{ description: '', inspection_type: 'REVIEW', reference_doc: '', responsible: '' }],
     },
   })
-  const { fields, append, remove } = useFieldArray({ control, name: 'activities' })
+  const { fields, append, remove, move } = useFieldArray({ control, name: 'activities' })
 
   async function onSubmit(values: NewPlanForm) {
     setSubmitting(true)
@@ -518,8 +518,32 @@ function NewPlanDialog({
                 <tbody>
                   {fields.map((field, idx) => (
                     <tr key={field.id} className="border-b border-border last:border-0">
-                      <td className="py-1.5 px-2 text-center">
-                        <GripVertical className="size-3.5 text-muted-foreground mx-auto" aria-hidden />
+                      <td className="py-1.5 px-2">
+                        <div className="flex items-center gap-1">
+                          <GripVertical className="size-3.5 text-muted-foreground shrink-0" aria-hidden />
+                          <div className="flex flex-col">
+                            <button
+                              type="button"
+                              onClick={() => move(idx, idx - 1)}
+                              disabled={idx === 0}
+                              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                              aria-label={`Move activity ${idx + 1} up`}
+                              title="Move up"
+                            >
+                              <ChevronUp className="size-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => move(idx, idx + 1)}
+                              disabled={idx === fields.length - 1}
+                              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                              aria-label={`Move activity ${idx + 1} down`}
+                              title="Move down"
+                            >
+                              <ChevronDown className="size-3.5" />
+                            </button>
+                          </div>
+                        </div>
                       </td>
                       <td className="py-1.5 px-2">
                         <Input
