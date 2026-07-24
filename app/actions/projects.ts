@@ -6,7 +6,7 @@ import { sendProjectCreatedEmail } from '@/lib/email/send'
 import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
 
-import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 const PHASE_MAP: Record<number, string> = {
   0: 'intake', 1: 'commercial', 2: 'engineering', 3: 'engineering',
@@ -51,6 +51,7 @@ export async function getProjects(opts?: GetProjectsOptions): Promise<Project[]>
 export async function getProjects(opts: GetProjectsOptions & { paginated: true }): Promise<GetProjectsResult>
 export async function getProjects(opts?: GetProjectsOptions & { paginated?: boolean }): Promise<Project[] | GetProjectsResult> {
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
 
   const phase     = opts?.phase     ?? null
   const search    = opts?.search    ?? null
@@ -112,6 +113,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
 
 export async function getProject(id: string): Promise<ProjectData | null> {
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
 
   // Try by UUID first, then by code
   let query = supabase
@@ -172,6 +174,7 @@ export async function createProject(payload: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
 
   // Guard: Postgres DATE columns reject empty strings — convert to null
   const isValidDate = (d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d)
@@ -261,7 +264,7 @@ export async function createProjectFull(
   const { getActor } = await import('@/lib/db/queries')
   const actor = await getActor()
   const admin = createAdminClient()
-  const tenantId = actor.tenantId ?? DEMO_TENANT_FALLBACK
+  const tenantId = actor.tenantId ?? (await getCurrentTenantId())
 
   if (!input.name?.trim()) return { error: 'Project name is required.' }
   if (!input.pdPersonId || !input.pmPersonId) return { error: 'PD and PM are required.' }
@@ -383,6 +386,7 @@ export async function archiveProject(id: string): Promise<{ error?: string }> {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { error } = await supabase
     .from('projects')
     .update({ status: 'cancelled' })
@@ -436,6 +440,7 @@ export interface CommercialDashboard {
 
 export async function loadCommercialDashboard(projectId: string): Promise<CommercialDashboard> {
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data } = await supabase
     .from('finance_records')
     .select('id, project_id, type, category, description, amount, status, period, created_at')
@@ -475,6 +480,7 @@ export async function createCommercialRecord(data: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { error } = await supabase.from('finance_records').insert({
     tenant_id: DEMO_TENANT_FALLBACK,
     project_id: data.project_id,
@@ -493,6 +499,7 @@ export async function seedCommercialDemoData(projectId: string): Promise<{ error
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data: ex } = await supabase.from('finance_records').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
   const demos = [
@@ -541,6 +548,7 @@ export interface ScheduleDashboard {
 
 export async function loadScheduleDashboard(projectId: string): Promise<ScheduleDashboard> {
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data } = await supabase
     .from('schedule_milestones')
     .select('id, project_id, name, planned_start, planned_end, actual_start, actual_end, status, is_critical, gate_number, owner, progress_pct')
@@ -580,6 +588,7 @@ export async function createMilestone(data: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { error } = await supabase.from('schedule_milestones').insert({
     tenant_id:     DEMO_TENANT_FALLBACK,
     project_id:    data.project_id,
@@ -600,6 +609,7 @@ export async function updateMilestoneProgress(id: string, progress_pct: number, 
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { error } = await supabase
     .from('schedule_milestones')
     .update({ progress_pct, status, updated_at: new Date().toISOString() })
@@ -613,6 +623,7 @@ export async function seedScheduleDemoData(projectId: string): Promise<{ error?:
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data: ex } = await supabase.from('schedule_milestones').select('id').eq('project_id', projectId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
@@ -681,6 +692,7 @@ export interface StakeholdersDashboard {
 
 export async function loadStakeholdersDashboard(projectId: string): Promise<StakeholdersDashboard> {
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data } = await supabase
     .from('project_members')
     .select('id, project_id, name, organisation, role, influence, interest, engagement, notes, created_at')

@@ -19,7 +19,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendEmail, wrapHtml, heading, para } from '@/lib/email/send'
 
-import { DEMO_TENANT_FALLBACK as DEMO_TENANT } from '@/lib/tenant'
+import { getCurrentTenantId } from '@/lib/tenant'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gridmind-gules.vercel.app'
 
 // Roles that receive a digest (mapped from admin/sponsor/PM to the real enum).
@@ -68,13 +68,14 @@ async function compileUserDigest(
 ): Promise<ProjectDigest[] | null> {
   const since = new Date(Date.now() - WEEK_MS)
   const now = new Date()
+  const tenantId = await getCurrentTenantId()
 
   // Resolve THEIR projects. Portfolio roles see all active; PMs see projects
   // they manage (project_manager stores the manager name or id).
   let projQuery = admin
     .from('projects')
     .select('id, code, name, current_phase, status, budget_usd, spent_usd, project_manager')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('status', 'active')
   if (!PORTFOLIO_ROLES.includes(user.role ?? '')) {
     // PM scope — match on manager name or id.
@@ -91,7 +92,7 @@ async function compileUserDigest(
       admin.from('phase_gates').select('status').eq('project_id', p.id),
       admin.from('approvals').select('id, title, due_date, created_at')
         .eq('assignee_id', user.id).eq('status', 'pending'),
-      admin.from('approvals').select('id').eq('tenant_id', DEMO_TENANT)
+      admin.from('approvals').select('id').eq('tenant_id', tenantId)
         .not('decided_at', 'is', null).gte('decided_at', since.toISOString()),
       admin.from('ncrs').select('raised_at, status').eq('project_id', p.id).neq('status', 'closed'),
       admin.from('variation_orders').select('cost_impact, status').eq('project_id', p.id).eq('status', 'submitted'),
@@ -249,10 +250,11 @@ async function sendDigestToUser(
 /** Batch send to all eligible users. Called by the cron route. */
 export async function sendWeeklyDigests(): Promise<{ sent: number; skipped: number; failed: number }> {
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const { data: users } = await admin
     .from('profiles')
     .select('id, email, role, full_name')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('is_active', true)
     .in('role', DIGEST_ROLES)
 

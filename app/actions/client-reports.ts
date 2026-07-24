@@ -21,7 +21,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { logExport } from '@/app/actions/exports'
 
-import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
+import { getCurrentTenantId } from '@/lib/tenant'
 const BUCKET = 'reports'
 const WRITE_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']
 
@@ -186,6 +186,7 @@ export async function generateClientReport(opts: {
   if (!canWrite(actor.role)) return { error: 'You do not have permission to generate client reports.' }
 
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   const snapshot = await compileSnapshot(admin, opts.projectId)
   if (!snapshot) return { error: 'Project not found' }
 
@@ -201,7 +202,7 @@ export async function generateClientReport(opts: {
   const { data, error } = await admin
     .from('client_reports')
     .insert({
-      tenant_id: DEMO_TENANT_FALLBACK,
+      tenant_id: tenantId,
       project_id: opts.projectId,
       version,
       period_label: periodLabel,
@@ -228,13 +229,14 @@ export async function issueClientReport(opts: {
   if (!canWrite(actor.role)) return { error: 'You do not have permission to issue client reports.' }
 
   const admin = createAdminClient()
+  const tenantId = await getCurrentTenantId()
   await ensureReportsBucket(admin)
 
   // Decode the PDF and upload to the private reports bucket.
   const base64 = opts.pdfBase64.includes(',') ? opts.pdfBase64.split(',')[1] : opts.pdfBase64
   const bytes = Buffer.from(base64, 'base64')
   const { data: rpt } = await admin.from('client_reports').select('version').eq('id', opts.reportId).maybeSingle()
-  const storagePath = `${DEMO_TENANT_FALLBACK}/${opts.projectId}/client-report-v${num(rpt?.version)}-${Date.now()}.pdf`
+  const storagePath = `${tenantId}/${opts.projectId}/client-report-v${num(rpt?.version)}-${Date.now()}.pdf`
 
   const { error: upErr } = await admin.storage.from(BUCKET).upload(storagePath, bytes, {
     contentType: 'application/pdf', upsert: true,
