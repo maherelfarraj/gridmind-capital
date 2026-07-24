@@ -12,21 +12,19 @@ import { useRouter } from 'next/navigation'
 type ThemeOption = 'light' | 'dark' | 'system'
 type DigitStyleOption = 'western' | 'arabic_indic'
 
-const DATE_FORMATS = [
-  { id: 'iso', label: 'ISO 8601', example: '2026-07-21' },
-  { id: 'us',  label: 'US',      example: '07/21/2026' },
-  { id: 'eu',  label: 'EU',      example: '21/07/2026' },
-]
-
-const DENSITY_OPTIONS = [
-  { id: 'comfortable', label: 'Comfortable', desc: 'Default spacing, easy to scan' },
-  { id: 'compact',     label: 'Compact',     desc: 'Denser UI, more content visible' },
-]
+const DATE_FORMAT_IDS = ['iso', 'us', 'eu'] as const
+const DATE_FORMAT_EXAMPLES: Record<string, string> = {
+  iso: '2026-07-21',
+  us:  '07/21/2026',
+  eu:  '21/07/2026',
+}
 
 export function PreferencesTab({ onSave }: { onSave: () => void }) {
   const locale = useLocale()
   const router = useRouter()
   const { toast } = useToast()
+  const t = useTranslations('settings')
+  const tCommon = useTranslations('common')
 
   const [theme, setTheme]           = React.useState<ThemeOption>('system')
   const [dateFormat, setDateFormat] = React.useState('iso')
@@ -42,9 +40,11 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
 
   const isArabic = pendingLocale === 'ar'
 
-  const themeIcons: Record<ThemeOption, React.ComponentType<{ className?: string }>> = {
-    light: Sun, dark: Moon, system: Monitor,
-  }
+  const themeOptions: { id: ThemeOption; Icon: React.ComponentType<{ className?: string }>; colorClass: string }[] = [
+    { id: 'light',  Icon: Sun,     colorClass: 'bg-amber-100 text-amber-600' },
+    { id: 'dark',   Icon: Moon,    colorClass: 'bg-slate-800 text-slate-200' },
+    { id: 'system', Icon: Monitor, colorClass: 'bg-muted text-muted-foreground' },
+  ]
 
   async function applyLocale(newLocale: string) {
     if (newLocale === locale && newLocale === pendingLocale) return
@@ -53,7 +53,10 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
       await setLocaleAction(newLocale as 'en' | 'ar')
       // Hard navigation so the root layout re-renders with the new lang/dir.
       router.refresh()
-      toast({ title: newLocale === 'ar' ? 'تم تغيير اللغة إلى العربية' : 'Language changed to English', variant: 'success' })
+      toast({
+        title: newLocale === 'ar' ? 'تم تغيير اللغة إلى العربية' : 'Language changed to English',
+        variant: 'success',
+      })
     } catch {
       toast({ title: 'Failed to save language preference', variant: 'danger' })
       setPendingLocale(locale)
@@ -67,7 +70,12 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
     setSavingDigit(true)
     try {
       await setDigitStyleAction(style)
-      toast({ title: style === 'arabic_indic' ? 'Arabic-Indic digits enabled' : 'Western digits enabled', variant: 'success' })
+      toast({
+        title: style === 'arabic_indic'
+          ? t('languageRegion.arabicIndic')
+          : t('languageRegion.western'),
+        variant: 'success',
+      })
     } catch {
       toast({ title: 'Failed to save digit preference', variant: 'danger' })
     } finally {
@@ -75,27 +83,53 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
     }
   }
 
+  const digitOptions: { id: DigitStyleOption; labelKey: 'western' | 'arabicIndic'; exampleKey: 'westernExample' | 'arabicIndicExample'; descKey: 'westernDesc' | 'arabicIndicDesc' }[] = [
+    { id: 'western',      labelKey: 'western',     exampleKey: 'westernExample',     descKey: 'westernDesc' },
+    { id: 'arabic_indic', labelKey: 'arabicIndic',  exampleKey: 'arabicIndicExample', descKey: 'arabicIndicDesc' },
+  ]
+
+  const densityOptions: { id: string; labelKey: 'comfortable' | 'compact'; descKey: 'comfortableDesc' | 'compactDesc' }[] = [
+    { id: 'comfortable', labelKey: 'comfortable', descKey: 'comfortableDesc' },
+    { id: 'compact',     labelKey: 'compact',     descKey: 'compactDesc' },
+  ]
+
+  const interfaceOptions = [
+    {
+      label: t('accessibility.animations'),
+      desc:  t('accessibility.animationsDesc'),
+      value: animations,
+      set:   setAnimations,
+    },
+    {
+      label: t('accessibility.tooltips'),
+      desc:  t('accessibility.tooltipsDesc'),
+      value: tooltips,
+      set:   setTooltips,
+    },
+  ]
+
   return (
     <div className="space-y-6">
 
       {/* Appearance / Theme */}
-      <PrefSection title="Appearance" desc="Choose how GridMind looks on your device.">
+      <PrefSection title={t('appearance.title')} desc={t('appearance.desc')}>
         <div className="grid grid-cols-3 gap-3">
-          {(['light', 'dark', 'system'] as ThemeOption[]).map((t) => {
-            const Icon = themeIcons[t]
-            const active = theme === t
+          {themeOptions.map(({ id, Icon, colorClass }) => {
+            const active = theme === id
+            const themeLabel: Record<ThemeOption, string> = {
+              light:  t('appearance.light'),
+              dark:   t('appearance.dark'),
+              system: t('appearance.system'),
+            }
             return (
-              <button key={t} onClick={() => setTheme(t)}
+              <button key={id} onClick={() => setTheme(id)}
                 className={cn('relative flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all',
                   active ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted/40')}>
                 {active && <Check className="absolute top-2 end-2 size-3 text-primary" />}
-                <div className={cn('size-8 rounded-lg flex items-center justify-center',
-                  t === 'light' ? 'bg-amber-100 text-amber-600'
-                  : t === 'dark' ? 'bg-slate-800 text-slate-200'
-                  : 'bg-muted text-muted-foreground')}>
+                <div className={cn('size-8 rounded-lg flex items-center justify-center', colorClass)}>
                   <Icon className="size-4" />
                 </div>
-                <span className="text-xs font-semibold capitalize text-foreground">{t}</span>
+                <span className="text-xs font-semibold text-foreground">{themeLabel[id]}</span>
               </button>
             )
           })}
@@ -104,19 +138,19 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
 
       {/* Language & Region */}
       <PrefSection
-        title="Language & Region"
-        desc="Set your preferred language and regional number format. Changes apply immediately."
+        title={t('languageRegion.title')}
+        desc={t('languageRegion.desc')}
       >
         {/* Language selector */}
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
             <Globe className="size-3" aria-hidden />
-            Interface Language
+            {t('languageRegion.interfaceLanguage')}
           </label>
           <div className="flex gap-2">
             {[
-              { value: 'en', label: 'English',       sub: 'LTR' },
-              { value: 'ar', label: 'العربية',        sub: 'RTL' },
+              { value: 'en', label: 'English',  sub: t('languageRegion.ltr') },
+              { value: 'ar', label: 'العربية',   sub: t('languageRegion.rtl') },
             ].map((lang) => {
               const active = pendingLocale === lang.value
               return (
@@ -147,14 +181,11 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
               <Hash className="size-3" aria-hidden />
-              Digit Style
+              {t('languageRegion.digitStyle')}
               {savingDigit && <Loader2 className="size-3 animate-spin ms-1" aria-hidden />}
             </label>
             <div className="flex gap-2 flex-wrap">
-              {([
-                { id: 'western',      label: 'Western',       example: '1,234,567', desc: 'Recommended for business reports' },
-                { id: 'arabic_indic', label: 'Arabic-Indic',  example: '١٬٢٣٤٬٥٦٧', desc: 'Native Arabic numerals' },
-              ] as { id: DigitStyleOption; label: string; example: string; desc: string }[]).map((d) => (
+              {digitOptions.map((d) => (
                 <button key={d.id} onClick={() => applyDigitStyle(d.id)}
                   className={cn(
                     'flex items-start gap-3 rounded-xl border-2 p-3 text-start flex-1 min-w-[140px] transition-all',
@@ -165,9 +196,9 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
                     {digitStyle === d.id && <div className="size-2 rounded-full bg-primary" />}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-foreground">{d.label}</p>
-                    <p className="text-xs font-mono text-primary/80 mt-0.5">{d.example}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{d.desc}</p>
+                    <p className="text-sm font-semibold text-foreground">{t(`languageRegion.${d.labelKey}`)}</p>
+                    <p className="text-xs font-mono text-primary/80 mt-0.5">{t(`languageRegion.${d.exampleKey}`)}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{t(`languageRegion.${d.descKey}`)}</p>
                   </div>
                 </button>
               ))}
@@ -177,14 +208,16 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
 
         {/* Date format */}
         <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Date Format</label>
+          <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {t('dateFormat.title')}
+          </label>
           <div className="flex flex-wrap gap-2">
-            {DATE_FORMATS.map((f) => (
-              <button key={f.id} onClick={() => setDateFormat(f.id)}
+            {DATE_FORMAT_IDS.map((id) => (
+              <button key={id} onClick={() => setDateFormat(id)}
                 className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all',
-                  dateFormat === f.id ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-card text-foreground hover:bg-muted/40')}>
-                <span className="font-medium">{f.label}</span>
-                <span className="text-xs text-muted-foreground font-mono" dir="ltr">{f.example}</span>
+                  dateFormat === id ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-card text-foreground hover:bg-muted/40')}>
+                <span className="font-medium">{t(`dateFormat.${id}`)}</span>
+                <span className="text-xs text-muted-foreground font-mono" dir="ltr">{DATE_FORMAT_EXAMPLES[id]}</span>
               </button>
             ))}
           </div>
@@ -192,9 +225,9 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
       </PrefSection>
 
       {/* Display Density */}
-      <PrefSection title="Display Density" desc="Control how much information is shown at once.">
+      <PrefSection title={t('density.title')} desc={isArabic ? 'التحكم في كمية المعلومات المعروضة دفعةً واحدة.' : 'Control how much information is shown at once.'}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {DENSITY_OPTIONS.map((d) => (
+          {densityOptions.map((d) => (
             <button key={d.id} onClick={() => setDensity(d.id)}
               className={cn('flex items-start gap-3 rounded-xl border-2 p-4 text-start transition-all',
                 density === d.id ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted/40')}>
@@ -203,8 +236,8 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
                 {density === d.id && <div className="size-2 rounded-full bg-primary" />}
               </div>
               <div>
-                <p className="text-sm font-semibold text-foreground">{d.label}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{d.desc}</p>
+                <p className="text-sm font-semibold text-foreground">{t(`density.${d.labelKey}`)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t(`density.${d.descKey}`)}</p>
               </div>
             </button>
           ))}
@@ -212,12 +245,9 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
       </PrefSection>
 
       {/* Interface Toggles */}
-      <PrefSection title="Interface Options">
+      <PrefSection title={t('accessibility.title')}>
         <div className="space-y-3">
-          {[
-            { label: 'Enable animations', desc: 'Smooth transitions and micro-interactions', value: animations, set: setAnimations },
-            { label: 'Show tooltips',      desc: 'Display helpful hints on hover',           value: tooltips,   set: setTooltips },
-          ].map(({ label, desc, value, set }) => (
+          {interfaceOptions.map(({ label, desc, value, set }) => (
             <div key={label} className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">{label}</p>
@@ -232,7 +262,7 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
       <div className="flex justify-end pt-2 border-t border-border">
         <button onClick={onSave}
           className="px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-          Save Preferences
+          {tCommon('save')}
         </button>
       </div>
     </div>

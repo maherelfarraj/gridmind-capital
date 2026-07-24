@@ -54,7 +54,21 @@
     "proceed": "المضي قدمًا",
     "issue": "إصدار",
     "sign": "توقيع",
-    "print": "طباعة"
+    "print": "طباعة",
+    "history": "السجل",
+    "actions": "الإجراءات",
+    "details": "التفاصيل",
+    "summary": "الملخص",
+    "total": "الإجمالي",
+    "subtotal": "المجموع الفرعي",
+    "na": "غير متاح",
+    "unknown": "غير معروف",
+    "today": "اليوم",
+    "yesterday": "أمس",
+    "thisWeek": "هذا الأسبوع",
+    "overdue": "متأخر",
+    "daysOverdue": "متأخر {count} يوم",
+    "daysOverdue_plural": "متأخر {count} أيام"
   },
 
   "nav": {
@@ -84,58 +98,84 @@
     "more": "المزيد",
     "auditLog": "سجل التدقيق",
     "signatureAudit": "سجل التوقيعات",
-    "users": "المستخدمون"
+    "users": "المستخدمون",
+    "risks": "المخاطر",
+    "schedule": "الجدول الزمني",
+    "variations": "أوامر التغيير",
+    "payments": "شهادات الدفع",
+    "quality": "الجودة",
+    "contracts": "العقود",
+    "energy": "الطاقة",
+    "field": "الوضع الميداني",
+    "team": "الفريق",
+    "pmo": "مكتب إدارة المشاريع",
+    "cashFlow": "التدفق النقدي",
+    "costControl": "ضبط التكاليف",
+    "guarantees": "الضمانات البنكية",
+    "retention": "الاحتجاز المالي",
+    "ncrs": "تقارير عدم المطابقة",
+    "permits": "تصاريح العمل",
+    "commissioning": "التشغيل التجريبي",
+    "handover": "التسليم",
+    "marketplace": "السوق"
   },
 
   "gates": {
     "G0": {
-      "code": "G0",
+      "code": "ب0",
       "short": "قبول الفرصة",
       "full": "البوابة 0 — قبول الفرصة",
-      "purpose": "الفحص الأولي والموافقة على المضي في تقييم الفرصة",
+      "purpose": "الفحص الأولي والموافقة على المضي في تقييم الفرصة الاستثمارية",
       "phase": "ما قبل الدراسة الأمامية"
     },
     "G1": {
-      "code": "G1",
+      "code": "ب1",
       "short": "العرض والقرار المبدئي",
       "full": "البوابة 1 — العرض والقرار المبدئي",
-      "purpose": "تقييم العرض واتخاذ قرار الاستثمار المبدئي",
-      "phase": "الدراسة الأمامية"
+      "purpose": "تقييم العرض واتخاذ قرار الاستثمار المبدئي (تنفيذ / عدم تنفيذ)",
+      "phase": "الدراسة الأمامية (FEED)"
     },
     "G2": {
-      "code": "G2",
-      "short": "التقديم والترسية",
-      "full": "البوابة 2 — التقديم والترسية",
+      "code": "ب2",
+      "short": "تقديم العطاء والترسية",
+      "full": "البوابة 2 — تقديم العطاء والترسية",
       "purpose": "الموافقة على تقديم العطاء والتفويض بترسية العقد",
-      "phase": "المناقصة"
+      "phase": "طرح المناقصة"
     },
     "G3": {
-      "code": "G3",
-      "short": "العقد والتعبئة",
-      "full": "البوابة 3 — العقد والتعبئة",
-      "purpose": "إبرام العقد والتفويض بالتعبئة الكاملة للمشروع",
-      "phase": "التعبئة"
+      "code": "ب3",
+      "short": "إبرام العقد والتعبئة",
+      "full": "البوابة 3 — إبرام العقد والتعبئة",
+      "purpose": "إبرام عقد المقاولة والتفويض بالتعبئة الكاملة للمشروع",
+      "phase": "التعبئة والانطلاق"
     },
     "G4": {
-      "code": "G4",
+      "code": "ب4",
       "short": "الهندسة والتوريد والتنفيذ",
       "full": "البوابة 4 — الهندسة والتوريد والتنفيذ",
-      "purpose": "التحقق من اكتمال الهندسة وحالة المشتريات وتقدم الإنشاء",
+      "purpose": "التحقق من اكتمال التصميم الهندسي وحالة توريد المعدات وتقدم أعمال الإنشاء",
       "phase": "التنفيذ"
     },
     "G5": {
-      "code": "G5",
-      "short": "الفحص والاختبار والتشغيل والقبول المبدئي",
-      "full": "البوابة 5 — الفحص والاختبار والتشغيل والقبول المبدئي",
-      "purpose": "التحقق من اكتمال التركيب الميكانيكي والاختبارات وإصدار شهادة القبول المبدئي",
-      "phase": "التشغيل"
+      "code": "ب5",
+      "short": "الفحص والاختبار وشهادة القبول المبدئي",
+      "full": "البوابة 5 — الفحص والاختبار وشهادة القبول المبدئي",
+      "purpose": "التحقق من الإنجاز الميكانيكي واعتماد الاختبارات وإصدار شهادة القبول المبدئي (PAC)",
+      "phase": "التشغيل التجريبي"
     },
     "G6": {
-      "code": "G6",
-      "short": "فترة الضمان والقبول النهائي والإقفال",
-      "full": "البوابة 6 — فترة الضمان والقبول النهائي والإقفال",
-      "purpose": "إنهاء فترة ضمان العيوب وإصدار شهادة القبول النهائي وإغلاق المشروع",
+      "code": "ب6",
+      "short": "فترة ضمان العيوب وشهادة القبول النهائي والإقفال",
+      "full": "البوابة 6 — فترة ضمان العيوب وشهادة القبول النهائي والإقفال",
+      "purpose": "إنهاء فترة ضمان العيوب (DLP) وإصدار شهادة القبول النهائي (FAC) وإغلاق ملف المشروع",
       "phase": "الإقفال"
+    },
+    "G7": {
+      "code": "ب7",
+      "short": "الإقفال التجاري",
+      "full": "البوابة 7 — الإقفال التجاري",
+      "purpose": "التسوية التجارية النهائية والإفراج عن الاحتجاز المالي والضمانات البنكية",
+      "phase": "الإقفال التجاري"
     }
   },
 
@@ -170,9 +210,14 @@
     "called": "مطالب به",
     "signed": "موقَّع",
     "passed": "اجتاز",
-    "failed": "رُفض",
+    "failed": "لم يجتز",
     "at_risk": "في خطر",
-    "on_track": "على المسار"
+    "on_track": "على المسار",
+    "not_started": "لم يبدأ",
+    "acknowledged": "تم الاستلام",
+    "escalated": "مُصعَّد",
+    "resolved": "تم الحل",
+    "voided": "مُلغى"
   },
 
   "approvals": {
@@ -181,7 +226,7 @@
     "pending": "الموافقات المعلقة",
     "history": "سجل القرارات",
     "noApprovals": "لا توجد موافقات تنتظر إجراءك.",
-    "allClear": "أنت محدَّث بالكامل.",
+    "allClear": "أنت على اطلاع تام بجميع المعاملات.",
     "columns": {
       "title": "العنوان",
       "type": "النوع",
@@ -198,15 +243,26 @@
     },
     "rationale": "المبرر",
     "conditions": "الشروط",
-    "signatureRequired": "مطلوب توقيع إلكتروني للموافقة",
+    "signatureRequired": "يُشترط التوقيع الإلكتروني للموافقة",
     "signToAuthorize": "وقِّع لتفويض هذا القرار",
     "reSig": "إعادة التوقيع",
     "recordedSignatures": "التوقيعات المسجَّلة",
     "swipeApprove": "اسحب يسارًا للموافقة",
     "swipeReject": "اسحب يمينًا للرفض",
     "addComment": "أضف تعليقًا…",
-    "queued": "تم تأجيل القرار — سيُزامَن عند الاتصال",
-    "synced": "تمت مزامنة القرارات غير المتصلة بنجاح"
+    "queued": "تم تأجيل القرار — سيُزامَن عند توافر الاتصال",
+    "synced": "تمت مزامنة القرارات المتراكمة بنجاح",
+    "types": {
+      "gate": "بوابة مرحلة",
+      "variation_order": "أمر تغيير",
+      "payment_certificate": "شهادة دفع",
+      "ncr": "تقرير عدم مطابقة",
+      "risk": "قبول مخاطرة",
+      "work_permit": "تصريح عمل",
+      "contract": "عقد",
+      "procurement": "مشتريات",
+      "hse_incident": "حادثة صحة وسلامة"
+    }
   },
 
   "projects": {
@@ -241,11 +297,40 @@
     },
     "phases": {
       "pre_feed": "ما قبل الدراسة الأمامية",
-      "feed": "الدراسة الأمامية",
-      "tender": "المناقصة",
+      "feed": "الدراسة الأمامية (FEED)",
+      "tender": "طرح المناقصة",
       "execution": "التنفيذ",
-      "commissioning": "التشغيل",
+      "commissioning": "التشغيل التجريبي",
       "closeout": "الإقفال"
+    },
+    "info": {
+      "projectCode": "رمز المشروع",
+      "technology": "التقنية",
+      "capacityMw": "الطاقة (ميغاواط)",
+      "country": "الدولة",
+      "location": "الموقع",
+      "startDate": "تاريخ البدء",
+      "targetCompletion": "تاريخ الإنجاز المستهدف",
+      "budgetUsd": "الميزانية (دولار أمريكي)",
+      "description": "الوصف",
+      "projectManager": "مدير المشروع"
+    },
+    "actions": {
+      "viewDetail": "عرض التفاصيل",
+      "editProject": "تعديل المشروع",
+      "archiveProject": "أرشفة المشروع",
+      "duplicateProject": "نسخ المشروع",
+      "advanceGate": "تقدم البوابة",
+      "exportGatePack": "تصدير حزمة البوابة",
+      "viewHistory": "عرض السجل"
+    },
+    "technologies": {
+      "solar": "الطاقة الشمسية الكهروضوئية",
+      "wind": "طاقة الرياح",
+      "bess": "نظام تخزين الطاقة بالبطاريات (BESS)",
+      "hybrid": "نظام هجين",
+      "hydrogen": "الهيدروجين الأخضر",
+      "transmission": "نقل الطاقة"
     }
   },
 
@@ -261,14 +346,14 @@
     "totalBudget": "إجمالي الميزانية",
     "viewAll": "عرض الكل",
     "kpis": {
-      "totalCapacity": "إجمالي الطاقة",
+      "totalCapacity": "إجمالي القدرة المركبة",
       "totalInvestment": "إجمالي الاستثمار",
       "projectsOnTrack": "على المسار",
       "projectsAtRisk": "في خطر"
     },
     "charts": {
       "projectsByGate": "المشاريع حسب البوابة",
-      "budgetUtilisation": "استخدام الميزانية",
+      "budgetUtilisation": "نسبة استخدام الميزانية",
       "timelineProgress": "تقدم الجدول الزمني"
     },
     "timeline": {
@@ -288,17 +373,32 @@
     "fullName": "الاسم الكامل",
     "forgotPassword": "نسيت كلمة المرور؟",
     "resetPassword": "إعادة تعيين كلمة المرور",
-    "sendResetLink": "إرسال رابط الإعادة",
+    "sendResetLink": "إرسال رابط الاستعادة",
     "createAccount": "إنشاء حساب",
     "alreadyHaveAccount": "لديك حساب بالفعل؟",
     "noAccount": "ليس لديك حساب؟",
+    "tagline": "منظومة التحكم المؤسسي في مشاريع EPC",
+    "loginFailed": "فشل تسجيل الدخول",
+    "welcomeBack": "أهلًا بعودتك!",
+    "continueWith": "أو المتابعة باستخدام",
     "errors": {
       "invalidEmail": "يرجى إدخال عنوان بريد إلكتروني صحيح.",
       "passwordTooShort": "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
       "passwordMismatch": "كلمتا المرور غير متطابقتين.",
       "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
       "emailInUse": "هذا البريد الإلكتروني مسجَّل بالفعل.",
-      "generic": "حدث خطأ. يرجى المحاولة مرة أخرى."
+      "generic": "حدث خطأ. يرجى المحاولة مرة أخرى.",
+      "sessionExpired": "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مجددًا.",
+      "notAuthorized": "ليس لديك صلاحية الوصول إلى هذا المورد.",
+      "accountDisabled": "تم تعطيل حسابك. تواصل مع المسؤول."
+    },
+    "features": {
+      "gateControl": "التحكم في بوابات المراحل",
+      "gateControlDesc": "موافقات متعددة المستويات مع التوقيع الإلكتروني",
+      "teamCollab": "تعاون الفريق",
+      "teamCollabDesc": "صندوق وارد موحد للموافقات وتقارير عدم المطابقة وأوامر التغيير",
+      "liveData": "بيانات المحفظة المباشرة",
+      "liveDataDesc": "لوحات معلومات آنية لكامل محفظة المشاريع"
     }
   },
 
@@ -318,7 +418,11 @@
       "field_photo": "صورة ميدانية",
       "certificate": "شهادة",
       "report": "تقرير",
-      "correspondence": "مراسلات"
+      "correspondence": "مراسلات",
+      "drawing": "مخطط هندسي",
+      "specification": "مواصفات فنية",
+      "contract": "عقد",
+      "permit": "تصريح"
     },
     "columns": {
       "title": "العنوان",
@@ -328,6 +432,15 @@
       "status": "الحالة",
       "uploadedBy": "رُفع بواسطة",
       "uploadedAt": "تاريخ الرفع"
+    },
+    "review": {
+      "title": "مراجعة المستندات",
+      "pending": "قيد المراجعة",
+      "approved": "معتمد",
+      "rejected": "مرفوض",
+      "reviewer": "المراجع",
+      "reviewDate": "تاريخ المراجعة",
+      "comments": "ملاحظات المراجعة"
     }
   },
 
@@ -336,7 +449,8 @@
     "costControl": "ضبط التكاليف",
     "cashFlow": "التدفق النقدي",
     "retention": "الاحتجاز المالي",
-    "guarantees": "الضمانات",
+    "guarantees": "الضمانات البنكية",
+    "paymentCertificates": "شهادات الدفع",
     "columns": {
       "voNumber": "رقم أمر التغيير",
       "description": "الوصف",
@@ -348,11 +462,31 @@
     },
     "kpis": {
       "contractValue": "قيمة العقد",
-      "invoiced": "المُفاتَر",
-      "received": "المستلَم",
-      "overdue": "المتأخر",
-      "retentionHeld": "الاحتجاز المحتفظ به",
-      "forecast90d": "التوقعات للـ 90 يومًا"
+      "invoiced": "إجمالي الفواتير المُصدَرة",
+      "received": "إجمالي المُستلَم",
+      "overdue": "المبالغ المتأخرة",
+      "retentionHeld": "الاحتجاز المحتجَز",
+      "forecast90d": "التوقعات للـ 90 يومًا القادمة"
+    },
+    "guaranteeTypes": {
+      "bid_bond": "ضمان العطاء",
+      "performance_bond": "ضمان حسن التنفيذ",
+      "advance_payment_guarantee": "ضمان الدفعة المقدمة",
+      "retention_bond": "ضمان الاحتجاز"
+    },
+    "milestoneStatuses": {
+      "planned": "مخطط",
+      "invoiced": "مُفاتَر",
+      "overdue": "متأخر",
+      "paid": "مدفوع"
+    },
+    "escalation": {
+      "level1": "م1 — متابعة رسمية",
+      "level2": "م2 — تصعيد إداري",
+      "level3": "م3 — علاج تعاقدي",
+      "level4": "م4 — تسوية نزاع",
+      "escalate": "تصعيد",
+      "template": "نموذج البريد الإلكتروني"
     }
   },
 
@@ -365,7 +499,7 @@
       "title": "العنوان",
       "source": "المصدر",
       "status": "الحالة",
-      "cycle": "الدورة",
+      "cycle": "دورة التصحيح",
       "raisedBy": "رُفع بواسطة",
       "date": "التاريخ"
     },
@@ -376,13 +510,18 @@
       "closed": "مغلق"
     },
     "sources": {
-      "failed_inspection": "فحص فاشل",
-      "audit": "تدقيق",
+      "failed_inspection": "فحص غير مطابق",
+      "audit": "تدقيق داخلي",
       "site_observation": "ملاحظة موقعية"
     },
     "fieldPhotos": "صور ميدانية",
     "addPhoto": "إضافة صورة",
-    "photoAdded": "تمت إضافة الصورة"
+    "photoAdded": "تمت إضافة الصورة",
+    "rootCause": "السبب الجذري",
+    "correctiveAction": "الإجراء التصحيحي",
+    "closureNote": "ملاحظة الإغلاق",
+    "reinspectionPassed": "اجتازت إعادة الفحص",
+    "gateGuard": "يجب إغلاق جميع تقارير عدم المطابقة قبل الانتقال إلى البوابة 6"
   },
 
   "settings": {
@@ -390,7 +529,7 @@
     "profile": "الملف الشخصي",
     "notifications": "الإشعارات",
     "language": "اللغة والمنطقة",
-    "languageLabel": "لغة العرض",
+    "languageLabel": "لغة الواجهة",
     "digitStyleLabel": "تنسيق الأرقام",
     "digitStyles": {
       "western": "أرقام غربية (1 2 3)",
@@ -400,7 +539,67 @@
       "en": "English",
       "ar": "العربية"
     },
-    "saved": "تم حفظ التفضيلات."
+    "saved": "تم حفظ التفضيلات.",
+    "appearance": {
+      "title": "المظهر",
+      "desc": "اختر مظهر المنصة على جهازك.",
+      "light": "فاتح",
+      "dark": "داكن",
+      "system": "تلقائي"
+    },
+    "languageRegion": {
+      "title": "اللغة والمنطقة",
+      "desc": "اضبط لغتك المفضلة وتنسيق الأرقام الإقليمي. تُطبَّق التغييرات فورًا.",
+      "interfaceLanguage": "لغة الواجهة",
+      "digitStyle": "أسلوب الأرقام",
+      "western": "غربي",
+      "westernExample": "1,234,567",
+      "westernDesc": "موصى به للتقارير التجارية",
+      "arabicIndic": "عربي هندي",
+      "arabicIndicExample": "١٬٢٣٤٬٥٦٧",
+      "arabicIndicDesc": "أرقام عربية أصيلة",
+      "ltr": "من اليسار لليمين",
+      "rtl": "من اليمين لليسار"
+    },
+    "dateFormat": {
+      "title": "تنسيق التاريخ",
+      "iso": "ISO 8601",
+      "us": "أمريكي",
+      "eu": "أوروبي"
+    },
+    "density": {
+      "title": "كثافة العرض",
+      "comfortable": "مريح",
+      "comfortableDesc": "تباعد افتراضي، سهل القراءة",
+      "compact": "مضغوط",
+      "compactDesc": "واجهة أكثف، محتوى أكثر"
+    },
+    "accessibility": {
+      "title": "إمكانية الوصول",
+      "animations": "تفعيل الحركات",
+      "animationsDesc": "تأثيرات حركية عند الانتقال والرسوم البيانية",
+      "tooltips": "إظهار التلميحات",
+      "tooltipsDesc": "إرشادات سياقية عند التحويم"
+    },
+    "account": {
+      "title": "الحساب",
+      "fullName": "الاسم الكامل",
+      "email": "البريد الإلكتروني",
+      "role": "الدور",
+      "tenant": "المنظمة",
+      "changePassword": "تغيير كلمة المرور",
+      "currentPassword": "كلمة المرور الحالية",
+      "newPassword": "كلمة المرور الجديدة",
+      "confirmNewPassword": "تأكيد كلمة المرور الجديدة"
+    },
+    "notificationPrefs": {
+      "emailOnApproval": "إشعار بريدي عند طلبات الموافقة",
+      "emailOnNcr": "إشعار بريدي عند رفع تقرير عدم مطابقة",
+      "emailOnVo": "إشعار بريدي عند إصدار أمر تغيير",
+      "emailOnEscalation": "إشعار بريدي عند تصعيد مستحقات دفع",
+      "emailOnMention": "إشعار بريدي عند الإشارة إليك",
+      "weeklyDigest": "ملخص أسبوعي للمحفظة"
+    }
   },
 
   "emails": {
@@ -458,12 +657,12 @@
   },
 
   "signature": {
-    "draw": "رسم",
-    "type": "كتابة",
+    "draw": "رسم التوقيع",
+    "type": "كتابة التوقيع",
     "typePlaceholder": "اكتب اسمك الكامل",
     "clear": "مسح",
     "undo": "تراجع",
-    "consent": "أؤكد أن هذا توقيعي الإلكتروني الملزم",
+    "consent": "أؤكد أن هذا توقيعي الإلكتروني الملزم قانونًا",
     "saveAndSign": "حفظ وتوقيع",
     "signing": "جارٍ التوقيع…",
     "signedBy": "وقَّعه",
@@ -473,11 +672,465 @@
 
   "stageGates": {
     "title": "بوابات المراحل",
-    "convene": "عقد المراجعة",
+    "convene": "عقد جلسة المراجعة",
     "approve": "موافقة",
     "reject": "رفض",
     "hold": "تعليق",
-    "controlCenter": "مركز التحكم في البوابات",
-    "packExport": "تصدير حزمة البوابة"
+    "controlCenter": "مركز التحكم في بوابات المراحل",
+    "packExport": "تصدير حزمة البوابة",
+    "quorum": "التوقيع على القرار",
+    "chairDecision": "قرار رئيس اللجنة",
+    "externalSignature": "توقيع خارجي",
+    "preconditions": "شروط اجتياز البوابة",
+    "preconditionsFailed": "لم تُستوفَ شروط اجتياز البوابة",
+    "signoffs": "التوقيعات",
+    "signed": "موقَّع",
+    "unsigned": "قيد الانتظار",
+    "approvedWithConditions": "موافقة مشروطة",
+    "issueGateCertificate": "إصدار شهادة البوابة",
+    "pac": "شهادة القبول المبدئي (PAC)",
+    "fac": "شهادة القبول النهائي (FAC)",
+    "dlp": "فترة ضمان العيوب (DLP)",
+    "certificate": "شهادة البوابة",
+    "reviewDate": "تاريخ المراجعة",
+    "chairperson": "رئيس لجنة المراجعة"
+  },
+
+  "hse": {
+    "title": "الصحة والسلامة والبيئة",
+    "incidents": "الحوادث",
+    "permits": "تصاريح العمل",
+    "inspections": "الفحوصات",
+    "newIncident": "تسجيل حادثة",
+    "newPermit": "تصريح عمل جديد",
+    "noIncidents": "لم تُسجَّل أي حوادث.",
+    "noPermits": "لا توجد تصاريح عمل.",
+    "kpis": {
+      "ltifr": "معدل تكرار الإصابات المفقودة (LTIFR)",
+      "trir": "معدل تكرار الإصابات الكلية (TRIR)",
+      "openActions": "الإجراءات الصحية والسلامة المفتوحة",
+      "daysWithoutIncident": "أيام بدون حوادث",
+      "activePermits": "تصاريح العمل النشطة"
+    },
+    "incidentTypes": {
+      "near_miss": "حادثة وشيكة (كادت تقع)",
+      "first_aid": "إسعاف أولي",
+      "medical_treatment": "إصابة تستدعي علاجًا طبيًا",
+      "lost_time": "إصابة مع توقف عن العمل",
+      "fatality": "وفاة",
+      "property_damage": "تلف في الممتلكات",
+      "environmental": "حادثة بيئية"
+    },
+    "permitTypes": {
+      "hot_work": "تصريح أعمال ساخنة",
+      "confined_space": "تصريح الدخول إلى الفضاء المحصور",
+      "electrical": "تصريح العزل الكهربائي",
+      "excavation": "تصريح الحفر والتخندق",
+      "working_at_height": "تصريح العمل في الارتفاعات",
+      "lifting": "تصريح عمليات الرفع",
+      "general": "تصريح عمل عام"
+    },
+    "permitStatuses": {
+      "draft": "مسودة",
+      "pending_approval": "قيد الموافقة",
+      "approved": "معتمد",
+      "active": "نشط",
+      "suspended": "موقوف",
+      "closed": "مغلق",
+      "cancelled": "ملغى"
+    },
+    "columns": {
+      "number": "الرقم المرجعي",
+      "type": "النوع",
+      "location": "الموقع",
+      "description": "الوصف",
+      "reportedBy": "بلَّغ عنه",
+      "date": "التاريخ",
+      "status": "الحالة",
+      "severity": "الخطورة"
+    },
+    "severity": {
+      "low": "منخفضة",
+      "medium": "متوسطة",
+      "high": "مرتفعة",
+      "critical": "حرجة"
+    },
+    "immediateActions": "الإجراءات الفورية",
+    "rootCause": "السبب الجذري",
+    "correctiveActions": "الإجراءات التصحيحية",
+    "investigation": "التحقيق"
+  },
+
+  "risks": {
+    "title": "سجل المخاطر",
+    "newRisk": "إضافة مخاطرة",
+    "noRisks": "لم تُسجَّل أي مخاطر.",
+    "columns": {
+      "number": "رقم المخاطرة",
+      "title": "العنوان",
+      "category": "الفئة",
+      "probability": "الاحتمالية",
+      "impact": "الأثر",
+      "priority": "الأولوية",
+      "owner": "المسؤول",
+      "status": "الحالة",
+      "response": "خطة الاستجابة"
+    },
+    "categories": {
+      "technical": "تقنية",
+      "commercial": "تجارية",
+      "legal": "قانونية",
+      "hse": "صحة وسلامة وبيئة",
+      "environmental": "بيئية",
+      "financial": "مالية",
+      "schedule": "جدول زمني",
+      "resource": "الموارد",
+      "stakeholder": "أصحاب المصلحة",
+      "force_majeure": "قوة قاهرة"
+    },
+    "probability": {
+      "very_low": "منخفضة جدًا",
+      "low": "منخفضة",
+      "medium": "متوسطة",
+      "high": "مرتفعة",
+      "very_high": "مرتفعة جدًا"
+    },
+    "impact": {
+      "negligible": "ضئيل",
+      "minor": "طفيف",
+      "moderate": "معتدل",
+      "major": "كبير",
+      "catastrophic": "كارثي"
+    },
+    "response": {
+      "avoid": "تجنب",
+      "mitigate": "تخفيف",
+      "transfer": "نقل",
+      "accept": "قبول"
+    },
+    "priority": {
+      "critical": "حرجة",
+      "high": "مرتفعة",
+      "medium": "متوسطة",
+      "low": "منخفضة"
+    }
+  },
+
+  "schedule": {
+    "title": "الجدول الزمني والمعالم الرئيسية",
+    "gantt": "مخطط غانت",
+    "milestones": "المعالم الرئيسية",
+    "newMilestone": "إضافة معلم",
+    "noMilestones": "لم تُحدَّد أي معالم.",
+    "columns": {
+      "name": "المعلم",
+      "gate": "البوابة",
+      "owner": "المسؤول",
+      "plannedStart": "بداية مخططة",
+      "plannedEnd": "نهاية مخططة",
+      "actualStart": "بداية فعلية",
+      "actualEnd": "نهاية فعلية",
+      "progress": "التقدم",
+      "status": "الحالة",
+      "critical": "المسار الحرج"
+    },
+    "kpis": {
+      "totalMilestones": "إجمالي المعالم",
+      "completed": "مكتملة",
+      "overdue": "متأخرة",
+      "upcoming": "وشيكة (14 يومًا)"
+    }
+  },
+
+  "variations": {
+    "title": "أوامر التغيير",
+    "register": "سجل أوامر التغيير",
+    "newVariation": "أمر تغيير جديد",
+    "noVariations": "لا توجد أوامر تغيير.",
+    "columns": {
+      "number": "رقم أمر التغيير",
+      "title": "العنوان",
+      "origin": "المنشأ",
+      "type": "النوع",
+      "amount": "المبلغ (دولار أمريكي)",
+      "status": "الحالة",
+      "submittedBy": "مقدَّم من",
+      "date": "التاريخ"
+    },
+    "origins": {
+      "client": "العميل",
+      "contractor": "المقاول",
+      "variation": "تغيير في النطاق",
+      "compensation_event": "حدث تعويضي"
+    },
+    "types": {
+      "scope_change": "تغيير في النطاق",
+      "design_change": "تعديل تصميمي",
+      "site_condition": "ظروف موقعية غير متوقعة",
+      "regulatory": "تغيير تنظيمي",
+      "client_request": "طلب من العميل",
+      "force_majeure": "قوة قاهرة"
+    },
+    "statuses": {
+      "draft": "مسودة",
+      "submitted": "مقدَّم للموافقة",
+      "under_review": "قيد المراجعة",
+      "approved": "معتمد",
+      "rejected": "مرفوض",
+      "withdrawn": "مسحوب"
+    },
+    "actions": {
+      "submit": "تقديم للموافقة",
+      "approve": "اعتماد",
+      "reject": "رفض",
+      "withdraw": "سحب",
+      "setBaseline": "تحديد خط الأساس"
+    },
+    "baselineValue": "قيمة العقد الأساسية",
+    "approvedVos": "أوامر التغيير المعتمدة",
+    "revisedValue": "القيمة التعاقدية المعدَّلة",
+    "voHistory": "سجل أوامر التغيير"
+  },
+
+  "payments": {
+    "title": "معالم الدفع",
+    "paymentCertificate": "شهادة الدفع",
+    "newMilestone": "إضافة معلم دفع",
+    "noMilestones": "لا توجد معالم دفع.",
+    "columns": {
+      "reference": "المرجع",
+      "description": "الوصف",
+      "plannedDate": "التاريخ المخطط",
+      "plannedAmount": "المبلغ المخطط",
+      "invoicedAmount": "المبلغ المُفاتَر",
+      "paidAmount": "المبلغ المدفوع",
+      "status": "الحالة",
+      "escalation": "مستوى التصعيد"
+    },
+    "kpis": {
+      "totalContract": "إجمالي قيمة العقد",
+      "totalInvoiced": "إجمالي الفواتير المُصدَرة",
+      "totalReceived": "إجمالي المبالغ المُستلَمة",
+      "totalOverdue": "إجمالي المبالغ المتأخرة",
+      "retentionHeld": "الاحتجاز المحتجَز"
+    },
+    "retention": {
+      "title": "سجل الاحتجاز المالي",
+      "held": "محتجَز",
+      "releaseRequested": "طُلب الإفراج",
+      "released": "مُفرَج عنه",
+      "requestRelease": "طلب الإفراج",
+      "bulkRelease": "طلب الإفراج الكلي (عند إصدار شهادة القبول النهائي)"
+    },
+    "escalation": {
+      "l1": "م1 — متابعة رسمية (+7 أيام)",
+      "l2": "م2 — تصعيد إداري (+30 يومًا)",
+      "l3": "م3 — علاج تعاقدي (+60 يومًا)",
+      "l4": "م4 — تسوية نزاع (+90 يومًا)"
+    }
+  },
+
+  "quality": {
+    "title": "الجودة",
+    "inspections": "الفحوصات",
+    "testPacks": "حزم الاختبار",
+    "itp": "خطة الفحص والاختبار (ITP)",
+    "newInspection": "فحص جديد",
+    "noInspections": "لم تُسجَّل أي فحوصات.",
+    "columns": {
+      "reference": "الرقم المرجعي",
+      "type": "النوع",
+      "location": "الموقع",
+      "inspector": "المفتش",
+      "date": "التاريخ",
+      "result": "النتيجة",
+      "status": "الحالة"
+    },
+    "results": {
+      "pass": "مطابق",
+      "fail": "غير مطابق",
+      "conditional": "مطابق بشروط"
+    },
+    "categories": {
+      "civil": "أعمال مدنية",
+      "structural": "أعمال إنشائية",
+      "mechanical": "أعمال ميكانيكية",
+      "electrical": "أعمال كهربائية",
+      "commissioning": "التشغيل التجريبي",
+      "pre_commissioning": "ما قبل التشغيل التجريبي"
+    }
+  },
+
+  "contracts": {
+    "title": "العقود",
+    "register": "سجل العقود",
+    "newContract": "عقد جديد",
+    "noContracts": "لا توجد عقود.",
+    "columns": {
+      "number": "رقم العقد",
+      "title": "الموضوع",
+      "counterparty": "الطرف المقابل",
+      "type": "نوع العقد",
+      "value": "قيمة العقد",
+      "startDate": "تاريخ البدء",
+      "endDate": "تاريخ الانتهاء",
+      "status": "الحالة"
+    },
+    "types": {
+      "epc": "عقد EPC (هندسة، توريد، إنشاء)",
+      "supply": "عقد توريد",
+      "services": "عقد خدمات",
+      "lump_sum": "مبلغ مقطوع",
+      "reimbursable": "قابل للسداد",
+      "framework": "اتفاقية إطارية"
+    },
+    "keyDates": {
+      "ntp": "أمر البدء (NTP)",
+      "commercialCompletion": "الاكتمال التجاري",
+      "pac": "شهادة القبول المبدئي",
+      "fac": "شهادة القبول النهائي",
+      "defectsEnd": "انتهاء فترة ضمان العيوب"
+    }
+  },
+
+  "energy": {
+    "title": "الطاقة ونظام تخزينها",
+    "dashboard": "لوحة متابعة الطاقة",
+    "production": "إنتاج الطاقة",
+    "performance": "مؤشرات الأداء",
+    "alerts": "التنبيهات",
+    "kpis": {
+      "installedCapacity": "القدرة المركبة (ميغاواط ذروة)",
+      "availabilityFactor": "معامل التوافر",
+      "performanceRatio": "نسبة الأداء",
+      "capacityFactor": "معامل القدرة",
+      "energyYield": "إنتاج الطاقة (ميغاواط ساعة)",
+      "ghiActual": "الإشعاع الأفقي الشامل الفعلي (كيلوواط ساعة/م²)",
+      "specificYield": "الإنتاج النوعي (كيلوواط ساعة/كيلوواط ذروة)",
+      "pr": "نسبة الأداء (PR)",
+      "cuf": "معامل استخدام القدرة (CUF)",
+      "stateOfCharge": "مستوى الشحن",
+      "roundTripEfficiency": "كفاءة الدورة الكاملة",
+      "cycleCount": "عدد دورات الشحن"
+    },
+    "status": {
+      "online": "متصل",
+      "offline": "غير متصل",
+      "derated": "مُخفَّض الأداء",
+      "maintenance": "تحت الصيانة",
+      "fault": "عطل"
+    },
+    "inverters": "العاكسات",
+    "strings": "سلاسل الألواح",
+    "trackers": "أنظمة التتبع",
+    "batteries": "وحدات البطاريات",
+    "weatherStation": "محطة الأرصاد الجوية"
+  },
+
+  "field": {
+    "title": "الوضع الميداني",
+    "scan": "مسح رمز QR",
+    "capture": "التقاط صورة",
+    "offlineMode": "وضع عدم الاتصال",
+    "syncPending": "في انتظار المزامنة",
+    "syncNow": "مزامنة الآن",
+    "syncing": "جارٍ المزامنة…",
+    "synced": "تمت مزامنة جميع البيانات",
+    "pendingChanges": "تعديل {count} معلَّق",
+    "pendingChanges_plural": "{count} تعديلات معلَّقة",
+    "camera": "الكاميرا",
+    "gallery": "معرض الصور",
+    "addNote": "إضافة ملاحظة",
+    "attachPhoto": "إرفاق صورة",
+    "location": "الموقع",
+    "equipment": "رمز المعدة",
+    "workOrder": "أمر العمل",
+    "inspectionForm": "نموذج الفحص",
+    "signOff": "توقيع الاعتماد",
+    "noConnection": "لا يوجد اتصال بالإنترنت — العمل في وضع عدم الاتصال"
+  },
+
+  "admin": {
+    "title": "لوحة الإدارة",
+    "platformHealth": "سلامة المنصة",
+    "userManagement": "إدارة المستخدمين",
+    "auditLog": "سجل التدقيق",
+    "signatureAudit": "سجل التوقيعات",
+    "tenantSettings": "إعدادات المنظمة",
+    "approvalMatrix": "مصفوفة الموافقات",
+    "rolesFlow": "الأدوار وتدفق الموافقات",
+    "gateApprovers": "الجهات المعتمِدة الافتراضية للبوابات",
+    "rulesHealth": "فحص سلامة القواعد",
+    "health": {
+      "title": "سلامة المنصة",
+      "allGood": "جميع الأنظمة تعمل بسلام",
+      "warnings": "تحذير واحد",
+      "warnings_plural": "{count} تحذيرات",
+      "critical": "مشكلة حرجة واحدة",
+      "critical_plural": "{count} مشكلات حرجة",
+      "checks": {
+        "usersWithoutProfiles": "مستخدمو المصادقة بلا ملف شخصي",
+        "profilesWithoutTenant": "ملفات شخصية بلا معرف مستأجر",
+        "activeProjects": "المشاريع النشطة في المنظمة",
+        "auditLogToday": "سجلات التدقيق اليوم",
+        "tablesMissingRls": "الجداول المدققة التي تفتقر إلى RLS"
+      },
+      "refresh": "تشغيل الفحوصات",
+      "checkedAt": "تم الفحص في {time}"
+    },
+    "users": {
+      "title": "المستخدمون",
+      "invite": "دعوة مستخدم",
+      "deactivate": "تعطيل",
+      "changeRole": "تغيير الدور",
+      "columns": {
+        "name": "الاسم",
+        "email": "البريد الإلكتروني",
+        "role": "الدور",
+        "status": "الحالة",
+        "joinedAt": "تاريخ الانضمام"
+      }
+    }
+  },
+
+  "table": {
+    "noData": "لا توجد بيانات للعرض.",
+    "loading": "جارٍ تحميل البيانات…",
+    "columns": "الأعمدة",
+    "sortAsc": "ترتيب تصاعدي",
+    "sortDesc": "ترتيب تنازلي",
+    "selectAll": "تحديد الكل",
+    "selectRow": "تحديد الصف",
+    "filterBy": "تصفية حسب {column}"
+  },
+
+  "empty": {
+    "noProjects": "لا توجد مشاريع بعد. أنشئ مشروعك الأول للبدء.",
+    "noApprovals": "صندوق الموافقات فارغ.",
+    "noDocuments": "لم تُرفع أي مستندات.",
+    "noRisks": "لم تُسجَّل أي مخاطر.",
+    "noVariations": "لم تُصدَر أي أوامر تغيير.",
+    "noPayments": "لم تُحدَّد أي معالم دفع.",
+    "noNcrs": "لا توجد تقارير عدم مطابقة.",
+    "noIncidents": "لم تُسجَّل أي حوادث صحة وسلامة.",
+    "noPermits": "لم تُصدَر أي تصاريح عمل.",
+    "noMilestones": "لم تُحدَّد أي معالم زمنية.",
+    "noContracts": "لم تُسجَّل أي عقود.",
+    "noData": "لا يوجد شيء هنا حتى الآن.",
+    "cta": "ابدأ الآن"
+  },
+
+  "errors": {
+    "pageNotFound": "الصفحة غير موجودة",
+    "pageNotFoundDesc": "الصفحة التي تبحث عنها غير موجودة أو تم نقلها.",
+    "serverError": "حدث خطأ ما",
+    "serverErrorDesc": "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى أو التواصل مع الدعم الفني.",
+    "unauthorized": "رُفض الوصول",
+    "unauthorizedDesc": "ليس لديك صلاحية لعرض هذه الصفحة.",
+    "sessionExpired": "انتهت صلاحية الجلسة",
+    "sessionExpiredDesc": "انتهت صلاحية جلستك. يرجى تسجيل الدخول مجددًا.",
+    "tryAgain": "المحاولة مرة أخرى",
+    "goHome": "الذهاب إلى لوحة التحكم",
+    "contactSupport": "التواصل مع الدعم الفني"
   }
 }

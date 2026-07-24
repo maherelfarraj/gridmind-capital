@@ -54,7 +54,21 @@
     "proceed": "Proceed",
     "issue": "Issue",
     "sign": "Sign",
-    "print": "Print"
+    "print": "Print",
+    "history": "History",
+    "actions": "Actions",
+    "details": "Details",
+    "summary": "Summary",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "na": "N/A",
+    "unknown": "Unknown",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This week",
+    "overdue": "Overdue",
+    "daysOverdue": "{count} day overdue",
+    "daysOverdue_plural": "{count} days overdue"
   },
 
   "nav": {
@@ -84,7 +98,26 @@
     "more": "More",
     "auditLog": "Audit Log",
     "signatureAudit": "Signature Audit",
-    "users": "Users"
+    "users": "Users",
+    "risks": "Risks",
+    "schedule": "Schedule",
+    "variations": "Variations",
+    "payments": "Payments",
+    "quality": "Quality",
+    "contracts": "Contracts",
+    "energy": "Energy",
+    "field": "Field Mode",
+    "team": "Team",
+    "pmo": "PMO",
+    "cashFlow": "Cash Flow",
+    "costControl": "Cost Control",
+    "guarantees": "Guarantees",
+    "retention": "Retention",
+    "ncrs": "NCRs",
+    "permits": "Work Permits",
+    "commissioning": "Commissioning",
+    "handover": "Handover",
+    "marketplace": "Marketplace"
   },
 
   "gates": {
@@ -136,6 +169,13 @@
       "full": "Gate 6 — DLP, FAC & Closeout",
       "purpose": "Conclude the Defects Liability Period, issue Final Acceptance Certificate, and close the project",
       "phase": "Closeout"
+    },
+    "G7": {
+      "code": "G7",
+      "short": "Commercial Closeout",
+      "full": "Gate 7 — Commercial Closeout",
+      "purpose": "Final commercial settlement, release of retentions and guarantees",
+      "phase": "Commercial Closeout"
     }
   },
 
@@ -172,7 +212,12 @@
     "passed": "Passed",
     "failed": "Failed",
     "at_risk": "At Risk",
-    "on_track": "On Track"
+    "on_track": "On Track",
+    "not_started": "Not Started",
+    "acknowledged": "Acknowledged",
+    "escalated": "Escalated",
+    "resolved": "Resolved",
+    "voided": "Voided"
   },
 
   "approvals": {
@@ -206,7 +251,18 @@
     "swipeReject": "Swipe left to reject",
     "addComment": "Add a comment…",
     "queued": "Decision queued — will sync when online",
-    "synced": "Offline decisions synced successfully"
+    "synced": "Offline decisions synced successfully",
+    "types": {
+      "gate": "Stage Gate",
+      "variation_order": "Variation Order",
+      "payment_certificate": "Payment Certificate",
+      "ncr": "Non-Conformance Report",
+      "risk": "Risk Acceptance",
+      "work_permit": "Work Permit",
+      "contract": "Contract",
+      "procurement": "Procurement",
+      "hse_incident": "HSE Incident"
+    }
   },
 
   "projects": {
@@ -246,6 +302,35 @@
       "execution": "Execution",
       "commissioning": "Commissioning",
       "closeout": "Closeout"
+    },
+    "info": {
+      "projectCode": "Project Code",
+      "technology": "Technology",
+      "capacityMw": "Capacity (MW)",
+      "country": "Country",
+      "location": "Location",
+      "startDate": "Start Date",
+      "targetCompletion": "Target Completion",
+      "budgetUsd": "Budget (USD)",
+      "description": "Description",
+      "projectManager": "Project Manager"
+    },
+    "actions": {
+      "viewDetail": "View Details",
+      "editProject": "Edit Project",
+      "archiveProject": "Archive Project",
+      "duplicateProject": "Duplicate Project",
+      "advanceGate": "Advance Gate",
+      "exportGatePack": "Export Gate Pack",
+      "viewHistory": "View History"
+    },
+    "technologies": {
+      "solar": "Solar PV",
+      "wind": "Wind",
+      "bess": "BESS",
+      "hybrid": "Hybrid",
+      "hydrogen": "Green Hydrogen",
+      "transmission": "Transmission"
     }
   },
 
@@ -292,13 +377,28 @@
     "createAccount": "Create account",
     "alreadyHaveAccount": "Already have an account?",
     "noAccount": "Don't have an account?",
+    "tagline": "Enterprise EPC Project Controls",
+    "loginFailed": "Login failed",
+    "welcomeBack": "Welcome back!",
+    "continueWith": "Or continue with",
     "errors": {
       "invalidEmail": "Please enter a valid email address.",
       "passwordTooShort": "Password must be at least 8 characters.",
       "passwordMismatch": "Passwords do not match.",
       "invalidCredentials": "Invalid email or password.",
       "emailInUse": "This email is already registered.",
-      "generic": "An error occurred. Please try again."
+      "generic": "An error occurred. Please try again.",
+      "sessionExpired": "Your session has expired. Please sign in again.",
+      "notAuthorized": "You are not authorized to access this resource.",
+      "accountDisabled": "Your account has been disabled. Contact your administrator."
+    },
+    "features": {
+      "gateControl": "Gate Control",
+      "gateControlDesc": "Multi-level stage gate approvals with electronic sign-off",
+      "teamCollab": "Team Collaboration",
+      "teamCollabDesc": "Unified inbox for approvals, NCRs, and variations",
+      "liveData": "Live Portfolio Data",
+      "liveDataDesc": "Real-time dashboards across the entire project portfolio"
     }
   },
 
@@ -318,7 +418,11 @@
       "field_photo": "Field Photo",
       "certificate": "Certificate",
       "report": "Report",
-      "correspondence": "Correspondence"
+      "correspondence": "Correspondence",
+      "drawing": "Drawing",
+      "specification": "Specification",
+      "contract": "Contract",
+      "permit": "Permit"
     },
     "columns": {
       "title": "Title",
@@ -328,6 +432,15 @@
       "status": "Status",
       "uploadedBy": "Uploaded by",
       "uploadedAt": "Uploaded"
+    },
+    "review": {
+      "title": "Document Review",
+      "pending": "Pending Review",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "reviewer": "Reviewer",
+      "reviewDate": "Review Date",
+      "comments": "Review Comments"
     }
   },
 
@@ -337,6 +450,7 @@
     "cashFlow": "Cash Flow",
     "retention": "Retention",
     "guarantees": "Guarantees",
+    "paymentCertificates": "Payment Certificates",
     "columns": {
       "voNumber": "VO No.",
       "description": "Description",
@@ -353,6 +467,26 @@
       "overdue": "Overdue",
       "retentionHeld": "Retention Held",
       "forecast90d": "90-Day Forecast"
+    },
+    "guaranteeTypes": {
+      "bid_bond": "Bid Bond",
+      "performance_bond": "Performance Bond",
+      "advance_payment_guarantee": "Advance Payment Guarantee",
+      "retention_bond": "Retention Bond"
+    },
+    "milestoneStatuses": {
+      "planned": "Planned",
+      "invoiced": "Invoiced",
+      "overdue": "Overdue",
+      "paid": "Paid"
+    },
+    "escalation": {
+      "level1": "L1 — Formal Follow-Up",
+      "level2": "L2 — Management Escalation",
+      "level3": "L3 — Contractual Remedy",
+      "level4": "L4 — Dispute Resolution",
+      "escalate": "Escalate",
+      "template": "Email Template"
     }
   },
 
@@ -382,7 +516,12 @@
     },
     "fieldPhotos": "Field Photos",
     "addPhoto": "Add photo",
-    "photoAdded": "Photo added"
+    "photoAdded": "Photo added",
+    "rootCause": "Root Cause",
+    "correctiveAction": "Corrective Action",
+    "closureNote": "Closure Note",
+    "reinspectionPassed": "Re-inspection passed",
+    "gateGuard": "Open NCRs must be closed before advancing to G6"
   },
 
   "settings": {
@@ -400,7 +539,67 @@
       "en": "English",
       "ar": "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
     },
-    "saved": "Preferences saved."
+    "saved": "Preferences saved.",
+    "appearance": {
+      "title": "Appearance",
+      "desc": "Choose how GridMind looks on your device.",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "languageRegion": {
+      "title": "Language & Region",
+      "desc": "Set your preferred language and regional number format. Changes apply immediately.",
+      "interfaceLanguage": "Interface Language",
+      "digitStyle": "Digit Style",
+      "western": "Western",
+      "westernExample": "1,234,567",
+      "westernDesc": "Recommended for business reports",
+      "arabicIndic": "Arabic-Indic",
+      "arabicIndicExample": "\u0661\u066c\u0662\u0663\u0664\u066c\u0665\u0666\u0667",
+      "arabicIndicDesc": "Native Arabic numerals",
+      "ltr": "LTR",
+      "rtl": "RTL"
+    },
+    "dateFormat": {
+      "title": "Date Format",
+      "iso": "ISO 8601",
+      "us": "US",
+      "eu": "EU"
+    },
+    "density": {
+      "title": "Display Density",
+      "comfortable": "Comfortable",
+      "comfortableDesc": "Default spacing, easy to scan",
+      "compact": "Compact",
+      "compactDesc": "Denser UI, more content visible"
+    },
+    "accessibility": {
+      "title": "Accessibility",
+      "animations": "Enable animations",
+      "animationsDesc": "Motion effects on transitions and charts",
+      "tooltips": "Show tooltips",
+      "tooltipsDesc": "Contextual hints on hover"
+    },
+    "account": {
+      "title": "Account",
+      "fullName": "Full Name",
+      "email": "Email",
+      "role": "Role",
+      "tenant": "Organisation",
+      "changePassword": "Change Password",
+      "currentPassword": "Current Password",
+      "newPassword": "New Password",
+      "confirmNewPassword": "Confirm New Password"
+    },
+    "notificationPrefs": {
+      "emailOnApproval": "Email on approval requests",
+      "emailOnNcr": "Email on NCR raised",
+      "emailOnVo": "Email on variation order",
+      "emailOnEscalation": "Email on payment escalation",
+      "emailOnMention": "Email when mentioned",
+      "weeklyDigest": "Weekly portfolio digest"
+    }
   },
 
   "emails": {
@@ -478,6 +677,460 @@
     "reject": "Reject",
     "hold": "Hold",
     "controlCenter": "Gate Control Center",
-    "packExport": "Export Gate Pack"
+    "packExport": "Export Gate Pack",
+    "quorum": "Sign Off",
+    "chairDecision": "Chair Decision",
+    "externalSignature": "External Signature",
+    "preconditions": "Gate Preconditions",
+    "preconditionsFailed": "Gate preconditions not met",
+    "signoffs": "Sign-offs",
+    "signed": "Signed",
+    "unsigned": "Pending",
+    "approvedWithConditions": "Approved with Conditions",
+    "issueGateCertificate": "Issue Gate Certificate",
+    "pac": "Provisional Acceptance Certificate",
+    "fac": "Final Acceptance Certificate",
+    "dlp": "Defects Liability Period",
+    "certificate": "Gate Certificate",
+    "reviewDate": "Review Date",
+    "chairperson": "Chairperson"
+  },
+
+  "hse": {
+    "title": "Health, Safety & Environment",
+    "incidents": "Incidents",
+    "permits": "Work Permits",
+    "inspections": "Inspections",
+    "newIncident": "Report Incident",
+    "newPermit": "New Work Permit",
+    "noIncidents": "No incidents recorded.",
+    "noPermits": "No work permits.",
+    "kpis": {
+      "ltifr": "LTIFR",
+      "trir": "TRIR",
+      "openActions": "Open HSE Actions",
+      "daysWithoutIncident": "Days Without Incident",
+      "activePermits": "Active Work Permits"
+    },
+    "incidentTypes": {
+      "near_miss": "Near Miss",
+      "first_aid": "First Aid",
+      "medical_treatment": "Medical Treatment Injury",
+      "lost_time": "Lost Time Injury",
+      "fatality": "Fatality",
+      "property_damage": "Property Damage",
+      "environmental": "Environmental"
+    },
+    "permitTypes": {
+      "hot_work": "Hot Work Permit",
+      "confined_space": "Confined Space Entry",
+      "electrical": "Electrical Isolation",
+      "excavation": "Excavation",
+      "working_at_height": "Working at Height",
+      "lifting": "Lifting Operations",
+      "general": "General Work Permit"
+    },
+    "permitStatuses": {
+      "draft": "Draft",
+      "pending_approval": "Pending Approval",
+      "approved": "Approved",
+      "active": "Active",
+      "suspended": "Suspended",
+      "closed": "Closed",
+      "cancelled": "Cancelled"
+    },
+    "columns": {
+      "number": "Ref. No.",
+      "type": "Type",
+      "location": "Location",
+      "description": "Description",
+      "reportedBy": "Reported by",
+      "date": "Date",
+      "status": "Status",
+      "severity": "Severity"
+    },
+    "severity": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical"
+    },
+    "immediateActions": "Immediate Actions",
+    "rootCause": "Root Cause",
+    "correctiveActions": "Corrective Actions",
+    "investigation": "Investigation"
+  },
+
+  "risks": {
+    "title": "Risk Register",
+    "newRisk": "Add Risk",
+    "noRisks": "No risks recorded.",
+    "columns": {
+      "number": "Risk No.",
+      "title": "Title",
+      "category": "Category",
+      "probability": "Probability",
+      "impact": "Impact",
+      "priority": "Priority",
+      "owner": "Owner",
+      "status": "Status",
+      "response": "Response"
+    },
+    "categories": {
+      "technical": "Technical",
+      "commercial": "Commercial",
+      "legal": "Legal",
+      "hse": "HSE",
+      "environmental": "Environmental",
+      "financial": "Financial",
+      "schedule": "Schedule",
+      "resource": "Resource",
+      "stakeholder": "Stakeholder",
+      "force_majeure": "Force Majeure"
+    },
+    "probability": {
+      "very_low": "Very Low",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "very_high": "Very High"
+    },
+    "impact": {
+      "negligible": "Negligible",
+      "minor": "Minor",
+      "moderate": "Moderate",
+      "major": "Major",
+      "catastrophic": "Catastrophic"
+    },
+    "response": {
+      "avoid": "Avoid",
+      "mitigate": "Mitigate",
+      "transfer": "Transfer",
+      "accept": "Accept"
+    },
+    "priority": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    }
+  },
+
+  "schedule": {
+    "title": "Schedule & Milestones",
+    "gantt": "Gantt Chart",
+    "milestones": "Milestones",
+    "newMilestone": "Add Milestone",
+    "noMilestones": "No milestones defined.",
+    "columns": {
+      "name": "Milestone",
+      "gate": "Gate",
+      "owner": "Owner",
+      "plannedStart": "Planned Start",
+      "plannedEnd": "Planned End",
+      "actualStart": "Actual Start",
+      "actualEnd": "Actual End",
+      "progress": "Progress",
+      "status": "Status",
+      "critical": "Critical Path"
+    },
+    "kpis": {
+      "totalMilestones": "Total Milestones",
+      "completed": "Completed",
+      "overdue": "Overdue",
+      "upcoming": "Upcoming (14 days)"
+    }
+  },
+
+  "variations": {
+    "title": "Variation Orders",
+    "register": "Variation Register",
+    "newVariation": "New Variation Order",
+    "noVariations": "No variation orders.",
+    "columns": {
+      "number": "VO No.",
+      "title": "Title",
+      "origin": "Origin",
+      "type": "Type",
+      "amount": "Amount (USD)",
+      "status": "Status",
+      "submittedBy": "Submitted by",
+      "date": "Date"
+    },
+    "origins": {
+      "client": "Client",
+      "contractor": "Contractor",
+      "variation": "Variation",
+      "compensation_event": "Compensation Event"
+    },
+    "types": {
+      "scope_change": "Scope Change",
+      "design_change": "Design Change",
+      "site_condition": "Unforeseen Site Condition",
+      "regulatory": "Regulatory Change",
+      "client_request": "Client Request",
+      "force_majeure": "Force Majeure"
+    },
+    "statuses": {
+      "draft": "Draft",
+      "submitted": "Submitted",
+      "under_review": "Under Review",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "withdrawn": "Withdrawn"
+    },
+    "actions": {
+      "submit": "Submit for Approval",
+      "approve": "Approve",
+      "reject": "Reject",
+      "withdraw": "Withdraw",
+      "setBaseline": "Set Baseline"
+    },
+    "baselineValue": "Baseline Contract Value",
+    "approvedVos": "Approved VOs",
+    "revisedValue": "Revised Contract Value",
+    "voHistory": "VO History"
+  },
+
+  "payments": {
+    "title": "Payment Milestones",
+    "paymentCertificate": "Payment Certificate",
+    "newMilestone": "Add Milestone",
+    "noMilestones": "No payment milestones.",
+    "columns": {
+      "reference": "Reference",
+      "description": "Description",
+      "plannedDate": "Planned Date",
+      "plannedAmount": "Planned Amount",
+      "invoicedAmount": "Invoiced Amount",
+      "paidAmount": "Paid Amount",
+      "status": "Status",
+      "escalation": "Escalation Level"
+    },
+    "kpis": {
+      "totalContract": "Total Contract",
+      "totalInvoiced": "Total Invoiced",
+      "totalReceived": "Total Received",
+      "totalOverdue": "Total Overdue",
+      "retentionHeld": "Retention Held"
+    },
+    "retention": {
+      "title": "Retention Register",
+      "held": "Held",
+      "releaseRequested": "Release Requested",
+      "released": "Released",
+      "requestRelease": "Request Release",
+      "bulkRelease": "Request All Release (FAC)"
+    },
+    "escalation": {
+      "l1": "L1 — Formal Follow-Up (+7 days)",
+      "l2": "L2 — Management Escalation (+30 days)",
+      "l3": "L3 — Contractual Remedy (+60 days)",
+      "l4": "L4 — Dispute Resolution (+90 days)"
+    }
+  },
+
+  "quality": {
+    "title": "Quality",
+    "inspections": "Inspections",
+    "testPacks": "Test Packs",
+    "itp": "Inspection & Test Plan",
+    "newInspection": "New Inspection",
+    "noInspections": "No inspections recorded.",
+    "columns": {
+      "reference": "Ref.",
+      "type": "Type",
+      "location": "Location",
+      "inspector": "Inspector",
+      "date": "Date",
+      "result": "Result",
+      "status": "Status"
+    },
+    "results": {
+      "pass": "Pass",
+      "fail": "Fail",
+      "conditional": "Conditional Pass"
+    },
+    "categories": {
+      "civil": "Civil",
+      "structural": "Structural",
+      "mechanical": "Mechanical",
+      "electrical": "Electrical",
+      "commissioning": "Commissioning",
+      "pre_commissioning": "Pre-Commissioning"
+    }
+  },
+
+  "contracts": {
+    "title": "Contracts",
+    "register": "Contract Register",
+    "newContract": "New Contract",
+    "noContracts": "No contracts.",
+    "columns": {
+      "number": "Contract No.",
+      "title": "Title",
+      "counterparty": "Counterparty",
+      "type": "Type",
+      "value": "Value",
+      "startDate": "Start Date",
+      "endDate": "End Date",
+      "status": "Status"
+    },
+    "types": {
+      "epc": "EPC",
+      "supply": "Supply",
+      "services": "Services",
+      "lump_sum": "Lump Sum",
+      "reimbursable": "Reimbursable",
+      "framework": "Framework Agreement"
+    },
+    "keyDates": {
+      "ntp": "Notice to Proceed (NTP)",
+      "commercialCompletion": "Commercial Completion",
+      "pac": "Provisional Acceptance",
+      "fac": "Final Acceptance",
+      "defectsEnd": "Defects Liability End"
+    }
+  },
+
+  "energy": {
+    "title": "Energy & BESS",
+    "dashboard": "Energy Dashboard",
+    "production": "Energy Production",
+    "performance": "Performance",
+    "alerts": "Alerts",
+    "kpis": {
+      "installedCapacity": "Installed Capacity (MWp)",
+      "availabilityFactor": "Availability Factor",
+      "performanceRatio": "Performance Ratio",
+      "capacityFactor": "Capacity Factor",
+      "energyYield": "Energy Yield (MWh)",
+      "ghiActual": "GHI Actual (kWh/m²)",
+      "specificYield": "Specific Yield (kWh/kWp)",
+      "pr": "PR",
+      "cuf": "CUF",
+      "stateOfCharge": "State of Charge",
+      "roundTripEfficiency": "Round-Trip Efficiency",
+      "cycleCount": "Cycle Count"
+    },
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "derated": "Derated",
+      "maintenance": "Maintenance",
+      "fault": "Fault"
+    },
+    "inverters": "Inverters",
+    "strings": "Strings",
+    "trackers": "Trackers",
+    "batteries": "Battery Units",
+    "weatherStation": "Weather Station"
+  },
+
+  "field": {
+    "title": "Field Mode",
+    "scan": "Scan QR Code",
+    "capture": "Capture Photo",
+    "offlineMode": "Offline Mode",
+    "syncPending": "Sync Pending",
+    "syncNow": "Sync Now",
+    "syncing": "Syncing…",
+    "synced": "All data synced",
+    "pendingChanges": "{count} change pending",
+    "pendingChanges_plural": "{count} changes pending",
+    "camera": "Camera",
+    "gallery": "Gallery",
+    "addNote": "Add Note",
+    "attachPhoto": "Attach Photo",
+    "location": "Location",
+    "equipment": "Equipment Tag",
+    "workOrder": "Work Order",
+    "inspectionForm": "Inspection Form",
+    "signOff": "Sign Off",
+    "noConnection": "No internet connection — working offline"
+  },
+
+  "admin": {
+    "title": "Admin",
+    "platformHealth": "Platform Health",
+    "userManagement": "User Management",
+    "auditLog": "Audit Log",
+    "signatureAudit": "Signature Audit",
+    "tenantSettings": "Tenant Settings",
+    "approvalMatrix": "Approval Matrix",
+    "rolesFlow": "Roles & Approval Flow",
+    "gateApprovers": "Gate Approver Defaults",
+    "rulesHealth": "Rules Health Check",
+    "health": {
+      "title": "Platform Health",
+      "allGood": "All systems healthy",
+      "warnings": "{count} warning",
+      "warnings_plural": "{count} warnings",
+      "critical": "{count} critical issue",
+      "critical_plural": "{count} critical issues",
+      "checks": {
+        "usersWithoutProfiles": "Auth users without a profile row",
+        "profilesWithoutTenant": "Profiles missing tenant_id",
+        "activeProjects": "Active projects in tenant",
+        "auditLogToday": "Audit log entries today",
+        "tablesMissingRls": "Audited tables missing RLS"
+      },
+      "refresh": "Run checks",
+      "checkedAt": "Checked {time}"
+    },
+    "users": {
+      "title": "Users",
+      "invite": "Invite User",
+      "deactivate": "Deactivate",
+      "changeRole": "Change Role",
+      "columns": {
+        "name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "joinedAt": "Joined"
+      }
+    }
+  },
+
+  "table": {
+    "noData": "No data to display.",
+    "loading": "Loading data…",
+    "columns": "Columns",
+    "sortAsc": "Sort ascending",
+    "sortDesc": "Sort descending",
+    "selectAll": "Select all",
+    "selectRow": "Select row",
+    "filterBy": "Filter by {column}"
+  },
+
+  "empty": {
+    "noProjects": "No projects yet. Create your first project to get started.",
+    "noApprovals": "Your approval inbox is empty.",
+    "noDocuments": "No documents have been uploaded.",
+    "noRisks": "No risks have been logged.",
+    "noVariations": "No variation orders raised.",
+    "noPayments": "No payment milestones defined.",
+    "noNcrs": "No non-conformance reports.",
+    "noIncidents": "No HSE incidents recorded.",
+    "noPermits": "No work permits issued.",
+    "noMilestones": "No schedule milestones.",
+    "noContracts": "No contracts registered.",
+    "noData": "Nothing here yet.",
+    "cta": "Get started"
+  },
+
+  "errors": {
+    "pageNotFound": "Page not found",
+    "pageNotFoundDesc": "The page you are looking for does not exist or has been moved.",
+    "serverError": "Something went wrong",
+    "serverErrorDesc": "An unexpected error occurred. Please try again or contact support.",
+    "unauthorized": "Access Denied",
+    "unauthorizedDesc": "You do not have permission to view this page.",
+    "sessionExpired": "Session Expired",
+    "sessionExpiredDesc": "Your session has expired. Please sign in again.",
+    "tryAgain": "Try again",
+    "goHome": "Go to Dashboard",
+    "contactSupport": "Contact support"
   }
 }
