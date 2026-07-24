@@ -17,11 +17,12 @@ import { getVariationOrders }    from '@/app/actions/variation-orders'
 import { getClaims }             from '@/app/actions/claims'
 import { getTransmittalsRegister } from '@/app/actions/transmittals'
 import { getPermitsBoard }       from '@/app/actions/workpermits'
+import { getItpDashboard, getNcrRegister } from '@/app/actions/quality'
 import type { RiskRecord }       from '@/lib/types/action-types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register' | 'lender-progress' | 'document-control-log' | 'ptw-log'
+type ReportType = 'project-status' | 'gate-progress' | 'financial-summary' | 'risk-register' | 'approvals-log' | 'variations-register' | 'lender-progress' | 'document-control-log' | 'ptw-log' | 'quality-report'
 type DateRange  = '30d' | '90d' | '1y' | 'all'
 
 const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
@@ -34,6 +35,7 @@ const REPORT_TYPES: { id: ReportType; label: string; description: string }[] = [
   { id: 'lender-progress',   label: 'Lender Progress Report', description: 'Bank-ready progress report per project — compile, save, and export the full lender pack' },
   { id: 'document-control-log', label: 'Document Control Log', description: 'Transmittals for a project with response codes and turnaround days' },
   { id: 'ptw-log',           label: 'PTW Log',            description: 'Permits to work by type and status with validity windows' },
+  { id: 'quality-report',   label: 'Quality Report',     description: 'ITP completion, hold point log, and NCR register with aging by project' },
 ]
 
 const DATE_RANGE_OPTIONS: { id: DateRange; label: string }[] = [
@@ -588,6 +590,200 @@ function PtwLogReport() {
   )
 }
 
+// ── Quality: severity colors + aging thresholds ───────────────────────────
+const NCR_SEV_COLOR: Record<string, string> = {
+  critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  major:    'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  minor:    'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400',
+}
+const NCR_AGING_COLOR: Record<string, string> = {
+  red:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  amber: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  none:  '',
+}
+
+function QualityReport() {
+  const { projects, isLoading: projLoading, activeProjectId, setProjectId } = useReportProject()
+  const { data: itpData, isLoading: itpLoading } = useSWR(
+    activeProjectId ? `report-itp-${activeProjectId}` : null,
+    () => getItpDashboard(activeProjectId as string),
+  )
+  const { data: ncrData, isLoading: ncrLoading } = useSWR(
+    activeProjectId ? `report-ncr-${activeProjectId}` : null,
+    () => getNcrRegister(activeProjectId as string),
+  )
+
+  if (projLoading) return <LoadingRows cols={6} />
+  if (projects.length === 0) {
+    return <div className="rounded-lg border border-border p-10 text-center text-sm text-muted-foreground">No projects available.</div>
+  }
+
+  const isLoading = itpLoading || ncrLoading
+
+  // ── ITP plan summary ──────────────────────────────────────────────────────
+  const plans = itpData?.plans ?? []
+  const kpis  = itpData?.kpis
+  const holdPoints = plans.flatMap(p =>
+    p.activities.filter(a => a.inspection_type === 'HOLD')
+      .map(a => ({ ...a, plan_no: p.itp_no, plan_title: p.title })),
+  )
+  const pendingHolds = holdPoints.filter(h => h.status === 'pending')
+
+  // ── NCR rows ─────────────────────────────────────────────────────────────
+  const ncrs = ncrData?.rows ?? []
+
+  return (
+    <div className="space-y-8">
+      <ReportProjectPicker projects={projects} activeProjectId={activeProjectId} onChange={setProjectId} />
+
+      {isLoading ? <LoadingRows cols={6} /> : (
+        <>
+          {/* ── KPI strip ───────────────────────────────────────────────── */}
+          {kpis && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: 'Active ITPs',       value: String(kpis.active_plans) },
+                { label: 'Hold points pending', value: String(kpis.hold_points_pending),
+                  highlight: kpis.hold_points_pending > 0 ? 'text-amber-600' : '' },
+                { label: 'Inspection pass rate', value: `${kpis.pass_rate_pct}%`,
+                  highlight: kpis.pass_rate_pct < 85 ? 'text-red-600' : 'text-emerald-600' },
+                { label: 'Open NCRs',         value: String(kpis.open_ncrs),
+                  highlight: kpis.critical_or_major_ncrs > 0 ? 'text-red-600' : '' },
+              ].map(k => (
+                <div key={k.label} className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+                  <p className={cn('text-xl font-bold tabular-nums', k.highlight ?? 'text-foreground')}>{k.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{k.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── ITP completion table ─────────────────────────────────────── */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">ITP Plans — completion</h3>
+            <ReportTable
+              headers={['ITP No', 'Title', 'Work Package', 'Discipline', 'Completion', 'Status']}
+              empty={plans.length === 0}
+            >
+              {plans.map(p => (
+                <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="px-3 py-2 font-mono text-xs text-primary whitespace-nowrap">{p.itp_no}</td>
+                  <td className="px-3 py-2 max-w-[220px] truncate">{p.title}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{p.work_package ?? '—'}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{p.discipline ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${p.completion_pct}%` }} />
+                      </div>
+                      <span className="text-xs tabular-nums text-muted-foreground">{p.completion_pct}%</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium capitalize border',
+                      p.status === 'active' ? 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' :
+                      p.status === 'complete' ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' :
+                      p.status === 'void' ? 'border-red-300 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' :
+                      'border-border bg-muted text-muted-foreground')}>
+                      {p.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </ReportTable>
+          </div>
+
+          {/* ── Hold point log ──────────────────────────────────────────── */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">
+              Hold point log
+              {pendingHolds.length > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  {pendingHolds.length} pending
+                </span>
+              )}
+            </h3>
+            <ReportTable
+              headers={['ITP', 'Seq', 'Description', 'Ref Doc', 'Responsible', 'Status', 'Result Date']}
+              empty={holdPoints.length === 0}
+            >
+              {holdPoints.map(h => (
+                <tr key={h.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="px-3 py-2 font-mono text-xs text-primary whitespace-nowrap">{h.plan_no}</td>
+                  <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">{h.seq}</td>
+                  <td className="px-3 py-2 max-w-[200px] truncate text-sm">{h.description}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{h.reference_doc ?? '—'}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{h.responsible ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
+                      h.status === 'passed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' :
+                      h.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+                      h.status === 'waived' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' :
+                      'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400')}>
+                      {h.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                    {h.result_date ? new Date(h.result_date).toLocaleDateString() : '—'}
+                  </td>
+                </tr>
+              ))}
+            </ReportTable>
+          </div>
+
+          {/* ── NCR register ────────────────────────────────────────────── */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">NCR register</h3>
+            <ReportTable
+              headers={['NCR No', 'Title', 'Category', 'Severity', 'Status', 'Raised', 'Age', 'Aging']}
+              empty={ncrs.length === 0}
+            >
+              {ncrs.map(n => (
+                <tr key={n.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="px-3 py-2 font-mono text-xs text-primary whitespace-nowrap">{n.ncr_number}</td>
+                  <td className="px-3 py-2 max-w-[220px] truncate text-sm">{n.title}</td>
+                  <td className="px-3 py-2 text-xs capitalize text-muted-foreground">
+                    {n.category.replace(/_/g, ' ')}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium capitalize', NCR_SEV_COLOR[n.severity] ?? '')}>
+                      {n.severity}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
+                      n.status === 'closed' ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' :
+                      n.status === 'open'   ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+                      'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400')}>
+                      {n.status.replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(n.raised_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">{n.days_open}d</td>
+                  <td className="px-3 py-2">
+                    {n.aging !== 'none' ? (
+                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', NCR_AGING_COLOR[n.aging])}>
+                        {n.aging === 'red' ? '>30d' : '>14d'}
+                      </span>
+                    ) : <span className="text-xs text-muted-foreground">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </ReportTable>
+            {ncrs.length > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {ncrData?.open_count ?? 0} open · {ncrData?.critical_count ?? 0} critical
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function LoadingRows({ cols }: { cols: number }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -720,6 +916,7 @@ export default function ReportsPage() {
           {activeType === 'lender-progress'   && <LenderProgressReport />}
           {activeType === 'document-control-log' && <DocumentControlLogReport />}
           {activeType === 'ptw-log'           && <PtwLogReport />}
+          {activeType === 'quality-report'    && <QualityReport />}
         </div>
       </div>
     </div>

@@ -281,6 +281,85 @@ export async function maybeCreateDelayInsight(projectId: string): Promise<void> 
   }
 }
 
+/**
+ * Fire-and-forget quality watchdog, called from getItpDashboard.
+ * Two independent triggers, each raising ONE insight if not already open:
+ *  A) inspection pass rate < 85% with 10+ results → module 'schedule_risk', severity 'high'
+ *  B) any critical NCR (source = failed_inspection) open > 7 days → module 'safety', severity 'high'
+ * Each trigger checks independently for an existing open insight of that module+project combo.
+ * Never throws.
+ */
+export async function maybeCreateQualityInsight(
+  projectId: string,
+  passRatePct: number,
+  totalResults: number,
+  oldestCriticalNcrDays: number,  // 0 if none
+): Promise<void> {
+  try {
+    const sb = createAdminClient()
+    const { data: proj } = await sb.from('projects').select('name').eq('id', projectId).maybeSingle()
+    const projectName = (proj?.name as string | null) ?? 'project'
+
+    // ── Trigger A: low pass rate ──────────────────────────────────────────
+    const triggerPassRate = passRatePct < 85 && totalResults >= 10
+    if (triggerPassRate) {
+      const { data: existingSchedule } = await sb
+        .from('ai_insights')
+        .select('id')
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('project_id', projectId)
+        .eq('module', 'schedule_risk')
+        .eq('status', 'open')
+        .limit(1)
+
+      if (!existingSchedule || existingSchedule.length === 0) {
+        await sb.from('ai_insights').insert({
+          tenant_id: DEMO_TENANT,
+          project_id: projectId,
+          module: 'schedule_risk',
+          title: `Inspection pass rate below threshold on ${projectName}`,
+          description: `ITP inspection pass rate is ${passRatePct}% (threshold: 85%) based on ${totalResults} recorded results. A sustained low pass rate increases rework cycles, delays commissioning, and elevates schedule risk.`,
+          confidence: 85,
+          severity: 'high',
+          status: 'open',
+          recommended_action: 'Review failed hold points with the QA/QC lead. Identify root-cause patterns — recurring failures in the same work package may indicate a training or process gap.',
+        })
+        revalidatePath('/ai-insights')
+      }
+    }
+
+    // ── Trigger B: critical NCR open > 7 days ────────────────────────────
+    const triggerCriticalNcr = oldestCriticalNcrDays > 7
+    if (triggerCriticalNcr) {
+      const { data: existingSafety } = await sb
+        .from('ai_insights')
+        .select('id')
+        .eq('tenant_id', DEMO_TENANT)
+        .eq('project_id', projectId)
+        .eq('module', 'safety')
+        .eq('status', 'open')
+        .limit(1)
+
+      if (!existingSafety || existingSafety.length === 0) {
+        await sb.from('ai_insights').insert({
+          tenant_id: DEMO_TENANT,
+          project_id: projectId,
+          module: 'safety',
+          title: `Critical NCR unresolved ${oldestCriticalNcrDays} days on ${projectName}`,
+          description: `A critical non-conformance (failed inspection category) has been open for ${oldestCriticalNcrDays} days without disposition or closure. Unresolved critical NCRs block mechanical completion gate approvals and indicate a systemic quality control failure.`,
+          confidence: 92,
+          severity: 'high',
+          status: 'open',
+          recommended_action: 'Assign root cause investigation immediately. Document disposition (Use As-Is / Repair / Rework / Reject). Escalate to Project Director if closure is not achieved within 48 hours.',
+        })
+        revalidatePath('/ai-insights')
+      }
+    }
+  } catch (e) {
+    console.error('[ai-insights] quality insight generator failed:', e)
+  }
+}
+
 export async function acknowledgeInsightAction(id: string) {
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }

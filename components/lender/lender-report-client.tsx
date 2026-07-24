@@ -695,7 +695,36 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
               <KpiCard label="Open punch items" value={String(data.quality.openPunchItems)} />
               <KpiCard label="Open inspections" value={String(data.quality.openInspections)} />
               <KpiCard label="Non-conformances" value={String(data.quality.ncrByStatus.reduce((a, n) => a + n.count, 0))} sub="Across all statuses" />
+              {data.quality.itpCompletionPct !== undefined && (
+                <KpiCard label="ITP completion" value={`${data.quality.itpCompletionPct}%`} sub={`${data.quality.activePlans ?? 0} active plan${(data.quality.activePlans ?? 0) !== 1 ? 's' : ''}`} />
+              )}
             </div>
+
+            {/* Optional ITP + NCR-by-severity block */}
+            {data.quality.ncrBySeverity && data.quality.ncrBySeverity.length > 0 && (
+              <div className="print-avoid-break mb-4">
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Open NCRs by severity</h3>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr><Th>Severity</Th><Th numeric>Count</Th></tr>
+                  </thead>
+                  <tbody>
+                    {data.quality.ncrBySeverity.map((n) => (
+                      <tr key={n.severity}>
+                        <Td>
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                            n.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                            n.severity === 'major'    ? 'bg-amber-100 text-amber-700' :
+                            'bg-neutral-100 text-neutral-600'
+                          }`}>{n.severity}</span>
+                        </Td>
+                        <Td numeric>{n.count}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="print-avoid-break">
               <h3 className="mb-2 text-sm font-semibold text-neutral-700">Non-conformance reports by status</h3>
               {data.quality.ncrByStatus.length > 0 ? (

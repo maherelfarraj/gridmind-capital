@@ -165,6 +165,10 @@ export interface LenderReportData {
     openPunchItems: number
     openInspections: number
     ncrByStatus: { status: string; count: number }[]
+    /** Optional ITP block — only present when itp_plans exist for the project */
+    itpCompletionPct?: number       // average across all plans
+    activePlans?: number
+    ncrBySeverity?: { severity: string; count: number }[]
   }
   preparedBy: string | null
 }
@@ -464,15 +468,43 @@ export async function getLenderReportData(
   // ── NCRs by status (quality) ─────────────────────────────────────────────────
   const { data: ncrRows } = await admin
     .from('ncrs')
-    .select('status')
+    .select('status, source')
     .eq('tenant_id', DEMO_TENANT)
     .eq('project_id', projectId)
   const ncrCount: Record<string, number> = {}
+  const ncrSevCount: Record<string, number> = { critical: 0, major: 0, minor: 0 }
   for (const n of ncrRows ?? []) {
     const st = String(n.status ?? 'open')
     ncrCount[st] = (ncrCount[st] ?? 0) + 1
+    if (n.status !== 'closed') {
+      const sev = n.source === 'failed_inspection' ? 'critical' : n.source === 'audit' ? 'major' : 'minor'
+      ncrSevCount[sev] = (ncrSevCount[sev] ?? 0) + 1
+    }
   }
   const ncrByStatus = Object.entries(ncrCount).map(([status, count]) => ({ status, count }))
+  const ncrBySeverity = Object.entries(ncrSevCount)
+    .filter(([, c]) => c > 0)
+    .map(([severity, count]) => ({ severity, count }))
+
+  // ── ITP completion (optional) ────────────────────────────────────────────────
+  let itpCompletionPct: number | undefined
+  let activePlans: number | undefined
+  const { data: itpPlanRows } = await admin
+    .from('itp_plans')
+    .select('id, status')
+    .eq('tenant_id', DEMO_TENANT)
+    .eq('project_id', projectId)
+  if (itpPlanRows && itpPlanRows.length > 0) {
+    activePlans = itpPlanRows.filter((p) => p.status === 'active').length
+    const planIds = itpPlanRows.map((p) => p.id as string)
+    const { data: actRows } = await admin
+      .from('itp_activities')
+      .select('status')
+      .in('plan_id', planIds)
+    const acts = actRows ?? []
+    const completed = acts.filter((a) => ['passed', 'waived', 'failed'].includes(String(a.status ?? ''))).length
+    itpCompletionPct = acts.length > 0 ? Math.round((completed / acts.length) * 100) : 0
+  }
 
   // ── Prepared-by (current user's display name) ────────────────────────────────
   let preparedBy: string | null = null
@@ -560,7 +592,7 @@ export async function getLenderReportData(
     },
     hse,
     risks,
-    quality: { openPunchItems, openInspections, ncrByStatus },
+    quality: { openPunchItems, openInspections, ncrByStatus, ncrBySeverity: ncrBySeverity.length > 0 ? ncrBySeverity : undefined, itpCompletionPct, activePlans },
     preparedBy,
   }
 }

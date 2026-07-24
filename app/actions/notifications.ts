@@ -61,7 +61,10 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
   const today  = nowIso.slice(0, 10)
   const last24 = new Date(now.getTime() - 24 * 3_600_000).toISOString()
 
-  const [permitRes, transRes, dailyRes, photoRes] = await Promise.all([
+  const ago3d  = new Date(now.getTime() - 3  * 86_400_000).toISOString()
+  const ago7d  = new Date(now.getTime() - 7  * 86_400_000).toISOString()
+
+  const [permitRes, transRes, dailyRes, photoRes, holdRes, critNcrRes] = await Promise.all([
     admin
       .from('work_permits')
       .select('id, permit_no, title, project_id, valid_to')
@@ -91,6 +94,25 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       .not('ticket_id', 'is', null)
       .gte('created_at', last24)
       .order('created_at', { ascending: false }),
+    // ITP hold points pending for more than 3 days
+    admin
+      .from('itp_activities')
+      .select('id, plan_id, description, created_at, itp_plans(project_id, itp_no, tenant_id)')
+      .eq('inspection_type', 'HOLD')
+      .eq('status', 'pending')
+      .lt('created_at', ago3d)
+      .order('created_at', { ascending: true })
+      .limit(20),
+    // Critical NCRs (source = 'failed_inspection') open > 7 days
+    admin
+      .from('ncrs')
+      .select('id, ncr_number, title, project_id, raised_at')
+      .eq('tenant_id', DEMO_TENANT)
+      .eq('source', 'failed_inspection')
+      .neq('status', 'closed')
+      .lt('raised_at', ago7d)
+      .order('raised_at', { ascending: true })
+      .limit(20),
   ])
 
   // Resolve project names + punch-item titles for the field-derived alerts.
@@ -138,6 +160,37 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       is_read:   false,
       link:      `/projects/${t.project_id}/transmittals`,
       created_at: due,
+    })
+  }
+
+  // ITP hold points pending >3 days.
+  for (const h of holdRes.data ?? []) {
+    const plan = (h.itp_plans as unknown as Record<string, unknown> | null)
+    const projectId = (plan?.project_id as string | null) ?? ''
+    const itpNo     = (plan?.itp_no     as string | null) ?? 'ITP'
+    const daysWaiting = Math.max(0, Math.floor((Date.now() - new Date(h.created_at as string).getTime()) / 86_400_000))
+    out.push({
+      id:        `hold-point-${h.id}`,
+      title:     `Hold point pending — ${itpNo}`,
+      body:      `"${(h.description as string) ?? 'Hold point'}" has been pending for ${daysWaiting} day${daysWaiting === 1 ? '' : 's'}. Inspector sign-off required before work continues.`,
+      type:      'alert',
+      is_read:   false,
+      link:      projectId ? `/projects/${projectId}/quality` : '/quality',
+      created_at: (h.created_at as string) ?? nowIso,
+    })
+  }
+
+  // Critical NCRs (failed_inspection source) open >7 days.
+  for (const n of critNcrRes.data ?? []) {
+    const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(n.raised_at as string).getTime()) / 86_400_000))
+    out.push({
+      id:        `critical-ncr-${n.id}`,
+      title:     `Critical NCR open ${daysOpen}d — ${(n.ncr_number as string) ?? 'NCR'}`,
+      body:      `"${(n.title as string) ?? 'Non-conformance'}" (Critical) has been open for ${daysOpen} days without closure. Root cause and disposition required.`,
+      type:      'urgent',
+      is_read:   false,
+      link:      `/projects/${n.project_id}/quality`,
+      created_at: (n.raised_at as string) ?? nowIso,
     })
   }
 

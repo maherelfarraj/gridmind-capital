@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireRole } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
+import { maybeCreateQualityInsight } from '@/app/actions/ai-insights'
 
 const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 
@@ -111,7 +112,7 @@ export async function getItpDashboard(projectId: string): Promise<ItpDashboard> 
       ),
     admin
       .from('ncrs')
-      .select('id, status, source')
+      .select('id, status, source, raised_at')
       .eq('project_id', projectId)
       .eq('tenant_id', DEMO_TENANT),
   ])
@@ -154,6 +155,16 @@ export async function getItpDashboard(projectId: string): Promise<ItpDashboard> 
     critical_or_major_ncrs: criticalNcrs,
     pass_rate_pct: passRatePct,
   }
+
+  // Fire-and-forget quality AI insight check.
+  const openCriticalNcrs = (ncrsRes.data ?? []).filter(
+    (r: Record<string, unknown>) => r.status !== 'closed' && r.source === 'failed_inspection',
+  )
+  const oldestCriticalDays = openCriticalNcrs.reduce((max: number, r: Record<string, unknown>) => {
+    const days = Math.max(0, Math.floor((Date.now() - new Date(r.raised_at as string).getTime()) / 86_400_000))
+    return Math.max(max, days)
+  }, 0)
+  void maybeCreateQualityInsight(projectId, passRatePct, resolved, oldestCriticalDays)
 
   return { kpis, plans }
 }
