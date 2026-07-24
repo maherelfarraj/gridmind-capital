@@ -9,7 +9,7 @@ import {
 } from 'recharts'
 import {
   ArrowLeft, Plus, RefreshCw, Loader2, DollarSign, FileText,
-  CheckCircle2, AlertCircle, X,
+  CheckCircle2, AlertCircle, X, ChevronRight, ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -203,6 +203,23 @@ export function CommercialPage({ projectId }: { projectId: string }) {
             </div>
           ))}
         </div>
+
+        {/* Contracts register link */}
+        <Link
+          href={`/projects/${projectId}/contracts`}
+          className="group flex items-center gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-[#f59e0b]/50 hover:bg-muted/30"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f59e0b]/10">
+            <ShieldCheck className="size-5 text-[#f59e0b]" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">Contracts Register</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Track EPC and subcontract milestones, liquidated damages and bonds
+            </p>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+        </Link>
 
         {/* Charts */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
