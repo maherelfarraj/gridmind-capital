@@ -452,6 +452,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           bgColor: 'bg-orange-100 dark:bg-orange-900/30', count: 'PTW board',
           ariaLabel: 'Open Permit to Work board', href: `/projects/${projectId}/permits`,
         },
+        {
+          label: 'Quality / ITP', icon: ClipboardCheck, iconColor: '#0f766e',
+          bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'ITP register',
+          ariaLabel: 'Open Quality ITP register', href: `/projects/${projectId}/quality`,
+        },
       ]
     : QUICK_ACTIONS
   return (

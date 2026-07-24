@@ -7,8 +7,9 @@ import {
 } from 'recharts'
 import {
   Plus, RefreshCw, Loader2, Hammer, HardHat, ClipboardList,
-  CheckCircle2, AlertTriangle, X,
+  CheckCircle2, AlertTriangle, X, ClipboardCheck, ChevronRight,
 } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -393,6 +394,31 @@ export function ConstructionPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Quality / ITP nav card */}
+        <Card className="rounded-xl border border-border">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-lg bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center shrink-0">
+                  <ClipboardCheck className="size-5 text-teal-700 dark:text-teal-400" aria-hidden />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Quality / ITP Register</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Inspection &amp; Test Plans, hold points, pass rates and open NCRs per project.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/projects"
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors shrink-0"
+              >
+                Open ITP <ChevronRight className="size-3.5" aria-hidden />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Daily reports (field mode → construction) */}
         <DailyReportsSection />

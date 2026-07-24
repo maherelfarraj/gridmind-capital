@@ -1,0 +1,355 @@
+'use server'
+
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter, requireRole } from '@/lib/auth/guard'
+
+const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+
+export type InspectionType = 'HOLD' | 'WITNESS' | 'SURVEILLANCE' | 'REVIEW'
+export type ActivityStatus = 'pending' | 'passed' | 'failed' | 'waived'
+export type PlanStatus = 'draft' | 'active' | 'complete' | 'void'
+
+export interface ItpActivity {
+  id: string
+  plan_id: string
+  seq: number
+  description: string
+  inspection_type: InspectionType
+  reference_doc: string | null
+  responsible: string | null
+  status: ActivityStatus
+  result_date: string | null
+  notes: string | null
+}
+
+export interface ItpPlan {
+  id: string
+  project_id: string
+  tenant_id: string
+  itp_no: string
+  title: string
+  work_package: string | null
+  discipline: string | null
+  status: PlanStatus
+  created_at: string
+  updated_at: string
+  activities: ItpActivity[]
+  completion_pct: number
+}
+
+export interface ItpKpis {
+  active_plans: number
+  hold_points_pending: number
+  open_ncrs: number          // from ncrs table, non-closed
+  critical_or_major_ncrs: number // from_inspection source = critical proxy
+  pass_rate_pct: number      // passed / (passed + failed) across all activities
+}
+
+export interface ItpDashboard {
+  kpis: ItpKpis
+  plans: ItpPlan[]
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+function mapPlan(row: Record<string, unknown>, activities: ItpActivity[]): ItpPlan {
+  const acts = activities.filter(a => a.plan_id === (row.id as string))
+  const completed = acts.filter(a => a.status === 'passed' || a.status === 'waived' || a.status === 'failed').length
+  const completion_pct = acts.length ? Math.round((completed / acts.length) * 100) : 0
+  return {
+    id: row.id as string,
+    project_id: row.project_id as string,
+    tenant_id: row.tenant_id as string,
+    itp_no: row.itp_no as string,
+    title: row.title as string,
+    work_package: (row.work_package as string) ?? null,
+    discipline: (row.discipline as string) ?? null,
+    status: (row.status as PlanStatus) ?? 'draft',
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string,
+    activities: acts.sort((a, b) => a.seq - b.seq),
+    completion_pct,
+  }
+}
+
+function mapActivity(row: Record<string, unknown>): ItpActivity {
+  return {
+    id: row.id as string,
+    plan_id: row.plan_id as string,
+    seq: row.seq as number,
+    description: row.description as string,
+    inspection_type: (row.inspection_type as InspectionType) ?? 'REVIEW',
+    reference_doc: (row.reference_doc as string) ?? null,
+    responsible: (row.responsible as string) ?? null,
+    status: (row.status as ActivityStatus) ?? 'pending',
+    result_date: (row.result_date as string) ?? null,
+    notes: (row.notes as string) ?? null,
+  }
+}
+
+// ── read functions ─────────────────────────────────────────────────────────
+
+export async function getItpDashboard(projectId: string): Promise<ItpDashboard> {
+  const admin = createAdminClient()
+
+  const [plansRes, activitiesRes, ncrsRes] = await Promise.all([
+    admin
+      .from('itp_plans')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('tenant_id', DEMO_TENANT)
+      .order('created_at', { ascending: false }),
+    admin
+      .from('itp_activities')
+      .select('*')
+      .eq('tenant_id', DEMO_TENANT)
+      .in(
+        'plan_id',
+        // subquery emulated: fetch plan ids first if needed — we'll filter client-side
+        [],
+      ),
+    admin
+      .from('ncrs')
+      .select('id, status, source')
+      .eq('project_id', projectId)
+      .eq('tenant_id', DEMO_TENANT),
+  ])
+
+  // Re-fetch activities with the correct plan IDs
+  const planIds = (plansRes.data ?? []).map((p: Record<string, unknown>) => p.id as string)
+  const activities: ItpActivity[] = planIds.length
+    ? ((await admin
+        .from('itp_activities')
+        .select('*')
+        .in('plan_id', planIds)
+        .order('seq', { ascending: true })).data ?? []).map(r => mapActivity(r as Record<string, unknown>))
+    : []
+
+  const plans = (plansRes.data ?? []).map(r => mapPlan(r as Record<string, unknown>, activities))
+
+  // KPIs
+  const ncrs = ncrsRes.data ?? []
+  const openNcrs = ncrs.filter((r: Record<string, unknown>) => r.status !== 'closed').length
+  // Use source='failed_inspection' as the "critical/major" proxy (most severe NCR origin)
+  const criticalNcrs = ncrs.filter(
+    (r: Record<string, unknown>) => r.status !== 'closed' && r.source === 'failed_inspection',
+  ).length
+
+  const allActivities = activities
+  const passed = allActivities.filter(a => a.status === 'passed' || a.status === 'waived').length
+  const resolved = allActivities.filter(a => a.status === 'passed' || a.status === 'waived' || a.status === 'failed').length
+  const passRatePct = resolved > 0 ? Math.round((passed / resolved) * 100) : 0
+
+  const holdPending = allActivities.filter(
+    a => a.inspection_type === 'HOLD' && a.status === 'pending',
+  ).length
+
+  const activePlans = plans.filter(p => p.status === 'active').length
+
+  const kpis: ItpKpis = {
+    active_plans: activePlans,
+    hold_points_pending: holdPending,
+    open_ncrs: openNcrs,
+    critical_or_major_ncrs: criticalNcrs,
+    pass_rate_pct: passRatePct,
+  }
+
+  return { kpis, plans }
+}
+
+export async function getItpPlan(planId: string): Promise<ItpPlan | null> {
+  const admin = createAdminClient()
+  const [planRes, actsRes] = await Promise.all([
+    admin.from('itp_plans').select('*').eq('id', planId).eq('tenant_id', DEMO_TENANT).maybeSingle(),
+    admin.from('itp_activities').select('*').eq('plan_id', planId).order('seq', { ascending: true }),
+  ])
+  if (!planRes.data) return null
+  const activities = (actsRes.data ?? []).map(r => mapActivity(r as Record<string, unknown>))
+  return mapPlan(planRes.data as Record<string, unknown>, activities)
+}
+
+// ── mutations ──────────────────────────────────────────────────────────────
+
+export async function createItpPlan(input: {
+  projectId: string
+  title: string
+  work_package?: string
+  discipline?: string
+  activities: Array<{
+    description: string
+    inspection_type: InspectionType
+    reference_doc?: string
+    responsible?: string
+  }>
+}): Promise<{ error?: string; id?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const admin = createAdminClient()
+
+  // Auto-number: ITP-001 style, scoped to project
+  const { count } = await admin
+    .from('itp_plans')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', input.projectId)
+    .eq('tenant_id', DEMO_TENANT)
+
+  const itp_no = `ITP-${String((count ?? 0) + 1).padStart(3, '0')}`
+
+  const { data: plan, error } = await admin
+    .from('itp_plans')
+    .insert({
+      project_id: input.projectId,
+      tenant_id: DEMO_TENANT,
+      itp_no,
+      title: input.title,
+      work_package: input.work_package ?? null,
+      discipline: input.discipline ?? null,
+      status: 'draft',
+    })
+    .select('id')
+    .single()
+
+  if (error || !plan) return { error: error?.message ?? 'Failed to create ITP plan' }
+
+  if (input.activities.length > 0) {
+    const rows = input.activities.map((a, i) => ({
+      plan_id: plan.id,
+      tenant_id: DEMO_TENANT,
+      seq: i + 1,
+      description: a.description,
+      inspection_type: a.inspection_type,
+      reference_doc: a.reference_doc ?? null,
+      responsible: a.responsible ?? null,
+      status: 'pending' as ActivityStatus,
+    }))
+    const { error: actErr } = await admin.from('itp_activities').insert(rows)
+    if (actErr) return { error: actErr.message }
+  }
+
+  return { id: plan.id }
+}
+
+export async function updateActivityResult(
+  activityId: string,
+  result: { status: ActivityStatus; notes?: string },
+): Promise<{ error?: string }> {
+  // HOLD points require approver-level role
+  const admin = createAdminClient()
+  const { data: act } = await admin
+    .from('itp_activities')
+    .select('inspection_type')
+    .eq('id', activityId)
+    .maybeSingle()
+
+  if (act?.inspection_type === 'HOLD') {
+    const gate = await requireRole([
+      'system_admin', 'tenant_admin', 'project_director',
+      'project_manager', 'hse_manager', 'commissioning_manager',
+    ])
+    if ('error' in gate) return gate
+  } else {
+    const gate = await requireWriter()
+    if ('error' in gate) return gate
+  }
+
+  const { error } = await admin
+    .from('itp_activities')
+    .update({
+      status: result.status,
+      notes: result.notes ?? null,
+      result_date: result.status !== 'pending' ? new Date().toISOString().slice(0, 10) : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', activityId)
+
+  return error ? { error: error.message } : {}
+}
+
+export async function activateItpPlan(planId: string): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('itp_plans')
+    .update({ status: 'active', updated_at: new Date().toISOString() })
+    .eq('id', planId)
+    .eq('tenant_id', DEMO_TENANT)
+  return error ? { error: error.message } : {}
+}
+
+export async function voidItpPlan(planId: string): Promise<{ error?: string }> {
+  const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director'])
+  if ('error' in gate) return gate
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('itp_plans')
+    .update({ status: 'void', updated_at: new Date().toISOString() })
+    .eq('id', planId)
+    .eq('tenant_id', DEMO_TENANT)
+  return error ? { error: error.message } : {}
+}
+
+export async function seedItpDemoData(projectId: string): Promise<{ error?: string; seeded?: boolean }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
+
+  const admin = createAdminClient()
+  const { count } = await admin
+    .from('itp_plans')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+    .eq('tenant_id', DEMO_TENANT)
+  if ((count ?? 0) > 0) return { seeded: false }
+
+  const plans = [
+    {
+      itp_no: 'ITP-001', title: 'Pile Foundation Inspection', work_package: 'Civil',
+      discipline: 'Structural', status: 'active' as PlanStatus,
+      activities: [
+        { seq: 1, description: 'Pile boring location survey', inspection_type: 'REVIEW' as InspectionType, responsible: 'Civil Engineer', reference_doc: 'DWG-C-001', status: 'passed' as ActivityStatus, result_date: '2026-06-15' },
+        { seq: 2, description: 'Steel reinforcement placement', inspection_type: 'WITNESS' as InspectionType, responsible: 'Site Supervisor', reference_doc: null, status: 'passed' as ActivityStatus, result_date: '2026-06-18' },
+        { seq: 3, description: 'Concrete pour — hold for sign-off', inspection_type: 'HOLD' as InspectionType, responsible: 'Project Manager', reference_doc: 'SPEC-STR-02', status: 'pending' as ActivityStatus, result_date: null },
+        { seq: 4, description: 'Post-pour cube test results', inspection_type: 'REVIEW' as InspectionType, responsible: 'QA Engineer', reference_doc: null, status: 'pending' as ActivityStatus, result_date: null },
+      ],
+    },
+    {
+      itp_no: 'ITP-002', title: 'HV Cable Installation', work_package: 'Electrical',
+      discipline: 'Electrical', status: 'active' as PlanStatus,
+      activities: [
+        { seq: 1, description: 'Cable drum receipt inspection', inspection_type: 'SURVEILLANCE' as InspectionType, responsible: 'Electrical Engineer', reference_doc: 'SPEC-EL-10', status: 'passed' as ActivityStatus, result_date: '2026-07-01' },
+        { seq: 2, description: 'Trench depth & bedding', inspection_type: 'WITNESS' as InspectionType, responsible: 'Site Supervisor', reference_doc: null, status: 'failed' as ActivityStatus, result_date: '2026-07-05' },
+        { seq: 3, description: 'Cable pull & termination', inspection_type: 'HOLD' as InspectionType, responsible: 'Commissioning Manager', reference_doc: 'SPEC-EL-12', status: 'pending' as ActivityStatus, result_date: null },
+      ],
+    },
+    {
+      itp_no: 'ITP-003', title: 'BESS Module Installation', work_package: 'Mechanical',
+      discipline: 'BESS', status: 'draft' as PlanStatus,
+      activities: [
+        { seq: 1, description: 'Module unboxing visual inspection', inspection_type: 'SURVEILLANCE' as InspectionType, responsible: 'OEM Rep', reference_doc: 'OEM-ITP-001', status: 'pending' as ActivityStatus, result_date: null },
+        { seq: 2, description: 'Torque check on bus-bar connections', inspection_type: 'WITNESS' as InspectionType, responsible: 'Commissioning Manager', reference_doc: null, status: 'pending' as ActivityStatus, result_date: null },
+        { seq: 3, description: 'Cell voltage pre-charge hold', inspection_type: 'HOLD' as InspectionType, responsible: 'Project Director', reference_doc: 'SPEC-BESS-07', status: 'pending' as ActivityStatus, result_date: null },
+        { seq: 4, description: 'Thermal imaging sign-off', inspection_type: 'REVIEW' as InspectionType, responsible: 'QA Engineer', reference_doc: null, status: 'pending' as ActivityStatus, result_date: null },
+      ],
+    },
+  ]
+
+  for (const p of plans) {
+    const { data: plan } = await admin
+      .from('itp_plans')
+      .insert({ project_id: projectId, tenant_id: DEMO_TENANT, itp_no: p.itp_no, title: p.title, work_package: p.work_package, discipline: p.discipline, status: p.status })
+      .select('id')
+      .single()
+    if (!plan) continue
+    await admin.from('itp_activities').insert(
+      p.activities.map(a => ({
+        plan_id: plan.id, tenant_id: DEMO_TENANT,
+        seq: a.seq, description: a.description, inspection_type: a.inspection_type,
+        reference_doc: a.reference_doc ?? null, responsible: a.responsible ?? null,
+        status: a.status, result_date: a.result_date ?? null,
+      }))
+    )
+  }
+
+  return { seeded: true }
+}
