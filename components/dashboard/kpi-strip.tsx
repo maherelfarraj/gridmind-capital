@@ -3,6 +3,8 @@
 import * as React from 'react'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDigitStyle } from '@/lib/session-context'
+import { toLocaleDigits } from '@/lib/digits'
 import type { KpiData } from './dashboard-data'
 
 // ─────────────────────────────────────────────────────────────
@@ -30,6 +32,8 @@ interface KpiCardProps {
 }
 
 function KpiCard({ data, loading }: KpiCardProps) {
+  const digitStyle = useDigitStyle()
+
   if (loading) return <KpiCardSkeleton />
 
   const TrendIcon =
@@ -40,6 +44,12 @@ function KpiCard({ data, loading }: KpiCardProps) {
     data.trend === 'up' ? 'text-[#22c55e]' :
     data.trend === 'down' ? 'text-[#f97316]' : 'text-muted-foreground'
 
+  // KPI values arrive pre-formatted with units (e.g. "$4.82B", "6,240 MW").
+  // Shape the digits to the user's preference without disturbing units.
+  const value      = toLocaleDigits(data.value, digitStyle)
+  const subValue   = data.subValue ? toLocaleDigits(data.subValue, digitStyle) : undefined
+  const trendLabel = toLocaleDigits(data.trendLabel, digitStyle)
+
   return (
     <article
       className={cn(
@@ -47,7 +57,7 @@ function KpiCard({ data, loading }: KpiCardProps) {
         'transition-shadow duration-200 hover:shadow-md hover:shadow-black/10',
         'dark:hover:shadow-black/30 group',
       )}
-      aria-label={`${data.label}: ${data.value}`}
+      aria-label={`${data.label}: ${value}`}
     >
       {/* Accent border on the leading edge (left in LTR, right in RTL) */}
       <span
@@ -61,25 +71,26 @@ function KpiCard({ data, loading }: KpiCardProps) {
         {data.label}
       </p>
 
-      {/* Primary value */}
+      {/* Primary value — digits shaped, kept LTR so units/symbols stay ordered */}
       <p
         className="text-2xl font-bold text-foreground leading-none tabular-nums"
         aria-live="polite"
+        dir="ltr"
       >
-        {data.value}
+        {value}
       </p>
 
       {/* Sub-value */}
-      {data.subValue && (
+      {subValue && (
         <p className="text-xs text-muted-foreground truncate">
-          {data.subValue}
+          {subValue}
         </p>
       )}
 
       {/* Trend row */}
       <div className={cn('mt-1 flex items-center gap-1', trendColor)}>
         <TrendIcon className="size-3 shrink-0" aria-hidden="true" />
-        <span className="text-[11px] font-medium leading-none">{data.trendLabel}</span>
+        <span className="text-[11px] font-medium leading-none">{trendLabel}</span>
       </div>
     </article>
   )
