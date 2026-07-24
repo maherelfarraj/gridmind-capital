@@ -462,6 +462,11 @@ function QuickActionsCard({ onAction, projectId }: { onAction?: (label: string) 
           bgColor: 'bg-blue-100 dark:bg-blue-900/30', count: 'Milestones & LDs',
           ariaLabel: 'Open contracts register', href: `/projects/${projectId}/contracts`,
         },
+        {
+          label: 'Energy', icon: Zap, iconColor: '#0d9488',
+          bgColor: 'bg-teal-100 dark:bg-teal-900/30', count: 'Production & yield',
+          ariaLabel: 'Open energy performance dashboard', href: `/projects/${projectId}/energy`,
+        },
       ]
     : QUICK_ACTIONS
   return (

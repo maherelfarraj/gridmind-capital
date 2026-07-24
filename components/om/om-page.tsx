@@ -6,7 +6,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Wrench, AlertTriangle, CheckCircle2, Clock, RefreshCw } from 'lucide-react'
+import { Wrench, AlertTriangle, CheckCircle2, Clock, RefreshCw, Zap, ArrowRight } from 'lucide-react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -259,6 +260,29 @@ export function OmPage() {
             </table>
           )}
         </div>
+      </div>
+
+      {/* Energy performance link */}
+      <div className="rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-900/10 px-5 py-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="size-9 rounded-lg bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center shrink-0">
+            <Zap className="size-4 text-teal-600 dark:text-teal-400" aria-hidden />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Energy Performance</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Production logs, yield vs P50/P90, curtailment — available per project after COD (G7).
+            </p>
+          </div>
+        </div>
+        {data?.assets && data.assets.length > 0 && (
+          <Link
+            href={`/projects/${data.assets[0].project_id ?? ''}/energy`}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-teal-300 dark:border-teal-700 bg-background px-3 py-1.5 text-xs font-medium text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
+          >
+            Open Energy <ArrowRight className="size-3" aria-hidden />
+          </Link>
+        )}
       </div>
     </div>
   )
