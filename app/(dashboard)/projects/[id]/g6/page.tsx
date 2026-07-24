@@ -74,7 +74,7 @@ export default function G6Page() {
     { id: 'failures',      label: 'Failures',           count: MOCK_FAILURES.filter((f) => f.status !== 'closed').length },
     { id: 'training',         label: 'Training Records',   count: MOCK_TRAINING.length },
     { id: 'documentation',    label: 'Documentation',      count: MOCK_COMM_DOCS.length },
-    { id: 'grid-compliance',  label: 'Grid Compliance' },
+    { id: 'grid-compliance',  label: 'Grid Compliance',    count: g6Data?.gridCompliance.total || undefined },
   ]
 
   return (

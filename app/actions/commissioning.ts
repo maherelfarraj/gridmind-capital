@@ -118,9 +118,24 @@ export interface G6TestPackage {
   actual_start: string | null; actual_end: string | null
 }
 
+export interface G6GridComplianceTest {
+  id: string; test_name: string; standard: string | null
+  test_date: string | null; result: string | null; certificate_ref: string | null
+}
+
+export interface G6GridComplianceSummary {
+  tests:     G6GridComplianceTest[]
+  total:     number
+  passed:    number
+  failed:    number
+  scheduled: number
+  pass_rate: number
+}
+
 export interface G6DataResult {
-  testPackages: G6TestPackage[]
-  gateFormData: Record<string, unknown> | null
+  testPackages:   G6TestPackage[]
+  gateFormData:   Record<string, unknown> | null
+  gridCompliance: G6GridComplianceSummary
 }
 
 const COMM_STATUS_REMAP: Record<string, string> = {
@@ -135,7 +150,7 @@ export async function getG6Data(projectId: string): Promise<G6DataResult> {
   const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
-  const [testRes, gateRes] = await Promise.all([
+  const [testRes, gateRes, complianceRes] = await Promise.all([
     sb.from('commissioning_tests')
       .select('id, test_number, description, system, test_type, status, scheduled_date, completed_date, lead_engineer, reference_doc, defects_raised, witness_required')
       .eq('tenant_id', tenantId)
@@ -147,6 +162,13 @@ export async function getG6Data(projectId: string): Promise<G6DataResult> {
       .eq('project_id', projectId)
       .eq('gate_number', 6)
       .maybeSingle(),
+    // Grid compliance tests surface in the G6 gate data so commissioning
+    // readiness reflects grid-code test status. Same shape as getGridCompliance.
+    sb.from('grid_compliance_tests')
+      .select('id, test_name, standard, test_date, result, certificate_ref')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .order('test_date', { ascending: true, nullsFirst: false }),
   ])
 
   const testPackages: G6TestPackage[] = (testRes.data ?? []).map((r) => {
@@ -183,9 +205,29 @@ export async function getG6Data(projectId: string): Promise<G6DataResult> {
     }
   })
 
+  const complianceTests: G6GridComplianceTest[] = (complianceRes.data ?? []).map((r) => ({
+    id:              r.id             as string,
+    test_name:       r.test_name       as string,
+    standard:        r.standard        as string | null,
+    test_date:       r.test_date       as string | null,
+    result:          r.result          as string | null,
+    certificate_ref: r.certificate_ref as string | null,
+  }))
+  const gcPassed    = complianceTests.filter(t => t.result === 'passed').length
+  const gcFailed    = complianceTests.filter(t => t.result === 'failed').length
+  const gcScheduled = complianceTests.filter(t => t.result === 'scheduled' || t.result == null).length
+
   return {
     testPackages,
     gateFormData: (gateRes.data?.form_data as Record<string, unknown>) ?? null,
+    gridCompliance: {
+      tests:     complianceTests,
+      total:     complianceTests.length,
+      passed:    gcPassed,
+      failed:    gcFailed,
+      scheduled: gcScheduled,
+      pass_rate: (gcPassed + gcFailed) > 0 ? Math.round((gcPassed / (gcPassed + gcFailed)) * 100) : 0,
+    },
   }
 }
 
