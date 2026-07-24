@@ -6,9 +6,9 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  FileText, Plus, ChevronRight, X, Loader2, AlertTriangle,
+  Plus, ChevronRight, X, Loader2, AlertTriangle,
   CheckCircle2, Clock, DollarSign, Gavel, Trash2, ArrowLeft,
-  ShieldCheck, Shield, ShieldAlert, ShieldOff, BadgeDollarSign,
+  ShieldCheck, Shield, ShieldAlert, BadgeDollarSign,
   RefreshCw, XCircle, LinkIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -53,23 +53,19 @@ function fmtDate(iso: string | null): string {
 // ─── Type metadata ────────────────────────────────────────────────────────────
 
 const CONTRACT_TYPE_LABELS: Record<ContractType, string> = {
-  epc:              'EPC',
-  lump_sum:         'Lump Sum',
-  cost_reimbursable:'Cost Reimb.',
-  framework:        'Framework',
-  supply:           'Supply',
-  service:          'Service',
-  other:            'Other',
+  epc:         'EPC',
+  subcontract: 'Subcontract',
+  supply:      'Supply',
+  service:     'Service',
+  consultancy: 'Consultancy',
 }
 
 const CONTRACT_TYPE_COLORS: Record<ContractType, string> = {
-  epc:              'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  lump_sum:         'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-  cost_reimbursable:'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  framework:        'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
-  supply:           'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
-  service:          'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400',
-  other:            'bg-muted text-muted-foreground',
+  epc:         'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  subcontract: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+  supply:      'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+  service:     'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400',
+  consultancy: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
 }
 
 const CONTRACT_STATUS_COLORS: Record<ContractStatus, string> = {
@@ -88,13 +84,11 @@ const MILESTONE_STATUS_COLORS: Record<MilestoneStatus, string> = {
 }
 
 const CONTRACT_TYPE_OPTIONS = [
-  { value: 'epc',              label: 'EPC' },
-  { value: 'lump_sum',         label: 'Lump Sum' },
-  { value: 'cost_reimbursable',label: 'Cost Reimbursable' },
-  { value: 'framework',        label: 'Framework' },
-  { value: 'supply',           label: 'Supply' },
-  { value: 'service',          label: 'Service' },
-  { value: 'other',            label: 'Other' },
+  { value: 'epc',         label: 'EPC' },
+  { value: 'subcontract', label: 'Subcontract' },
+  { value: 'supply',      label: 'Supply' },
+  { value: 'service',     label: 'Service' },
+  { value: 'consultancy', label: 'Consultancy' },
 ]
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
@@ -336,7 +330,7 @@ const milestoneSchema = z.object({
 const newContractSchema = z.object({
   title:           z.string().min(3, 'Title required (min 3 chars)'),
   party:           z.string().optional(),
-  type:            z.enum(['epc','lump_sum','cost_reimbursable','framework','supply','service','other']),
+  type:            z.enum(['epc','subcontract','supply','service','consultancy']),
   value:           z.coerce.number().min(1, 'Value must be > 0'),
   currency:        z.string().optional(),
   signed_date:     z.string().optional(),
@@ -546,13 +540,11 @@ function NewContractDialog({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const SECURITY_TYPE_META: Record<SecurityType, { label: string; icon: React.ElementType; color: string; bg: string }> = {
-  performance_bond:       { label: 'Performance Bond',       icon: Shield,           color: '#1d4ed8', bg: 'bg-blue-100 dark:bg-blue-900/30'    },
-  advance_payment_bond:   { label: 'Advance Payment Bond',   icon: BadgeDollarSign,  color: '#0891b2', bg: 'bg-cyan-100 dark:bg-cyan-900/30'    },
-  retention_bond:         { label: 'Retention Bond',         icon: ShieldCheck,      color: '#0f766e', bg: 'bg-teal-100 dark:bg-teal-900/30'    },
-  bid_bond:               { label: 'Bid Bond',               icon: Gavel,            color: '#7c3aed', bg: 'bg-violet-100 dark:bg-violet-900/30' },
-  warranty_bond:          { label: 'Warranty Bond',          icon: ShieldAlert,      color: '#d97706', bg: 'bg-amber-100 dark:bg-amber-900/30'  },
-  letter_of_credit:       { label: 'Letter of Credit',       icon: FileText,         color: '#be185d', bg: 'bg-pink-100 dark:bg-pink-900/30'    },
-  other:                  { label: 'Other',                  icon: ShieldOff,        color: '#64748b', bg: 'bg-slate-100 dark:bg-slate-800/50'  },
+  performance_bond:          { label: 'Performance Bond',          icon: Shield,          color: '#1d4ed8', bg: 'bg-blue-100 dark:bg-blue-900/30'   },
+  advance_payment_bond:      { label: 'Advance Payment Bond',      icon: BadgeDollarSign, color: '#0891b2', bg: 'bg-cyan-100 dark:bg-cyan-900/30'   },
+  parent_company_guarantee:  { label: 'Parent Company Guarantee',  icon: Gavel,           color: '#7c3aed', bg: 'bg-violet-100 dark:bg-violet-900/30' },
+  retention_bond:            { label: 'Retention Bond',            icon: ShieldCheck,     color: '#0f766e', bg: 'bg-teal-100 dark:bg-teal-900/30'   },
+  insurance:                 { label: 'Insurance',                 icon: ShieldAlert,     color: '#d97706', bg: 'bg-amber-100 dark:bg-amber-900/30' },
 }
 
 const SECURITY_STATUS_META: Record<SecurityStatus, { label: string; color: string }> = {
@@ -563,13 +555,11 @@ const SECURITY_STATUS_META: Record<SecurityStatus, { label: string; color: strin
 }
 
 const SECURITY_TYPE_OPTIONS = [
-  { value: 'performance_bond',      label: 'Performance Bond'      },
-  { value: 'advance_payment_bond',  label: 'Advance Payment Bond'  },
-  { value: 'retention_bond',        label: 'Retention Bond'        },
-  { value: 'bid_bond',              label: 'Bid Bond'              },
-  { value: 'warranty_bond',         label: 'Warranty Bond'         },
-  { value: 'letter_of_credit',      label: 'Letter of Credit'      },
-  { value: 'other',                 label: 'Other'                 },
+  { value: 'performance_bond',         label: 'Performance Bond'         },
+  { value: 'advance_payment_bond',     label: 'Advance Payment Bond'     },
+  { value: 'parent_company_guarantee', label: 'Parent Company Guarantee' },
+  { value: 'retention_bond',           label: 'Retention Bond'           },
+  { value: 'insurance',                label: 'Insurance'                },
 ]
 
 /** Green >90d, amber ≤90d, red ≤30d, black "EXPIRED" */
@@ -742,7 +732,7 @@ function SecurityDetail({
 // ─── New security dialog ──────────────────────────────────────────────────────
 
 const newSecuritySchema = z.object({
-  type:        z.enum(['performance_bond','advance_payment_bond','retention_bond','bid_bond','warranty_bond','letter_of_credit','other']),
+  type:        z.enum(['performance_bond','advance_payment_bond','parent_company_guarantee','retention_bond','insurance']),
   issuer:      z.string().optional(),
   reference:   z.string().optional(),
   amount:      z.coerce.number().min(1, 'Amount must be > 0'),
