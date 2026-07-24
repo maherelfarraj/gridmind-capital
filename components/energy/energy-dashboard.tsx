@@ -12,6 +12,8 @@ import { z } from 'zod'
 import {
   Zap, TrendingUp, Wind, AlertTriangle, Plus, Upload,
   RefreshCw, Loader2, FileText, X, CheckCircle2, Info,
+  Battery, Activity, ShieldCheck, CircleDot, Calendar,
+  BarChart2, Edit2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button }   from '@/components/ui/button'
@@ -24,7 +26,12 @@ import {
 } from '@/components/ui/dialog'
 import {
   getEnergyDashboard, logProduction, importProductionCsv,
+  getBessDashboard, logBessMetrics,
+  getGridCompliance, addComplianceTest, updateComplianceResult,
   type EnergyDashboard, type ProductionRow,
+  type BessDashboard, type BessRow,
+  type GridComplianceDashboard, type GridComplianceTest,
+  type ComplianceResult, type ComplianceCategory,
 } from '@/app/actions/energy'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -477,6 +484,735 @@ function CurtailmentLog({ rows }: { rows: ProductionRow[] }) {
   )
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// BESS SECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Cycle consumption colour thresholds
+function cycleColor(pct: number): 'green' | 'amber' | 'red' {
+  if (pct < 60)  return 'green'
+  if (pct <= 85) return 'amber'
+  return 'red'
+}
+
+const CYCLE_BAR_COLORS: Record<string, string> = {
+  green: 'bg-emerald-500',
+  amber: 'bg-amber-400',
+  red:   'bg-red-500',
+}
+
+// ─── BESS stat cards ──────────────────────────────────────────────────────────
+
+function BessStatCards({ data }: { data: BessDashboard }) {
+  const latest = data.latest
+  const w      = data.warranty
+  const pct    = w.pct_consumed
+  const col    = cycleColor(pct)
+
+  const accentMap: Record<string, 'green' | 'amber' | 'red' | 'teal' | 'neutral'> = {
+    green: 'green', amber: 'amber', red: 'red',
+  }
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* SOC */}
+      <div className="rounded-xl border border-border bg-card px-5 py-4 flex items-start gap-4">
+        <div className="size-9 rounded-lg bg-muted/60 flex items-center justify-center shrink-0">
+          <Battery className="size-4 text-muted-foreground" aria-hidden />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Latest SOC</p>
+          <p className="text-2xl font-bold tabular-nums leading-tight mt-0.5 text-foreground">
+            {latest?.soc_pct != null ? fmtPct(latest.soc_pct) : '—'}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">State of charge</p>
+        </div>
+      </div>
+
+      {/* Cycles used — with progress bar */}
+      <div className="rounded-xl border border-border bg-card px-5 py-4 flex flex-col gap-2">
+        <div className="flex items-start gap-3">
+          <div className="size-9 rounded-lg bg-muted/60 flex items-center justify-center shrink-0">
+            <Activity className="size-4 text-muted-foreground" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cycles used</p>
+            <p className={cn('text-2xl font-bold tabular-nums leading-tight mt-0.5', {
+              'text-emerald-600 dark:text-emerald-400': col === 'green',
+              'text-amber-600  dark:text-amber-400':   col === 'amber',
+              'text-red-600    dark:text-red-400':     col === 'red',
+            })}>
+              {w.cycles_used > 0 ? Math.round(w.cycles_used).toLocaleString() : '—'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {w.warranty_cycle_limit > 0 ? `of ${Math.round(w.warranty_cycle_limit).toLocaleString()} limit` : 'No limit set'}
+            </p>
+          </div>
+        </div>
+        {w.warranty_cycle_limit > 0 && (
+          <div className="space-y-1">
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className={cn('h-full rounded-full transition-all', CYCLE_BAR_COLORS[col])}
+                style={{ width: `${Math.min(pct, 100).toFixed(1)}%` }}
+              />
+            </div>
+            <p className="text-[11px] tabular-nums text-muted-foreground">{pct.toFixed(1)}% consumed</p>
+          </div>
+        )}
+      </div>
+
+      {/* SOH */}
+      <div className="rounded-xl border border-border bg-card px-5 py-4 flex items-start gap-4">
+        <div className="size-9 rounded-lg bg-muted/60 flex items-center justify-center shrink-0">
+          <ShieldCheck className="size-4 text-muted-foreground" aria-hidden />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Latest SOH</p>
+          <p className={cn('text-2xl font-bold tabular-nums leading-tight mt-0.5', {
+            'text-emerald-600 dark:text-emerald-400': (latest?.soh_pct ?? 100) >= 90,
+            'text-amber-600  dark:text-amber-400':    (latest?.soh_pct ?? 100) >= 80 && (latest?.soh_pct ?? 100) < 90,
+            'text-red-600    dark:text-red-400':      (latest?.soh_pct ?? 100) < 80,
+          })}>
+            {latest?.soh_pct != null ? fmtPct(latest.soh_pct) : '—'}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">State of health</p>
+        </div>
+      </div>
+
+      {/* Throughput */}
+      <StatCard
+        label="Throughput total"
+        value={fmt1(data.throughput_total)}
+        unit="MWh"
+        sub="90-day window"
+        icon={BarChart2}
+        accent="teal"
+      />
+    </div>
+  )
+}
+
+// ─── Warranty alert ───────────────────────────────────────────────────────────
+
+function WarrantyAlert({ data }: { data: BessDashboard }) {
+  const w = data.warranty
+  if (!w.projected_limit_date || !w.warranty_cycle_limit) return null
+
+  const daysToLimit = Math.floor(
+    (new Date(w.projected_limit_date).getTime() - Date.now()) / 86_400_000,
+  )
+  if (daysToLimit > 180) return null
+
+  return (
+    <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 px-5 py-4 flex items-start gap-3">
+      <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" aria-hidden />
+      <div>
+        <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+          Warranty cycle limit projected in {daysToLimit}d
+        </p>
+        <p className="text-xs text-amber-700/80 dark:text-amber-400/70 mt-0.5">
+          At the current cycling rate, the warranty limit of{' '}
+          {Math.round(w.warranty_cycle_limit).toLocaleString()} cycles will be reached around{' '}
+          {new Date(w.projected_limit_date + 'T00:00:00Z').toLocaleDateString('en-GB', {
+            day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
+          })}. Review dispatch strategy and notify the asset manager.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── BESS charts ──────────────────────────────────────────────────────────────
+
+function BessCharts({ history }: { history: BessRow[] }) {
+  const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date))
+
+  const sohData    = sorted.filter(r => r.soh_pct != null).map(r => ({ date: r.date, soh: r.soh_pct }))
+  const cyclesData = sorted.filter(r => r.cycles_cumulative != null).map((r, i, arr) => ({
+    date:   r.date,
+    cycles: i === 0 ? 0 : Math.max(0, (r.cycles_cumulative ?? 0) - (arr[i - 1].cycles_cumulative ?? 0)),
+  }))
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* SOH trend */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <p className="text-sm font-semibold text-foreground mb-1">SOH trend (90 days)</p>
+        <p className="text-xs text-muted-foreground mb-4">State of health degradation</p>
+        {sohData.length > 1 ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={sohData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDate} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={13} tickLine={false} axisLine={false} />
+              <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} tickLine={false} axisLine={false} width={36} tickFormatter={v => `${v}%`} />
+              <Tooltip content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null
+                return (
+                  <div className="rounded-lg border border-border bg-popover shadow-md px-3 py-2 text-xs">
+                    <p className="font-semibold mb-1">{label ? fmtDateFull(String(label)) : ''}</p>
+                    <p className="text-teal-600">SOH: {Number(payload[0]?.value).toFixed(1)}%</p>
+                  </div>
+                )
+              }} />
+              <Line dataKey="soh" name="SOH %" type="monotone" stroke="#0d9488" strokeWidth={2} dot={false} connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-48 flex items-center justify-center text-sm text-muted-foreground">Not enough data points.</div>
+        )}
+      </div>
+
+      {/* Daily cycles bar */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <p className="text-sm font-semibold text-foreground mb-1">Daily cycles (90 days)</p>
+        <p className="text-xs text-muted-foreground mb-4">Incremental cycles per day</p>
+        {cyclesData.filter(d => d.cycles > 0).length > 0 ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={cyclesData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDate} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={13} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} tickLine={false} axisLine={false} width={28} />
+              <Tooltip content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null
+                return (
+                  <div className="rounded-lg border border-border bg-popover shadow-md px-3 py-2 text-xs">
+                    <p className="font-semibold mb-1">{label ? fmtDateFull(String(label)) : ''}</p>
+                    <p className="text-blue-600">Cycles: {Number(payload[0]?.value).toFixed(2)}</p>
+                  </div>
+                )
+              }} />
+              <Bar dataKey="cycles" name="Daily cycles" fill="#3b82f6" radius={[2, 2, 0, 0]} maxBarSize={20} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-48 flex items-center justify-center text-sm text-muted-foreground">No cycle data available.</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Log BESS metrics dialog ──────────────────────────────────────────────────
+
+const bessLogSchema = z.object({
+  date:                 z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
+  soc_pct:              z.coerce.number().min(0).max(100).optional(),
+  cycles_cumulative:    z.coerce.number().min(0).optional(),
+  throughput_mwh:       z.coerce.number().min(0).optional(),
+  soh_pct:              z.coerce.number().min(0).max(100).optional(),
+  warranty_cycle_limit: z.coerce.number().min(0).optional(),
+})
+type BessLogValues = z.infer<typeof bessLogSchema>
+
+function LogBessDialog({ open, onClose, projectId }: { open: boolean; onClose: () => void; projectId: string }) {
+  const { toast } = useToast()
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<BessLogValues>({
+    resolver: zodResolver(bessLogSchema),
+    defaultValues: { date: new Date().toISOString().slice(0, 10) },
+  })
+
+  async function onSubmit(v: BessLogValues) {
+    const res = await logBessMetrics(projectId, v.date, {
+      soc_pct:              v.soc_pct              ?? null,
+      cycles_cumulative:    v.cycles_cumulative    ?? null,
+      throughput_mwh:       v.throughput_mwh       ?? null,
+      soh_pct:              v.soh_pct              ?? null,
+      warranty_cycle_limit: v.warranty_cycle_limit ?? null,
+    })
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Logged', description: `BESS metrics for ${v.date} saved.`, variant: 'success' })
+    reset()
+    onClose()
+    globalMutate(`bess-dashboard-${projectId}`)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Log BESS metrics</DialogTitle>
+          <DialogDescription>Record daily battery state, cycles, and health data.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="bl-date">Date</Label>
+            <Input id="bl-date" type="date" {...register('date')} />
+            {errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="bl-soc">SOC (%)</Label>
+              <Input id="bl-soc" type="number" step="0.1" min="0" max="100" {...register('soc_pct')} placeholder="—" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bl-soh">SOH (%)</Label>
+              <Input id="bl-soh" type="number" step="0.01" min="0" max="100" {...register('soh_pct')} placeholder="—" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="bl-cycles">Cumulative cycles</Label>
+              <Input id="bl-cycles" type="number" step="0.01" min="0" {...register('cycles_cumulative')} placeholder="—" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bl-tput">Throughput (MWh)</Label>
+              <Input id="bl-tput" type="number" step="0.01" min="0" {...register('throughput_mwh')} placeholder="—" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bl-limit">Warranty cycle limit</Label>
+            <Input id="bl-limit" type="number" step="1" min="0" {...register('warranty_cycle_limit')} placeholder="e.g. 4000" />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { reset(); onClose() }}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="size-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── BESS section ─────────────────────────────────────────────────────────────
+
+export function BessSection({ projectId }: { projectId: string }) {
+  const [logOpen, setLogOpen] = React.useState(false)
+
+  const { data, isLoading, mutate } = useSWR<BessDashboard>(
+    `bess-dashboard-${projectId}`,
+    () => getBessDashboard(projectId),
+  )
+
+  const isLive = (data?.history.length ?? 0) > 0
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <Battery className="size-4 text-blue-500" aria-hidden />
+            BESS Performance
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Battery state, cycling, warranty tracking</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <LiveBadge live={isLive} />
+          <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading} aria-label="Refresh BESS">
+            <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} aria-hidden />
+          </Button>
+          <Button size="sm" onClick={() => setLogOpen(true)}>
+            <Plus className="size-3.5 mr-1.5" aria-hidden />
+            Log BESS
+          </Button>
+        </div>
+      </div>
+
+      {/* Warranty alert */}
+      {data && <WarrantyAlert data={data} />}
+
+      {/* Loading */}
+      {isLoading && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => <div key={i} className="h-24 rounded-xl bg-muted/40 animate-pulse" />)}
+          </div>
+          <div className="h-48 rounded-xl bg-muted/40 animate-pulse" />
+        </div>
+      )}
+
+      {/* No data */}
+      {!isLoading && !isLive && (
+        <div className="rounded-xl border border-dashed border-border bg-muted/10 py-10 text-center">
+          <Battery className="size-8 text-muted-foreground/30 mx-auto mb-3" aria-hidden />
+          <p className="text-sm font-semibold text-muted-foreground">No BESS data logged yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-1 max-w-xs mx-auto">
+            Log daily SOC, SOH, and cycles to track battery health and warranty consumption.
+          </p>
+        </div>
+      )}
+
+      {/* Stats + charts */}
+      {!isLoading && isLive && data && (
+        <>
+          <BessStatCards data={data} />
+          <BessCharts history={data.history} />
+        </>
+      )}
+
+      <LogBessDialog open={logOpen} onClose={() => setLogOpen(false)} projectId={projectId} />
+    </div>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GRID COMPLIANCE SECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const RESULT_META: Record<string, { label: string; color: string }> = {
+  pass:             { label: 'Passed',           color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  fail:             { label: 'Failed',            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'               },
+  conditional_pass: { label: 'Conditional Pass',  color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'       },
+  scheduled:        { label: 'Scheduled',         color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'      },
+}
+
+const CATEGORY_OPTIONS: { value: ComplianceCategory; label: string }[] = [
+  { value: 'freq_response',      label: 'Frequency Response'     },
+  { value: 'voltage_ride_through', label: 'Voltage Ride-Through' },
+  { value: 'power_factor',       label: 'Power Factor'           },
+  { value: 'ramp_rate',          label: 'Ramp Rate'              },
+  { value: 'anti_islanding',     label: 'Anti-Islanding'         },
+  { value: 'scada_comms',        label: 'SCADA Communications'   },
+  { value: 'protection',         label: 'Protection'             },
+  { value: 'other',              label: 'Other'                  },
+]
+
+function resultMeta(r: ComplianceResult, completedDate: string | null) {
+  if (r === 'pass' || r === 'conditional_pass' || r === 'fail') return RESULT_META[r]
+  if (!completedDate) return RESULT_META['scheduled']
+  return RESULT_META['scheduled']
+}
+
+// ─── Add test dialog ──────────────────────────────────────────────────────────
+
+const addTestSchema = z.object({
+  category:       z.string(),
+  test_name:      z.string().min(3, 'Test name required'),
+  scheduled_date: z.string().optional(),
+  notes:          z.string().optional(),
+})
+type AddTestValues = z.infer<typeof addTestSchema>
+
+function AddTestDialog({ open, onClose, projectId, onRefresh }: {
+  open: boolean; onClose: () => void; projectId: string; onRefresh: () => void
+}) {
+  const { toast } = useToast()
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<AddTestValues>({
+    resolver: zodResolver(addTestSchema),
+    defaultValues: { category: 'freq_response' },
+  })
+
+  async function onSubmit(v: AddTestValues) {
+    const res = await addComplianceTest(projectId, {
+      category:       v.category as ComplianceCategory,
+      test_name:      v.test_name,
+      scheduled_date: v.scheduled_date || null,
+      notes:          v.notes          || null,
+    })
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Test added', description: 'Compliance test scheduled.', variant: 'success' })
+    reset()
+    onClose()
+    onRefresh()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add compliance test</DialogTitle>
+          <DialogDescription>Schedule a grid code or standard compliance test.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label>Category</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {CATEGORY_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setValue('category', opt.value)}
+                  className={cn(
+                    'px-3 py-2 rounded-lg border text-xs font-medium text-left transition-colors',
+                    watch('category') === opt.value
+                      ? 'border-primary bg-primary/5 text-primary'
+                      : 'border-border text-muted-foreground hover:border-primary/50',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="at-name">Test name <span className="text-destructive">*</span></Label>
+            <Input id="at-name" {...register('test_name')} placeholder="e.g. LFSM-O frequency response" />
+            {errors.test_name && <p className="text-xs text-destructive">{errors.test_name.message}</p>}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="at-date">Scheduled date</Label>
+            <Input id="at-date" type="date" {...register('scheduled_date')} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="at-notes">Notes</Label>
+            <Input id="at-notes" {...register('notes')} placeholder="Optional notes / standard reference" />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { reset(); onClose() }}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="size-4 mr-2 animate-spin" />}
+              Schedule test
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Update result dialog ─────────────────────────────────────────────────────
+
+const updateResultSchema = z.object({
+  result:          z.enum(['pass', 'fail', 'conditional_pass']),
+  certificate_ref: z.string().optional(),
+})
+type UpdateResultValues = z.infer<typeof updateResultSchema>
+
+function UpdateResultDialog({ test, open, onClose, onRefresh }: {
+  test: GridComplianceTest | null; open: boolean; onClose: () => void; onRefresh: () => void
+}) {
+  const { toast } = useToast()
+  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm<UpdateResultValues>({
+    resolver: zodResolver(updateResultSchema),
+    defaultValues: { result: 'pass' },
+  })
+
+  async function onSubmit(v: UpdateResultValues) {
+    if (!test) return
+    const res = await updateComplianceResult(test.id, v.result, v.certificate_ref || null)
+    if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
+    toast({ title: 'Updated', description: 'Test result recorded.', variant: 'success' })
+    reset()
+    onClose()
+    onRefresh()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Record result</DialogTitle>
+          <DialogDescription>{test?.test_name}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-1">
+          <div className="flex gap-2">
+            {(['pass', 'conditional_pass', 'fail'] as const).map(r => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setValue('result', r)}
+                className={cn(
+                  'flex-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors',
+                  watch('result') === r
+                    ? r === 'pass'             ? 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
+                      : r === 'conditional_pass' ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
+                      : 'border-red-400 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                    : 'border-border text-muted-foreground hover:border-primary/50',
+                )}
+              >
+                {r === 'conditional_pass' ? 'Conditional' : r.charAt(0).toUpperCase() + r.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ur-cert">Certificate reference</Label>
+            <Input id="ur-cert" {...register('certificate_ref')} placeholder="e.g. CERT-GC-2026-001" />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { reset(); onClose() }}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="size-4 mr-2 animate-spin" />}
+              Save result
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Grid compliance table ────────────────────────────────────────────────────
+
+export function GridComplianceTable({
+  tests, onRefresh, projectId,
+}: { tests: GridComplianceTest[]; onRefresh: () => void; projectId: string }) {
+  const [updateTarget, setUpdateTarget] = React.useState<GridComplianceTest | null>(null)
+  const [addOpen, setAddOpen]           = React.useState(false)
+
+  if (tests.length === 0) {
+    return (
+      <>
+        <div className="rounded-xl border border-dashed border-border bg-muted/10 py-10 text-center">
+          <ShieldCheck className="size-8 text-muted-foreground/30 mx-auto mb-3" aria-hidden />
+          <p className="text-sm font-semibold text-muted-foreground">No compliance tests scheduled</p>
+          <p className="text-xs text-muted-foreground/60 mt-1 max-w-xs mx-auto">
+            Add grid code compliance tests to track pass/fail status and certificate references.
+          </p>
+          <Button size="sm" className="mt-4" onClick={() => setAddOpen(true)}>
+            <Plus className="size-3.5 mr-1.5" aria-hidden />
+            Add first test
+          </Button>
+        </div>
+        <AddTestDialog open={addOpen} onClose={() => setAddOpen(false)} projectId={projectId} onRefresh={onRefresh} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div className="rounded-xl border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/30 border-b border-border">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Test name</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Standard</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Date</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Result</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Certificate</th>
+              <th className="px-4 py-3 text-xs sr-only">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tests.map(t => {
+              const meta = resultMeta(t.result, t.completed_date)
+              const displayDate = t.completed_date ?? t.scheduled_date
+              return (
+                <tr key={t.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-3">
+                    <p className="text-sm font-medium text-foreground">{t.test_name}</p>
+                    {t.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">{t.notes}</p>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground capitalize">
+                      {t.category.replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                    {displayDate ? (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="size-3 text-muted-foreground/50" aria-hidden />
+                        {fmtDateFull(displayDate)}
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', meta.color)}>
+                      {meta.label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {t.certificate_ref ?? '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {!t.completed_date && (
+                      <button
+                        onClick={() => setUpdateTarget(t)}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
+                        aria-label={`Record result for ${t.test_name}`}
+                      >
+                        <Edit2 className="size-3" aria-hidden />
+                        Record
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <AddTestDialog    open={addOpen}        onClose={() => setAddOpen(false)}         projectId={projectId} onRefresh={onRefresh} />
+      <UpdateResultDialog test={updateTarget} open={!!updateTarget} onClose={() => setUpdateTarget(null)} onRefresh={onRefresh} />
+    </>
+  )
+}
+
+// ─── Grid compliance section ──────────────────────────────────────────────────
+
+export function GridComplianceSection({ projectId }: { projectId: string }) {
+  const [addOpen, setAddOpen] = React.useState(false)
+
+  const { data, isLoading, mutate } = useSWR<GridComplianceDashboard>(
+    `grid-compliance-${projectId}`,
+    () => getGridCompliance(projectId),
+  )
+
+  const tests   = data?.tests   ?? []
+  const summary = data?.summary
+  const isLive  = tests.length > 0
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <CircleDot className="size-4 text-violet-500" aria-hidden />
+            Grid Compliance
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Standards testing, certificates, and pass rate
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <LiveBadge live={isLive} />
+          <Button size="sm" variant="ghost" onClick={() => mutate()} disabled={isLoading} aria-label="Refresh compliance">
+            <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} aria-hidden />
+          </Button>
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="size-3.5 mr-1.5" aria-hidden />
+            Add test
+          </Button>
+        </div>
+      </div>
+
+      {/* Summary stats */}
+      {summary && tests.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total tests',   value: String(summary.total),     accent: 'neutral' as const },
+            { label: 'Passed',        value: String(summary.passed),    accent: summary.passed > 0 ? 'green' as const : 'neutral' as const },
+            { label: 'Failed',        value: String(summary.failed),    accent: summary.failed > 0 ? 'red' as const : 'neutral' as const },
+            { label: 'Pass rate',     value: `${summary.pass_rate.toFixed(0)}%`, accent: summary.pass_rate >= 80 ? 'green' as const : summary.pass_rate >= 60 ? 'amber' as const : 'red' as const },
+          ].map(s => (
+            <div key={s.label} className="rounded-xl border border-border bg-card px-4 py-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{s.label}</p>
+              <p className={cn('text-2xl font-bold tabular-nums mt-0.5', {
+                'text-emerald-600 dark:text-emerald-400': s.accent === 'green',
+                'text-amber-600  dark:text-amber-400':   s.accent === 'amber',
+                'text-red-600    dark:text-red-400':     s.accent === 'red',
+                'text-foreground':                        s.accent === 'neutral',
+              })}>
+                {s.value}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Loading */}
+      {isLoading && (
+        <div className="space-y-2">
+          {[...Array(3)].map((_, i) => <div key={i} className="h-12 rounded-lg bg-muted/40 animate-pulse" />)}
+        </div>
+      )}
+
+      {/* Table */}
+      {!isLoading && (
+        <GridComplianceTable tests={tests} onRefresh={() => mutate()} projectId={projectId} />
+      )}
+
+      <AddTestDialog open={addOpen} onClose={() => setAddOpen(false)} projectId={projectId} onRefresh={() => mutate()} />
+    </div>
+  )
+}
+
+
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
 function EmptyState({ onLog, onImport }: { onLog: () => void; onImport: () => void }) {
@@ -735,6 +1471,14 @@ export function EnergyDashboard({ projectId }: { projectId: string }) {
       {/* Dialogs */}
       <LogProductionDialog  open={logOpen} onClose={() => setLogOpen(false)} projectId={projectId} />
       <ImportCsvDialog      open={csvOpen} onClose={() => setCsvOpen(false)} projectId={projectId} />
+
+      {/* ── BESS section ── */}
+      <div className="border-t border-border pt-2" />
+      <BessSection projectId={projectId} />
+
+      {/* ── Grid compliance section ── */}
+      <div className="border-t border-border pt-2" />
+      <GridComplianceSection projectId={projectId} />
     </div>
   )
 }

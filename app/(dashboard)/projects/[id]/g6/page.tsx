@@ -16,6 +16,7 @@ import { FailuresTab }      from '@/components/g6/failures-tab'
 import { TrainingTab }      from '@/components/g6/training-tab'
 import { DocumentationTab } from '@/components/g6/documentation-tab'
 import { GuaranteesCloseoutCard } from '@/components/g6/guarantees-closeout-card'
+import { GridComplianceSection }  from '@/components/energy/energy-dashboard'
 
 import {
   MOCK_TEST_PACKAGES,
@@ -27,7 +28,7 @@ import {
 } from '@/components/g6/data'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type TabId = 'testpackages' | 'performance' | 'energization' | 'failures' | 'training' | 'documentation'
+type TabId = 'testpackages' | 'performance' | 'energization' | 'failures' | 'training' | 'documentation' | 'grid-compliance'
 
 // ─── Stats bar ────────────────────────────────────────────────────────────────
 function StatsBar() {
@@ -71,8 +72,9 @@ export default function G6Page() {
     { id: 'performance',   label: 'Performance Tests',  count: MOCK_PERF_TESTS.length },
     { id: 'energization',  label: 'Energization',       count: MOCK_ENERGIZATION.length },
     { id: 'failures',      label: 'Failures',           count: MOCK_FAILURES.filter((f) => f.status !== 'closed').length },
-    { id: 'training',      label: 'Training Records',   count: MOCK_TRAINING.length },
-    { id: 'documentation', label: 'Documentation',      count: MOCK_COMM_DOCS.length },
+    { id: 'training',         label: 'Training Records',   count: MOCK_TRAINING.length },
+    { id: 'documentation',    label: 'Documentation',      count: MOCK_COMM_DOCS.length },
+    { id: 'grid-compliance',  label: 'Grid Compliance' },
   ]
 
   return (
@@ -155,12 +157,17 @@ export default function G6Page() {
           </div>
 
           {/* Tab content */}
-          {activeTab === 'testpackages'  && <TestPackagesTab  packages={testPackages} />}
-          {activeTab === 'performance'   && <PerformanceTab   tests={MOCK_PERF_TESTS}        />}
-          {activeTab === 'energization'  && <EnergizationTab  records={MOCK_ENERGIZATION}    />}
-          {activeTab === 'failures'      && <FailuresTab       failures={MOCK_FAILURES}       />}
-          {activeTab === 'training'      && <TrainingTab       records={MOCK_TRAINING}        />}
-          {activeTab === 'documentation' && <DocumentationTab  docs={MOCK_COMM_DOCS}          />}
+          {activeTab === 'testpackages'   && <TestPackagesTab  packages={testPackages} />}
+          {activeTab === 'performance'    && <PerformanceTab   tests={MOCK_PERF_TESTS}        />}
+          {activeTab === 'energization'   && <EnergizationTab  records={MOCK_ENERGIZATION}    />}
+          {activeTab === 'failures'       && <FailuresTab       failures={MOCK_FAILURES}       />}
+          {activeTab === 'training'       && <TrainingTab       records={MOCK_TRAINING}        />}
+          {activeTab === 'documentation'  && <DocumentationTab  docs={MOCK_COMM_DOCS}          />}
+          {activeTab === 'grid-compliance' && (
+            <div className="rounded-xl bg-white border border-slate-200 shadow-sm p-6">
+              <GridComplianceSection projectId={id} />
+            </div>
+          )}
 
         </div>
     </div>
