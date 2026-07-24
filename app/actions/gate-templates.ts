@@ -2,7 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export interface TemplateDeliverable {
   name: string
@@ -47,12 +47,13 @@ function normalizeGates(raw: unknown): TemplateGate[] {
  * @param activeOnly  When true (default), only returns active templates — used by the wizard.
  */
 export async function getGateTemplates(activeOnly = true): Promise<GateTemplate[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   let query = supabase
     .from('gate_templates')
     .select('id, name, description, technology, is_active, is_default, gates, created_at, updated_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('is_default', { ascending: false })
     .order('name', { ascending: true })
 

@@ -5,16 +5,17 @@ import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { FinanceRecord, CashFlowRecord, FinanceEvmDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export async function loadFinanceEvmDashboard(): Promise<FinanceEvmDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
   const [{ data: records }, { data: cashflow }, { data: projects }, { data: certs }, { data: vos }] = await Promise.all([
-    sb.from('finance_records').select('*').eq('tenant_id', DEMO_TENANT).order('period'),
-    sb.from('cash_flow_records').select('*').eq('tenant_id', DEMO_TENANT).order('period'),
-    sb.from('projects').select('id, name, budget_usd').eq('tenant_id', DEMO_TENANT),
-    sb.from('payment_certificates').select('this_period, status').eq('tenant_id', DEMO_TENANT),
-    sb.from('variation_orders').select('cost_impact, status').eq('tenant_id', DEMO_TENANT),
+    sb.from('finance_records').select('*').eq('tenant_id', tenantId).order('period'),
+    sb.from('cash_flow_records').select('*').eq('tenant_id', tenantId).order('period'),
+    sb.from('projects').select('id, name, budget_usd').eq('tenant_id', tenantId),
+    sb.from('payment_certificates').select('this_period, status').eq('tenant_id', tenantId),
+    sb.from('variation_orders').select('cost_impact, status').eq('tenant_id', tenantId),
   ])
 
   const pm = Object.fromEntries((projects ?? []).map(p => [p.id, p.name]))
@@ -85,14 +86,15 @@ export async function loadFinanceEvmDashboard(): Promise<FinanceEvmDashboard> {
 }
 
 export async function seedFinanceEvmDemoAction() {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const sb = createAdminClient()
-  const { data: existing } = await sb.from('finance_records').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: existing } = await sb.from('finance_records').select('id').eq('tenant_id', tenantId).limit(1)
   if (existing && existing.length > 0) return { seeded: false }
 
-  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(1)
   const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
 
   const BAC = 320_000_000
@@ -109,7 +111,7 @@ export async function seedFinanceEvmDemoAction() {
     const spi = Math.round((ev / pv) * 100) / 100
     const eac = Math.round(BAC / cpi)
     return {
-      project_id: pid, tenant_id: DEMO_TENANT, period,
+      project_id: pid, tenant_id: tenantId, period,
       bac: BAC, pv: Math.round(pv), ev: Math.round(ev), ac: Math.round(ac),
       cpi, spi, eac, etc: eac - Math.round(ac), cv: Math.round(ev - ac), sv: Math.round(ev - pv),
     }
@@ -122,7 +124,7 @@ export async function seedFinanceEvmDemoAction() {
     const planned_inflow  = pvBase[i] * BAC * 0.1
     const actual_inflow   = evBase[i] * BAC * 0.08
     return {
-      project_id: pid, tenant_id: DEMO_TENANT, period,
+      project_id: pid, tenant_id: tenantId, period,
       planned_inflow: Math.round(planned_inflow),
       actual_inflow:  Math.round(actual_inflow),
       planned_outflow: Math.round(planned_outflow),

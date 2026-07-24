@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import type { IFCPackage, DrawingRecord, RFIRecord, EngineeringDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
 const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
 
@@ -27,22 +27,23 @@ const IFC_STATUS_COLORS: Record<string, string> = {
 }
 
 export async function loadEngineeringDashboard(): Promise<EngineeringDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [pkgRes, docRes, rfiRes] = await Promise.all([
     supabase.from('engineering_packages')
       .select('id, package_number, discipline, title, revision, status, completion_pct, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     supabase.from('documents')
       .select('id, title, category, metadata, status, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('category', 'drawing')
       .order('created_at', { ascending: false })
       .limit(50),
     supabase.from('tickets')
       .select('id, title, category, status, created_at, metadata')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('category', 'rfi')
       .order('created_at', { ascending: false })
       .limit(50),
@@ -162,19 +163,20 @@ const RFI_STATUS_MAP: Record<string, string> = {
 
 /** Loads real engineering data for a specific project's G2 gate detail page. */
 export async function getG2Data(projectId: string): Promise<G2DataResult> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [pkgRes, docRes, rfiRes] = await Promise.all([
     supabase
       .from('engineering_packages')
       .select('id, package_number, discipline, title, revision, status, completion_pct, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     supabase
       .from('documents')
       .select('id, title, category, metadata, status, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('category', 'drawing')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
@@ -182,7 +184,7 @@ export async function getG2Data(projectId: string): Promise<G2DataResult> {
     supabase
       .from('tickets')
       .select('id, title, status, created_at, metadata')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('category', 'rfi')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
@@ -251,6 +253,7 @@ export async function getG2Data(projectId: string): Promise<G2DataResult> {
 }
 
 export async function createRFI(data: {
+  const tenantId = await getCurrentTenantId()
   title: string; discipline: string; description: string
 }): Promise<{ error?: string }> {
   const gate = await requireWriter()
@@ -258,7 +261,7 @@ export async function createRFI(data: {
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('tickets').insert({
-    tenant_id:  DEMO_TENANT,
+    tenant_id:  tenantId,
     project_id: DEMO_PROJECT,
     title:      data.title,
     description:data.description,
@@ -272,23 +275,25 @@ export async function createRFI(data: {
 }
 
 export async function closeRFI(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('tickets')
     .update({ status: 'closed', updated_at: new Date().toISOString() })
-    .eq('id', id).eq('tenant_id', DEMO_TENANT)
+    .eq('id', id).eq('tenant_id', tenantId)
   return { error: error?.message }
 }
 
 export async function seedEngineeringDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('engineering_packages')
-    .select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+    .select('id').eq('tenant_id', tenantId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
   const disciplines = ['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation']
@@ -297,7 +302,7 @@ export async function seedEngineeringDemoData(): Promise<{ error?: string }> {
   for (let i = 0; i < disciplines.length; i++) {
     const disc = disciplines[i]
     await supabase.from('engineering_packages').insert({
-      tenant_id:      DEMO_TENANT,
+      tenant_id:      tenantId,
       project_id:     DEMO_PROJECT,
       package_number: `IFC-${disc.slice(0, 3).toUpperCase()}-001`,
       discipline:     disc,
@@ -317,7 +322,7 @@ export async function seedEngineeringDemoData(): Promise<{ error?: string }> {
   ]
   for (const rfi of rfis) {
     await supabase.from('tickets').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT,
+      tenant_id: tenantId, project_id: DEMO_PROJECT,
       title: rfi.title, category: 'rfi', status: 'open', priority: 'normal',
       description: `RFI raised by site engineer`, created_by: DEMO_USER,
       metadata: { discipline: rfi.discipline },

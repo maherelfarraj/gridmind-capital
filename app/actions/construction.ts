@@ -4,26 +4,27 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import type { WorkPackage, InspectionRecord, PunchItem, ConstructionDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
 
 export async function loadConstructionDashboard(): Promise<ConstructionDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [wpRes, inspRes, punchRes] = await Promise.all([
     supabase.from('work_packages')
       .select('id, wp_code, title, discipline, contractor, planned_pct, actual_pct, status, health')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     supabase.from('inspections')
       .select('id, title, type, result, date, inspector, location, metadata')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .limit(50),
     supabase.from('tickets')
       .select('id, title, category, status, priority, assigned_to, created_at, metadata')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('category', 'punch_item')
       .order('created_at', { ascending: false })
       .limit(50),
@@ -108,17 +109,19 @@ export async function loadConstructionDashboard(): Promise<ConstructionDashboard
 }
 
 export async function closePunchItem(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('tickets')
     .update({ status: 'closed', updated_at: new Date().toISOString() })
-    .eq('id', id).eq('tenant_id', DEMO_TENANT)
+    .eq('id', id).eq('tenant_id', tenantId)
   return { error: error?.message }
 }
 
 export async function recordInspection(data: {
+  const tenantId = await getCurrentTenantId()
   title: string; type: string; result: string; location: string
 }): Promise<{ error?: string }> {
   const gate = await requireWriter()
@@ -126,7 +129,7 @@ export async function recordInspection(data: {
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('inspections').insert({
-    tenant_id:  DEMO_TENANT,
+    tenant_id:  tenantId,
     project_id: DEMO_PROJECT,
     title:      data.title,
     type:       data.type,
@@ -201,35 +204,36 @@ const INCIDENT_STATUS_REMAP: Record<string, string> = {
 }
 
 export async function getG4Data(projectId: string): Promise<G4DataResult> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [wpRes, incRes, permRes, workPermitRes, dailyRes, gateRes] = await Promise.all([
     supabase.from('work_packages')
       .select('id, wp_code, title, discipline, planned_pct, actual_pct, status')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     supabase.from('hse_incidents')
       .select('id, ref, title, severity, status, incident_date, reported_by, description')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     supabase.from('hse_permits')
       .select('id, ref, type, scope, issued_to, issued_date, expiry_date, status')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     supabase.from('work_permits')
       .select('id, permit_no, type, title, location, status, valid_from, valid_to, issuer')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     supabase.from('daily_reports')
       .select('report_date', { count: 'exact' })
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('report_date', { ascending: false }),
     supabase.from('gate_submissions')
       .select('form_data')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('gate_number', 4)
       .maybeSingle(),
@@ -352,25 +356,26 @@ const PUNCH_STATUS_REMAP: Record<string, G5PunchItem['status']> = {
 }
 
 export async function getG5Data(projectId: string): Promise<G5DataResult> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [inspRes, punchRes, gateRes] = await Promise.all([
     supabase.from('inspections')
       .select('id, title, type, result, date, inspector, location, metadata')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(100),
     supabase.from('tickets')
       .select('id, title, status, priority, assigned_to, created_at, metadata')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .not('metadata->punch_cat', 'is', null)
       .order('created_at', { ascending: false })
       .limit(100),
     supabase.from('gate_submissions')
       .select('form_data')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('gate_number', 5)
       .maybeSingle(),
@@ -431,11 +436,12 @@ export async function getG5Data(projectId: string): Promise<G5DataResult> {
 }
 
 export async function seedConstructionDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  const { data: ex } = await supabase.from('work_packages').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: ex } = await supabase.from('work_packages').select('id').eq('tenant_id', tenantId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
   const wpData = [
@@ -448,7 +454,7 @@ export async function seedConstructionDemoData(): Promise<{ error?: string }> {
   ]
   for (const d of wpData) {
     await supabase.from('work_packages').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT, ...d,
+      tenant_id: tenantId, project_id: DEMO_PROJECT, ...d,
     })
   }
 
@@ -462,7 +468,7 @@ export async function seedConstructionDemoData(): Promise<{ error?: string }> {
   ]
   for (const p of punchData) {
     await supabase.from('tickets').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT,
+      tenant_id: tenantId, project_id: DEMO_PROJECT,
       title: p.title, category: 'punch_item', status: 'open', priority: 'normal',
       description: `Category ${p.cat} punch item raised during inspection.`,
       created_by: DEMO_USER,
@@ -480,7 +486,7 @@ export async function seedConstructionDemoData(): Promise<{ error?: string }> {
   ]
   for (const i of insps) {
     await supabase.from('inspections').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT,
+      tenant_id: tenantId, project_id: DEMO_PROJECT,
       date: new Date().toISOString().slice(0, 10),
       inspector: 'Site QA Engineer',
       ...i,

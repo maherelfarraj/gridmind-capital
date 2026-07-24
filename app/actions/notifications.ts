@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export interface LiveNotification {
   id: string
@@ -54,6 +54,7 @@ export async function getNotificationsAction(): Promise<NotificationsResult> {
  * These are computed on read (not persisted) so they never need a marked-read row.
  */
 async function getDerivedNotifications(): Promise<LiveNotification[]> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const now   = new Date()
   const nowIso = now.toISOString()
@@ -70,7 +71,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
     admin
       .from('work_permits')
       .select('id, permit_no, title, project_id, valid_to')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('status', 'issued')
       .gte('valid_to', nowIso)
       .lte('valid_to', in48)
@@ -78,21 +79,21 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
     admin
       .from('transmittals')
       .select('id, transmittal_no, subject, project_id, response_due')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .in('status', ['issued', 'acknowledged'])
       .lt('response_due', nowIso)
       .order('response_due', { ascending: true }),
     admin
       .from('daily_reports')
       .select('id, project_id, report_date, workforce_count, updated_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('status', 'submitted')
       .gte('report_date', today)
       .order('updated_at', { ascending: false }),
     admin
       .from('field_photos')
       .select('id, ticket_id, project_id, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .not('ticket_id', 'is', null)
       .gte('created_at', last24)
       .order('created_at', { ascending: false }),
@@ -109,7 +110,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
     admin
       .from('ncrs')
       .select('id, ncr_number, title, project_id, raised_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('source', 'failed_inspection')
       .neq('status', 'closed')
       .lt('raised_at', ago7d)
@@ -119,7 +120,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
     admin
       .from('securities')
       .select('id, type, issuer, reference, expiry_date, project_id')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('status', 'active')
       .gte('expiry_date', nowIso)
       .lte('expiry_date', in30d)
@@ -129,7 +130,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
     admin
       .from('contract_milestones')
       .select('id, title, due_date, amount, contract_id, contracts(project_id, contract_no)')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('status', 'pending')
       .gte('due_date', today)
       .lte('due_date', in7d)
@@ -139,7 +140,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
     admin
       .from('grid_compliance_tests')
       .select('id, test_name, category, completed_date, project_id')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('result', 'fail')
       .order('completed_date', { ascending: false })
       .limit(20),
@@ -157,10 +158,10 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
   const [ticketRes, projRes] = await Promise.all([
     punchTicketIds.length
       ? admin.from('tickets').select('id, title, project_id, created_at, metadata')
-          .eq('tenant_id', DEMO_TENANT).eq('category', 'punch_item').in('id', punchTicketIds)
+          .eq('tenant_id', tenantId).eq('category', 'punch_item').in('id', punchTicketIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     projectIds.length
-      ? admin.from('projects').select('id, name').eq('tenant_id', DEMO_TENANT).in('id', projectIds)
+      ? admin.from('projects').select('id, name').eq('tenant_id', tenantId).in('id', projectIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
   const projName = Object.fromEntries((projRes.data ?? []).map((p) => [p.id as string, p.name as string]))
@@ -356,6 +357,7 @@ export async function markAllReadAction(): Promise<void> {
 
 /** Seed demo notifications for the current user (dev helper) */
 export async function seedNotificationsAction(): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
@@ -427,6 +429,7 @@ function feedTime(isoStr: string | null): string {
  * – open critical/high AI insights
  */
 export async function getActivityFeed(): Promise<ActivityFeedItem[]> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
   const [{ data: approvals }, { data: docs }, { data: insights }, { data: projects }] =
@@ -439,13 +442,13 @@ export async function getActivityFeed(): Promise<ActivityFeedItem[]> {
       sb
         .from('documents')
         .select('id, title, category, created_at, project_id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false })
         .limit(10),
       sb
         .from('ai_insights')
         .select('id, title, severity, module, created_at')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .in('severity', ['critical', 'high'])
         .in('status', ['open', 'acknowledged'])
         .order('created_at', { ascending: false })
@@ -453,7 +456,7 @@ export async function getActivityFeed(): Promise<ActivityFeedItem[]> {
       sb
         .from('projects')
         .select('id, name')
-        .eq('tenant_id', DEMO_TENANT),
+        .eq('tenant_id', tenantId),
     ])
 
   const pm = Object.fromEntries((projects ?? []).map((p) => [p.id as string, p.name as string]))

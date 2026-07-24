@@ -5,7 +5,7 @@ import { requireWriter, requireRole } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import { maybeCreateContractsInsight } from '@/app/actions/ai-insights'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utility helpers
@@ -206,6 +206,7 @@ function mapSecurity(r: Record<string, unknown>): Security {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getContractsRegister(projectId: string): Promise<ContractsRegister> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
   const [contractsRes, milestonesRes] = await Promise.all([
@@ -213,12 +214,12 @@ export async function getContractsRegister(projectId: string): Promise<Contracts
       .from('contracts')
       .select('id, tenant_id, project_id, contract_no, title, party, type, status, value, currency, signed_date, commencement, completion, retention_pct, ld_rate_per_day, ld_cap_pct, created_at')
       .eq('project_id', projectId)
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('contract_no', { ascending: true }),
     admin
       .from('contract_milestones')
       .select('id, contract_id, title, due_date, amount, status, achieved_date, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('due_date', { ascending: true }),
   ])
 
@@ -263,13 +264,14 @@ export async function getContractsRegister(projectId: string): Promise<Contracts
   // Fire-and-forget contracts AI insight check.
   // Need oldest expired-but-active security age — fetch securities for project.
   void (async () => {
+    const tenantId = await getCurrentTenantId()
     try {
       const admin2 = createAdminClient()
       const { data: secRows } = await admin2
         .from('securities')
         .select('expiry_date, status')
         .eq('project_id', projectId)
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('status', 'active')
       const oldestExpiredDays = (secRows ?? []).reduce((max: number, s: Record<string, unknown>) => {
         const exp = s.expiry_date as string | null
@@ -291,6 +293,7 @@ export async function getContractsRegister(projectId: string): Promise<Contracts
 export async function createContract(
   projectId: string,
   data: {
+    const tenantId = await getCurrentTenantId()
     title: string
     party?: string
     type: ContractType
@@ -315,14 +318,14 @@ export async function createContract(
     .from('contracts')
     .select('id', { count: 'exact', head: true })
     .eq('project_id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   const seq = String((count ?? 0) + 1).padStart(3, '0')
   const contract_no = `CON-${seq}`
 
   const { data: inserted, error } = await admin
     .from('contracts')
     .insert({
-      tenant_id:       DEMO_TENANT,
+      tenant_id:       tenantId,
       project_id:      projectId,
       contract_no,
       title:           data.title.trim(),
@@ -348,7 +351,7 @@ export async function createContract(
   // Insert milestones if provided
   if (milestones.length > 0) {
     const rows = milestones.map(m => ({
-      tenant_id:   DEMO_TENANT,
+      tenant_id:   tenantId,
       contract_id: contractId,
       title:       m.title.trim(),
       due_date:    m.due_date,
@@ -368,12 +371,13 @@ export async function createContract(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function computeLdExposure(contractId: string): Promise<LdExposure & { error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('contracts')
     .select('status, value, completion, ld_rate_per_day, ld_cap_pct')
     .eq('id', contractId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .maybeSingle()
 
   if (error || !data) return { days_late: 0, ld_amount: 0, capped: false, error: error?.message ?? 'Contract not found' }
@@ -408,6 +412,7 @@ export async function updateMilestoneStatus(
   status: MilestoneStatus,
   achievedDate?: string,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -418,7 +423,7 @@ export async function updateMilestoneStatus(
     .from('contract_milestones')
     .select('id, contract_id, title, amount, status')
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .maybeSingle()
 
   if (fetchErr || !milestone) return { error: fetchErr?.message ?? 'Milestone not found' }
@@ -434,7 +439,7 @@ export async function updateMilestoneStatus(
     .from('contract_milestones')
     .update(patch)
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
 
@@ -449,14 +454,14 @@ export async function updateMilestoneStatus(
       .from('contracts')
       .select('project_id')
       .eq('id', m.contract_id as string)
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .maybeSingle()
 
     const projectId = (contract as Record<string, unknown> | null)?.project_id as string | undefined
 
     if (projectId) {
       const { error: finErr } = await admin.from('finance_records').insert({
-        tenant_id:   DEMO_TENANT,
+        tenant_id:   tenantId,
         project_id:  projectId,
         type:        'contract',
         category:    'milestone_payment',
@@ -479,6 +484,7 @@ export async function updateMilestoneStatus(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getSecuritiesRegister(projectId: string): Promise<SecuritiesRegister> {
+  const tenantId = await getCurrentTenantId()
   // Run expiry sweep first (best-effort, never blocks the read)
   await expirySweep(projectId)
 
@@ -487,7 +493,7 @@ export async function getSecuritiesRegister(projectId: string): Promise<Securiti
     .from('securities')
     .select('id, tenant_id, project_id, contract_id, type, issuer, reference, amount, currency, issue_date, expiry_date, status, created_at')
     .eq('project_id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('expiry_date', { ascending: true, nullsFirst: false })
 
   const securities = (error || !data ? [] : data).map(r => mapSecurity(r as Record<string, unknown>))
@@ -508,6 +514,7 @@ export async function getSecuritiesRegister(projectId: string): Promise<Securiti
 export async function createSecurity(
   projectId: string,
   data: {
+    const tenantId = await getCurrentTenantId()
     type: SecurityType
     issuer?: string
     reference?: string
@@ -525,7 +532,7 @@ export async function createSecurity(
   const { data: inserted, error } = await admin
     .from('securities')
     .insert({
-      tenant_id:   DEMO_TENANT,
+      tenant_id:   tenantId,
       project_id:  projectId,
       contract_id: data.contract_id ?? null,
       type:        data.type,
@@ -546,6 +553,7 @@ export async function createSecurity(
 }
 
 export async function releaseSecurity(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director', 'finance_manager'])
   if ('error' in gate) return gate
 
@@ -554,7 +562,7 @@ export async function releaseSecurity(id: string): Promise<{ error?: string }> {
     .from('securities')
     .select('id, project_id, status')
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .maybeSingle()
 
   if (fetchErr || !current) return { error: fetchErr?.message ?? 'Security not found' }
@@ -567,7 +575,7 @@ export async function releaseSecurity(id: string): Promise<{ error?: string }> {
     .from('securities')
     .update({ status: 'released', updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
   revalidatePath(`/projects/${s.project_id as string}/contracts`)
@@ -575,6 +583,7 @@ export async function releaseSecurity(id: string): Promise<{ error?: string }> {
 }
 
 export async function claimSecurity(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director', 'finance_manager'])
   if ('error' in gate) return gate
 
@@ -583,7 +592,7 @@ export async function claimSecurity(id: string): Promise<{ error?: string }> {
     .from('securities')
     .select('id, project_id, status')
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .maybeSingle()
 
   if (fetchErr || !current) return { error: fetchErr?.message ?? 'Security not found' }
@@ -596,7 +605,7 @@ export async function claimSecurity(id: string): Promise<{ error?: string }> {
     .from('securities')
     .update({ status: 'claimed', updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
   revalidatePath(`/projects/${s.project_id as string}/contracts`)
@@ -612,13 +621,14 @@ export async function claimSecurity(id: string): Promise<{ error?: string }> {
  * Called inside getSecuritiesRegister — best-effort, never throws.
  */
 export async function expirySweep(projectId: string): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const admin = createAdminClient()
     const today = new Date().toISOString().slice(0, 10)
     const { error } = await admin
       .from('securities')
       .update({ status: 'expired', updated_at: new Date().toISOString() })
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('status', 'active')
       .lt('expiry_date', today)

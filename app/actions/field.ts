@@ -8,7 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 
 const BUCKET = 'documents'
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -105,6 +105,7 @@ export async function getDailyReports(
   projectId: string,
   limit = 30,
 ): Promise<DailyReportSummary[]> {
+  const tenantId = await getCurrentTenantId()
   const auth = await getAuthActor()
   if ('error' in auth) return []
 
@@ -112,7 +113,7 @@ export async function getDailyReports(
   const { data, error } = await supabase
     .from('daily_reports')
     .select('id, report_date, weather, workforce_count, equipment_count, work_performed, status')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .order('report_date', { ascending: false })
     .limit(limit)
@@ -156,6 +157,7 @@ export async function getDailyReport(
   projectId: string,
   date: string,
 ): Promise<DailyReportDetail | null> {
+  const tenantId = await getCurrentTenantId()
   const auth = await getAuthActor()
   if ('error' in auth) return null
 
@@ -163,7 +165,7 @@ export async function getDailyReport(
   const { data, error } = await supabase
     .from('daily_reports')
     .select('*')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .eq('report_date', date)
     .maybeSingle()
@@ -173,7 +175,7 @@ export async function getDailyReport(
   const { data: photoRows } = await supabase
     .from('field_photos')
     .select('id, storage_path, caption, report_id, ticket_id, created_at, uploaded_by')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('report_id', data.id)
     .order('created_at', { ascending: false })
 
@@ -217,6 +219,7 @@ export async function saveDailyReport(
   projectId: string,
   data: DailyReportInput,
 ): Promise<{ id: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -239,7 +242,7 @@ export async function saveDailyReport(
   const { data: existing } = await supabase
     .from('daily_reports')
     .select('id')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .eq('report_date', data.report_date)
     .maybeSingle()
@@ -257,7 +260,7 @@ export async function saveDailyReport(
   const { data: inserted, error } = await supabase
     .from('daily_reports')
     .insert({
-      tenant_id:   DEMO_TENANT,
+      tenant_id:   tenantId,
       project_id:  projectId,
       report_date: data.report_date,
       status:      'draft',
@@ -279,6 +282,7 @@ export async function submitDailyReport(
   id: string,
   submittedBy: string,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -292,7 +296,7 @@ export async function submitDailyReport(
       updated_at:   new Date().toISOString(),
     })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   revalidatePath('/field')
   return { error: error?.message }
@@ -313,6 +317,7 @@ export async function createFieldPunchItem(
   projectId: string,
   data: PunchItemInput,
 ): Promise<{ id: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -320,7 +325,7 @@ export async function createFieldPunchItem(
   const { data: inserted, error } = await supabase
     .from('tickets')
     .insert({
-      tenant_id:   DEMO_TENANT,
+      tenant_id:   tenantId,
       project_id:  projectId,
       title:       data.title,
       category:    'punch_item',
@@ -347,6 +352,7 @@ export async function getPhotoUploadUrl(
   projectId: string,
   fileName: string,
 ): Promise<{ uploadUrl: string; storagePath: string } | { error: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -380,7 +386,7 @@ export async function registerFieldPhoto(
   const { data, error } = await supabase
     .from('field_photos')
     .insert({
-      tenant_id:    DEMO_TENANT,
+      tenant_id:    tenantId,
       project_id:   projectId,
       storage_path: storagePath,
       caption:      caption || null,
@@ -401,6 +407,7 @@ export async function registerFieldPhoto(
 // ─────────────────────────────────────────────────────────────
 
 export async function deleteFieldPhoto(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -409,7 +416,7 @@ export async function deleteFieldPhoto(id: string): Promise<{ error?: string }> 
     .from('field_photos')
     .select('storage_path')
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .maybeSingle()
 
   if (row?.storage_path) {
@@ -420,7 +427,7 @@ export async function deleteFieldPhoto(id: string): Promise<{ error?: string }> 
     .from('field_photos')
     .delete()
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   revalidatePath('/field')
   return { error: error?.message }
@@ -431,6 +438,7 @@ export async function deleteFieldPhoto(id: string): Promise<{ error?: string }> 
 // ─────────────────────────────────────────────────────────────
 
 export async function getFieldHome(projectId: string): Promise<FieldHome> {
+  const tenantId = await getCurrentTenantId()
   const empty: FieldHome = { today: null, activePermits: 0, punchItems: [], recentPhotos: [] }
 
   const auth = await getAuthActor()
@@ -444,14 +452,14 @@ export async function getFieldHome(projectId: string): Promise<FieldHome> {
     supabase
       .from('work_permits')
       .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('status', 'issued')
       .gt('valid_to', nowIso),
     supabase
       .from('tickets')
       .select('id, title, status, priority, created_at, metadata')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('assigned_to', auth.actor.userId)
       .not('metadata->punch_cat', 'is', null)
@@ -461,7 +469,7 @@ export async function getFieldHome(projectId: string): Promise<FieldHome> {
     supabase
       .from('field_photos')
       .select('id, storage_path, caption, report_id, ticket_id, created_at, uploaded_by')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(6),

@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT  = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
 
@@ -96,19 +96,20 @@ const RFQ_STATUS_REMAP: Record<string, string> = {
 
 /** Loads all procurement data for the G3 gate detail page in one call. */
 export async function getG3Data(projectId: string): Promise<G3DataResult> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [rfqRes, poRes] = await Promise.all([
     supabase
       .from('rfqs')
       .select('id, rfq_number, title, category, status, budget_max, currency, bid_deadline, created_at, organization_name')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     supabase
       .from('purchase_orders')
       .select('id, po_number, vendor_name, description, amount_usd, status, expected_delivery, created_at, organization_name')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
   ])
@@ -184,15 +185,16 @@ export async function getG3Data(projectId: string): Promise<G3DataResult> {
 }
 
 export async function loadProcurementDashboard(): Promise<ProcurementDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
   const [rfqRes, poRes] = await Promise.all([
     supabase.from('rfqs')
       .select('id, rfq_number, title, vendor, status, issue_date, close_date, amount_usd, score')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     supabase.from('purchase_orders')
       .select('id, po_number, vendor, description, amount_usd, status, issued_date, expected_delivery')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
   ])
 
@@ -245,6 +247,7 @@ export async function loadProcurementDashboard(): Promise<ProcurementDashboard> 
 }
 
 export async function issueRFQ(data: {
+  const tenantId = await getCurrentTenantId()
   title: string; vendor: string; amount_usd: number; close_date: string
 }): Promise<{ error?: string }> {
   const gate = await requireWriter()
@@ -253,7 +256,7 @@ export async function issueRFQ(data: {
   const supabase = createAdminClient()
   const rfq_number = `RFQ-${Date.now().toString(36).toUpperCase().slice(-6)}`
   const { error } = await supabase.from('rfqs').insert({
-    tenant_id:  DEMO_TENANT,
+    tenant_id:  tenantId,
     project_id: DEMO_PROJECT,
     rfq_number,
     title:      data.title,
@@ -267,6 +270,7 @@ export async function issueRFQ(data: {
 }
 
 export async function advancePOStatus(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -278,16 +282,17 @@ export async function advancePOStatus(id: string): Promise<{ error?: string }> {
   if (!next) return {}
   const { error } = await supabase.from('purchase_orders')
     .update({ status: next, updated_at: new Date().toISOString() })
-    .eq('id', id).eq('tenant_id', DEMO_TENANT)
+    .eq('id', id).eq('tenant_id', tenantId)
   return { error: error?.message }
 }
 
 export async function seedProcurementDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  const { data: ex } = await supabase.from('rfqs').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: ex } = await supabase.from('rfqs').select('id').eq('tenant_id', tenantId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
   const rfqData = [
@@ -299,7 +304,7 @@ export async function seedProcurementDemoData(): Promise<{ error?: string }> {
   ]
   for (const d of rfqData) {
     await supabase.from('rfqs').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT,
+      tenant_id: tenantId, project_id: DEMO_PROJECT,
       issue_date: '2026-03-01', close_date: '2026-04-15', ...d,
     })
   }
@@ -312,7 +317,7 @@ export async function seedProcurementDemoData(): Promise<{ error?: string }> {
   ]
   for (const d of poData) {
     await supabase.from('purchase_orders').insert({
-      tenant_id: DEMO_TENANT, project_id: DEMO_PROJECT, ...d,
+      tenant_id: tenantId, project_id: DEMO_PROJECT, ...d,
     })
   }
   return {}

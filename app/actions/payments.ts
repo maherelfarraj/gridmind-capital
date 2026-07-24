@@ -5,7 +5,7 @@ import { requireWriter, requireRole, getAuthActor } from '@/lib/auth/guard'
 import { getProjectProgress } from '@/app/actions/schedule'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // Roles allowed to certify a certificate and to mark it paid.
 const CERTIFY_ROLES = ['finance_manager', 'project_director', 'tenant_admin', 'system_admin'] as const
@@ -99,11 +99,12 @@ async function computeContractValue(projectId: string): Promise<number> {
 // ─── Reads ───────────────────────────────────────────────────────────────────
 
 export async function getPaymentCertificates(projectId: string): Promise<PaymentRegister> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { data } = await admin
     .from('payment_certificates')
     .select('*')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .order('created_at', { ascending: true })
 
@@ -175,13 +176,14 @@ export interface PortfolioCostExposure {
  * rather than an N+1 per project.
  */
 export async function getPortfolioCostExposure(): Promise<PortfolioCostExposure> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const certifiedStatuses = ['certified', 'invoiced', 'paid']
 
   const [{ data: projects }, { data: vos }, { data: certs }] = await Promise.all([
-    admin.from('projects').select('id, code, name, budget_usd').eq('tenant_id', DEMO_TENANT),
-    admin.from('variation_orders').select('project_id, cost_impact, status').eq('tenant_id', DEMO_TENANT),
-    admin.from('payment_certificates').select('project_id, this_period, status').eq('tenant_id', DEMO_TENANT),
+    admin.from('projects').select('id, code, name, budget_usd').eq('tenant_id', tenantId),
+    admin.from('variation_orders').select('project_id, cost_impact, status').eq('tenant_id', tenantId),
+    admin.from('payment_certificates').select('project_id, this_period, status').eq('tenant_id', tenantId),
   ])
 
   // Per-project approved / pending VO impact.
@@ -244,6 +246,7 @@ export async function getPortfolioCostExposure(): Promise<PortfolioCostExposure>
  * advance recovery.
  */
 export async function draftPaymentCertificate(opts: {
+  const tenantId = await getCurrentTenantId()
   projectId: string
   period_start: string
   period_end: string
@@ -265,7 +268,7 @@ export async function draftPaymentCertificate(opts: {
   const { data: priorRows } = await admin
     .from('payment_certificates')
     .select('this_period, status, pc_number')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', opts.projectId)
 
   const prior = priorRows ?? []
@@ -286,7 +289,7 @@ export async function draftPaymentCertificate(opts: {
   const { data: inserted, error } = await admin
     .from('payment_certificates')
     .insert({
-      tenant_id:          DEMO_TENANT,
+      tenant_id:          tenantId,
       project_id:         opts.projectId,
       pc_number:          pcNumber,
       period_start:       opts.period_start,
@@ -327,6 +330,7 @@ export async function updatePaymentCertificateStatus(
   id: string,
   next: PcStatus,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   // Role-gate the privileged transitions; others just require a writer.
   const gate = next === 'certified' || next === 'paid'
     ? await requireRole(CERTIFY_ROLES)
@@ -360,7 +364,7 @@ export async function updatePaymentCertificateStatus(
   // status change if the ledger insert fails.
   if (next === 'paid') {
     const { error: finErr } = await admin.from('finance_records').insert({
-      tenant_id:   DEMO_TENANT,
+      tenant_id:   tenantId,
       project_id:  current.project_id,
       type:        'cashflow',
       category:    'client_payment',

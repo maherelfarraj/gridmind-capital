@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -89,16 +89,17 @@ function weeksBetween(fromIso: string, toIso: string): number {
 // ─── 1. Read schedule ─────────────────────────────────────────────────────────
 
 export async function getSchedule(projectId: string): Promise<ScheduleResult> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
   const [{ data: activities }, { data: dependencies }] = await Promise.all([
     sb.from('schedule_activities')
       .select('*')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('sort_order', { ascending: true }),
     sb.from('activity_dependencies')
       .select('id, project_id, predecessor_id, successor_id, type, lag_days')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId),
   ])
 
@@ -114,6 +115,7 @@ export async function createActivity(
   projectId: string,
   data: ActivityInput,
 ): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -121,7 +123,7 @@ export async function createActivity(
   const { data: inserted, error } = await sb
     .from('schedule_activities')
     .insert({
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       project_id:       projectId,
       activity_code:    data.activity_code ?? null,
       name:             data.name ?? 'New activity',
@@ -150,6 +152,7 @@ export async function updateActivity(
   id: string,
   data: ActivityInput,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -160,7 +163,7 @@ export async function updateActivity(
     .from('schedule_activities')
     .select('project_id, percent_complete')
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .single()
 
   if (!existing) return { error: 'Activity not found' }
@@ -184,14 +187,14 @@ export async function updateActivity(
     .from('schedule_activities')
     .update(patch)
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
 
   // Log a progress_updates row whenever percent_complete changed.
   if (pctChanged) {
     await sb.from('progress_updates').insert({
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       project_id:       existing.project_id,
       activity_id:      id,
       update_date:      today(),
@@ -205,6 +208,7 @@ export async function updateActivity(
 }
 
 export async function deleteActivity(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -213,21 +217,21 @@ export async function deleteActivity(id: string): Promise<{ error?: string }> {
     .from('schedule_activities')
     .select('project_id')
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .single()
 
   // Remove dependent rows + progress history first, then the activity.
   await sb.from('activity_dependencies')
     .delete()
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .or(`predecessor_id.eq.${id},successor_id.eq.${id}`)
-  await sb.from('progress_updates').delete().eq('tenant_id', DEMO_TENANT).eq('activity_id', id)
+  await sb.from('progress_updates').delete().eq('tenant_id', tenantId).eq('activity_id', id)
 
   const { error } = await sb
     .from('schedule_activities')
     .delete()
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
   if (existing?.project_id) revalidatePath(`/projects/${existing.project_id}/schedule`)
@@ -264,6 +268,7 @@ export async function addDependency(
   type: string = 'FS',
   lagDays: number = 0,
 ): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -276,7 +281,7 @@ export async function addDependency(
     .from('schedule_activities')
     .select('project_id')
     .eq('id', predecessorId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .single()
 
   if (!pred) return { error: 'Predecessor not found' }
@@ -286,7 +291,7 @@ export async function addDependency(
   const { data: edges } = await sb
     .from('activity_dependencies')
     .select('predecessor_id, successor_id')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', pred.project_id)
 
   const graph = [...(edges ?? []), { predecessor_id: predecessorId, successor_id: successorId }]
@@ -297,7 +302,7 @@ export async function addDependency(
   const { data: inserted, error } = await sb
     .from('activity_dependencies')
     .insert({
-      tenant_id:      DEMO_TENANT,
+      tenant_id:      tenantId,
       project_id:     pred.project_id,
       predecessor_id: predecessorId,
       successor_id:   successorId,
@@ -313,6 +318,7 @@ export async function addDependency(
 }
 
 export async function removeDependency(id: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -321,14 +327,14 @@ export async function removeDependency(id: string): Promise<{ error?: string }> 
     .from('activity_dependencies')
     .select('project_id')
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .single()
 
   const { error } = await sb
     .from('activity_dependencies')
     .delete()
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
   if (existing?.project_id) revalidatePath(`/projects/${existing.project_id}/schedule`)
@@ -343,6 +349,7 @@ export async function recordProgress(
   percentComplete: number,
   note?: string,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -351,7 +358,7 @@ export async function recordProgress(
     .from('schedule_activities')
     .select('project_id')
     .eq('id', activityId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .single()
 
   if (!activity) return { error: 'Activity not found' }
@@ -363,7 +370,7 @@ export async function recordProgress(
   const { data: prior } = await sb
     .from('progress_updates')
     .select('id')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('activity_id', activityId)
     .eq('update_date', date)
     .maybeSingle()
@@ -376,7 +383,7 @@ export async function recordProgress(
     if (error) return { error: error.message }
   } else {
     const { error } = await sb.from('progress_updates').insert({
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       project_id:       activity.project_id,
       activity_id:      activityId,
       update_date:      date,
@@ -399,7 +406,7 @@ export async function recordProgress(
     .from('schedule_activities')
     .update(patch)
     .eq('id', activityId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (syncErr) return { error: syncErr.message }
   revalidatePath(`/projects/${activity.project_id}/schedule`)
@@ -415,11 +422,12 @@ export interface ProjectProgress {
 }
 
 export async function getProjectProgress(projectId: string): Promise<ProjectProgress> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
   const { data } = await sb
     .from('schedule_activities')
     .select('percent_complete, weight, status')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
 
   const rows = data ?? []
@@ -449,15 +457,16 @@ export interface SCurvePoint {
 }
 
 export async function getSCurveData(projectId: string): Promise<SCurvePoint[]> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
   const [{ data: acts }, { data: updates }] = await Promise.all([
     sb.from('schedule_activities')
       .select('id, weight, planned_start, planned_finish')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId),
     sb.from('progress_updates')
       .select('activity_id, update_date, percent_complete')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('update_date', { ascending: true }),
   ])
@@ -528,6 +537,7 @@ export async function createBaseline(
   projectId: string,
   name: string,
 ): Promise<{ error?: string; id?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -535,7 +545,7 @@ export async function createBaseline(
   const { data: acts } = await sb
     .from('schedule_activities')
     .select('id, activity_code, name, planned_start, planned_finish, duration_days')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
 
   const snapshot = (acts ?? []).map(a => ({
@@ -550,7 +560,7 @@ export async function createBaseline(
   const { data: inserted, error } = await sb
     .from('schedule_baselines')
     .insert({
-      tenant_id:  DEMO_TENANT,
+      tenant_id:  tenantId,
       project_id: projectId,
       name:       name || 'Baseline 1',
       snapshot,
@@ -590,12 +600,13 @@ function dayDiff(fromIso: string | null, toIso: string | null): number | null {
 }
 
 export async function getBaselineVariance(projectId: string): Promise<BaselineVariance> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
   const { data: baseline } = await sb
     .from('schedule_baselines')
     .select('name, snapshot, created_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -606,7 +617,7 @@ export async function getBaselineVariance(projectId: string): Promise<BaselineVa
   const { data: current } = await sb
     .from('schedule_activities')
     .select('id, activity_code, name, planned_start, planned_finish')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
 
   const currentById = Object.fromEntries((current ?? []).map(a => [a.id, a]))
@@ -680,6 +691,7 @@ const PV_BESS_TEMPLATE: TemplateActivity[] = [
 ]
 
 export async function seedScheduleTemplate(projectId: string): Promise<{ seeded: boolean; error?: string; count?: number }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { seeded: false, error: gate.error }
 
@@ -689,7 +701,7 @@ export async function seedScheduleTemplate(projectId: string): Promise<{ seeded:
   const { data: existing } = await sb
     .from('schedule_activities')
     .select('id')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .limit(1)
   if (existing && existing.length > 0) return { seeded: false }
@@ -704,7 +716,7 @@ export async function seedScheduleTemplate(projectId: string): Promise<{ seeded:
     const finish = addDays(start, t.duration)
     finishByCode[t.code] = finish
     return {
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       project_id:       projectId,
       activity_code:    t.code,
       name:             t.name,
@@ -735,7 +747,7 @@ export async function seedScheduleTemplate(projectId: string): Promise<{ seeded:
   const depRows = PV_BESS_TEMPLATE
     .filter(t => t.predecessor && idByCode[t.predecessor] && idByCode[t.code])
     .map(t => ({
-      tenant_id:      DEMO_TENANT,
+      tenant_id:      tenantId,
       project_id:     projectId,
       predecessor_id: idByCode[t.predecessor as string],
       successor_id:   idByCode[t.code],
@@ -778,6 +790,7 @@ export async function importActivities(
   rows: ImportRow[],
   mode: 'append' | 'replace' = 'append',
 ): Promise<{ error?: string; imported?: number }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
   if (!rows.length) return { error: 'No rows to import' }
@@ -785,9 +798,9 @@ export async function importActivities(
   const sb = createAdminClient()
 
   if (mode === 'replace') {
-    await sb.from('activity_dependencies').delete().eq('tenant_id', DEMO_TENANT).eq('project_id', projectId)
-    await sb.from('progress_updates').delete().eq('tenant_id', DEMO_TENANT).eq('project_id', projectId)
-    await sb.from('schedule_activities').delete().eq('tenant_id', DEMO_TENANT).eq('project_id', projectId)
+    await sb.from('activity_dependencies').delete().eq('tenant_id', tenantId).eq('project_id', projectId)
+    await sb.from('progress_updates').delete().eq('tenant_id', tenantId).eq('project_id', projectId)
+    await sb.from('schedule_activities').delete().eq('tenant_id', tenantId).eq('project_id', projectId)
   }
 
   let sortBase = 0
@@ -795,7 +808,7 @@ export async function importActivities(
     const { data: maxRow } = await sb
       .from('schedule_activities')
       .select('sort_order')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('sort_order', { ascending: false })
       .limit(1)
@@ -806,7 +819,7 @@ export async function importActivities(
   const insertRows = rows.map((r, i) => {
     const pct = Math.max(0, Math.min(100, Number(r.percent_complete ?? 0)))
     return {
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       project_id:       projectId,
       activity_code:    r.activity_code ?? null,
       name:             r.name || 'Imported activity',
@@ -840,7 +853,7 @@ export async function importActivities(
   const depRows = rows
     .filter(r => r.predecessor_code && r.activity_code && idByCode[r.predecessor_code] && idByCode[r.activity_code])
     .map(r => ({
-      tenant_id:      DEMO_TENANT,
+      tenant_id:      tenantId,
       project_id:     projectId,
       predecessor_id: idByCode[r.predecessor_code as string],
       successor_id:   idByCode[r.activity_code as string],
@@ -864,6 +877,7 @@ export async function importActivities(
 export async function recalcCriticalPath(
   projectId: string,
 ): Promise<{ error?: string; criticalCount?: number }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -871,11 +885,11 @@ export async function recalcCriticalPath(
   const [{ data: acts }, { data: deps }] = await Promise.all([
     sb.from('schedule_activities')
       .select('id, duration_days, planned_start, planned_finish')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId),
     sb.from('activity_dependencies')
       .select('predecessor_id, successor_id, lag_days')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId),
   ])
 
@@ -954,10 +968,10 @@ export async function recalcCriticalPath(
   }
 
   if (criticalIds.length) {
-    await sb.from('schedule_activities').update({ is_critical: true }).in('id', criticalIds).eq('tenant_id', DEMO_TENANT)
+    await sb.from('schedule_activities').update({ is_critical: true }).in('id', criticalIds).eq('tenant_id', tenantId)
   }
   if (nonCriticalIds.length) {
-    await sb.from('schedule_activities').update({ is_critical: false }).in('id', nonCriticalIds).eq('tenant_id', DEMO_TENANT)
+    await sb.from('schedule_activities').update({ is_critical: false }).in('id', nonCriticalIds).eq('tenant_id', tenantId)
   }
 
   revalidatePath(`/projects/${projectId}/schedule`)
@@ -984,11 +998,12 @@ export interface GateScheduleRow {
  * activity in the gate is 100% complete.
  */
 export async function getGateSchedule(projectId: string): Promise<GateScheduleRow[]> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
   const { data } = await sb
     .from('schedule_activities')
     .select('gate_number, planned_start, planned_finish, actual_start, actual_finish, percent_complete, weight')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
 
   const rows = (data ?? []).filter(r => r.gate_number != null)

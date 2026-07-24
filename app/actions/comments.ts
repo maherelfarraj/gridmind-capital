@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendMentionEmail } from '@/lib/email/send'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 /** Build the deep-link for a comment thread based on its entity. */
 function commentLink(entityType: string, entityId: string): string {
@@ -23,12 +23,13 @@ async function emailMentions(opts: {
   entityType: string
   entityId: string
 }) {
+  const tenantId = await getCurrentTenantId()
   if (opts.mentions.length === 0) return
   const admin = createAdminClient()
   const { data: profiles } = await admin
     .from('profiles')
     .select('id, email, full_name')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('is_active', true)
   if (!profiles?.length) return
 
@@ -115,6 +116,7 @@ export async function getComments(
 }
 
 export async function addComment(input: {
+  const tenantId = await getCurrentTenantId()
   entityType: string
   entityId: string
   body: string
@@ -132,7 +134,7 @@ export async function addComment(input: {
   const { data, error } = await supabase
     .from('comments')
     .insert({
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       object_type: input.entityType,
       object_id: input.entityId,
       author_id: user?.id ?? null,

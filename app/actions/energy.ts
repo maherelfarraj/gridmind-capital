@@ -5,7 +5,7 @@ import { requireWriter }     from '@/lib/auth/guard'
 import { revalidatePath }    from 'next/cache'
 import { maybeCreateEnergyInsight, maybeCreateBessInsight } from '@/app/actions/ai-insights'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +113,7 @@ export interface GridComplianceDashboard {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getEnergyDashboard(projectId: string): Promise<EnergyDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb      = createAdminClient()
   const since90 = daysAgo(90)
   const since0m = startOfMonth()
@@ -122,7 +123,7 @@ export async function getEnergyDashboard(projectId: string): Promise<EnergyDashb
   const { data: rows } = await sb
     .from('energy_production')
     .select('id, project_id, date, energy_mwh, availability_pct, curtailment_mwh, p50_mwh, p90_mwh')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .gte('date', since90)
     .order('date', { ascending: false })
@@ -142,7 +143,7 @@ export async function getEnergyDashboard(projectId: string): Promise<EnergyDashb
   const { data: ytdRows } = await sb
     .from('energy_production')
     .select('date, energy_mwh, availability_pct, curtailment_mwh, p50_mwh, p90_mwh')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .gte('date', since0y)
 
@@ -195,6 +196,7 @@ export async function logProduction(
   projectId: string,
   date: string,   // YYYY-MM-DD
   data: {
+    const tenantId = await getCurrentTenantId()
     energy_mwh:       number
     availability_pct?: number | null
     curtailment_mwh?:  number | null
@@ -212,7 +214,7 @@ export async function logProduction(
     .from('energy_production')
     .upsert(
       {
-        tenant_id:        DEMO_TENANT,
+        tenant_id:        tenantId,
         project_id:       projectId,
         date,
         energy_mwh:       data.energy_mwh,
@@ -246,6 +248,7 @@ export async function importProductionCsv(
   projectId: string,
   rows: ProductionCsvRow[],
 ): Promise<{ imported: number; skipped: number; error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { imported: 0, skipped: 0, error: gate.error }
 
@@ -259,7 +262,7 @@ export async function importProductionCsv(
     const mwh = num(r.energy_mwh)
     if (mwh < 0) { skipped++; continue }
     valid.push({
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       project_id:       projectId,
       date:             r.date,
       energy_mwh:       mwh,
@@ -290,13 +293,14 @@ export async function importProductionCsv(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getBessDashboard(projectId: string): Promise<BessDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb      = createAdminClient()
   const since90 = daysAgo(90)
 
   const { data: rows } = await sb
     .from('bess_metrics')
     .select('id, project_id, date, soc_pct, cycles_cumulative, throughput_mwh, soh_pct, warranty_cycle_limit')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .gte('date', since90)
     .order('date', { ascending: false })
@@ -371,6 +375,7 @@ export async function logBessMetrics(
   projectId: string,
   date: string,   // YYYY-MM-DD
   data: {
+    const tenantId = await getCurrentTenantId()
     soc_pct?:              number | null
     cycles_cumulative?:    number | null
     throughput_mwh?:       number | null
@@ -388,7 +393,7 @@ export async function logBessMetrics(
     .from('bess_metrics')
     .upsert(
       {
-        tenant_id:            DEMO_TENANT,
+        tenant_id:            tenantId,
         project_id:           projectId,
         date,
         soc_pct:              data.soc_pct              ?? null,
@@ -411,12 +416,13 @@ export async function logBessMetrics(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getGridCompliance(projectId: string): Promise<GridComplianceDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
   const { data: rows } = await sb
     .from('grid_compliance_tests')
     .select('id, project_id, category, test_name, scheduled_date, completed_date, result, certificate_ref, notes')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .order('scheduled_date', { ascending: true })
 
@@ -450,6 +456,7 @@ export async function getGridCompliance(projectId: string): Promise<GridComplian
 export async function addComplianceTest(
   projectId: string,
   data: {
+    const tenantId = await getCurrentTenantId()
     category:       ComplianceCategory
     test_name:      string
     scheduled_date?: string | null
@@ -465,7 +472,7 @@ export async function addComplianceTest(
   const { data: inserted, error } = await admin
     .from('grid_compliance_tests')
     .insert({
-      tenant_id:      DEMO_TENANT,
+      tenant_id:      tenantId,
       project_id:     projectId,
       category:       data.category,
       test_name:      data.test_name.trim(),
@@ -492,6 +499,7 @@ export async function updateComplianceResult(
   result: NonNullable<ComplianceResult>,
   certificateRef?: string | null,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -505,7 +513,7 @@ export async function updateComplianceResult(
       updated_at:      new Date().toISOString(),
     })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
 

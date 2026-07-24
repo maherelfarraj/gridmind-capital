@@ -19,7 +19,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendEmail, wrapHtml, heading, para } from '@/lib/email/send'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { DEMO_TENANT_FALLBACK as DEMO_TENANT } from '@/lib/tenant'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gridmind-gules.vercel.app'
 
 // Roles that receive a digest (mapped from admin/sponsor/PM to the real enum).

@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/auth/guard'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -37,12 +37,13 @@ export interface UserProfile {
 // ─────────────────────────────────────────────────────────────
 
 export async function getTenant(): Promise<TenantData | null> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('tenants')
     .select('id, name, slug, plan, status, created_at, max_projects, max_users, settings')
-    .eq('id', DEMO_TENANT)
+    .eq('id', tenantId)
     .single()
 
   if (error || !data) return null
@@ -50,6 +51,7 @@ export async function getTenant(): Promise<TenantData | null> {
 }
 
 export async function updateTenant(payload: Partial<Pick<TenantData, 'name' | 'settings'>>): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireAdmin()
   if ('error' in gate) return gate
 
@@ -58,7 +60,7 @@ export async function updateTenant(payload: Partial<Pick<TenantData, 'name' | 's
   const { error } = await supabase
     .from('tenants')
     .update(payload)
-    .eq('id', DEMO_TENANT)
+    .eq('id', tenantId)
 
   if (error) return { error: error.message }
   return {}
@@ -69,12 +71,13 @@ export async function updateTenant(payload: Partial<Pick<TenantData, 'name' | 's
 // ─────────────────────────────────────────────────────────────
 
 export async function getUsers(): Promise<UserProfile[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('profiles')
     .select('id, full_name, email, role, department, avatar_url, created_at, last_active')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
 
   if (error || !data) return []
@@ -92,6 +95,7 @@ export async function getUsers(): Promise<UserProfile[]> {
 }
 
 export async function updateUserRole(userId: string, role: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireAdmin()
   if ('error' in gate) return gate
 
@@ -101,13 +105,14 @@ export async function updateUserRole(userId: string, role: string): Promise<{ er
     .from('profiles')
     .update({ role })
     .eq('id', userId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
   return {}
 }
 
 export async function deactivateUser(userId: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireAdmin()
   if ('error' in gate) return gate
 
@@ -118,7 +123,7 @@ export async function deactivateUser(userId: string): Promise<{ error?: string }
     .from('profiles')
     .update({ role: 'viewer', department: 'Deactivated' })
     .eq('id', userId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
   return {}
@@ -140,12 +145,13 @@ export interface ApprovalRule {
 }
 
 export async function getApprovalRules(): Promise<ApprovalRule[]> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('approval_rules')
     .select('id, name, object_type, min_amount, max_amount, required_roles, approval_levels, is_active')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
 
   if (error || !data) return []

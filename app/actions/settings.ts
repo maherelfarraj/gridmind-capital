@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +39,7 @@ export interface UpdateProfilePayload {
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
 export async function getProfileSettings(): Promise<ProfileSettings> {
+  const tenantId = await getCurrentTenantId()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -48,7 +49,7 @@ export async function getProfileSettings(): Promise<ProfileSettings> {
     user
       ? admin.from('profiles').select('full_name, role').eq('id', user.id).single()
       : Promise.resolve({ data: null, error: null }),
-    admin.from('tenants').select('settings').eq('id', DEMO_TENANT).single(),
+    admin.from('tenants').select('settings').eq('id', tenantId).single(),
   ])
 
   const profile = profileRes.data
@@ -75,6 +76,7 @@ export async function getProfileSettings(): Promise<ProfileSettings> {
 export async function updateProfileSettings(
   payload: UpdateProfilePayload,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -88,7 +90,7 @@ export async function updateProfileSettings(
   const { data: tenantRow } = await admin
     .from('tenants')
     .select('settings')
-    .eq('id', DEMO_TENANT)
+    .eq('id', tenantId)
     .single()
 
   const currentSettings = (tenantRow?.settings as Record<string, unknown> | null) ?? {}
@@ -112,7 +114,7 @@ export async function updateProfileSettings(
     payload.fullName !== undefined
       ? admin.from('profiles').update({ full_name: payload.fullName }).eq('id', user.id)
       : Promise.resolve({ error: null }),
-    admin.from('tenants').update({ settings: newSettings }).eq('id', DEMO_TENANT),
+    admin.from('tenants').update({ settings: newSettings }).eq('id', tenantId),
   ])
 
   if (profileRes.error) return { error: (profileRes.error as { message: string }).message }

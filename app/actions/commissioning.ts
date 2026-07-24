@@ -5,16 +5,17 @@ import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { CommissioningTest, HandoverRecord, CommissioningDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─── Load ─────────────────────────────────────────────────────
 export async function loadCommissioningDashboard(): Promise<CommissioningDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
   const [{ data: tests }, { data: handover }, { data: projects }] = await Promise.all([
-    sb.from('commissioning_tests').select('*').eq('tenant_id', DEMO_TENANT).order('created_at', { ascending: false }),
-    sb.from('handover_records').select('*').eq('tenant_id', DEMO_TENANT).order('created_at', { ascending: false }),
-    sb.from('projects').select('id, name').eq('tenant_id', DEMO_TENANT),
+    sb.from('commissioning_tests').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+    sb.from('handover_records').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+    sb.from('projects').select('id, name').eq('tenant_id', tenantId),
   ])
 
   const projectMap = Object.fromEntries((projects ?? []).map(p => [p.id, p.name]))
@@ -77,13 +78,14 @@ export async function createTestAction(data: {
   scheduled_date: string
   witness_required: boolean
 }) {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
   const sb = createAdminClient()
   const { error } = await sb.from('commissioning_tests').insert({
     ...data,
-    tenant_id: DEMO_TENANT,
+    tenant_id: tenantId,
     status: 'pending',
     defects_raised: 0,
   })
@@ -130,17 +132,18 @@ const COMM_STATUS_REMAP: Record<string, string> = {
 }
 
 export async function getG6Data(projectId: string): Promise<G6DataResult> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
   const [testRes, gateRes] = await Promise.all([
     sb.from('commissioning_tests')
       .select('id, test_number, description, system, test_type, status, scheduled_date, completed_date, lead_engineer, reference_doc, defects_raised, witness_required')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     sb.from('gate_submissions')
       .select('form_data')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('gate_number', 6)
       .maybeSingle(),
@@ -188,6 +191,7 @@ export async function getG6Data(projectId: string): Promise<G6DataResult> {
 
 // ─── Seed ─────────────────────────────────────────────────────
 export async function seedCommissioningDemoAction() {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { seeded: false, message: gate.error }
 
@@ -196,11 +200,11 @@ export async function seedCommissioningDemoAction() {
   const { data: existing } = await sb
     .from('commissioning_tests')
     .select('id')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .limit(1)
   if (existing && existing.length > 0) return { seeded: false, message: 'Already seeded' }
 
-  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', DEMO_TENANT).limit(2)
+  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(2)
   const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
 
   const tests = [
@@ -215,7 +219,7 @@ export async function seedCommissioningDemoAction() {
   ]
 
   await sb.from('commissioning_tests').insert(
-    tests.map(t => ({ ...t, project_id: pid, tenant_id: DEMO_TENANT }))
+    tests.map(t => ({ ...t, project_id: pid, tenant_id: tenantId }))
   )
 
   const handoverDocs = [
@@ -227,7 +231,7 @@ export async function seedCommissioningDemoAction() {
   ]
 
   await sb.from('handover_records').insert(
-    handoverDocs.map(d => ({ ...d, project_id: pid, tenant_id: DEMO_TENANT }))
+    handoverDocs.map(d => ({ ...d, project_id: pid, tenant_id: tenantId }))
   )
 
   revalidatePath('/commissioning')

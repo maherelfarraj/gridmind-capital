@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache'
 import type { MarketplaceProvider } from '@/lib/types/action-types'
 export type { MarketplaceProvider }
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ── Integration hub static config ────────────────────────────────────────────
 
@@ -74,12 +74,13 @@ const RECENT_EVENTS: DataExchangeEvent[] = [
 ]
 
 export async function loadMarketplaceDashboard(): Promise<MarketplaceDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
   const { data: providerRows } = await sb
     .from('marketplace_providers')
     .select('*')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('name')
 
   const providers = (providerRows ?? []) as MarketplaceProvider[]
@@ -117,6 +118,7 @@ export async function loadMarketplaceDashboard(): Promise<MarketplaceDashboard> 
 }
 
 export async function connectProviderAction(id: string): Promise<{ error: string | null }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -125,12 +127,13 @@ export async function connectProviderAction(id: string): Promise<{ error: string
     .from('marketplace_providers')
     .update({ status: 'connected' })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   revalidatePath('/marketplace')
   return { error: error?.message ?? null }
 }
 
 export async function disconnectProviderAction(id: string): Promise<{ error: string | null }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -139,17 +142,18 @@ export async function disconnectProviderAction(id: string): Promise<{ error: str
     .from('marketplace_providers')
     .update({ status: 'available' })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   revalidatePath('/marketplace')
   return { error: error?.message ?? null }
 }
 
 export async function seedMarketplaceDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const sb = createAdminClient()
-  const { data: ex } = await sb.from('marketplace_providers').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: ex } = await sb.from('marketplace_providers').select('id').eq('tenant_id', tenantId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
   const demos = [
@@ -164,7 +168,7 @@ export async function seedMarketplaceDemoData(): Promise<{ error?: string }> {
   ] as const
 
   for (const d of demos) {
-    await sb.from('marketplace_providers').insert({ tenant_id: DEMO_TENANT, logo_url: null, ...d })
+    await sb.from('marketplace_providers').insert({ tenant_id: tenantId, logo_url: null, ...d })
   }
   return {}
 }

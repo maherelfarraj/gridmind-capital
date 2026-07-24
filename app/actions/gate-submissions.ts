@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import { sendApprovalRequestEmail } from '@/lib/email/send'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -214,8 +215,6 @@ export interface G7FormData {
 
 // ─── Shared submit helper for G2–G7 ───────────────────────────
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
 /**
  * Saves a gate submission (upsert on project_id + gate_number) and creates a
  * paired approvals row — mirrors the G0/G1 pattern for gates 2 through 7.
@@ -228,6 +227,7 @@ async function submitGateForm(
 ): Promise<{ error: string | null }> {
   const guard = await requireWriter()
   if ('error' in guard) return guard
+  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
 
@@ -246,7 +246,7 @@ async function submitGateForm(
 
   // Create the approval request for this submission
   const { error: apprError } = await supabase.from('approvals').insert({
-    tenant_id:   DEMO_TENANT,
+    tenant_id:   tenantId,
     object_type: 'gate_submission',
     object_id:   projectId,
     title:       `G${gateNumber} Submission — ${projectName}`,

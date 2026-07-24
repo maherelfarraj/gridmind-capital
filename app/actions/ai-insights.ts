@@ -5,14 +5,15 @@ import { requireWriter } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import type { AiInsight, MarketplaceProvider, AiMarketplaceDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export async function loadAiMarketplaceDashboard(): Promise<AiMarketplaceDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
   const [{ data: insights }, { data: providers }, { data: projects }] = await Promise.all([
-    sb.from('ai_insights').select('*').eq('tenant_id', DEMO_TENANT).order('created_at', { ascending: false }),
-    sb.from('marketplace_providers').select('*').eq('tenant_id', DEMO_TENANT).order('name'),
-    sb.from('projects').select('id, name').eq('tenant_id', DEMO_TENANT),
+    sb.from('ai_insights').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+    sb.from('marketplace_providers').select('*').eq('tenant_id', tenantId).order('name'),
+    sb.from('projects').select('id, name').eq('tenant_id', tenantId),
   ])
 
   const pm = Object.fromEntries((projects ?? []).map(p => [p.id, p.name]))
@@ -49,6 +50,7 @@ export async function loadAiMarketplaceDashboard(): Promise<AiMarketplaceDashboa
  * inside a read (e.g. getVariationsRegister) as a side effect.
  */
 export async function maybeCreateCostOverrunInsight(projectId: string): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const sb = createAdminClient()
 
@@ -68,7 +70,7 @@ export async function maybeCreateCostOverrunInsight(projectId: string): Promise<
     const { data: existing } = await sb
       .from('ai_insights')
       .select('id')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('module', 'cost_overrun')
       .eq('status', 'open')
@@ -79,7 +81,7 @@ export async function maybeCreateCostOverrunInsight(projectId: string): Promise<
       n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toFixed(0)}`
 
     await sb.from('ai_insights').insert({
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       project_id: projectId,
       module: 'cost_overrun',
       title: `Pending variations exceed 5% of budget on ${proj?.name ?? 'project'}`,
@@ -106,6 +108,7 @@ export async function maybeCreateLenderRiskInsight(
   cpi: number,
   spi: number,
 ): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const sb = createAdminClient()
     const { data: proj } = await sb.from('projects').select('name').eq('id', projectId).maybeSingle()
@@ -134,7 +137,7 @@ export async function maybeCreateLenderRiskInsight(
       const { data: existing } = await sb
         .from('ai_insights')
         .select('id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('module', c.module)
         .eq('status', 'open')
@@ -142,7 +145,7 @@ export async function maybeCreateLenderRiskInsight(
       if (existing && existing.length > 0) continue
 
       await sb.from('ai_insights').insert({
-        tenant_id: DEMO_TENANT,
+        tenant_id: tenantId,
         project_id: projectId,
         module: c.module,
         title: c.title,
@@ -171,6 +174,7 @@ export async function maybeCreatePermitSafetyInsight(
   suspendedCount: number,
   expiredUnclosedLast7d: number,
 ): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const triggerSuspended = suspendedCount > 0
     const triggerExpired = expiredUnclosedLast7d > 3
@@ -181,7 +185,7 @@ export async function maybeCreatePermitSafetyInsight(
     const { data: existing } = await sb
       .from('ai_insights')
       .select('id')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('module', 'safety')
       .eq('status', 'open')
@@ -196,7 +200,7 @@ export async function maybeCreatePermitSafetyInsight(
     if (triggerExpired) reasons.push(`${expiredUnclosedLast7d} permits expired without formal closure in the last 7 days`)
 
     await sb.from('ai_insights').insert({
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       project_id: projectId,
       module: 'safety',
       title: `Permit-to-work compliance risk on ${projectName}`,
@@ -220,6 +224,7 @@ export async function maybeCreatePermitSafetyInsight(
  * project. Never throws.
  */
 export async function maybeCreateDelayInsight(projectId: string): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const sb = createAdminClient()
 
@@ -227,7 +232,7 @@ export async function maybeCreateDelayInsight(projectId: string): Promise<void> 
     const { data: rows } = await sb
       .from('daily_reports')
       .select('report_date, delays')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('status', 'submitted')
       .order('report_date', { ascending: false })
@@ -254,7 +259,7 @@ export async function maybeCreateDelayInsight(projectId: string): Promise<void> 
     const { data: existing } = await sb
       .from('ai_insights')
       .select('id')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('module', 'schedule_risk')
       .eq('status', 'open')
@@ -265,7 +270,7 @@ export async function maybeCreateDelayInsight(projectId: string): Promise<void> 
     const projectName = (proj?.name as string) ?? 'project'
 
     await sb.from('ai_insights').insert({
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       project_id: projectId,
       module: 'schedule_risk',
       title: `Recurring site delays reported — ${projectName}`,
@@ -295,6 +300,7 @@ export async function maybeCreateQualityInsight(
   totalResults: number,
   oldestCriticalNcrDays: number,  // 0 if none
 ): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const sb = createAdminClient()
     const { data: proj } = await sb.from('projects').select('name').eq('id', projectId).maybeSingle()
@@ -306,7 +312,7 @@ export async function maybeCreateQualityInsight(
       const { data: existingSchedule } = await sb
         .from('ai_insights')
         .select('id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('module', 'schedule_risk')
         .eq('status', 'open')
@@ -314,7 +320,7 @@ export async function maybeCreateQualityInsight(
 
       if (!existingSchedule || existingSchedule.length === 0) {
         await sb.from('ai_insights').insert({
-          tenant_id: DEMO_TENANT,
+          tenant_id: tenantId,
           project_id: projectId,
           module: 'schedule_risk',
           title: `Inspection pass rate below threshold on ${projectName}`,
@@ -334,7 +340,7 @@ export async function maybeCreateQualityInsight(
       const { data: existingSafety } = await sb
         .from('ai_insights')
         .select('id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('module', 'safety')
         .eq('status', 'open')
@@ -342,7 +348,7 @@ export async function maybeCreateQualityInsight(
 
       if (!existingSafety || existingSafety.length === 0) {
         await sb.from('ai_insights').insert({
-          tenant_id: DEMO_TENANT,
+          tenant_id: tenantId,
           project_id: projectId,
           module: 'safety',
           title: `Critical NCR unresolved ${oldestCriticalNcrDays} days on ${projectName}`,
@@ -373,6 +379,7 @@ export async function maybeCreateContractsInsight(
   totalLdExposure: number,
   oldestExpiredSecurityDays: number,  // 0 if none
 ): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const sb = createAdminClient()
     const { data: proj } = await sb
@@ -390,7 +397,7 @@ export async function maybeCreateContractsInsight(
       const { data: existing } = await sb
         .from('ai_insights')
         .select('id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('module', 'cost_overrun')
         .eq('status', 'open')
@@ -399,7 +406,7 @@ export async function maybeCreateContractsInsight(
       if (!existing || existing.length === 0) {
         const ldPct = ((totalLdExposure / budgetUsd) * 100).toFixed(1)
         await sb.from('ai_insights').insert({
-          tenant_id:  DEMO_TENANT,
+          tenant_id:  tenantId,
           project_id: projectId,
           module:     'cost_overrun',
           title:      `LD exposure ${ldPct}% of budget on ${projectName}`,
@@ -419,7 +426,7 @@ export async function maybeCreateContractsInsight(
       const { data: existingSec } = await sb
         .from('ai_insights')
         .select('id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('module', 'cost_overrun')
         .eq('status', 'open')
@@ -428,7 +435,7 @@ export async function maybeCreateContractsInsight(
 
       if (!existingSec || existingSec.length === 0) {
         await sb.from('ai_insights').insert({
-          tenant_id:  DEMO_TENANT,
+          tenant_id:  tenantId,
           project_id: projectId,
           module:     'cost_overrun',
           title:      `Expired security not released on ${projectName}`,
@@ -458,6 +465,7 @@ export async function maybeCreateEnergyInsight(
   rolling7dActual: number,
   rolling7dP50:    number,
 ): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     if (rolling7dP50 <= 0 || rolling7dActual <= 0) return
     const pct = (rolling7dActual / rolling7dP50) * 100
@@ -474,7 +482,7 @@ export async function maybeCreateEnergyInsight(
     const { data: existing } = await sb
       .from('ai_insights')
       .select('id')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('module', 'anomaly_detection')
       .eq('status', 'open')
@@ -483,7 +491,7 @@ export async function maybeCreateEnergyInsight(
     if (existing && existing.length > 0) return
 
     await sb.from('ai_insights').insert({
-      tenant_id:  DEMO_TENANT,
+      tenant_id:  tenantId,
       project_id: projectId,
       module:     'anomaly_detection',
       title:      `Low production — 7-day yield at ${pct.toFixed(1)}% of P50 on ${projectName}`,
@@ -511,6 +519,7 @@ export async function maybeCreateBessInsight(
   sohDrop30d:      number,   // SOH percentage points dropped over last 30 days (positive = drop)
   pctWarrantyUsed: number,   // cycles_used / warranty_limit × 100
 ): Promise<void> {
+  const tenantId = await getCurrentTenantId()
   try {
     const sb = createAdminClient()
     const { data: proj } = await sb
@@ -525,7 +534,7 @@ export async function maybeCreateBessInsight(
       const { data: existingSoh } = await sb
         .from('ai_insights')
         .select('id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('module', 'predictive_maintenance')
         .eq('status', 'open')
@@ -534,7 +543,7 @@ export async function maybeCreateBessInsight(
 
       if (!existingSoh || existingSoh.length === 0) {
         await sb.from('ai_insights').insert({
-          tenant_id:  DEMO_TENANT,
+          tenant_id:  tenantId,
           project_id: projectId,
           module:     'predictive_maintenance',
           title:      `Rapid BESS SOH degradation — ${sohDrop30d.toFixed(1)}pp drop in 30 days on ${projectName}`,
@@ -553,7 +562,7 @@ export async function maybeCreateBessInsight(
       const { data: existingCycles } = await sb
         .from('ai_insights')
         .select('id')
-        .eq('tenant_id', DEMO_TENANT)
+        .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('module', 'predictive_maintenance')
         .eq('status', 'open')
@@ -562,7 +571,7 @@ export async function maybeCreateBessInsight(
 
       if (!existingCycles || existingCycles.length === 0) {
         await sb.from('ai_insights').insert({
-          tenant_id:  DEMO_TENANT,
+          tenant_id:  tenantId,
           project_id: projectId,
           module:     'predictive_maintenance',
           title:      `BESS warranty cycle limit at ${pctWarrantyUsed.toFixed(1)}% on ${projectName}`,
@@ -611,14 +620,15 @@ export async function connectProviderAction(id: string) {
 }
 
 export async function seedAiMarketplaceDemoAction() {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { seeded: false }
 
   const sb = createAdminClient()
-  const { data: existing } = await sb.from('ai_insights').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: existing } = await sb.from('ai_insights').select('id').eq('tenant_id', tenantId).limit(1)
   if (existing && existing.length > 0) return { seeded: false }
 
-  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', DEMO_TENANT).limit(1)
+  const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(1)
   const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
 
   const insightRows = [
@@ -631,7 +641,7 @@ export async function seedAiMarketplaceDemoAction() {
   ]
 
   await sb.from('ai_insights').insert(
-    insightRows.map(r => ({ ...r, project_id: pid, tenant_id: DEMO_TENANT }))
+    insightRows.map(r => ({ ...r, project_id: pid, tenant_id: tenantId }))
   )
 
   const providerRows = [
@@ -646,7 +656,7 @@ export async function seedAiMarketplaceDemoAction() {
   ]
 
   await sb.from('marketplace_providers').insert(
-    providerRows.map(r => ({ ...r, tenant_id: DEMO_TENANT }))
+    providerRows.map(r => ({ ...r, tenant_id: tenantId }))
   )
 
   revalidatePath('/ai-insights')

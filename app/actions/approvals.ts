@@ -10,7 +10,7 @@ const ADMIN_APPROVER_ROLES = ['Super Admin', 'Tenant Admin', 'Executive Sponsor'
 
 // profiles.role enum values that action approvals (used to resolve email recipients).
 const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 /** Resolve the active approver profiles (id + email + name) for a tenant. */
 async function resolveApprovers(
@@ -92,6 +92,7 @@ export async function createApproval(opts: {
 }): Promise<{ id: string } | { error: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
 
@@ -126,7 +127,7 @@ export async function createApproval(opts: {
       })
       return
     }
-    const approvers = await resolveApprovers(supabase, DEMO_TENANT)
+    const approvers = await resolveApprovers(supabase, tenantId)
     for (const a of approvers) {
       await sendApprovalRequestEmail({
         to: a.email,
@@ -307,12 +308,12 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
 export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
   const { data: ex } = await supabase.from('approvals').select('id').limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
-  const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
   const demos = [
     { object_type: 'opportunity',    title: 'OPP-RAK-250', description: 'G0 gate review for 250MW Solar opportunity', status: 'pending',  priority: 'high',   amount: 175_000_000 },
     { object_type: 'opportunity',    title: 'OPP-GOS-150', description: 'G0 gate review for 150MW Wind opportunity',  status: 'approved', priority: 'normal', amount: 210_000_000 },
@@ -322,7 +323,7 @@ export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
     { object_type: 'variation',      title: 'VAR-012',     description: 'Schedule variation — weather delay +6wk',   status: 'pending',  priority: 'critical', amount: 12_400_000 },
   ]
   for (const d of demos) {
-    await supabase.from('approvals').insert({ tenant_id: DEMO_TENANT, ...d })
+    await supabase.from('approvals').insert({ tenant_id: tenantId, ...d })
   }
 
   // Seed approval_rules
@@ -338,7 +339,7 @@ export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
   ]
   const { data: exRules } = await supabase.from('approval_rules').select('id').limit(1)
   if ((exRules?.length ?? 0) === 0) {
-    for (const r of ruleSeeds) await supabase.from('approval_rules').insert({ tenant_id: DEMO_TENANT, ...r })
+    for (const r of ruleSeeds) await supabase.from('approval_rules').insert({ tenant_id: tenantId, ...r })
   }
 
   return {}

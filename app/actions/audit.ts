@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin }      from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const PAGE_SIZE = 50
 
 export interface AuditRow {
@@ -168,6 +168,7 @@ export async function getAuditLog(
 ): Promise<{ entries: AuditEntry[] } | { error: string }> {
   const gate = await requireAdmin()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   const { tableName, recordId, limit = 50 } = opts
   const safeLimit = Math.min(Math.max(1, limit), 200)
@@ -177,7 +178,7 @@ export async function getAuditLog(
   let query = admin
     .from('audit_logs')
     .select('id, tenant_id, actor_id, action, entity_type, entity_id, old_data, new_data, created_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
     .limit(safeLimit)
 
@@ -202,6 +203,7 @@ export async function getRecordHistory(
 ): Promise<{ entries: AuditEntry[] } | { error: string }> {
   const gate = await requireAdmin()
   if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
 
   if (!tableName?.trim()) return { error: 'tableName is required' }
   if (!recordId?.trim())  return { error: 'recordId is required' }
@@ -211,7 +213,7 @@ export async function getRecordHistory(
   const { data, error } = await admin
     .from('audit_logs')
     .select('id, tenant_id, actor_id, action, entity_type, entity_id, old_data, new_data, created_at')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('entity_type', tableName)
     .eq('entity_id',   recordId)
     .order('created_at', { ascending: true })   // oldest-first for timeline

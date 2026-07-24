@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import type { Opportunity, OpportunitiesDashboard } from '@/lib/types/action-types'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -17,19 +17,20 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [projRes, approvalRes] = await Promise.all([
     supabase
       .from('projects')
       .select('id, code, name, technology, capacity_mw, country, location, status, health, budget_usd, created_at, current_phase')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .in('current_phase', [0, 1])
       .order('created_at', { ascending: false }),
     supabase
       .from('approvals')
       .select('id, title, status, object_type')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('object_type', 'opportunity'),
   ])
 
@@ -78,6 +79,7 @@ export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboa
 }
 
 export async function createOpportunity(data: {
+  const tenantId = await getCurrentTenantId()
   name: string
   code: string
   technology: string
@@ -96,7 +98,7 @@ export async function createOpportunity(data: {
   const { data: proj, error: pe } = await supabase
     .from('projects')
     .insert({
-      tenant_id:        DEMO_TENANT,
+      tenant_id:        tenantId,
       name:             data.name,
       code:             data.code,
       description:      data.description,
@@ -118,7 +120,7 @@ export async function createOpportunity(data: {
 
   // 2. Create approval record for G0 review
   await supabase.from('approvals').insert({
-    tenant_id:   DEMO_TENANT,
+    tenant_id:   tenantId,
     object_type: 'opportunity',
     title:       data.code,
     description: `G0 Gate review for ${data.name}`,
@@ -131,6 +133,7 @@ export async function createOpportunity(data: {
 }
 
 export async function submitOpportunityForReview(projectId: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -139,11 +142,12 @@ export async function submitOpportunityForReview(projectId: string): Promise<{ e
     .from('projects')
     .update({ status: 'active' })
     .eq('id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   return { error: error?.message }
 }
 
 export async function seedOpportunitiesDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -153,7 +157,7 @@ export async function seedOpportunitiesDemoData(): Promise<{ error?: string }> {
   const { data: existing } = await supabase
     .from('projects')
     .select('id')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .eq('current_phase', 0)
     .limit(1)
 
@@ -168,7 +172,7 @@ export async function seedOpportunitiesDemoData(): Promise<{ error?: string }> {
 
   for (const d of demos) {
     await supabase.from('projects').insert({
-      tenant_id: DEMO_TENANT, created_by: DEMO_USER,
+      tenant_id: tenantId, created_by: DEMO_USER,
       project_manager: DEMO_USER,
       status: 'planning', current_phase: 0,
       description: `G0 opportunity — ${d.technology} project at ${d.location}`,

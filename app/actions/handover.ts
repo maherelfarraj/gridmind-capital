@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export type HandoverStatus = 'not_started' | 'in_progress' | 'submitted' | 'accepted' | 'rejected'
 
@@ -41,6 +41,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export async function loadHandoverDashboard(): Promise<HandoverDashboard> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const { data } = await supabase
@@ -50,7 +51,7 @@ export async function loadHandoverDashboard(): Promise<HandoverDashboard> {
       status, completion_pct, due_date, accepted_by, created_at,
       projects!handover_items_project_id_fkey(name, code)
     `)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('due_date', { ascending: true })
 
   const rows = (data ?? []).map((r): HandoverItem => ({
@@ -100,6 +101,7 @@ export async function updateHandoverStatus(
   status: HandoverStatus,
   completion_pct?: number,
 ): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -113,11 +115,12 @@ export async function updateHandoverStatus(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   return { error: error?.message }
 }
 
 export async function createHandoverItem(data: {
+  const tenantId = await getCurrentTenantId()
   project_id: string
   category: HandoverItem['category']
   title: string
@@ -129,7 +132,7 @@ export async function createHandoverItem(data: {
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('handover_items').insert({
-    tenant_id:      DEMO_TENANT,
+    tenant_id:      tenantId,
     project_id:     data.project_id,
     category:       data.category,
     title:          data.title,
@@ -185,28 +188,29 @@ const HANDOVER_STATUS_REMAP: Record<string, G7Milestone['status']> = {
 const ASSET_CATEGORY_SAFE = new Set(['Electrical', 'Mechanical', 'Civil', 'IT', 'Safety'])
 
 export async function getG7Data(projectId: string): Promise<G7DataResult> {
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
   const [hiRes, assetRes, planRes, gateRes] = await Promise.all([
     supabase.from('handover_items')
       .select('id, category, title, description, status, completion_pct, due_date')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('due_date', { ascending: true }),
     supabase.from('assets')
       .select('id, name, category, status, warranty_expiry, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     supabase.from('maintenance_plans')
       .select('id, asset_id, title, plan_type, next_due, assigned_to')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('next_due', { ascending: true })
       .limit(50),
     supabase.from('gate_submissions')
       .select('form_data')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .eq('gate_number', 7)
       .maybeSingle(),
@@ -274,6 +278,7 @@ export async function getG7Data(projectId: string): Promise<G7DataResult> {
 }
 
 export async function seedHandoverDemoData(): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -283,7 +288,7 @@ export async function seedHandoverDemoData(): Promise<{ error?: string }> {
   const { data: projects } = await supabase
     .from('projects')
     .select('id, name, code')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .limit(1)
 
   const projectId = projects?.[0]?.id
@@ -308,7 +313,7 @@ export async function seedHandoverDemoData(): Promise<{ error?: string }> {
   ]
 
   for (const d of demos) {
-    await supabase.from('handover_items').insert({ tenant_id: DEMO_TENANT, ...d })
+    await supabase.from('handover_items').insert({ tenant_id: tenantId, ...d })
   }
 
   return {}

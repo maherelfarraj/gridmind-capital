@@ -5,7 +5,7 @@ import { requireWriter, requireRole } from '@/lib/auth/guard'
 import { revalidatePath } from 'next/cache'
 import { maybeCreateQualityInsight } from '@/app/actions/ai-insights'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export type InspectionType = 'HOLD' | 'WITNESS' | 'SURVEILLANCE' | 'REVIEW'
 export type ActivityStatus = 'pending' | 'passed' | 'failed' | 'waived'
@@ -92,6 +92,7 @@ function mapActivity(row: Record<string, unknown>): ItpActivity {
 // ── read functions ─────────────────────────────────────────────────────────
 
 export async function getItpDashboard(projectId: string): Promise<ItpDashboard> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
   const [plansRes, activitiesRes, ncrsRes] = await Promise.all([
@@ -99,12 +100,12 @@ export async function getItpDashboard(projectId: string): Promise<ItpDashboard> 
       .from('itp_plans')
       .select('*')
       .eq('project_id', projectId)
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     admin
       .from('itp_activities')
       .select('*')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .in(
         'plan_id',
         // subquery emulated: fetch plan ids first if needed — we'll filter client-side
@@ -114,7 +115,7 @@ export async function getItpDashboard(projectId: string): Promise<ItpDashboard> 
       .from('ncrs')
       .select('id, status, source, raised_at')
       .eq('project_id', projectId)
-      .eq('tenant_id', DEMO_TENANT),
+      .eq('tenant_id', tenantId),
   ])
 
   // Re-fetch activities with the correct plan IDs
@@ -170,9 +171,10 @@ export async function getItpDashboard(projectId: string): Promise<ItpDashboard> 
 }
 
 export async function getItpPlan(planId: string): Promise<ItpPlan | null> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const [planRes, actsRes] = await Promise.all([
-    admin.from('itp_plans').select('*').eq('id', planId).eq('tenant_id', DEMO_TENANT).maybeSingle(),
+    admin.from('itp_plans').select('*').eq('id', planId).eq('tenant_id', tenantId).maybeSingle(),
     admin.from('itp_activities').select('*').eq('plan_id', planId).order('seq', { ascending: true }),
   ])
   if (!planRes.data) return null
@@ -183,6 +185,7 @@ export async function getItpPlan(planId: string): Promise<ItpPlan | null> {
 // ── mutations ──────────────────────────────────────────────────────────────
 
 export async function createItpPlan(input: {
+  const tenantId = await getCurrentTenantId()
   projectId: string
   title: string
   work_package?: string
@@ -204,7 +207,7 @@ export async function createItpPlan(input: {
     .from('itp_plans')
     .select('id', { count: 'exact', head: true })
     .eq('project_id', input.projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   const itp_no = `ITP-${String((count ?? 0) + 1).padStart(3, '0')}`
 
@@ -212,7 +215,7 @@ export async function createItpPlan(input: {
     .from('itp_plans')
     .insert({
       project_id: input.projectId,
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       itp_no,
       title: input.title,
       work_package: input.work_package ?? null,
@@ -227,7 +230,7 @@ export async function createItpPlan(input: {
   if (input.activities.length > 0) {
     const rows = input.activities.map((a, i) => ({
       plan_id: plan.id,
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       seq: i + 1,
       description: a.description,
       inspection_type: a.inspection_type,
@@ -279,6 +282,7 @@ export async function updateActivityResult(
 }
 
 export async function activateItpPlan(planId: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
   const admin = createAdminClient()
@@ -286,11 +290,12 @@ export async function activateItpPlan(planId: string): Promise<{ error?: string 
     .from('itp_plans')
     .update({ status: 'active', updated_at: new Date().toISOString() })
     .eq('id', planId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   return error ? { error: error.message } : {}
 }
 
 export async function voidItpPlan(planId: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director'])
   if ('error' in gate) return gate
   const admin = createAdminClient()
@@ -298,11 +303,12 @@ export async function voidItpPlan(planId: string): Promise<{ error?: string }> {
     .from('itp_plans')
     .update({ status: 'void', updated_at: new Date().toISOString() })
     .eq('id', planId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   return error ? { error: error.message } : {}
 }
 
 export async function seedItpDemoData(projectId: string): Promise<{ error?: string; seeded?: boolean }> {
+  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return { error: gate.error }
 
@@ -311,7 +317,7 @@ export async function seedItpDemoData(projectId: string): Promise<{ error?: stri
     .from('itp_plans')
     .select('id', { count: 'exact', head: true })
     .eq('project_id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
   if ((count ?? 0) > 0) return { seeded: false }
 
   const plans = [
@@ -349,13 +355,13 @@ export async function seedItpDemoData(projectId: string): Promise<{ error?: stri
   for (const p of plans) {
     const { data: plan } = await admin
       .from('itp_plans')
-      .insert({ project_id: projectId, tenant_id: DEMO_TENANT, itp_no: p.itp_no, title: p.title, work_package: p.work_package, discipline: p.discipline, status: p.status })
+      .insert({ project_id: projectId, tenant_id: tenantId, itp_no: p.itp_no, title: p.title, work_package: p.work_package, discipline: p.discipline, status: p.status })
       .select('id')
       .single()
     if (!plan) continue
     await admin.from('itp_activities').insert(
       p.activities.map(a => ({
-        plan_id: plan.id, tenant_id: DEMO_TENANT,
+        plan_id: plan.id, tenant_id: tenantId,
         seq: a.seq, description: a.description, inspection_type: a.inspection_type,
         reference_doc: a.reference_doc ?? null, responsible: a.responsible ?? null,
         status: a.status, result_date: a.result_date ?? null,
@@ -441,12 +447,13 @@ function mapNcrRow(r: Record<string, unknown>): QualityNcr {
 }
 
 export async function getNcrRegister(projectId: string): Promise<QualityNcrRegister> {
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('ncrs')
     .select('id, ncr_number, title, description, source, root_cause, corrective_action, closure_note, status, raised_at, closed_at, created_at')
     .eq('project_id', projectId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('ncr_number', { ascending: true })
 
   const rows = (error || !data ? [] : data).map(r => mapNcrRow(r as Record<string, unknown>))
@@ -456,6 +463,7 @@ export async function getNcrRegister(projectId: string): Promise<QualityNcrRegis
 }
 
 export async function createNcr(input: {
+  const tenantId = await getCurrentTenantId()
   projectId: string
   title: string
   category: NcrCategory
@@ -469,7 +477,7 @@ export async function createNcr(input: {
     .from('ncrs')
     .insert({
       project_id: input.projectId,
-      tenant_id: DEMO_TENANT,
+      tenant_id: tenantId,
       title: input.title,
       source: input.category,
       description: input.description ?? null,
@@ -490,6 +498,7 @@ export async function createNcr(input: {
 export async function setNcrDisposition(
   ncrId: string,
   input: { root_cause: string; disposition: string },
+const tenantId = await getCurrentTenantId()
 ): Promise<{ error?: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
@@ -503,7 +512,7 @@ export async function setNcrDisposition(
       updated_at: new Date().toISOString(),
     })
     .eq('id', ncrId)
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
 
   return error ? { error: error.message } : {}
 }

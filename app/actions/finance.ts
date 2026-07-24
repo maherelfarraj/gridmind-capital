@@ -2,7 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { getCurrentTenantId } from '@/lib/tenant'
 const M = 1_000_000
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -58,12 +58,13 @@ function fmtDate(isoStr: string | null): string {
 // ─── Main loader ──────────────────────────────────────────────────────────────
 
 export async function getFinanceDashboard(projectId?: string): Promise<FinanceDashboard> {
+  const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 
   let frQuery = sb
     .from('finance_records')
     .select('id, project_id, period, bac, ev, ac, pv, cpi, spi, eac')
-    .eq('tenant_id', DEMO_TENANT)
+    .eq('tenant_id', tenantId)
     .order('period', { ascending: false })
 
   if (projectId) {
@@ -75,13 +76,13 @@ export async function getFinanceDashboard(projectId?: string): Promise<FinanceDa
     sb
       .from('projects')
       .select('id, name, code')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .eq('status', 'active')
       .order('created_at'),
     sb
       .from('purchase_orders')
       .select('id, po_number, vendor_name, description, amount_usd, status, created_at')
-      .eq('tenant_id', DEMO_TENANT)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .limit(50),
   ])
