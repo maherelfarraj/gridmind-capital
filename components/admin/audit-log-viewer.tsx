@@ -285,11 +285,42 @@ export function AuditLogViewer() {
 
       {/* Diff slide panel */}
       {selected && (
-        <DiffPanel
-          entry={selected}
-          // Rendered inside a positioned container:
-          // wrap in a fixed slide-over
-        />
+        <div
+          className="fixed inset-y-0 end-0 z-50 flex w-full max-w-2xl flex-col bg-background shadow-2xl border-s border-border"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Change detail for ${selected.action} on ${selected.table_name}`}
+        >
+          {/* Panel header */}
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <History className="size-4" aria-hidden />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Change Detail</h2>
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-mono">{selected.table_name}</span>
+                  {' · '}
+                  {new Date(selected.changed_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              aria-label="Close change detail panel"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            <DiffPanel entry={selected} />
+          </div>
+        </div>
       )}
 
       <div className="space-y-5 relative">
