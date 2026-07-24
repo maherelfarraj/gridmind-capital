@@ -18,6 +18,7 @@ import {
   type ScheduleActivity,
 } from '@/app/actions/schedule'
 import { getProject } from '@/app/actions/projects'
+import { ResourceHistogram } from '@/components/resources/resource-histogram'
 
 export function ScheduleWorkspace({ projectId }: { projectId: string }) {
   const { toast } = useToast()
@@ -200,6 +201,9 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
             )}
           </>
         )}
+
+        {/* Resources histogram — planned vs actual workforce & equipment */}
+        <ResourceHistogram projectId={projectId} />
       </div>
     </>
   )
