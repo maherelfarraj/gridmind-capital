@@ -33,10 +33,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   const totalProjects    = projects.length
   const activeProjects   = projects.filter((p) => p.status === 'active').length
-  const pendingApprovals = approvals.filter((a) => a.status === 'pending' || a.status === 'under_review').length
+  // Open = not yet decided. The `approval_status` enum is
+  // pending | approved | rejected | delegated — there is no `under_review`.
+  const isOpen           = (s: string | null) => s === 'pending' || s === 'delegated'
+  const pendingApprovals = approvals.filter((a) => isOpen(a.status)).length
   const sevenDaysAgo     = new Date(Date.now() - 7 * 24 * 3_600_000).toISOString()
   const overdueApprovals = approvals.filter(
-    (a) => (a.status === 'pending' || a.status === 'under_review') && a.created_at < sevenDaysAgo,
+    (a) => isOpen(a.status) && a.created_at < sevenDaysAgo,
   ).length
 
   return {
@@ -110,11 +113,19 @@ export async function getDashboardApprovals(): Promise<ApprovalItem[]> {
     .from('approvals')
     .select('id, object_type, title, status, priority, created_at, description, amount')
     .eq('tenant_id', tenantId)
-    .in('status', ['pending', 'under_review'])
+    // `under_review` is not a member of the approval_status enum
+    // (pending | approved | rejected | delegated) — including it made Postgres
+    // reject the whole query with 22P02, so this widget was always empty.
+    .in('status', ['pending', 'delegated'])
     .order('created_at', { ascending: false })
     .limit(20)
 
-  if (error || !data) return []
+  // Don't swallow the failure silently — an empty widget looked like "no data".
+  if (error) {
+    console.log('[v0] getDashboardApprovals failed:', error.message)
+    return []
+  }
+  if (!data) return []
 
   const PRIORITY_MAP: Record<string, ApprovalItem['priority']> = {
     critical: 'critical', high: 'high', normal: 'medium', low: 'low',

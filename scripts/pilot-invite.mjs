@@ -50,18 +50,58 @@ const admin = createClient(url, serviceKey, {
  */
 const DOMAIN =
   process.argv.find((a) => a.startsWith('--domain='))?.split('=')[1] ??
-  'gridmind.capital'
+  'gsi.jo'
+
+/**
+ * Base mailbox that actually receives mail. The four non-PD seats use RFC 5233
+ * sub-addressing (`base+tag@`) so each is a DISTINCT auth identity (own user id,
+ * own session, own sign-off row) while every message still lands in one real
+ * inbox. No stranger receives pilot mail.
+ */
+const BASE_LOCAL = process.argv.find((a) => a.startsWith('--base='))?.split('=')[1] ?? 'ahmad'
 
 const at = (local) => `${local}@${DOMAIN}`
+const alias = (tag) => `${BASE_LOCAL}+${tag}@${DOMAIN}`
 
 const ROSTER = [
-  { seat: null,  email: at('maher'), fullName: 'Maher Al Farraj', role: 'tenant_admin',     placeholder: false },
-  { seat: 'PD',  email: at('ahmad'), fullName: 'Ahmad Obaisi',    role: 'project_director',  placeholder: false },
-  { seat: 'DEV', email: at('pm1'),   fullName: 'Project Developer (pilot)',         role: 'project_manager',  placeholder: true },
-  { seat: 'DM',  email: at('eng1'),  fullName: 'Design Manager (pilot)',            role: 'engineer',         placeholder: true },
-  { seat: 'FIN', email: at('fin1'),  fullName: 'Finance Manager (pilot)',           role: 'finance_manager',  placeholder: true },
-  { seat: 'GCM', email: at('eng2'),  fullName: 'Grid Connection Manager (pilot)',   role: 'engineer',         placeholder: true },
+  // PD reuses Ahmad's already-confirmed account — promoted, never re-invited,
+  // so no duplicate identity is created and his working login is preserved.
+  { seat: 'PD',  email: at(BASE_LOCAL),  fullName: 'Ahmad Obaisi', role: 'project_director', placeholder: false },
+  { seat: 'DEV', email: alias('dev'),    fullName: 'Project Developer (pilot)',       role: 'project_manager', placeholder: true },
+  { seat: 'DM',  email: alias('dm'),     fullName: 'Design Manager (pilot)',          role: 'engineer',        placeholder: true },
+  { seat: 'FIN', email: alias('fin'),    fullName: 'Finance Manager (pilot)',         role: 'finance_manager', placeholder: true },
+  { seat: 'GCM', email: alias('gcm'),    fullName: 'Grid Connection Manager (pilot)', role: 'engineer',        placeholder: true },
 ]
+
+// Maher (tenant_admin) is intentionally NOT invited: his roster address is at
+// gridmind.capital, which does not resolve. He already has admin access via the
+// existing admin@gridmind.capital profile, and he holds no G1 seat, so the
+// walkthrough does not depend on him.
+
+// ── preflight: segregation of duties ────────────────────────────────────
+// PD is G1's ONLY approver. If PD shares an address with any signer, the same
+// human approves their own submission and the walkthrough proves nothing.
+{
+  const pd = ROSTER.find((r) => r.seat === 'PD')
+  const clash = ROSTER.filter((r) => r.seat !== 'PD' && r.email === pd?.email)
+  if (!pd) {
+    console.error('[v0] ABORT — no PD seat in roster.')
+    process.exit(1)
+  }
+  if (clash.length) {
+    console.error(
+      `[v0] ABORT — PD (${pd.email}) also holds ${clash.map((c) => c.seat).join(', ')}.\n` +
+        `[v0] Segregation of duties requires PD to be a distinct identity.`,
+    )
+    process.exit(1)
+  }
+  const dupes = ROSTER.map((r) => r.email).filter((e, i, a) => a.indexOf(e) !== i)
+  if (dupes.length) {
+    console.error(`[v0] ABORT — duplicate addresses in roster: ${[...new Set(dupes)].join(', ')}`)
+    process.exit(1)
+  }
+  console.log(`[v0] Segregation OK — PD ${pd.email} is distinct from all 4 signers.`)
+}
 
 // ── preflight: can the domain receive mail at all? ──────────────────────
 // Supabase rejects addresses at non-resolving domains with a per-address

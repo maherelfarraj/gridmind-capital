@@ -212,13 +212,31 @@ export async function delegateApproval(opts: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  // 'delegated' is not a valid status per the CHECK constraint.
-  // Use 'under_review' and record delegation metadata in the description.
+
+  // The `approval_status` enum is: pending | approved | rejected | delegated.
+  // There is NO `under_review` member, so writing it made every delegation fail
+  // with a 22P02 invalid-enum-input error. `delegated` is the correct value.
+  //
+  // Reassign `assignee_id` to the delegate as well — without it the row stayed
+  // on the original approver's queue and the delegation had no effect.
+  const { data: current, error: readErr } = await supabase
+    .from('approvals')
+    .select('description')
+    .eq('id', opts.id)
+    .single()
+
+  if (readErr) return { error: readErr.message }
+
+  // Append to the audit trail rather than overwriting it.
+  const note = `[Delegated to ${opts.delegateId} at ${new Date().toISOString()}] Reason: ${opts.reason}`
+  const description = current?.description ? `${current.description}\n${note}` : note
+
   const { error } = await supabase
     .from('approvals')
     .update({
-      status:      'under_review',
-      description: `[Delegated to: ${opts.delegateId}]\nReason: ${opts.reason}`,
+      status:      'delegated',
+      assignee_id: opts.delegateId,
+      description,
       updated_at:  new Date().toISOString(),
     })
     .eq('id', opts.id)
