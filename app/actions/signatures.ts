@@ -24,6 +24,24 @@ export interface SignatureRecord {
   statement: string
 }
 
+/**
+ * An UNPERSISTED signature, held in client state until the action it authorizes
+ * is actually submitted.
+ *
+ * `signatures` is append-only by design, so a signature must never be written
+ * before the thing it signs. Persisting at sign time let a user sign, abandon the
+ * form, and leave a permanent signature row on an approval that was never
+ * decided — which then blocks any safe status reconciliation, because an existing
+ * signature is (correctly) treated as "a human put pen to paper here".
+ */
+export interface SignatureDraft {
+  /** base64 PNG data URL rendered from the pad. Never leaves the client until submit. */
+  dataUrl: string
+  statement: string
+  signerName?: string
+  signerRole?: string | null
+}
+
 interface Actor {
   userId: string | null
   tenantId: string
@@ -87,6 +105,78 @@ async function resolveSignerId(
   return { id: data.id, name: data.full_name ?? 'Authorized Signer', role: data.role }
 }
 
+export interface OrphanedSignature {
+  signatureId: string
+  approvalId: string
+  approvalTitle: string | null
+  signerName: string
+  signedAt: string
+  ageDays: number
+}
+
+/**
+ * REPORT (never delete) `gate_approval` signatures whose parent approval is still
+ * undecided after `olderThanDays`.
+ *
+ * Deliberately read-only. `signatures` is an append-only legal record: a row means
+ * a real person put pen to paper, and we cannot distinguish "abandoned draft" from
+ * "signed, decision still pending" with certainty. Deleting would also destroy the
+ * only evidence that the signing happened at all.
+ *
+ * Orphans are now PREVENTED at the source (SignaturePad defers, and createSignature
+ * refuses gate_approval writes outside a decision), so this should return an empty
+ * list going forward. It exists to surface the historical rows and to detect any
+ * regression that starts producing new ones.
+ */
+export async function findOrphanedGateSignatures(
+  // Default 0 = report EVERY undecided-parent signature regardless of age.
+  // A 7-day default reported zero while 4 real orphans existed (all ~8h old) —
+  // an age window silently hides exactly the rows this is meant to surface.
+  // Pass a positive value only to ask "which are older than N days?".
+  olderThanDays = 0,
+): Promise<{ orphans: OrphanedSignature[] } | { error: string }> {
+  const supabase = createAdminClient()
+
+  let sigQuery = supabase
+    .from('signatures')
+    .select('id, entity_id, signer_name, signed_at')
+    .eq('entity_type', 'gate_approval')
+  // Only apply an age window when one was explicitly requested.
+  if (olderThanDays > 0) {
+    sigQuery = sigQuery.lt('signed_at', new Date(Date.now() - olderThanDays * 86400000).toISOString())
+  }
+
+  const { data: sigs, error } = await sigQuery
+  if (error) return { error: error.message }
+  if (!sigs?.length) return { orphans: [] }
+
+  // `signatures.entity_id` is POLYMORPHIC (no FK), so resolve parents explicitly.
+  const { data: approvals, error: apprErr } = await supabase
+    .from('approvals')
+    .select('id, title, decided_at')
+    .in('id', Array.from(new Set(sigs.map((s) => s.entity_id))))
+  if (apprErr) return { error: apprErr.message }
+
+  // decided_at IS NULL is the reliable test for "no decision was ever recorded".
+  // `status` cannot be used: 'pending' is also the resting state of a live approval.
+  const undecided = new Map(
+    (approvals ?? []).filter((a) => a.decided_at === null).map((a) => [a.id, a]),
+  )
+
+  return {
+    orphans: sigs
+      .filter((s) => undecided.has(s.entity_id))
+      .map((s) => ({
+        signatureId:   s.id,
+        approvalId:    s.entity_id,
+        approvalTitle: undecided.get(s.entity_id)?.title ?? null,
+        signerName:    s.signer_name,
+        signedAt:      s.signed_at,
+        ageDays:       Math.floor((Date.now() - new Date(s.signed_at).getTime()) / 86400000),
+      })),
+  }
+}
+
 /**
  * Persist an electronic signature.
  * @param dataUrl base64 PNG data URL of the rendered signature
@@ -99,11 +189,39 @@ export async function createSignature(opts: {
   statement: string
   signerName?: string
   signerRole?: string | null
+  /**
+   * Set ONLY by `decideApproval`, which writes the signature inside the same call
+   * that records the decision. Any other caller writing a `gate_approval`
+   * signature would be creating an orphan on an undecided approval — see the
+   * guard below.
+   */
+  allowUndecided?: boolean
 }): Promise<{ signature: SignatureRecord } | { error: string }> {
   if (!opts.dataUrl?.startsWith('data:image/')) return { error: 'A signature is required' }
   if (!opts.statement?.trim()) return { error: 'Consent statement missing' }
 
   const supabase = createAdminClient()
+
+  // ── Orphan prevention (preferred over cleanup) ──────────────────────────────
+  // `signatures` is append-only by design, so the only safe fix for orphaned rows
+  // is to never create them. A `gate_approval` signature is only legitimate as
+  // part of recording a decision, so refuse to write one unless the caller is
+  // actually deciding now (`allowUndecided`, set by decideApproval).
+  //
+  // This is a backstop for the real fix — SignaturePad no longer persists at sign
+  // time — and it catches any FUTURE call site that forgets to defer.
+  if (opts.entityType === 'gate_approval' && !opts.allowUndecided) {
+    console.error(
+      '[v0] createSignature: refused a gate_approval signature written outside a decision.',
+      'Pass the signature as a SignatureDraft to decideApproval instead.',
+    )
+    return {
+      error:
+        'A gate approval signature can only be saved together with its decision. ' +
+        'Submit your decision to record the signature.',
+    }
+  }
+
   const actor = await getActor()
   const signer = await resolveSignerId(supabase, actor)
   if (!signer) return { error: 'Could not resolve signer identity' }

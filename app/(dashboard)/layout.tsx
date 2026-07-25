@@ -4,6 +4,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { SessionProvider } from '@/lib/session-context'
 import { createClient } from '@/lib/supabase/server'
 import { getUnreadCountAction } from '@/app/actions/notifications'
+import { getPendingApprovalCount } from '@/app/actions/approvals'
 import { signOutAction } from '@/app/actions/auth'
 import {
   type AppSession,
@@ -151,12 +152,10 @@ export default async function DashboardLayout({
   if (session.roles.includes('client_viewer')) redirect('/client')
   if (session.roles.includes('subcontractor')) redirect('/portal')
 
-  // Count pending approvals scoped to this tenant
-  const { count: approvalCount } = await supabase
-    .from('approvals')
-    .select('*', { count: 'exact', head: true })
-    .eq('tenant_id', session.tenantId)
-    .eq('status', 'pending')
+  // Pending approvals scoped to this tenant AND to the roles this user actually
+  // approves for. This was tenant-only, so a non-admin got a red badge that
+  // opened onto an empty inbox — see getPendingApprovalCount.
+  const approvalCount = await getPendingApprovalCount()
 
   // Live unread notification count for the bell badge
   const notificationCount = await getUnreadCountAction()

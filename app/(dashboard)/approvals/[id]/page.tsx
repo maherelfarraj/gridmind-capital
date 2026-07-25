@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { G0ApprovalReview } from '@/components/approvals/g0-approval-review'
 import { decideApproval, delegateApproval, getApprovalById } from '@/app/actions/approvals'
 import { getSignaturesForEntity } from '@/app/actions/signatures'
+import type { SignatureDraft } from '@/app/actions/signatures'
 import type { UserProfile } from '@/components/approvals/g0-approval-review'
 import type { G0FormData } from '@/app/actions/gate-submissions'
 
@@ -122,9 +123,11 @@ export default function ApprovalDetailPage() {
     decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject',
     rationale: string,
     conditions?: string,
-    signatureId?: string,
+    signatureDraft?: SignatureDraft,
   ) {
-    const { error } = await decideApproval({ id, decision, rationale, conditions, signatureId })
+    // The draft is persisted inside decideApproval, after its guards pass, so an
+    // abandoned or rejected decision never leaves a signature row behind.
+    const { error } = await decideApproval({ id, decision, rationale, conditions, signatureDraft })
     if (error) throw new Error(error)
   }
 

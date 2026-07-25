@@ -10,7 +10,7 @@ import {
 import type { G0FormData, G0RiskRow, G0StakeholderRow } from '@/app/actions/gate-submissions'
 import { SignaturePad } from '@/components/signatures/signature-pad'
 import { SignatureDisplay } from '@/components/signatures/signature-display'
-import type { SignatureRecord } from '@/app/actions/signatures'
+import type { SignatureDraft, SignatureRecord } from '@/app/actions/signatures'
 import { useClientNow } from '@/lib/hooks/use-client-now'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -39,7 +39,12 @@ interface G0ApprovalReviewProps {
   approval:       ApprovalRecord
   opportunity:    Partial<G0FormData>
   requester:      UserProfile
-  onDecide:       (decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject', rationale: string, conditions?: string, signatureId?: string) => Promise<void>
+  /**
+   * `signatureDraft` is an UNPERSISTED signature. The handler must persist it
+   * together with the decision, so a signature never exists on an undecided
+   * approval. See SignatureDraft.
+   */
+  onDecide:       (decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject', rationale: string, conditions?: string, signatureDraft?: SignatureDraft) => Promise<void>
   onDelegate:     (delegateId: string, reason: string) => Promise<void>
   onRequestInfo:  (message: string) => Promise<void>
   isSubmitting?:  boolean
@@ -302,7 +307,9 @@ export function G0ApprovalReview({
 }: G0ApprovalReviewProps) {
   const [decision, setDecision]         = React.useState<Decision>('proceed')
   const [showSig, setShowSig]           = React.useState(false)
-  const [signature, setSignature]       = React.useState<SignatureRecord | null>(null)
+  // The captured-but-UNPERSISTED signature. It is written to the database only
+  // inside handleSubmit, together with the decision it authorizes.
+  const [signature, setSignature]       = React.useState<SignatureDraft | null>(null)
   const [rationale, setRationale]       = React.useState('')
   const [conditions, setConditions]     = React.useState('')
   const [showDelegate, setShowDelegate] = React.useState(false)
@@ -340,7 +347,8 @@ export function G0ApprovalReview({
         decision,
         rationale,
         decision === 'conditional_proceed' ? conditions : undefined,
-        signature?.id,
+        // Persisted server-side as part of the decision, never before it.
+        signature ?? undefined,
       )
       setDone(true)
     } catch (e) {
@@ -730,14 +738,27 @@ export function G0ApprovalReview({
                   </div>
 
                   {signature ? (
-                    <SignatureDisplay signature={signature} />
+                    /* Local preview of the pending signature. It is not saved yet,
+                       so it renders straight from the captured data URL. */
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white p-3">
+                      <img
+                        src={signature.dataUrl}
+                        alt="Your captured signature, pending submission"
+                        className="h-20 w-full object-contain"
+                      />
+                      <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-500">
+                        <PenLine className="w-3 h-3" aria-hidden />
+                        Captured — saved when you submit your decision
+                      </p>
+                    </div>
                   ) : showSig ? (
                     <SignaturePad
                       entityType="gate_approval"
                       entityId={approval.id}
                       projectId={projectId ?? null}
                       statement={`I, as the authorized approver, endorse the "${cfg.label}" decision for ${approval.title}${projectName ? ` (${projectName})` : ''}. This electronic signature is legally binding.`}
-                      onSigned={(rec) => { setSignature(rec); setShowSig(false) }}
+                      defer
+                      onDraft={(d) => { setSignature(d); setShowSig(false) }}
                       onCancel={() => setShowSig(false)}
                     />
                   ) : (
