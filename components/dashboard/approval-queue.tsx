@@ -36,8 +36,12 @@ interface ApprovalRowProps {
   item: ApprovalItem
 }
 
+const TYPE_META_FALLBACK: { label: string; Icon: React.ElementType; color: string } = {
+  label: 'Approval', Icon: FileText, color: '#64748b',
+}
+
 function ApprovalRow({ item }: ApprovalRowProps) {
-  const meta = TYPE_META[item.type]
+  const meta = TYPE_META[item.type] ?? TYPE_META_FALLBACK
 
   const priorityVariant =
     item.priority === 'critical' ? 'critical' :

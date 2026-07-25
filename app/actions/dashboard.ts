@@ -120,11 +120,31 @@ export async function getDashboardApprovals(): Promise<ApprovalItem[]> {
     critical: 'critical', high: 'high', normal: 'medium', low: 'low',
   }
 
+  // Map DB object_type values to the valid ApprovalType union consumed by ApprovalQueue.
+  const OBJECT_TYPE_MAP: Record<string, ApprovalItem['type']> = {
+    gate:           'gate-review',
+    gate_review:    'gate-review',
+    'gate-review':  'gate-review',
+    budget:         'budget-variance',
+    budget_variance:'budget-variance',
+    change_order:   'change-order',
+    'change-order': 'change-order',
+    variation:      'change-order',
+    contract:       'contract',
+    subcontract:    'contract',
+    hse:            'hse-incident',
+    hse_incident:   'hse-incident',
+    // Everything else (document, opportunity, risk, payment_cert, purchase_order…)
+    // falls back to 'change-order' which is always in TYPE_META.
+  }
+
   return data.map((a) => {
     const daysOpen = Math.floor((Date.now() - new Date(a.created_at).getTime()) / 86_400_000)
+    const rawType  = (a.object_type ?? '').toLowerCase()
+    const mappedType: ApprovalItem['type'] = OBJECT_TYPE_MAP[rawType] ?? 'change-order'
     return {
       id:          a.id,
-      type:        (a.object_type?.toLowerCase().replace(/\s+/g, '-') ?? 'change-order') as ApprovalItem['type'],
+      type:        mappedType,
       title:       a.title ?? 'Approval Request',
       projectCode: '—',
       projectName: '—',
