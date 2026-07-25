@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/auth/guard'
-import { isAppRole } from '@/lib/auth/roles'
+import { isDbUserRole } from '@/lib/auth/roles'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 
@@ -104,7 +104,7 @@ export async function updateUserRole(userId: string, role: string): Promise<{ er
 
   // `profiles.role` is a Postgres enum. Writing a value outside the enum
   // raises 22P02, so reject unknown roles up front with a clear message.
-  if (!isAppRole(role)) {
+  if (!isDbUserRole(role)) {
     return { error: `"${role}" is not a valid role.` }
   }
 
@@ -167,7 +167,7 @@ export async function inviteInternalUser(
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { error: 'Enter a valid email address.' }
   }
-  if (!isAppRole(args.role)) {
+  if (!isDbUserRole(args.role)) {
     return { error: `"${args.role}" is not a valid role.` }
   }
 
