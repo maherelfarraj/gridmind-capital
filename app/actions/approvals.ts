@@ -48,6 +48,33 @@ async function resolveApprovers(
  * payment_certificates), so a stale id cannot be caught by the database —
  * callers must surface this rather than report a clean decision.
  */
+/**
+ * Single source of truth for `decided_at`.
+ *
+ * ⚠️ THE THREE-WRITER TRAP — read before adding any field to `approvals`.
+ * FOUR functions write `approvals.status`: decideApproval, delegateApproval,
+ * syncQueuedApproval (mobile) and updateApprovalStatus. Every new column must be
+ * written by ALL of them or the ones that forget silently produce wrong data.
+ * This has now bitten us three times (project lifecycle, then decided_at, then
+ * the delegate path below), so status writes go through this helper — spread it
+ * into the update object and a new writer cannot forget the field.
+ *
+ * Returning `null` for non-terminal states is deliberate, not a no-op: it CLEARS
+ * a stale timestamp when a decision is reopened (decideApproval's 'hold' maps to
+ * 'pending') or handed off ('delegated'), so `decided_at IS NULL` always means
+ * "no decision currently stands".
+ *
+ * NOTE: there is no `decided_by` column on `approvals` (verified against the live
+ * schema — only `decided_at` and an unused `decision_note`). Recording WHO decided
+ * needs a schema pass; until then attribution lives only in the description trail.
+ */
+function decisionStamp(
+  status: 'approved' | 'rejected' | 'pending' | 'delegated',
+): { decided_at: string | null } {
+  const isTerminal = status === 'approved' || status === 'rejected'
+  return { decided_at: isTerminal ? new Date().toISOString() : null }
+}
+
 async function applyApprovalLifecycle(
   supabase: ReturnType<typeof createAdminClient>,
   approval: { object_type?: string | null; object_id?: string | null } | null,
@@ -356,6 +383,8 @@ export async function decideApproval(opts: {
     .from('approvals')
     .update({
       status:     statusMap[opts.decision],
+      // 'hold' maps to 'pending', which correctly CLEARS decided_at (reopened).
+      ...decisionStamp(statusMap[opts.decision]),
       updated_at: new Date().toISOString(),
       // Store decision detail in description
       description: [
@@ -422,6 +451,8 @@ export async function delegateApproval(opts: {
     .from('approvals')
     .update({
       status:      'delegated',
+      // Delegation is a HAND-OFF, not a decision — this clears any stale stamp.
+      ...decisionStamp('delegated'),
       assignee_id: opts.delegateId,
       description,
       updated_at:  new Date().toISOString(),
@@ -641,7 +672,12 @@ export async function syncQueuedApproval(opts: {
 
   const { error } = await supabase
     .from('approvals')
-    .update({ status: opts.decision, description, updated_at: new Date().toISOString() })
+    .update({
+      status: opts.decision,
+      ...decisionStamp(opts.decision),
+      description,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', opts.id)
 
   // Same lifecycle transition as the desktop path — this is the action the
@@ -682,7 +718,7 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
 
   const { error } = await supabase
     .from('approvals')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status, ...decisionStamp(status), updated_at: new Date().toISOString() })
     .eq('id', id)
 
   // Third decision path — kept in sync via the shared helper.
