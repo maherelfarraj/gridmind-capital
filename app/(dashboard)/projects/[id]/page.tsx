@@ -178,7 +178,7 @@ export default function ProjectDetailRoute() {
           code: project.code,
           name: project.name,
           client: project.client,
-          status: project.status as 'active' | 'on-hold' | 'completed' | 'cancelled' | 'draft',
+          status: project.status as 'active' | 'on-hold' | 'completed' | 'cancelled' | 'draft' | 'planning',
           phase: project.phase,
           gate: project.gate,
           gateName: project.gateName,
