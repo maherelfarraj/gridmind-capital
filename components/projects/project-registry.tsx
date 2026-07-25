@@ -23,7 +23,7 @@ function toGmcProject(p: Project): GmcProject {
   const type = Object.entries(phaseToType).find(([k]) => tok.includes(k))?.[1] ?? 'PV'
   const statusMap: Record<string, GmcProject['status']> = {
     active: 'active', draft: 'draft', 'on-hold': 'on-hold', completed: 'completed',
-    cancelled: 'archived', archived: 'archived',
+    cancelled: 'archived', archived: 'archived', planning: 'draft',
   }
   return {
     id: p.id,
