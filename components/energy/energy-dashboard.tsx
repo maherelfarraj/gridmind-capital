@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import useSWR, { mutate as globalMutate } from 'swr'
+import { useClientNow } from '@/lib/hooks/use-client-now'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine,
@@ -597,10 +598,15 @@ function BessStatCards({ data }: { data: BessDashboard }) {
 
 function WarrantyAlert({ data }: { data: BessDashboard }) {
   const w = data.warranty
+  // Hook must precede any early return so the hook order stays stable.
+  // Date.now() during render is impure and desyncs server vs client.
+  const now = useClientNow(60_000)
+
   if (!w.projected_limit_date || !w.warranty_cycle_limit) return null
+  if (now === null) return null
 
   const daysToLimit = Math.floor(
-    (new Date(w.projected_limit_date).getTime() - Date.now()) / 86_400_000,
+    (new Date(w.projected_limit_date).getTime() - now) / 86_400_000,
   )
   if (daysToLimit > 180) return null
 

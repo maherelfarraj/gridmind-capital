@@ -77,17 +77,19 @@ export function ProjectWizard({
     )
   }
 
-  const generatedCode = useMemo(() => {
-    const yr = new Date().getFullYear()
-    const seq = String(Math.floor(1 + Math.random() * 999)).padStart(3, '0')
-    return `PRJ-${yr}-${seq}`
-  }, [])
+  // The server allocates the real sequential code (and is the only place that
+  // can, since it needs to see existing codes). Math.random() here produced a
+  // different value on the server and client render, causing a hydration
+  // mismatch, and the guessed number was usually wrong anyway.
+  const generatedCode = useMemo(() => `PRJ-${new Date().getFullYear()}-###`, [])
 
   function handleCreate() {
     startTransition(async () => {
       const res = await createProjectFull({
         name: name.trim(),
-        codeHint: generatedCode,
+        // Empty: let the server allocate the next sequential code. Sending the
+        // display placeholder would persist a literal "PRJ-2026-###".
+        codeHint: '',
         technology,
         capacity_mw: capNum,
         bess_mwh: Number(bessMwh) || 0,

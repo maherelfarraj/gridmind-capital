@@ -33,9 +33,21 @@ export function MobileApprovalCard({ record, onDecide, onOpen }: MobileApprovalC
   // re-render when it mutates, so the transition style could go stale.
   const [isDragging, setIsDragging] = React.useState(false)
 
-  const urgent = record.due_date
-    ? new Date(record.due_date).getTime() - Date.now() < 24 * 3_600_000
-    : false
+  // Computed in an effect, not during render: Date.now() is impure, so the
+  // server and client evaluate "due within 24h" at different instants and can
+  // disagree, producing a hydration mismatch on the urgency badge.
+  const [urgent, setUrgent] = React.useState(false)
+  /* eslint-disable react-hooks/set-state-in-effect --
+     Intentional: reading the clock is a side effect, so the urgency flag is
+     derived on mount rather than during render to keep SSR deterministic. */
+  React.useEffect(() => {
+    if (!record.due_date) {
+      setUrgent(false)
+      return
+    }
+    setUrgent(new Date(record.due_date).getTime() - Date.now() < 24 * 3_600_000)
+  }, [record.due_date])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── Touch handlers ─────────────────────────────────────────
   const onTouchStart = (e: React.TouchEvent) => {

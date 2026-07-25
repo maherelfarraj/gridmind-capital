@@ -4,6 +4,7 @@ import React from 'react'
 import Link from 'next/link'
 import useSWR from 'swr'
 import { useParams } from 'next/navigation'
+import { useClientNow } from '@/lib/hooks/use-client-now'
 import {
   ChevronRight, Plus, FileText, Download,
   Eye, ClipboardList, AlertCircle, CheckSquare, Award, FolderOpen, BarChart2,
@@ -48,6 +49,9 @@ export default function G5MechanicalCompletionPage() {
 
   // Live NCRs drive the gate-approval guard + the Open NCRs KPI.
   const { data: ncrData } = useSWR(`g5-ncrs-${projectId}`, () => getNcrs(projectId))
+  // Mount-time clock for NCR aging. Date.now() during render is impure and would
+  // differ between the server and client renders.
+  const nowMs = useClientNow(60_000)
   const liveOpenNcrs = ncrData?.kpis.open
 
   // G5 inspections + punch items from DB; fall back to mock while loading / empty
@@ -143,8 +147,10 @@ export default function G5MechanicalCompletionPage() {
                 .filter(r => r.status !== 'closed')
                 .slice(0, 6)
                 .map(ncr => {
-                  const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(ncr.raised_at).getTime()) / 86400000))
-                  const aging = daysOpen > 30 ? 'red' : daysOpen > 14 ? 'amber' : 'none'
+                  const daysOpen = nowMs === null
+                    ? null
+                    : Math.max(0, Math.floor((nowMs - new Date(ncr.raised_at).getTime()) / 86400000))
+                  const aging = daysOpen === null ? 'none' : daysOpen > 30 ? 'red' : daysOpen > 14 ? 'amber' : 'none'
                   const sevColor = ncr.source === 'failed_inspection' ? '#ef4444' : ncr.source === 'audit' ? '#f59e0b' : '#64748b'
                   const sevLabel = ncr.source === 'failed_inspection' ? 'Critical' : ncr.source === 'audit' ? 'Major' : 'Minor'
                   return (
@@ -163,7 +169,7 @@ export default function G5MechanicalCompletionPage() {
                             ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                             : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                         }`}>
-                          {daysOpen}d
+                          {daysOpen === null ? '—' : `${daysOpen}d`}
                         </span>
                       )}
                     </div>
