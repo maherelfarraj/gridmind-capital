@@ -1,4 +1,5 @@
 // G5 Mechanical Completion — mock data, chart data, and colour maps
+// Defensive sweep: all META maps use Record<string, Shape> + fallback exports.
 
 import type {
   Inspection, PunchItem, NCR, MCCertificate, TestPlan, AsBuilt,
