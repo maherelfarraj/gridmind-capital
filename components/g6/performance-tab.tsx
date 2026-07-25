@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import { cn } from '@/lib/utils'
 import type { PerformanceTest, PerfTestStatus } from './types'
-import { PERF_STATUS_META } from './data'
+import { PERF_STATUS_META, META_FALLBACK } from './data'
 
 const KPI_ICONS: Record<string, React.ReactNode> = {
   'Capacity Test':     <Gauge size={18} />,
@@ -45,7 +45,7 @@ export function PerformanceTab({ tests }: { tests: PerformanceTest[] }) {
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {tests.slice(0, 4).map((t) => {
-          const m = PERF_STATUS_META[t.status]
+          const m = PERF_STATUS_META[t.status] ?? META_FALLBACK(t.status)
           return (
             <div key={t.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex gap-3 items-start shadow-sm">
               <span className="p-2 rounded-lg mt-0.5" style={{ background: m.bg, color: m.color }}>
@@ -95,7 +95,7 @@ export function PerformanceTab({ tests }: { tests: PerformanceTest[] }) {
       {/* Test cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {tests.map((t) => {
-          const m = PERF_STATUS_META[t.status]
+          const m = PERF_STATUS_META[t.status] ?? META_FALLBACK(t.status)
           const isOpen = expanded === t.id
           return (
             <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

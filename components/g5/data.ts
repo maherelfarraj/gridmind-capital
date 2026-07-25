@@ -61,13 +61,17 @@ export const DISC_COLORS: Record<string, string> = {
   SCADA: '#a855f7', 'Civil & Mechanical': '#f97316', 'Mechanical & Electrical': '#06b6d4',
 }
 
-export const AB_STATUS_META: Record<AsBuiltStatus, { label: string; color: string }> = {
+export const AB_STATUS_META: Record<string, { label: string; color: string }> = {
   pending:            { label: 'Pending',            color: '#6b7280' },
   redlines_submitted: { label: 'Redlines Submitted', color: '#3b82f6' },
   under_review:       { label: 'Under Review',       color: '#f59e0b' },
   approved:           { label: 'Approved',           color: '#22c55e' },
   superseded:         { label: 'Superseded',         color: '#a855f7' },
 }
+export const AB_STATUS_FALLBACK = (raw: string): { label: string; color: string } => ({
+  label: raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+  color: '#94a3b8',
+})
 
 // ─── Chart Data ──────────────────────────────────────────────────────────────
 
