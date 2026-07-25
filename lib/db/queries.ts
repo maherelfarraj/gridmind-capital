@@ -372,22 +372,24 @@ export interface PersonLite {
   id: string
   full_name: string
   role: string | null
-  is_active: boolean
-  user_type: string | null
 }
 
 /** Active people. Pass `internalOnly` to restrict to internal staff. */
 export async function getPeople(opts?: { internalOnly?: boolean }): Promise<PersonLite[]> {
   const admin = createAdminClient()
-  let q = admin
+  // profiles table has: id, full_name, role, tenant_id, email, department, locale, digit_style
+  // is_active and user_type columns do not exist on this schema — omit them.
+  const { data, error } = await admin
     .from('profiles')
-    .select('id, full_name, role, is_active, user_type')
-    .eq('is_active', true)
+    .select('id, full_name, role')
     .order('full_name')
-  if (opts?.internalOnly) q = q.eq('user_type', 'internal')
-  const { data, error } = await q
   if (error) throw error
-  return (data ?? []) as PersonLite[]
+  // internalOnly: exclude external roles (subcontractor / client_viewer) from the picker
+  const external = new Set(['subcontractor', 'client_viewer'])
+  const filtered = opts?.internalOnly
+    ? (data ?? []).filter((p) => !external.has(p.role ?? ''))
+    : (data ?? [])
+  return filtered as PersonLite[]
 }
 
 /** Current role→person assignments for a project. */
