@@ -82,7 +82,10 @@ export async function seedOmDemoAction() {
   if (existing && existing.length > 0) return { seeded: false }
 
   const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(1)
-  const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
+  const pid = projects?.[0]?.id
+  // No hardcoded fallback id: project_id is a FK, so seeding against a
+  // nonexistent project would fail. Bail out instead.
+  if (!pid) return { seeded: false }
 
   const assetRows = [
     { asset_tag: 'INV-001', name: 'Inverter Unit A1', category: 'inverter', manufacturer: 'SMA', model: 'SUNNY CENTRAL 2500', serial_number: 'SMA-2025-001', installed_date: '2026-01-15', warranty_expiry: '2036-01-14', status: 'operational', criticality: 'critical', last_maintenance: '2026-06-01', next_maintenance: '2026-09-01' },

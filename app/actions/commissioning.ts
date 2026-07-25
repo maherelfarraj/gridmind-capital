@@ -247,7 +247,10 @@ export async function seedCommissioningDemoAction() {
   if (existing && existing.length > 0) return { seeded: false, message: 'Already seeded' }
 
   const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(2)
-  const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
+  const pid = projects?.[0]?.id
+  // No hardcoded fallback id: project_id is a FK, so seeding against a
+  // nonexistent project would fail. Bail out instead.
+  if (!pid) return { seeded: false, message: 'No project available to seed against' }
 
   const tests = [
     { system: 'DC Collection', subsystem: 'String Level', test_number: 'FC-001', description: 'String IV curve trace', test_type: 'functional', status: 'passed', witness_required: false, defects_raised: 0, scheduled_date: '2026-09-01', completed_date: '2026-09-02' },

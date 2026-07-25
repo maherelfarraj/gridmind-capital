@@ -126,10 +126,13 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   if (isUuid) {
     query = query.eq('id', id)
   } else {
-    query = query.ilike('code', id)
+    // Codes are not guaranteed unique historically, so order deterministically
+    // (oldest wins) and take one row. Using .single() here would throw when a
+    // code is duplicated and surface as a bogus "project not found".
+    query = query.ilike('code', id).order('created_at', { ascending: true })
   }
 
-  const { data, error } = await query.single()
+  const { data, error } = await query.limit(1).maybeSingle()
 
   if (error || !data) return null
 

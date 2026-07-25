@@ -127,7 +127,9 @@ export async function seedRisksDemoData(): Promise<{ error?: string }> {
   const { data: ex } = await supabase.from('risks').select('id').eq('tenant_id', tenantId).limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
-  const PROJECT_ID = 'a1000000-0000-0000-0000-000000000001'
+  // SOL-2026-001 "Al Dhafra Solar PV - Phase 1". The previous id
+  // (a1000000-...-001) was a duplicate-code row that has been deleted.
+  const PROJECT_ID = 'ce14ed42-0ea0-43e6-b718-cc2c2cb5283d'
   const demos = [
     { title: 'Grid connection delay',         category: 'Schedule',    probability: 4, impact: 5, owner: 'M. Al-Farsi', mitigation: 'Early engagement with utility authority' },
     { title: 'Equipment delivery logistics',  category: 'Procurement', probability: 3, impact: 4, owner: 'R. Chen',     mitigation: 'Buffer stock and dual-source procurement' },

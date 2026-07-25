@@ -629,7 +629,10 @@ export async function seedAiMarketplaceDemoAction() {
   if (existing && existing.length > 0) return { seeded: false }
 
   const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(1)
-  const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
+  const pid = projects?.[0]?.id
+  // No hardcoded fallback id: project_id is a FK, so seeding against a
+  // nonexistent project would fail. Bail out instead.
+  if (!pid) return { seeded: false }
 
   const insightRows = [
     { module: 'predictive_maintenance', title: 'Inverter A2 showing early degradation', description: 'SCADA data indicates 12% efficiency loss vs baseline. Probability of failure in 60 days: 73%.', confidence: 87, severity: 'critical', status: 'open', recommended_action: 'Schedule inspection within 2 weeks. Pre-order replacement IGBT module.' },
