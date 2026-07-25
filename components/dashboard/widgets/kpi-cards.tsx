@@ -4,11 +4,14 @@ import useSWR from 'swr'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import type { WidgetConfig } from './types'
 import { getWidgetStats } from '@/app/actions/dashboard'
+import { useDigitStyle } from '@/lib/session-context'
+import { toLocaleDigits } from '@/lib/digits'
 
 interface KPI { label: string; value: string; unit: string; delta: number; deltaUnit: string }
 
 export function KpiCardsWidget({ config }: { config: WidgetConfig }) {
   const { data: stats, isLoading } = useSWR('widget-stats', getWidgetStats)
+  const digitStyle = useDigitStyle()
 
   const KPIS: KPI[] = stats ? [
     { label: 'Active Projects', value: `${stats.activeProjects}`,                     unit: '',  delta: 0, deltaUnit: 'in portfolio' },
@@ -54,11 +57,11 @@ export function KpiCardsWidget({ config }: { config: WidgetConfig }) {
             <div key={k.label} className="rounded-xl border border-border bg-muted/10 px-3 py-2.5 flex flex-col justify-between">
               <p className="text-[10px] text-muted-foreground font-medium leading-tight">{k.label}</p>
               <p className="text-xl font-black text-foreground mt-1">
-                {k.value}<span className="text-sm font-semibold text-muted-foreground">{k.unit}</span>
+                {toLocaleDigits(k.value, digitStyle)}<span className="text-sm font-semibold text-muted-foreground">{toLocaleDigits(k.unit, digitStyle)}</span>
               </p>
               <div className={`flex items-center gap-0.5 text-[10px] font-semibold mt-1 ${dColor}`}>
                 <Icon className="size-3" />
-                <span>{k.delta > 0 ? '+' : ''}{k.delta}{k.deltaUnit.startsWith('pts') ? '' : ''} {k.deltaUnit}</span>
+                <span>{k.delta > 0 ? '+' : ''}{toLocaleDigits(String(k.delta), digitStyle)}{k.deltaUnit.startsWith('pts') ? '' : ''} {k.deltaUnit}</span>
               </div>
             </div>
           )

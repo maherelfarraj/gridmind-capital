@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 const BUCKET = 'documents'
-import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export interface CertificateDeliverable {
   label: string
@@ -27,10 +27,11 @@ export interface GateCertificate {
 }
 
 async function getActor() {
+  const tenantId = await getCurrentTenantId()
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null as string | null, tenantId: DEMO_TENANT_FALLBACK, fullName: null as string | null }
+    if (!user) return { userId: null as string | null, tenantId, fullName: null as string | null }
     const { data: profile } = await supabase
       .from('profiles')
       .select('tenant_id, full_name')
@@ -38,11 +39,11 @@ async function getActor() {
       .single()
     return {
       userId: user.id,
-      tenantId: profile?.tenant_id ?? DEMO_TENANT_FALLBACK,
+      tenantId,
       fullName: profile?.full_name ?? null,
     }
   } catch {
-    return { userId: null as string | null, tenantId: DEMO_TENANT_FALLBACK, fullName: null as string | null }
+    return { userId: null as string | null, tenantId, fullName: null as string | null }
   }
 }
 
@@ -112,6 +113,7 @@ export async function attachCertificatePdf(opts: {
   dataUrl: string
 }): Promise<{ url: string } | { error: string }> {
   const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
 
   const match = /^data:(application\/pdf);base64,(.+)$/i.exec(opts.dataUrl)
   if (!match) return { error: 'Invalid PDF data' }
@@ -125,7 +127,7 @@ export async function attachCertificatePdf(opts: {
     .single()
   const verId = cert?.verification_id ?? opts.certificateId
 
-  const storagePath = `certificates/${DEMO_TENANT_FALLBACK}/${opts.projectId}/${verId}.pdf`
+  const storagePath = `certificates/${tenantId}/${opts.projectId}/${verId}.pdf`
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
     .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true })

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { setLocaleAction, setDigitStyleAction } from '@/app/actions/locale'
 import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
+import { useDigitStyle } from '@/lib/session-context'
 
 type ThemeOption = 'light' | 'dark' | 'system'
 type DigitStyleOption = 'western' | 'arabic_indic'
@@ -21,6 +22,7 @@ const DATE_FORMAT_EXAMPLES: Record<string, string> = {
 
 export function PreferencesTab({ onSave }: { onSave: () => void }) {
   const locale = useLocale()
+  const sessionDigitStyle = useDigitStyle()
   const router = useRouter()
   const { toast } = useToast()
   const t = useTranslations('settings')
@@ -34,7 +36,7 @@ export function PreferencesTab({ onSave }: { onSave: () => void }) {
 
   // Language + digit style wired to the DB / cookie.
   const [pendingLocale, setPendingLocale]           = React.useState<string>(locale)
-  const [digitStyle, setDigitStyle]                 = React.useState<DigitStyleOption>('western')
+  const [digitStyle, setDigitStyle]                 = React.useState<DigitStyleOption>(sessionDigitStyle)
   const [savingLocale, setSavingLocale]             = React.useState(false)
   const [savingDigit, setSavingDigit]               = React.useState(false)
 

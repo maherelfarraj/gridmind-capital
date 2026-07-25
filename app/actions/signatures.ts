@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 
 const BUCKET = 'documents'
-import { DEMO_TENANT_FALLBACK } from '@/lib/tenant'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 export type SignatureEntityType = 'gate_approval' | 'vo_approval' | 'client_report' | 'certificate'
 
@@ -32,10 +32,11 @@ interface Actor {
 }
 
 async function getActor(): Promise<Actor> {
+  const tenantId = await getCurrentTenantId()
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
+    if (!user) return { userId: null, tenantId: tenantId, role: null, fullName: null }
     const { data: profile } = await supabase
       .from('profiles')
       .select('tenant_id, role, full_name')
@@ -43,12 +44,12 @@ async function getActor(): Promise<Actor> {
       .single()
     return {
       userId: user.id,
-      tenantId: profile?.tenant_id ?? DEMO_TENANT_FALLBACK,
+      tenantId: profile?.tenant_id ?? tenantId,
       role: profile?.role ?? null,
       fullName: profile?.full_name ?? null,
     }
   } catch {
-    return { userId: null, tenantId: DEMO_TENANT_FALLBACK, role: null, fullName: null }
+    return { userId: null, tenantId: tenantId, role: null, fullName: null }
   }
 }
 

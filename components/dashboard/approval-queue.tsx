@@ -71,7 +71,7 @@ function ApprovalRow({ item }: ApprovalRowProps) {
             <p className="text-xs font-semibold text-foreground leading-snug line-clamp-1">
               {item.title}
             </p>
-            <Badge variant={priorityVariant} className="shrink-0 ml-1">
+            <Badge variant={priorityVariant} className="shrink-0 ms-1">
               {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
             </Badge>
           </div>

@@ -31,6 +31,7 @@ export type ProjectStatus =
   | 'completed'
   | 'cancelled'
   | 'planning'
+  | 'draft'
 
 export interface ProjectData {
   id: string
@@ -155,6 +156,11 @@ const STATUS_META: Record<
   completed: { label: 'Completed',  variant: 'approved',      dot: false },
   cancelled: { label: 'Cancelled',  variant: 'rejected',      dot: false },
   planning:  { label: 'Planning',   variant: 'under-review',  dot: true  },
+  draft:     { label: 'Draft',      variant: 'under-review',  dot: true  },
+}
+
+const STATUS_META_FALLBACK: { label: string; variant: BadgeProps['variant']; dot: boolean } = {
+  label: '', variant: 'under-review', dot: true,
 }
 
 const PHASE_BADGE_VARIANT: Record<PhaseKey, BadgeProps['variant']> = {
@@ -335,11 +341,15 @@ export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
     return <HeaderSkeleton />
   }
 
-  const statusMeta = STATUS_META[project.status]
-  const phaseMeta = PHASE_META[project.phase]
-  const phaseBadgeVariant = PHASE_BADGE_VARIANT[project.phase]
-  const phaseLabel = PHASE_LABEL[project.phase]
-  const gateColor = phaseMeta.color
+  // Defensive lookups: unknown status/phase values must never throw during render.
+  const rawStatus = project.status as string
+  const statusMeta: typeof STATUS_META_FALLBACK =
+    STATUS_META[rawStatus as ProjectStatus] ??
+    { label: rawStatus ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1) : 'Unknown', variant: 'under-review', dot: true }
+  const phaseMeta   = PHASE_META[project.phase]   ?? PHASE_META['g0']
+  const phaseBadgeVariant = PHASE_BADGE_VARIANT[project.phase] ?? PHASE_BADGE_VARIANT['g0']
+  const phaseLabel  = PHASE_LABEL[project.phase]   ?? project.phase ?? 'Unknown Phase'
+  const gateColor   = phaseMeta.color
 
   return (
     <header

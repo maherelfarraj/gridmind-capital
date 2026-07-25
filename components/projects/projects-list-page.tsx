@@ -16,7 +16,7 @@ import { Badge, PhaseBadge } from '@/components/ui/badge'
    TYPES
 ───────────────────────────────────────────── */
 
-export type ProjectStatus = 'draft' | 'active' | 'on-hold' | 'completed' | 'cancelled'
+export type ProjectStatus = 'draft' | 'active' | 'on-hold' | 'completed' | 'cancelled' | 'planning'
 export type ProjectPhase =
   | 'intake' | 'commercial' | 'engineering' | 'procurement'
   | 'construction' | 'commissioning' | 'om' | 'finance' | 'ai-analytics'
@@ -97,9 +97,15 @@ const STATUS_STYLE: Record<string, string> = {
   'on-hold': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   completed: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
   cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  planning:  'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
 }
 
-const STATUS_OPTIONS = ['All', 'Draft', 'Active', 'On-Hold', 'Completed', 'Cancelled']
+/** Capitalise an arbitrary status string for fallback badge display. */
+function formatStatusLabel(s: string): string {
+  return s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+const STATUS_OPTIONS = ['All', 'Draft', 'Planning', 'Active', 'On-Hold', 'Completed', 'Cancelled']
 const BUDGET_OPTIONS = ['All', '<$100M', '$100M–$1B', '>$1B']
 const TECH_OPTIONS   = ['All', 'Solar PV', 'Offshore Wind', 'Hydro', 'Onshore Wind', 'CSP', 'Battery']
 const SORT_OPTIONS   = [
@@ -1048,7 +1054,7 @@ export function ProjectsListPage({
                         'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
                         STATUS_STYLE[project.status] ?? STATUS_STYLE.draft,
                       )}>
-                        {(project.status.charAt(0).toUpperCase() + project.status.slice(1)).replace('-', ' ')}
+                        {formatStatusLabel(project.status)}
                       </span>
                     </td>
                     {/* COD */}

@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import useSWR from 'swr'
-import { ArrowLeft, Plus, RefreshCw, Loader2, LayoutTemplate, Flag, Pencil, FileUp, Network } from 'lucide-react'
+import { ArrowLeft, Plus, RefreshCw, Loader2, LayoutTemplate, Flag, Pencil, FileUp, Network, Gauge } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { GanttChart } from '@/components/schedule/gantt-chart'
@@ -24,6 +24,7 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
   const { toast } = useToast()
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [progressOpen, setProgressOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<ScheduleActivity | null>(null)
   const [seeding, setSeeding] = React.useState(false)
   const [baselining, setBaselining] = React.useState(false)
@@ -43,6 +44,11 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
 
   const activities = schedule?.activities ?? []
   const dependencies = schedule?.dependencies ?? []
+
+  // Activities that can still take a progress update (not yet 100% complete).
+  const openActivities = activities.filter(
+    (a) => a.status !== 'completed' && Number(a.percent_complete ?? 0) < 100,
+  )
 
   function refresh() {
     mutate()
@@ -102,6 +108,14 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
         onSaved={refresh}
       />
 
+      <ActivityDialog
+        open={progressOpen}
+        onOpenChange={setProgressOpen}
+        projectId={projectId}
+        pickerActivities={openActivities}
+        onSaved={refresh}
+      />
+
       <ImportScheduleDialog
         open={importOpen}
         onOpenChange={setImportOpen}
@@ -146,6 +160,14 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
               {baselining ? <Loader2 className="size-3.5 animate-spin" /> : <Flag className="size-3.5" />}
               Create baseline
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setProgressOpen(true)}
+              disabled={!openActivities.length}
+            >
+              <Gauge className="size-3.5" /> Update progress
+            </Button>
             <Button size="sm" onClick={openAdd}>
               <Plus className="size-4" /> Add activity
             </Button>
@@ -185,7 +207,7 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
               activities={activities}
               dependencies={dependencies}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={openEdit}
               onSeed={handleSeed}
               seeding={seeding}
             />

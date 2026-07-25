@@ -65,6 +65,30 @@ export function formatCurrencyAmount(
   }
 }
 
+/** Western → Arabic-Indic digit map (U+0660–U+0669). */
+const ARABIC_INDIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'] as const
+
+/**
+ * Shape the ASCII digits inside an already-formatted display string to the
+ * requested digit style, leaving all non-digit characters (currency symbols,
+ * unit suffixes like "MW", separators, "%", "B"/"M") untouched.
+ *
+ * Use this for KPI values and table cells that arrive pre-formatted as strings
+ * (e.g. "$4.82B", "6,240 MW", "72%") where re-parsing to a number would lose
+ * the units. For raw numbers, prefer formatNumber/formatCurrencyAmount instead.
+ *
+ * - 'western'      → returned unchanged            → "6,240 MW"
+ * - 'arabic_indic' → ASCII 0-9 mapped to ٠-٩       → "٦,٢٤٠ MW"
+ */
+export function toLocaleDigits(
+  input: string | null | undefined,
+  digitStyle: DigitStyle = 'western',
+): string {
+  if (input == null) return '—'
+  if (digitStyle !== 'arabic_indic') return input
+  return input.replace(/[0-9]/g, (d) => ARABIC_INDIC_DIGITS[Number(d)])
+}
+
 /**
  * Format a percentage (0–100 scale → "42 %" or "٤٢ %").
  */

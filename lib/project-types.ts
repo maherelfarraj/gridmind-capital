@@ -8,7 +8,7 @@ export interface Project {
   code: string
   name: string
   client: string
-  status: 'active' | 'on-hold' | 'completed' | 'cancelled' | 'draft'
+  status: 'active' | 'on-hold' | 'completed' | 'cancelled' | 'draft' | 'planning'
   phase: string
   gate: number
   gateName: string

@@ -89,28 +89,29 @@ export async function getAuditEventsAction(opts?: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// audit_logs — trigger-written change history
+// audit_log — trigger-written row-level change history (READ ONLY)
 // ─────────────────────────────────────────────────────────────
 
 export interface AuditEntry {
-  id:          string
-  tenant_id:   string
-  actor_id:    string | null
-  /** Display name resolved from profiles.full_name; null when actor is deleted */
-  changed_by:  string | null
+  id:          number
+  tenant_id:   string | null
+  table_name:  string
+  record_id:   string | null
   action:      string
-  entity_type: string
-  entity_id:   string | null
-  old_data:    Record<string, unknown> | null
-  new_data:    Record<string, unknown> | null
+  /** Raw actor uuid as written by the trigger; null for system changes */
+  changed_by:  string | null
+  /** Display name resolved from profiles.full_name; null when unknown */
+  changed_by_name: string | null
+  old_values:  Record<string, unknown> | null
+  new_values:  Record<string, unknown> | null
   /** ISO timestamp */
   changed_at:  string
 }
 
 export interface GetAuditLogOptions {
-  /** Filter to a specific table (entity_type column) */
+  /** Filter to a specific table (table_name column) */
   tableName?: string
-  /** Filter to a specific record UUID (entity_id column) */
+  /** Filter to a specific record id (record_id column) */
   recordId?: string
   /** Maximum rows to return — default 50, hard-capped at 200 */
   limit?: number
@@ -126,7 +127,7 @@ async function enrichAuditRows(
   const actorIds = [
     ...new Set(
       rows
-        .map(r => r.actor_id as string | null)
+        .map(r => r.changed_by as string | null)
         .filter((id): id is string => !!id),
     ),
   ]
@@ -142,19 +143,21 @@ async function enrichAuditRows(
     }
   }
 
-  return rows.map(r => ({
-    id:          r.id          as string,
-    tenant_id:   r.tenant_id   as string,
-    actor_id:    (r.actor_id   as string | null) ?? null,
-    changed_by:  r.actor_id    ? (nameMap.get(r.actor_id as string) ?? null) : null,
-    action:      r.action      as string,
-    entity_type: r.entity_type as string,
-    entity_id:   (r.entity_id  as string | null) ?? null,
-    old_data:    (r.old_data   as Record<string, unknown> | null) ?? null,
-    new_data:    (r.new_data   as Record<string, unknown> | null) ?? null,
-    // triggers write to `created_at`; accept both names defensively
-    changed_at:  ((r.created_at ?? r.changed_at) as string) ?? '',
-  }))
+  return rows.map(r => {
+    const changedBy = (r.changed_by as string | null) ?? null
+    return {
+      id:              r.id          as number,
+      tenant_id:       (r.tenant_id  as string | null) ?? null,
+      table_name:      r.table_name  as string,
+      record_id:       (r.record_id  as string | null) ?? null,
+      action:          r.action      as string,
+      changed_by:      changedBy,
+      changed_by_name: changedBy ? (nameMap.get(changedBy) ?? null) : null,
+      old_values:      (r.old_values as Record<string, unknown> | null) ?? null,
+      new_values:      (r.new_values as Record<string, unknown> | null) ?? null,
+      changed_at:      (r.changed_at as string) ?? '',
+    }
+  })
 }
 
 /**
@@ -176,14 +179,14 @@ export async function getAuditLog(
   const admin = createAdminClient()
 
   let query = admin
-    .from('audit_logs')
-    .select('id, tenant_id, actor_id, action, entity_type, entity_id, old_data, new_data, created_at')
+    .from('audit_log')
+    .select('id, tenant_id, table_name, record_id, action, changed_by, old_values, new_values, changed_at')
     .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false })
+    .order('changed_at', { ascending: false })
     .limit(safeLimit)
 
-  if (tableName) query = query.eq('entity_type', tableName)
-  if (recordId)  query = query.eq('entity_id',   recordId)
+  if (tableName) query = query.eq('table_name', tableName)
+  if (recordId)  query = query.eq('record_id',  recordId)
 
   const { data, error } = await query
   if (error) return { error: error.message }
@@ -211,12 +214,12 @@ export async function getRecordHistory(
   const admin = createAdminClient()
 
   const { data, error } = await admin
-    .from('audit_logs')
-    .select('id, tenant_id, actor_id, action, entity_type, entity_id, old_data, new_data, created_at')
+    .from('audit_log')
+    .select('id, tenant_id, table_name, record_id, action, changed_by, old_values, new_values, changed_at')
     .eq('tenant_id', tenantId)
-    .eq('entity_type', tableName)
-    .eq('entity_id',   recordId)
-    .order('created_at', { ascending: true })   // oldest-first for timeline
+    .eq('table_name', tableName)
+    .eq('record_id',  recordId)
+    .order('changed_at', { ascending: true })   // oldest-first for timeline
 
   if (error) return { error: error.message }
 

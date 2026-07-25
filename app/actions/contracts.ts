@@ -26,12 +26,19 @@ function daysLate(completionDate: string): number {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ContractType   = 'epc' | 'lump_sum' | 'cost_reimbursable' | 'framework' | 'supply' | 'service' | 'other'
-export type ContractStatus = 'draft' | 'active' | 'completed' | 'terminated' | 'suspended'
+// Values below mirror the live DB CHECK constraints exactly.
+//   contracts_type_check:   epc | subcontract | supply | service | consultancy
+//   contracts_status_check: draft | active | suspended | completed | terminated
+//   securities_type_check:  advance_payment_bond | performance_bond |
+//                           parent_company_guarantee | retention_bond | insurance
+//   securities_status_check: active | expired | released | claimed
+//   contract_milestones_status_check: pending | achieved | missed | paid
+export type ContractType   = 'epc' | 'subcontract' | 'supply' | 'service' | 'consultancy'
+export type ContractStatus = 'draft' | 'active' | 'suspended' | 'completed' | 'terminated'
 
 export type MilestoneStatus = 'pending' | 'achieved' | 'missed' | 'paid'
 
-export type SecurityType   = 'performance_bond' | 'advance_payment_bond' | 'retention_bond' | 'bid_bond' | 'warranty_bond' | 'letter_of_credit' | 'other'
+export type SecurityType   = 'advance_payment_bond' | 'performance_bond' | 'parent_company_guarantee' | 'retention_bond' | 'insurance'
 export type SecurityStatus = 'active' | 'expired' | 'released' | 'claimed'
 
 export interface ContractMilestone {
@@ -161,7 +168,7 @@ function mapContract(
     contract_no:     r.contract_no as string,
     title:           r.title as string,
     party:           (r.party as string | null) ?? null,
-    type:            (r.type as ContractType) ?? 'other',
+    type:            (r.type as ContractType) ?? 'epc',
     status,
     value,
     currency:        (r.currency as string) ?? 'USD',
@@ -188,7 +195,7 @@ function mapSecurity(r: Record<string, unknown>): Security {
     tenant_id:     r.tenant_id as string,
     project_id:    r.project_id as string,
     contract_id:   (r.contract_id as string | null) ?? null,
-    type:          (r.type as SecurityType) ?? 'other',
+    type:          (r.type as SecurityType) ?? 'performance_bond',
     issuer:        (r.issuer as string | null) ?? null,
     reference:     (r.reference as string | null) ?? null,
     amount:        num(r.amount),
@@ -403,9 +410,9 @@ export async function computeLdExposure(contractId: string): Promise<LdExposure 
   return { days_late: days, ld_amount: capped ? cap : raw, capped }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────��──────
 // 4. updateMilestoneStatus
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────��────────────────
 
 export async function updateMilestoneStatus(
   id: string,
@@ -447,28 +454,33 @@ export async function updateMilestoneStatus(
   if (status === 'paid') {
     const m     = milestone as Record<string, unknown>
     const amount = num(m.amount)
-    const today  = new Date().toISOString().slice(0, 7) // YYYY-MM
+    const today  = new Date().toISOString().slice(0, 10) // YYYY-MM-DD (transaction_date is a date)
 
-    // Resolve project_id from the parent contract
+    // Resolve project_id + currency from the parent contract
     const { data: contract } = await admin
       .from('contracts')
-      .select('project_id')
+      .select('project_id, currency')
       .eq('id', m.contract_id as string)
       .eq('tenant_id', tenantId)
       .maybeSingle()
 
-    const projectId = (contract as Record<string, unknown> | null)?.project_id as string | undefined
+    const c = contract as Record<string, unknown> | null
+    const projectId = c?.project_id as string | undefined
 
     if (projectId) {
+      // NOTE: real finance_records columns are record_type / description / amount /
+      // currency / status / transaction_date (all NOT NULL except transaction_date).
+      // There is no `type`, `category`, or `period` column.
       const { error: finErr } = await admin.from('finance_records').insert({
-        tenant_id:   tenantId,
-        project_id:  projectId,
-        type:        'contract',
-        category:    'milestone_payment',
-        description: `Milestone payment — ${m.title as string}`,
+        tenant_id:        tenantId,
+        project_id:       projectId,
+        record_type:      'contract',
+        description:      `Milestone payment — ${m.title as string}`,
         amount,
-        status:      'paid',
-        period:      today,
+        currency:         (c?.currency as string) ?? 'USD',
+        status:           'paid',
+        cost_code:        'milestone_payment',
+        transaction_date: today,
       })
       if (finErr) console.warn('[contracts] finance_records insert skipped:', finErr.message)
 
@@ -539,7 +551,8 @@ export async function createSecurity(
       issuer:      data.issuer?.trim() ?? null,
       reference:   data.reference?.trim() ?? null,
       amount:      num(data.amount),
-      currency:    data.currency ?? 'USD',
+      // NOTE: the securities table has no currency column — displayed currency
+      // defaults to USD in mapSecurity. Do not insert `currency` here.
       issue_date:  data.issue_date ?? null,
       expiry_date: data.expiry_date ?? null,
       status:      'active',

@@ -136,13 +136,14 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       .lte('due_date', in7d)
       .order('due_date', { ascending: true })
       .limit(20),
-    // Grid compliance tests that failed (result = 'fail', no completed_date read-back needed)
+    // Grid compliance tests that failed. Real columns: test_name / standard /
+    // test_date / result ('failed'); there is no category or completed_date.
     admin
       .from('grid_compliance_tests')
-      .select('id, test_name, category, completed_date, project_id')
+      .select('id, test_name, standard, test_date, project_id')
       .eq('tenant_id', tenantId)
-      .eq('result', 'fail')
-      .order('completed_date', { ascending: false })
+      .eq('result', 'failed')
+      .order('test_date', { ascending: false, nullsFirst: false })
       .limit(20),
   ])
 
@@ -220,7 +221,7 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
       body:      `"${(n.title as string) ?? 'Non-conformance'}" (Critical) has been open for ${daysOpen} days without closure. Root cause and disposition required.`,
       type:      'urgent',
       is_read:   false,
-      link:      `/projects/${n.project_id}/quality`,
+      link:      `/projects/${n.project_id}/quality?ncr=${n.id}`,
       created_at: (n.raised_at as string) ?? nowIso,
     })
   }
@@ -262,16 +263,17 @@ async function getDerivedNotifications(): Promise<LiveNotification[]> {
 
   // Grid compliance test failures.
   for (const t of complianceFailRes.data ?? []) {
-    const categoryLabel = String(t.category ?? 'grid compliance').replace(/_/g, ' ')
-    const completedDate = t.completed_date as string | null
+    const testName = (t.test_name as string) ?? 'Grid compliance test'
+    const standard = t.standard as string | null
+    const testDate = t.test_date as string | null
     out.push({
       id:        `compliance-fail-${t.id}`,
-      title:     `Compliance test failed — ${(t.test_name as string) ?? categoryLabel}`,
-      body:      `"${(t.test_name as string) ?? 'Grid compliance test'}" (${categoryLabel}) failed${completedDate ? ` on ${new Date(completedDate).toLocaleDateString()}` : ''}. A re-test must be scheduled and the certificate reference updated before grid connection sign-off.`,
+      title:     `Compliance test failed — ${testName}`,
+      body:      `"${testName}"${standard ? ` (${standard})` : ''} failed${testDate ? ` on ${new Date(testDate).toLocaleDateString()}` : ''}. A re-test must be scheduled and the certificate reference updated before grid connection sign-off.`,
       type:      'urgent',
       is_read:   false,
       link:      `/projects/${t.project_id}/energy`,
-      created_at: (completedDate ?? nowIso),
+      created_at: (testDate ?? nowIso),
     })
   }
 

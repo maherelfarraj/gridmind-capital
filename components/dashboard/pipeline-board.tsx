@@ -121,7 +121,7 @@ function LaneColumn({ lane, onSelect }: LaneColumnProps) {
         </div>
         {lane.projects.length > 0 && (
           <span
-            className="ml-1 inline-flex items-center justify-center size-4 rounded-full text-[9px] font-bold"
+            className="ms-1 inline-flex items-center justify-center size-4 rounded-full text-[9px] font-bold"
             style={{ backgroundColor: `${lane.color}20`, color: lane.color }}
           >
             {lane.projects.length}
@@ -196,7 +196,7 @@ function ProjectFlyout({ project, lanes, onClose }: ProjectFlyoutProps) {
         aria-modal="true"
         aria-label={`${project.name} detail`}
         className={cn(
-          'fixed right-0 top-0 bottom-0 z-40 w-full max-w-sm bg-card border-l border-border shadow-2xl',
+          'fixed end-0 top-0 bottom-0 z-40 w-full max-w-sm bg-card border-s border-border shadow-2xl',
           'flex flex-col overflow-y-auto',
           'animate-[slide-in-right_0.22s_cubic-bezier(0.16,1,0.3,1)]',
         )}

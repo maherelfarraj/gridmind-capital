@@ -230,7 +230,7 @@ function GateStatusCard({
               aria-label="Submit gate package for approval"
               onClick={onSubmitApproval}
             >
-              <Send className="size-4 mr-2" aria-hidden />
+              <Send className="size-4 me-2" aria-hidden />
               Submit for Approval
             </Button>
             <Button
@@ -240,7 +240,7 @@ function GateStatusCard({
               aria-label="Request changes to gate deliverables"
               onClick={onRequestChanges}
             >
-              <RefreshCw className="size-4 mr-2" aria-hidden />
+              <RefreshCw className="size-4 me-2" aria-hidden />
               Request Changes
             </Button>
           </div>
@@ -330,7 +330,7 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
           <div key={label} className="flex items-center justify-between gap-3">
             <span className="text-sm text-slate-500 dark:text-muted-foreground shrink-0">{label}</span>
             {typeof value === 'string'
-              ? <span className="text-sm font-medium text-slate-900 dark:text-foreground text-right">{value}</span>
+              ? <span className="text-sm font-medium text-slate-900 dark:text-foreground text-end">{value}</span>
               : value
             }
           </div>
@@ -570,7 +570,7 @@ function ActivityTimelineCard({ logs, loading }: { logs: WorkflowLogEntry[]; loa
           size="sm"
           className="text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
         >
-          <ChevronDown className="size-4 mr-1.5" aria-hidden />
+          <ChevronDown className="size-4 me-1.5" aria-hidden />
           Load More
         </Button>
       </div>

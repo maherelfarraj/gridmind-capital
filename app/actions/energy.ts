@@ -82,19 +82,18 @@ export interface BessDashboard {
   throughput_total: number       // sum of throughput_mwh over history
 }
 
-export type ComplianceResult   = 'pass' | 'fail' | 'conditional_pass' | null
-export type ComplianceCategory = 'freq_response' | 'voltage_ride_through' | 'power_factor' | 'ramp_rate' | 'anti_islanding' | 'scada_comms' | 'protection' | 'other'
+// Result values mirror the live grid_compliance_tests_result_check CHECK:
+//   'scheduled' | 'passed' | 'failed' | 'retest_required'
+export type ComplianceResult = 'scheduled' | 'passed' | 'failed' | 'retest_required'
 
 export interface GridComplianceTest {
   id:               string
   project_id:       string
-  category:         ComplianceCategory
   test_name:        string
-  scheduled_date:   string | null
-  completed_date:   string | null
-  result:           ComplianceResult
+  standard:         string | null   // e.g. grid code / IEC standard
+  test_date:        string | null   // scheduled or performed date
+  result:           ComplianceResult | null
   certificate_ref:  string | null
-  notes:            string | null
 }
 
 export interface GridComplianceDashboard {
@@ -222,7 +221,6 @@ export async function logProduction(
         curtailment_mwh:  data.curtailment_mwh  ?? null,
         p50_mwh:          data.p50_mwh           ?? null,
         p90_mwh:          data.p90_mwh           ?? null,
-        updated_at:       new Date().toISOString(),
       },
       { onConflict: 'project_id,date' },
     )
@@ -268,7 +266,6 @@ export async function importProductionCsv(
       energy_mwh:       mwh,
       availability_pct: r.availability_pct != null ? num(r.availability_pct) : null,
       curtailment_mwh:  r.curtailment_mwh  != null ? num(r.curtailment_mwh)  : null,
-      updated_at:       new Date().toISOString(),
     })
   }
 
@@ -369,7 +366,7 @@ export async function getBessDashboard(projectId: string): Promise<BessDashboard
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. logBessMetrics
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────��────────────────────────
 
 export async function logBessMetrics(
   projectId: string,
@@ -401,7 +398,6 @@ export async function logBessMetrics(
         throughput_mwh:       data.throughput_mwh       ?? null,
         soh_pct:              data.soh_pct              ?? null,
         warranty_cycle_limit: data.warranty_cycle_limit ?? null,
-        updated_at:           new Date().toISOString(),
       },
       { onConflict: 'project_id,date' },
     )
@@ -421,26 +417,25 @@ export async function getGridCompliance(projectId: string): Promise<GridComplian
 
   const { data: rows } = await sb
     .from('grid_compliance_tests')
-    .select('id, project_id, category, test_name, scheduled_date, completed_date, result, certificate_ref, notes')
+    .select('id, project_id, test_name, standard, test_date, result, certificate_ref')
     .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
-    .order('scheduled_date', { ascending: true })
+    .order('test_date', { ascending: true, nullsFirst: false })
 
   const tests: GridComplianceTest[] = (rows ?? []).map(r => ({
     id:              r.id             as string,
     project_id:      r.project_id     as string,
-    category:        r.category        as ComplianceCategory,
     test_name:       r.test_name       as string,
-    scheduled_date:  r.scheduled_date  as string | null,
-    completed_date:  r.completed_date  as string | null,
-    result:          r.result          as ComplianceResult,
+    standard:        r.standard        as string | null,
+    test_date:       r.test_date       as string | null,
+    result:          r.result          as ComplianceResult | null,
     certificate_ref: r.certificate_ref as string | null,
-    notes:           r.notes           as string | null,
   }))
 
-  const passed    = tests.filter(t => t.result === 'pass' || t.result === 'conditional_pass').length
-  const failed    = tests.filter(t => t.result === 'fail').length
-  const scheduled = tests.filter(t => !t.completed_date).length
+  const passed    = tests.filter(t => t.result === 'passed').length
+  const failed    = tests.filter(t => t.result === 'failed').length
+  // "scheduled" = not yet resolved (explicitly scheduled or no result recorded).
+  const scheduled = tests.filter(t => t.result === 'scheduled' || t.result == null).length
   const pass_rate = (passed + failed) > 0 ? (passed / (passed + failed)) * 100 : 0
 
   return {
@@ -456,10 +451,10 @@ export async function getGridCompliance(projectId: string): Promise<GridComplian
 export async function addComplianceTest(
   projectId: string,
   data: {
-    category:       ComplianceCategory
-    test_name:      string
-    scheduled_date?: string | null
-    notes?:          string | null
+    test_name:  string
+    standard?:  string | null
+    test_date?: string | null
+    result?:    ComplianceResult
   },
 ): Promise<{ id?: string; error?: string }> {
   const tenantId = await getCurrentTenantId()
@@ -472,14 +467,13 @@ export async function addComplianceTest(
   const { data: inserted, error } = await admin
     .from('grid_compliance_tests')
     .insert({
-      tenant_id:      tenantId,
-      project_id:     projectId,
-      category:       data.category,
-      test_name:      data.test_name.trim(),
-      scheduled_date: data.scheduled_date ?? null,
-      notes:          data.notes          ?? null,
-      result:         null,
-      completed_date: null,
+      tenant_id:       tenantId,
+      project_id:      projectId,
+      test_name:       data.test_name.trim(),
+      standard:        data.standard  ?? null,
+      test_date:       data.test_date ?? null,
+      result:          data.result    ?? 'scheduled',
+      certificate_ref: null,
     })
     .select('id')
     .single()
@@ -496,7 +490,7 @@ export async function addComplianceTest(
 
 export async function updateComplianceResult(
   id: string,
-  result: NonNullable<ComplianceResult>,
+  result: ComplianceResult,
   certificateRef?: string | null,
 ): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
@@ -509,8 +503,6 @@ export async function updateComplianceResult(
     .update({
       result,
       certificate_ref: certificateRef ?? null,
-      completed_date:  new Date().toISOString().slice(0, 10),
-      updated_at:      new Date().toISOString(),
     })
     .eq('id', id)
     .eq('tenant_id', tenantId)

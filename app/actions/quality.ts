@@ -11,6 +11,35 @@ export type InspectionType = 'HOLD' | 'WITNESS' | 'SURVEILLANCE' | 'REVIEW'
 export type ActivityStatus = 'pending' | 'passed' | 'failed' | 'waived'
 export type PlanStatus = 'draft' | 'active' | 'complete' | 'void'
 
+// ── DB ↔ app value mapping ───────────────────────────────────────────────────
+// The DB stores inspection_type/status as lowercase text under CHECK constraints
+// (hold|witness|surveillance|review) and plan status as (draft|active|completed|
+// superseded). The app/UI layer uses the uppercase / short forms above. These
+// helpers normalize at the DB boundary so neither side has to change.
+
+const INSPECTION_TO_DB: Record<InspectionType, string> = {
+  HOLD: 'hold', WITNESS: 'witness', SURVEILLANCE: 'surveillance', REVIEW: 'review',
+}
+function inspectionToApp(dbValue: unknown): InspectionType {
+  switch (String(dbValue ?? '').toLowerCase()) {
+    case 'hold': return 'HOLD'
+    case 'witness': return 'WITNESS'
+    case 'surveillance': return 'SURVEILLANCE'
+    default: return 'REVIEW'
+  }
+}
+const PLAN_STATUS_TO_DB: Record<PlanStatus, string> = {
+  draft: 'draft', active: 'active', complete: 'completed', void: 'superseded',
+}
+function planStatusToApp(dbValue: unknown): PlanStatus {
+  switch (String(dbValue ?? '').toLowerCase()) {
+    case 'active': return 'active'
+    case 'completed': return 'complete'
+    case 'superseded': return 'void'
+    default: return 'draft'
+  }
+}
+
 export interface ItpActivity {
   id: string
   plan_id: string
@@ -66,7 +95,7 @@ function mapPlan(row: Record<string, unknown>, activities: ItpActivity[]): ItpPl
     title: row.title as string,
     work_package: (row.work_package as string) ?? null,
     discipline: (row.discipline as string) ?? null,
-    status: (row.status as PlanStatus) ?? 'draft',
+    status: planStatusToApp(row.status),
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
     activities: acts.sort((a, b) => a.seq - b.seq),
@@ -77,10 +106,11 @@ function mapPlan(row: Record<string, unknown>, activities: ItpActivity[]): ItpPl
 function mapActivity(row: Record<string, unknown>): ItpActivity {
   return {
     id: row.id as string,
-    plan_id: row.plan_id as string,
+    // DB FK column is itp_id; expose it as plan_id to keep the app-facing shape.
+    plan_id: row.itp_id as string,
     seq: row.seq as number,
     description: row.description as string,
-    inspection_type: (row.inspection_type as InspectionType) ?? 'REVIEW',
+    inspection_type: inspectionToApp(row.inspection_type),
     reference_doc: (row.reference_doc as string) ?? null,
     responsible: (row.responsible as string) ?? null,
     status: (row.status as ActivityStatus) ?? 'pending',
@@ -95,7 +125,7 @@ export async function getItpDashboard(projectId: string): Promise<ItpDashboard> 
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
-  const [plansRes, activitiesRes, ncrsRes] = await Promise.all([
+  const [plansRes, ncrsRes] = await Promise.all([
     admin
       .from('itp_plans')
       .select('*')
@@ -103,28 +133,19 @@ export async function getItpDashboard(projectId: string): Promise<ItpDashboard> 
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false }),
     admin
-      .from('itp_activities')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .in(
-        'plan_id',
-        // subquery emulated: fetch plan ids first if needed — we'll filter client-side
-        [],
-      ),
-    admin
       .from('ncrs')
       .select('id, status, source, raised_at')
       .eq('project_id', projectId)
       .eq('tenant_id', tenantId),
   ])
 
-  // Re-fetch activities with the correct plan IDs
+  // Fetch activities for the resolved plan ids (FK column is itp_id).
   const planIds = (plansRes.data ?? []).map((p: Record<string, unknown>) => p.id as string)
   const activities: ItpActivity[] = planIds.length
     ? ((await admin
         .from('itp_activities')
         .select('*')
-        .in('plan_id', planIds)
+        .in('itp_id', planIds)
         .order('seq', { ascending: true })).data ?? []).map(r => mapActivity(r as Record<string, unknown>))
     : []
 
@@ -175,7 +196,7 @@ export async function getItpPlan(planId: string): Promise<ItpPlan | null> {
   const admin = createAdminClient()
   const [planRes, actsRes] = await Promise.all([
     admin.from('itp_plans').select('*').eq('id', planId).eq('tenant_id', tenantId).maybeSingle(),
-    admin.from('itp_activities').select('*').eq('plan_id', planId).order('seq', { ascending: true }),
+    admin.from('itp_activities').select('*').eq('itp_id', planId).order('seq', { ascending: true }),
   ])
   if (!planRes.data) return null
   const activities = (actsRes.data ?? []).map(r => mapActivity(r as Record<string, unknown>))
@@ -229,11 +250,11 @@ export async function createItpPlan(input: {
 
   if (input.activities.length > 0) {
     const rows = input.activities.map((a, i) => ({
-      plan_id: plan.id,
+      itp_id: plan.id,
       tenant_id: tenantId,
       seq: i + 1,
       description: a.description,
-      inspection_type: a.inspection_type,
+      inspection_type: INSPECTION_TO_DB[a.inspection_type] ?? 'review',
       reference_doc: a.reference_doc ?? null,
       responsible: a.responsible ?? null,
       status: 'pending' as ActivityStatus,
@@ -245,24 +266,44 @@ export async function createItpPlan(input: {
   return { id: plan.id }
 }
 
-export async function updateActivityResult(
+/** Roles permitted to sign off (pass) a HOLD-point activity. */
+const HOLD_SIGNOFF_ROLES = [
+  'system_admin', 'tenant_admin', 'project_director',
+  'project_manager', 'hse_manager', 'commissioning_manager',
+] as const
+
+/**
+ * Record an inspection result on an ITP activity.
+ *  - passed / failed / waived with a result_date.
+ *  - HOLD POINT RULE: a 'hold' activity can only be marked `passed` by a role
+ *    at hse_manager / project_manager / tenant_admin level or above.
+ *  - When a HOLD activity FAILS, an NCR is auto-created (open, source
+ *    'failed_inspection', title from the activity description).
+ */
+export async function recordInspectionResult(
   activityId: string,
-  result: { status: ActivityStatus; notes?: string },
-): Promise<{ error?: string }> {
-  // HOLD points require approver-level role
+  status: Exclude<ActivityStatus, 'pending'>,
+  notes?: string,
+): Promise<{ error?: string; ncrId?: string }> {
   const admin = createAdminClient()
+
+  // Resolve the activity + its parent plan/project (FK column is itp_id).
   const { data: act } = await admin
     .from('itp_activities')
-    .select('inspection_type')
+    .select('id, itp_id, description, inspection_type')
     .eq('id', activityId)
     .maybeSingle()
+  if (!act) return { error: 'Inspection activity not found' }
 
-  if (act?.inspection_type === 'HOLD') {
-    const gate = await requireRole([
-      'system_admin', 'tenant_admin', 'project_director',
-      'project_manager', 'hse_manager', 'commissioning_manager',
-    ])
-    if ('error' in gate) return gate
+  const isHold = String(act.inspection_type ?? '').toLowerCase() === 'hold'
+
+  // Authorization. Passing a hold point requires elevated sign-off authority;
+  // every other write requires a non-viewer writer.
+  if (isHold && status === 'passed') {
+    const gate = await requireRole(HOLD_SIGNOFF_ROLES)
+    if ('error' in gate) {
+      return { error: 'Only a Project Manager, HSE Manager, or higher can sign off a hold point' }
+    }
   } else {
     const gate = await requireWriter()
     if ('error' in gate) return gate
@@ -271,14 +312,75 @@ export async function updateActivityResult(
   const { error } = await admin
     .from('itp_activities')
     .update({
-      status: result.status,
-      notes: result.notes ?? null,
-      result_date: result.status !== 'pending' ? new Date().toISOString().slice(0, 10) : null,
-      updated_at: new Date().toISOString(),
+      status,
+      notes: notes ?? null,
+      result_date: new Date().toISOString().slice(0, 10),
     })
     .eq('id', activityId)
+  if (error) return { error: error.message }
 
-  return error ? { error: error.message } : {}
+  // Auto-raise an NCR when a hold point fails.
+  let ncrId: string | undefined
+  if (isHold && status === 'failed') {
+    const { data: plan } = await admin
+      .from('itp_plans')
+      .select('project_id, tenant_id')
+      .eq('id', act.itp_id as string)
+      .maybeSingle()
+    if (plan) {
+      const projectId = plan.project_id as string
+      const tenantId = plan.tenant_id as string
+      const { count } = await admin
+        .from('ncrs')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+        .eq('tenant_id', tenantId)
+      const ncr_number = `NCR-${String((count ?? 0) + 1).padStart(3, '0')}`
+      const { data: ncr } = await admin
+        .from('ncrs')
+        .insert({
+          project_id: projectId,
+          tenant_id: tenantId,
+          ncr_number,
+          title: `Failed hold point: ${act.description as string}`,
+          description: notes ?? null,
+          source: 'failed_inspection',
+          status: 'open',
+          cycle: 1,
+          reinspection_passed: false,
+        })
+        .select('id')
+        .maybeSingle()
+      ncrId = (ncr as Record<string, unknown> | null)?.id as string | undefined
+      revalidatePath(`/projects/${projectId}/quality`)
+      revalidatePath(`/projects/${projectId}/g5`)
+    }
+  }
+
+  return ncrId ? { ncrId } : {}
+}
+
+/**
+ * Backwards-compatible wrapper kept for the existing ITP dashboard component.
+ * Delegates to recordInspectionResult (which enforces the hold-point rule and
+ * auto-raises NCRs). A 'pending' reset simply clears the result.
+ */
+export async function updateActivityResult(
+  activityId: string,
+  result: { status: ActivityStatus; notes?: string },
+): Promise<{ error?: string }> {
+  if (result.status === 'pending') {
+    const gate = await requireWriter()
+    if ('error' in gate) return gate
+    const admin = createAdminClient()
+    const { error } = await admin
+      .from('itp_activities')
+      .update({ status: 'pending', notes: result.notes ?? null, result_date: null })
+      .eq('id', activityId)
+    return error ? { error: error.message } : {}
+  }
+  const res = await recordInspectionResult(activityId, result.status, result.notes)
+  return 'error' in res && res.error ? { error: res.error } : {}
 }
 
 export async function activateItpPlan(planId: string): Promise<{ error?: string }> {
@@ -294,6 +396,33 @@ export async function activateItpPlan(planId: string): Promise<{ error?: string 
   return error ? { error: error.message } : {}
 }
 
+/**
+ * Complete an ITP plan. Only allowed when NO activity is still 'pending'
+ * (i.e. every inspection has a recorded result). DB status = 'completed'.
+ */
+export async function completeItpPlan(planId: string): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+  const admin = createAdminClient()
+
+  const { count: pendingCount } = await admin
+    .from('itp_activities')
+    .select('id', { count: 'exact', head: true })
+    .eq('itp_id', planId)
+    .eq('status', 'pending')
+  if ((pendingCount ?? 0) > 0) {
+    return { error: 'Cannot complete: some activities are still pending an inspection result' }
+  }
+
+  const { error } = await admin
+    .from('itp_plans')
+    .update({ status: 'completed', updated_at: new Date().toISOString() })
+    .eq('id', planId)
+    .eq('tenant_id', tenantId)
+  return error ? { error: error.message } : {}
+}
+
 export async function voidItpPlan(planId: string): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
   const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director'])
@@ -301,7 +430,8 @@ export async function voidItpPlan(planId: string): Promise<{ error?: string }> {
   const admin = createAdminClient()
   const { error } = await admin
     .from('itp_plans')
-    .update({ status: 'void', updated_at: new Date().toISOString() })
+    // DB CHECK allows draft|active|completed|superseded — 'void' maps to superseded.
+    .update({ status: 'superseded', updated_at: new Date().toISOString() })
     .eq('id', planId)
     .eq('tenant_id', tenantId)
   return error ? { error: error.message } : {}
@@ -355,14 +485,14 @@ export async function seedItpDemoData(projectId: string): Promise<{ error?: stri
   for (const p of plans) {
     const { data: plan } = await admin
       .from('itp_plans')
-      .insert({ project_id: projectId, tenant_id: tenantId, itp_no: p.itp_no, title: p.title, work_package: p.work_package, discipline: p.discipline, status: p.status })
+      .insert({ project_id: projectId, tenant_id: tenantId, itp_no: p.itp_no, title: p.title, work_package: p.work_package, discipline: p.discipline, status: PLAN_STATUS_TO_DB[p.status] })
       .select('id')
       .single()
     if (!plan) continue
     await admin.from('itp_activities').insert(
       p.activities.map(a => ({
-        plan_id: plan.id, tenant_id: tenantId,
-        seq: a.seq, description: a.description, inspection_type: a.inspection_type,
+        itp_id: plan.id, tenant_id: tenantId,
+        seq: a.seq, description: a.description, inspection_type: INSPECTION_TO_DB[a.inspection_type],
         reference_doc: a.reference_doc ?? null, responsible: a.responsible ?? null,
         status: a.status, result_date: a.result_date ?? null,
       }))
@@ -405,6 +535,8 @@ export interface QualityNcr {
   root_cause: string | null
   /** disposition = closure_note (required to close per existing state machine) */
   disposition: string | null
+  /** Estimated cost impact in USD (nullable — no value recorded yet) */
+  cost_impact: number | null
   raised_at: string
   closed_at: string | null
   days_open: number
@@ -434,10 +566,12 @@ function mapNcrRow(r: Record<string, unknown>): QualityNcr {
     title: r.title as string,
     description: (r.description as string | null) ?? null,
     category: source as NcrCategory,
-    severity: deriveSeverity(source),
+    // Explicit severity wins; fall back to the category-derived value.
+    severity: (r.severity as NcrSeverity | null) ?? deriveSeverity(source),
     status: status as QualityNcrStatus,
     root_cause: (r.root_cause as string | null) ?? null,
     disposition: (r.closure_note as string | null) ?? null,
+    cost_impact: r.cost_impact != null ? Number(r.cost_impact) : null,
     raised_at: raisedAt,
     closed_at: closedAt,
     days_open: daysOpen,
@@ -451,7 +585,7 @@ export async function getNcrRegister(projectId: string): Promise<QualityNcrRegis
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('ncrs')
-    .select('id, ncr_number, title, description, source, root_cause, corrective_action, closure_note, status, raised_at, closed_at, created_at')
+    .select('id, ncr_number, title, description, source, severity, cost_impact, root_cause, corrective_action, closure_note, status, raised_at, closed_at, created_at')
     .eq('project_id', projectId)
     .eq('tenant_id', tenantId)
     .order('ncr_number', { ascending: true })
@@ -466,6 +600,8 @@ export async function createNcr(input: {
   projectId: string
   title: string
   category: NcrCategory
+  severity?: NcrSeverity
+  cost_impact?: number
   description?: string
 }): Promise<{ error?: string; id?: string }> {
   const tenantId = await getCurrentTenantId()
@@ -480,6 +616,12 @@ export async function createNcr(input: {
       tenant_id: tenantId,
       title: input.title,
       source: input.category,
+      // Explicit severity wins; otherwise derive from the category.
+      severity: input.severity ?? deriveSeverity(input.category),
+      cost_impact:
+        input.cost_impact != null && !Number.isNaN(input.cost_impact)
+          ? input.cost_impact
+          : null,
       description: input.description ?? null,
       status: 'open',
       cycle: 1,
@@ -494,25 +636,169 @@ export async function createNcr(input: {
   return { id: (data as Record<string, unknown>).id as string }
 }
 
-/** Set root_cause + disposition (closure_note) — a prerequisite to closing the NCR. */
+/**
+ * Set root_cause + disposition (stored in closure_note) — a prerequisite to
+ * closing the NCR. Any supplied cost impact is persisted to the dedicated
+ * cost_impact column.
+ */
+export type NcrDisposition = 'rework' | 'repair' | 'use_as_is' | 'scrap'
+
 export async function setNcrDisposition(
   ncrId: string,
-  input: { root_cause: string; disposition: string },
+  input: { root_cause: string; disposition: string; cost_impact?: number },
 ): Promise<{ error?: string }> {
   const gate = await requireWriter()
   if ('error' in gate) return gate
   const tenantId = await getCurrentTenantId()
 
+  const patch: Record<string, unknown> = {
+    root_cause: input.root_cause,
+    closure_note: input.disposition,
+    updated_at: new Date().toISOString(),
+  }
+  if (input.cost_impact != null && !Number.isNaN(input.cost_impact)) {
+    patch.cost_impact = input.cost_impact
+  }
+
   const admin = createAdminClient()
   const { error } = await admin
     .from('ncrs')
+    .update(patch)
+    .eq('id', ncrId)
+    .eq('tenant_id', tenantId)
+
+  return error ? { error: error.message } : {}
+}
+
+/**
+ * Advance NCR status. The spec's open → in_progress → closed lifecycle maps
+ * onto the real ncr_status enum (open | in_rectification | re_inspection |
+ * closed): 'in_progress' → 'in_rectification'. Closing requires that a root
+ * cause AND disposition (closure_note) have already been recorded.
+ */
+export async function updateNcrStatus(
+  ncrId: string,
+  status: 'open' | 'in_progress' | 'in_rectification' | 're_inspection' | 'closed',
+): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+  const tenantId = await getCurrentTenantId()
+  const admin = createAdminClient()
+
+  const dbStatus = status === 'in_progress' ? 'in_rectification' : status
+
+  if (dbStatus === 'closed') {
+    const { data: ncr } = await admin
+      .from('ncrs')
+      .select('root_cause, closure_note, project_id')
+      .eq('id', ncrId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+    if (!ncr) return { error: 'NCR not found' }
+    if (!ncr.root_cause || !ncr.closure_note) {
+      return { error: 'Cannot close: record a root cause and disposition first' }
+    }
+  }
+
+  const { error } = await admin
+    .from('ncrs')
     .update({
-      root_cause: input.root_cause,
-      closure_note: input.disposition,
+      status: dbStatus,
+      closed_at: dbStatus === 'closed' ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', ncrId)
     .eq('tenant_id', tenantId)
 
   return error ? { error: error.message } : {}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUALITY DASHBOARD  (combined ITP completion + hold points + NCR stats)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface QualityDashboard {
+  plans: Array<{
+    id: string
+    itp_no: string
+    title: string
+    status: PlanStatus
+    passed: number
+    total: number
+    completion_pct: number
+  }>
+  hold_points_pending: number
+  ncr: {
+    open_by_severity: { critical: number; major: number; minor: number }
+    open_total: number
+    closed_this_month: number
+  }
+}
+
+export async function getQualityDashboard(projectId: string): Promise<QualityDashboard> {
+  const tenantId = await getCurrentTenantId()
+  const admin = createAdminClient()
+
+  const { data: planRows } = await admin
+    .from('itp_plans')
+    .select('id, itp_no, title, status')
+    .eq('project_id', projectId)
+    .eq('tenant_id', tenantId)
+    .order('itp_no', { ascending: true })
+
+  const planIds = (planRows ?? []).map(p => p.id as string)
+  const { data: actRows } = planIds.length
+    ? await admin
+        .from('itp_activities')
+        .select('itp_id, inspection_type, status')
+        .in('itp_id', planIds)
+    : { data: [] as Record<string, unknown>[] }
+
+  const acts = (actRows ?? []) as Record<string, unknown>[]
+
+  const plans = (planRows ?? []).map(p => {
+    const mine = acts.filter(a => a.itp_id === p.id)
+    const passed = mine.filter(a => a.status === 'passed').length
+    const total = mine.length
+    return {
+      id: p.id as string,
+      itp_no: p.itp_no as string,
+      title: p.title as string,
+      status: planStatusToApp(p.status),
+      passed,
+      total,
+      completion_pct: total ? Math.round((passed / total) * 100) : 0,
+    }
+  })
+
+  // Hold points pending = 'hold' activities still 'pending'.
+  const hold_points_pending = acts.filter(
+    a => String(a.inspection_type ?? '').toLowerCase() === 'hold' && a.status === 'pending',
+  ).length
+
+  // NCR stats.
+  const { data: ncrRows } = await admin
+    .from('ncrs')
+    .select('source, status, closed_at')
+    .eq('project_id', projectId)
+    .eq('tenant_id', tenantId)
+
+  const ncrs = (ncrRows ?? []) as Record<string, unknown>[]
+  const open = ncrs.filter(n => n.status !== 'closed')
+  const open_by_severity = { critical: 0, major: 0, minor: 0 }
+  for (const n of open) {
+    open_by_severity[deriveSeverity(String(n.source ?? 'site_observation'))] += 1
+  }
+
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+  const closed_this_month = ncrs.filter(
+    n => n.status === 'closed' && n.closed_at && new Date(n.closed_at as string).getTime() >= monthStart,
+  ).length
+
+  return {
+    plans,
+    hold_points_pending,
+    ncr: { open_by_severity, open_total: open.length, closed_this_month },
+  }
 }

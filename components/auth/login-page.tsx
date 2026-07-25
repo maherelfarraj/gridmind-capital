@@ -5,6 +5,7 @@ import {
   Zap, Mail, Lock, Eye, EyeOff, ShieldCheck, Users, FileCheck, Brain,
   AlertTriangle, CheckCircle, X, Loader2,
 } from 'lucide-react'
+import { useTranslations, useLocale } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 /* ─────────────────────────────────────────────
@@ -25,14 +26,15 @@ async function mockLogin(
 /* ─────────────────────────────────────────────
    Validation helpers
 ───────────────────────────────────────────── */
-function validateEmail(v: string) {
-  if (!v.trim()) return 'Please enter a valid email address.'
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Please enter a valid email address.'
+// Return a translation key ('' = valid) so the component can localise the message.
+function validateEmail(v: string): '' | 'emailInvalid' {
+  if (!v.trim()) return 'emailInvalid'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'emailInvalid'
   return ''
 }
-function validatePassword(v: string) {
-  if (!v) return 'Password must be at least 6 characters.'
-  if (v.length < 6) return 'Password must be at least 6 characters.'
+function validatePassword(v: string): '' | 'passwordTooShort' {
+  if (!v) return 'passwordTooShort'
+  if (v.length < 6) return 'passwordTooShort'
   return ''
 }
 
@@ -77,7 +79,19 @@ function GoogleIcon({ size = 20 }: { size?: number }) {
 /* ─────────────────────────────────────────────
    Toast component
 ───────────────────────────────────────────── */
-function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) => void }) {
+function Toast({
+  item,
+  onDismiss,
+  errorTitle,
+  successTitle,
+  dismissLabel,
+}: {
+  item: ToastItem
+  onDismiss: (id: string) => void
+  errorTitle: string
+  successTitle: string
+  dismissLabel: string
+}) {
   React.useEffect(() => {
     const t = setTimeout(() => onDismiss(item.id), 5000)
     return () => clearTimeout(t)
@@ -96,13 +110,13 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) =
       )}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-slate-900">
-          {item.type === 'error' ? 'Login failed' : 'Welcome back!'}
+          {item.type === 'error' ? errorTitle : successTitle}
         </p>
         <p className="mt-0.5 text-xs text-slate-500">{item.message}</p>
       </div>
       <button
         type="button"
-        aria-label="Dismiss notification"
+        aria-label={dismissLabel}
         onClick={() => onDismiss(item.id)}
         className="shrink-0 rounded p-0.5 text-slate-400 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
       >
@@ -118,25 +132,25 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) =
 const FEATURES = [
   {
     icon: <ShieldCheck className="size-5 text-green-400" aria-hidden="true" />,
-    title: '10-Phase Gate System',
-    desc: 'From intake to AI optimization',
+    titleKey: 'features.gateSystem',
+    descKey: 'features.gateSystemDesc',
   },
   {
     icon: <Users className="size-5 text-blue-400" aria-hidden="true" />,
-    title: 'Multi-Tenant Architecture',
-    desc: 'Secure tenant isolation',
+    titleKey: 'features.multiTenant',
+    descKey: 'features.multiTenantDesc',
   },
   {
     icon: <FileCheck className="size-5 text-amber-400" aria-hidden="true" />,
-    title: 'Immutable Audit Trails',
-    desc: 'Tamper-proof compliance',
+    titleKey: 'features.auditTrails',
+    descKey: 'features.auditTrailsDesc',
   },
   {
     icon: <Brain className="size-5 text-purple-400" aria-hidden="true" />,
-    title: 'AI-Powered Analytics',
-    desc: 'Predictive insights',
+    titleKey: 'features.aiAnalytics',
+    descKey: 'features.aiAnalyticsDesc',
   },
-]
+] as const
 
 /* ─────────────────────────────────────────────
    Field error display
@@ -164,7 +178,7 @@ export interface LoginPageProps {
   isLoading?: boolean
 }
 
-/* ─────────────────────────��───────────────────
+/* ─────────────────────────���───────────────────
    Main LoginPage
 ───────────────────────────────────────────── */
 export function LoginPage({
@@ -173,6 +187,11 @@ export function LoginPage({
   error: externalError,
   isLoading: externalLoading = false,
 }: LoginPageProps = {}) {
+  const t = useTranslations('auth.login')
+  const tAuth = useTranslations('auth')
+  const locale = useLocale()
+  const dir = locale === 'ar' ? 'rtl' : 'ltr'
+
   /* form state */
   const [email, setEmail]         = React.useState('')
   const [password, setPassword]   = React.useState('')
@@ -186,8 +205,11 @@ export function LoginPage({
 
   const isLoading   = loading || externalLoading
 
-  const emailErr    = touched.email    ? validateEmail(email)       : ''
-  const passwordErr = touched.password ? validatePassword(password) : ''
+  // Validators return translation keys ('' = valid); translate for display.
+  const emailErrKey    = touched.email    ? validateEmail(email)       : ''
+  const passwordErrKey = touched.password ? validatePassword(password) : ''
+  const emailErr       = emailErrKey    ? t(emailErrKey)    : ''
+  const passwordErr    = passwordErrKey ? t(passwordErrKey) : ''
   const isFormValid = !validateEmail(email) && !validatePassword(password)
 
   /* Surface external errors as toasts */
@@ -220,21 +242,21 @@ export function LoginPage({
         /* Delegate to caller — caller is responsible for redirect */
         await onLogin(email, password)
         setSuccess(true)
-        addToast('success', 'Signed in successfully.')
+        addToast('success', t('signedInSuccess'))
       } else {
         /* Built-in mock for demo / standalone usage */
         const result = await mockLogin(email, password)
         if (!result.success) {
-          addToast('error', result.error ?? 'Invalid email or password. Please try again.')
+          addToast('error', t('invalidCredentials'))
           setLoading(false)
           return
         }
         setSuccess(true)
-        addToast('success', 'Redirecting to your dashboard…')
+        addToast('success', t('redirecting'))
         setTimeout(() => { window.location.href = '/dashboard' }, 1800)
       }
     } catch {
-      addToast('error', 'Network error — please check your connection and try again.')
+      addToast('error', t('networkError'))
     } finally {
       setLoading(false)
     }
@@ -246,28 +268,35 @@ export function LoginPage({
       if (onSSOLogin) {
         await onSSOLogin(provider)
         setSuccess(true)
-        addToast('success', `Signed in with ${provider === 'microsoft' ? 'Microsoft' : 'Google'}.`)
+        addToast('success', provider === 'microsoft' ? t('ssoSignedInMicrosoft') : t('ssoSignedInGoogle'))
       } else {
         await new Promise((r) => setTimeout(r, 1200))
-        addToast('error', 'SSO is not configured in this environment.')
+        addToast('error', t('ssoNotConfigured'))
       }
     } catch {
-      addToast('error', `${provider === 'microsoft' ? 'Microsoft' : 'Google'} sign-in failed.`)
+      addToast('error', provider === 'microsoft' ? t('ssoFailedMicrosoft') : t('ssoFailedGoogle'))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="h-screen w-full overflow-hidden bg-slate-50">
+    <div dir={dir} className="h-screen w-full overflow-hidden bg-slate-50">
 
-      {/* ── Toast stack — fixed top-right ── */}
+      {/* ── Toast stack — fixed top-inline-end ── */}
       <div
-        className="fixed right-4 top-4 z-50 flex flex-col gap-2"
-        aria-label="Notifications"
+        className="fixed end-4 top-4 z-50 flex flex-col gap-2"
+        aria-label={t('notifications')}
       >
-        {toasts.map((t) => (
-          <Toast key={t.id} item={t} onDismiss={dismissToast} />
+        {toasts.map((toastItem) => (
+          <Toast
+            key={toastItem.id}
+            item={toastItem}
+            onDismiss={dismissToast}
+            errorTitle={tAuth('loginFailed')}
+            successTitle={tAuth('welcomeBack')}
+            dismissLabel={t('dismiss')}
+          />
         ))}
       </div>
 
@@ -292,26 +321,26 @@ export function LoginPage({
             <div className="flex size-20 items-center justify-center rounded-full bg-white/10">
               <Zap className="size-8 text-white" strokeWidth={2.5} aria-hidden="true" />
             </div>
-            <h1 className="mt-6 text-3xl font-bold text-white">GridMind Capital</h1>
-            <p className="mt-2 text-lg text-slate-300">
-              Renewable EPC Enterprise Operating System
+            <h1 className="mt-6 text-3xl font-bold text-white">{t('brand')}</h1>
+            <p className="mt-2 text-lg text-slate-300 text-center text-balance">
+              {t('productName')}
             </p>
             <span className="mt-4 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
-              Enterprise Edition
+              {t('edition')}
             </span>
 
             {/* Feature list */}
             <div className="mt-12 w-full max-w-md">
               <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/60">
-                Why GridMind Capital?
+                {t('whyTitle')}
               </p>
               <div className="flex flex-col gap-4">
                 {FEATURES.map((f) => (
-                  <div key={f.title} className="flex items-start gap-3">
+                  <div key={f.titleKey} className="flex items-start gap-3">
                     <div className="mt-0.5 shrink-0">{f.icon}</div>
                     <div>
-                      <p className="text-sm font-medium text-white">{f.title}</p>
-                      <p className="text-xs text-slate-400">{f.desc}</p>
+                      <p className="text-sm font-medium text-white">{t(f.titleKey)}</p>
+                      <p className="text-xs text-slate-400">{t(f.descKey)}</p>
                     </div>
                   </div>
                 ))}
@@ -320,8 +349,8 @@ export function LoginPage({
           </div>
 
           {/* Left panel footer */}
-          <p className="absolute bottom-8 left-8 text-xs text-slate-500">
-            © 2026 GridMind Capital. All rights reserved.
+          <p className="absolute bottom-8 start-8 text-xs text-slate-500">
+            {t('copyright')}
           </p>
         </div>
 
@@ -341,16 +370,16 @@ export function LoginPage({
                 <div className="flex size-14 items-center justify-center rounded-full bg-[#0a192f]/10">
                   <Zap className="size-7 text-[#0a192f]" strokeWidth={2.5} aria-hidden="true" />
                 </div>
-                <h1 className="mt-4 text-xl font-bold text-slate-900">GridMind Capital</h1>
-                <p className="mt-1 text-sm text-slate-500">Sign in to your account</p>
+                <h1 className="mt-4 text-xl font-bold text-slate-900">{t('brand')}</h1>
+                <p className="mt-1 text-sm text-slate-500">{t('heading')}</p>
               </div>
 
               {/* Desktop heading */}
               <h2 className="hidden text-2xl font-bold text-slate-900 lg:block">
-                Sign in to your account
+                {t('heading')}
               </h2>
               <p className="mt-1 hidden text-sm text-slate-500 lg:block">
-                Enter your credentials to access the platform.
+                {t('subtitle')}
               </p>
 
               {/* ── Form ── */}
@@ -358,7 +387,7 @@ export function LoginPage({
                 onSubmit={handleSubmit}
                 noValidate
                 className="mt-6 space-y-4"
-                aria-label="Login form"
+                aria-label={t('formLabel')}
               >
                 {/* Email */}
                 <div>
@@ -366,25 +395,26 @@ export function LoginPage({
                     htmlFor="login-email"
                     className="mb-1.5 block text-sm font-medium text-slate-700"
                   >
-                    Email address
+                    {tAuth('email')}
                   </label>
                   <div className="relative">
                     <Mail
-                      className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+                      className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
                       aria-hidden="true"
                     />
                     <input
                       id="login-email"
                       type="email"
                       autoComplete="email"
-                      placeholder="you@company.com"
+                      placeholder={t('emailPlaceholder')}
+                      dir="ltr"
                       required
                       disabled={isLoading || success}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+                      onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
                       className={cn(
-                        'w-full rounded-lg border bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900',
+                        'w-full rounded-lg border bg-white py-2.5 ps-9 pe-3 text-sm text-slate-900',
                         'placeholder:text-slate-400 outline-none transition-colors',
                         'focus:ring-2 focus:ring-sky-500 focus:border-sky-500',
                         'disabled:cursor-not-allowed disabled:opacity-50',
@@ -403,11 +433,11 @@ export function LoginPage({
                     htmlFor="login-password"
                     className="mb-1.5 block text-sm font-medium text-slate-700"
                   >
-                    Password
+                    {tAuth('password')}
                   </label>
                   <div className="relative">
                     <Lock
-                      className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+                      className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
                       aria-hidden="true"
                     />
                     <input
@@ -419,9 +449,9 @@ export function LoginPage({
                       disabled={isLoading || success}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+                      onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
                       className={cn(
-                        'w-full rounded-lg border bg-white py-2.5 pl-9 pr-10 text-sm text-slate-900',
+                        'w-full rounded-lg border bg-white py-2.5 ps-9 pe-10 text-sm text-slate-900',
                         'placeholder:text-slate-400 outline-none transition-colors',
                         'focus:ring-2 focus:ring-sky-500 focus:border-sky-500',
                         'disabled:cursor-not-allowed disabled:opacity-50',
@@ -433,9 +463,9 @@ export function LoginPage({
                     <button
                       type="button"
                       tabIndex={-1}
-                      aria-label={showPw ? 'Hide password' : 'Show password'}
+                      aria-label={showPw ? t('hidePassword') : t('showPassword')}
                       onClick={() => setShowPw((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded"
+                      className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded"
                     >
                       {showPw
                         ? <EyeOff className="size-4" aria-hidden="true" />
@@ -448,7 +478,7 @@ export function LoginPage({
                       type="button"
                       className="text-xs text-sky-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded"
                     >
-                      Forgot password?
+                      {tAuth('forgotPassword')}
                     </button>
                   </div>
                 </div>
@@ -467,7 +497,7 @@ export function LoginPage({
                     htmlFor="login-remember"
                     className="cursor-pointer select-none text-sm text-slate-600"
                   >
-                    Remember me for 30 days
+                    {t('rememberMe')}
                   </label>
                 </div>
 
@@ -486,10 +516,10 @@ export function LoginPage({
                   {isLoading ? (
                     <>
                       <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                      Signing in...
+                      {tAuth('signingIn')}
                     </>
                   ) : (
-                    'Sign In'
+                    tAuth('signIn')
                   )}
                 </button>
               </form>
@@ -497,7 +527,7 @@ export function LoginPage({
               {/* Divider */}
               <div className="my-6 flex items-center gap-4">
                 <span className="h-px flex-1 bg-slate-200" />
-                <span className="text-xs uppercase text-slate-400">or</span>
+                <span className="text-xs uppercase text-slate-400">{t('or')}</span>
                 <span className="h-px flex-1 bg-slate-200" />
               </div>
 
@@ -516,7 +546,7 @@ export function LoginPage({
                   )}
                 >
                   <MicrosoftIcon size={20} />
-                  Sign in with Microsoft
+                  {t('ssoMicrosoft')}
                 </button>
                 <button
                   type="button"
@@ -531,24 +561,24 @@ export function LoginPage({
                   )}
                 >
                   <GoogleIcon size={20} />
-                  Sign in with Google
+                  {t('ssoGoogle')}
                 </button>
               </div>
 
               {/* Card footer */}
               <p className="mt-6 text-center text-sm text-slate-500">
-                Don&apos;t have an account?{' '}
+                {tAuth('noAccount')}{' '}
                 <a
                   href="/auth/sign-up"
                   className="text-sky-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded"
                 >
-                  Create account
+                  {tAuth('createAccount')}
                 </a>
               </p>
 
               {/* Demo hint */}
-              <p className="mt-3 text-center text-xs text-slate-400">
-                Demo — admin@gridmind.capital / Admin123! or pm@gridmind.capital / PM123!
+              <p className="mt-3 text-center text-xs text-slate-400" dir="ltr">
+                {t('demoHint')}
               </p>
             </div>
 

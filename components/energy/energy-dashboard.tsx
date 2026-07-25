@@ -31,7 +31,7 @@ import {
   type EnergyDashboard, type ProductionRow,
   type BessDashboard, type BessRow,
   type GridComplianceDashboard, type GridComplianceTest,
-  type ComplianceResult, type ComplianceCategory,
+  type ComplianceResult,
 } from '@/app/actions/energy'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -855,36 +855,29 @@ export function BessSection({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const RESULT_META: Record<string, { label: string; color: string }> = {
-  pass:             { label: 'Passed',           color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  fail:             { label: 'Failed',            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'               },
-  conditional_pass: { label: 'Conditional Pass',  color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'       },
-  scheduled:        { label: 'Scheduled',         color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'      },
+  passed:          { label: 'Passed',          color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  failed:          { label: 'Failed',          color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'                 },
+  retest_required: { label: 'Retest Required', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'         },
+  scheduled:       { label: 'Scheduled',       color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400'         },
 }
 
-const CATEGORY_OPTIONS: { value: ComplianceCategory; label: string }[] = [
-  { value: 'freq_response',      label: 'Frequency Response'     },
-  { value: 'voltage_ride_through', label: 'Voltage Ride-Through' },
-  { value: 'power_factor',       label: 'Power Factor'           },
-  { value: 'ramp_rate',          label: 'Ramp Rate'              },
-  { value: 'anti_islanding',     label: 'Anti-Islanding'         },
-  { value: 'scada_comms',        label: 'SCADA Communications'   },
-  { value: 'protection',         label: 'Protection'             },
-  { value: 'other',              label: 'Other'                  },
+// Common grid-code / IEC standards for the free-text `standard` field.
+const STANDARD_PRESETS = [
+  'IEC 61400-21', 'IEC 62933', 'IEEE 1547', 'Grid Code — LFSM-O',
+  'Grid Code — Voltage Ride-Through', 'Grid Code — Reactive Power',
 ]
 
-function resultMeta(r: ComplianceResult, completedDate: string | null) {
-  if (r === 'pass' || r === 'conditional_pass' || r === 'fail') return RESULT_META[r]
-  if (!completedDate) return RESULT_META['scheduled']
+function resultMeta(r: ComplianceResult | null) {
+  if (r && RESULT_META[r]) return RESULT_META[r]
   return RESULT_META['scheduled']
 }
 
 // ─── Add test dialog ──────────────────────────────────────────────────────────
 
 const addTestSchema = z.object({
-  category:       z.string(),
-  test_name:      z.string().min(3, 'Test name required'),
-  scheduled_date: z.string().optional(),
-  notes:          z.string().optional(),
+  standard:   z.string().optional(),
+  test_name:  z.string().min(3, 'Test name required'),
+  test_date:  z.string().optional(),
 })
 type AddTestValues = z.infer<typeof addTestSchema>
 
@@ -892,17 +885,16 @@ function AddTestDialog({ open, onClose, projectId, onRefresh }: {
   open: boolean; onClose: () => void; projectId: string; onRefresh: () => void
 }) {
   const { toast } = useToast()
-  const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<AddTestValues>({
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<AddTestValues>({
     resolver: zodResolver(addTestSchema),
-    defaultValues: { category: 'freq_response' },
+    defaultValues: { standard: '' },
   })
 
   async function onSubmit(v: AddTestValues) {
     const res = await addComplianceTest(projectId, {
-      category:       v.category as ComplianceCategory,
-      test_name:      v.test_name,
-      scheduled_date: v.scheduled_date || null,
-      notes:          v.notes          || null,
+      test_name: v.test_name,
+      standard:  v.standard?.trim() || null,
+      test_date: v.test_date || null,
     })
     if (res.error) { toast({ title: 'Error', description: res.error, variant: 'danger' }); return }
     toast({ title: 'Test added', description: 'Compliance test scheduled.', variant: 'success' })
@@ -920,37 +912,20 @@ function AddTestDialog({ open, onClose, projectId, onRefresh }: {
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-1">
           <div className="space-y-1.5">
-            <Label>Category</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {CATEGORY_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setValue('category', opt.value)}
-                  className={cn(
-                    'px-3 py-2 rounded-lg border text-xs font-medium text-left transition-colors',
-                    watch('category') === opt.value
-                      ? 'border-primary bg-primary/5 text-primary'
-                      : 'border-border text-muted-foreground hover:border-primary/50',
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-1.5">
             <Label htmlFor="at-name">Test name <span className="text-destructive">*</span></Label>
             <Input id="at-name" {...register('test_name')} placeholder="e.g. LFSM-O frequency response" />
             {errors.test_name && <p className="text-xs text-destructive">{errors.test_name.message}</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="at-date">Scheduled date</Label>
-            <Input id="at-date" type="date" {...register('scheduled_date')} />
+            <Label htmlFor="at-standard">Standard</Label>
+            <Input id="at-standard" list="grid-standards" {...register('standard')} placeholder="e.g. IEC 61400-21 or grid code clause" />
+            <datalist id="grid-standards">
+              {STANDARD_PRESETS.map(s => <option key={s} value={s} />)}
+            </datalist>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="at-notes">Notes</Label>
-            <Input id="at-notes" {...register('notes')} placeholder="Optional notes / standard reference" />
+            <Label htmlFor="at-date">Scheduled date</Label>
+            <Input id="at-date" type="date" {...register('test_date')} />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => { reset(); onClose() }}>Cancel</Button>
@@ -968,7 +943,7 @@ function AddTestDialog({ open, onClose, projectId, onRefresh }: {
 // ─── Update result dialog ─────────────────────────────────────────────────────
 
 const updateResultSchema = z.object({
-  result:          z.enum(['pass', 'fail', 'conditional_pass']),
+  result:          z.enum(['passed', 'failed', 'retest_required']),
   certificate_ref: z.string().optional(),
 })
 type UpdateResultValues = z.infer<typeof updateResultSchema>
@@ -979,7 +954,7 @@ function UpdateResultDialog({ test, open, onClose, onRefresh }: {
   const { toast } = useToast()
   const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm<UpdateResultValues>({
     resolver: zodResolver(updateResultSchema),
-    defaultValues: { result: 'pass' },
+    defaultValues: { result: 'passed' },
   })
 
   async function onSubmit(v: UpdateResultValues) {
@@ -1001,7 +976,7 @@ function UpdateResultDialog({ test, open, onClose, onRefresh }: {
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-1">
           <div className="flex gap-2">
-            {(['pass', 'conditional_pass', 'fail'] as const).map(r => (
+            {(['passed', 'retest_required', 'failed'] as const).map(r => (
               <button
                 key={r}
                 type="button"
@@ -1009,13 +984,13 @@ function UpdateResultDialog({ test, open, onClose, onRefresh }: {
                 className={cn(
                   'flex-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors',
                   watch('result') === r
-                    ? r === 'pass'             ? 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
-                      : r === 'conditional_pass' ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
+                    ? r === 'passed'          ? 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
+                      : r === 'retest_required' ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
                       : 'border-red-400 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
                     : 'border-border text-muted-foreground hover:border-primary/50',
                 )}
               >
-                {r === 'conditional_pass' ? 'Conditional' : r.charAt(0).toUpperCase() + r.slice(1)}
+                {r === 'retest_required' ? 'Retest' : r === 'passed' ? 'Passed' : 'Failed'}
               </button>
             ))}
           </div>
@@ -1079,17 +1054,17 @@ export function GridComplianceTable({
           </thead>
           <tbody>
             {tests.map(t => {
-              const meta = resultMeta(t.result, t.completed_date)
-              const displayDate = t.completed_date ?? t.scheduled_date
+              const meta = resultMeta(t.result)
+              const displayDate = t.test_date
+              const pending = t.result == null || t.result === 'scheduled' || t.result === 'retest_required'
               return (
                 <tr key={t.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
                   <td className="px-4 py-3">
                     <p className="text-sm font-medium text-foreground">{t.test_name}</p>
-                    {t.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">{t.notes}</p>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground capitalize">
-                      {t.category.replace(/_/g, ' ')}
+                    <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {t.standard ?? '—'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
@@ -1109,7 +1084,7 @@ export function GridComplianceTable({
                     {t.certificate_ref ?? '—'}
                   </td>
                   <td className="px-4 py-3">
-                    {!t.completed_date && (
+                    {pending && (
                       <button
                         onClick={() => setUpdateTarget(t)}
                         className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
