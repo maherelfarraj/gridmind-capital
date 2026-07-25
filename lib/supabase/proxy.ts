@@ -28,7 +28,28 @@ export async function updateSession(request: NextRequest) {
   // IMPORTANT: do not add code between createServerClient and getUser()
   const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser()
+
+  // A stale/rotated refresh token makes getUser() fail on *every* request while
+  // the dead cookie survives, costing a wasted auth round-trip each time. Treat
+  // it as signed out and clear the cookies so the retry loop stops.
+  const staleSession =
+    userError != null &&
+    (userError.code === 'refresh_token_not_found' ||
+      userError.message.includes('Refresh Token'))
+
+  // Applied to whichever response we ultimately return — a redirect is a fresh
+  // NextResponse, so clearing cookies on `supabaseResponse` alone would be lost.
+  const clearStaleAuthCookies = <T extends NextResponse>(response: T): T => {
+    if (!staleSession) return response
+    for (const cookie of request.cookies.getAll()) {
+      if (cookie.name.startsWith('sb-')) {
+        response.cookies.delete(cookie.name)
+      }
+    }
+    return response
+  }
 
   const { pathname } = request.nextUrl
 
@@ -40,7 +61,7 @@ export async function updateSession(request: NextRequest) {
   if (isAuthPage && user) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
+    return clearStaleAuthCookies(NextResponse.redirect(url))
   }
 
   // ── Public / self-authenticating paths ───────────────────────────────────
@@ -75,8 +96,8 @@ export async function updateSession(request: NextRequest) {
   if (!isPublic && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
-    return NextResponse.redirect(url)
+    return clearStaleAuthCookies(NextResponse.redirect(url))
   }
 
-  return supabaseResponse
+  return clearStaleAuthCookies(supabaseResponse)
 }

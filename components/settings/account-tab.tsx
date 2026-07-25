@@ -121,8 +121,8 @@ export function AccountTab({ onSave }: { onSave: () => void }) {
             {/* QR placeholder */}
             <div className="size-32 rounded-lg bg-white border border-border flex items-center justify-center">
               <div className="grid grid-cols-5 gap-0.5 p-2 opacity-70">
-                {Array.from({ length: 25 }).map((_, i) => (
-                  <div key={i} className={cn('size-3 rounded-sm', Math.random() > 0.5 ? 'bg-black' : 'bg-transparent')} />
+                {QR_PLACEHOLDER_CELLS.map((filled, i) => (
+                  <div key={i} className={cn('size-3 rounded-sm', filled ? 'bg-black' : 'bg-transparent')} />
                 ))}
               </div>
             </div>

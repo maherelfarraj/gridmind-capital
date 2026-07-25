@@ -83,7 +83,11 @@ function Select({
   className,
   id,
 }: SelectProps) {
-  const selectId = id ?? React.useId()
+  // useId must run unconditionally: `id ?? React.useId()` short-circuits when
+  // `id` is supplied, so the hook count changes if `id` toggles between
+  // defined and undefined, crashing with "rendered fewer hooks than expected".
+  const generatedId = React.useId()
+  const selectId = id ?? generatedId
   const hasError = Boolean(error)
 
   // Group options

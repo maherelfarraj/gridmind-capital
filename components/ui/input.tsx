@@ -38,7 +38,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     },
     ref,
   ) => {
-    const inputId = id ?? React.useId()
+    // useId must run unconditionally: `id ?? React.useId()` short-circuits when
+    // `id` is supplied, so the hook count changes if `id` toggles between
+    // defined and undefined, crashing with "rendered fewer hooks than expected".
+    const generatedId = React.useId()
+    const inputId = id ?? generatedId
     const hasError = Boolean(error)
 
     return (

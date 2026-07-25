@@ -13,7 +13,10 @@ export function RisksTab({ liveData }: { liveData?: G0LiveRisk[] }) {
 
   const risks: InitiationRisk[] = liveData === undefined
     ? MOCK_RISKS
-    : liveData.map((r) => ({ ...r, id: r.id || String(Math.random()) } as InitiationRisk))
+    // Index-based fallback id, not Math.random(): a random id is regenerated on
+    // every render, so React would treat each row as new and remount it (losing
+    // focus and selection), and SSR/client would disagree during hydration.
+    : liveData.map((r, i) => ({ ...r, id: r.id || `live-risk-${i}` } as InitiationRisk))
 
   if (liveData !== undefined && liveData.length === 0) {
     return (
