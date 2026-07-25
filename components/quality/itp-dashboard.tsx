@@ -37,26 +37,31 @@ import {
 
 const INSPECTION_TYPES: InspectionType[] = ['HOLD', 'WITNESS', 'SURVEILLANCE', 'REVIEW']
 
-const TYPE_META: Record<InspectionType, { label: string; color: string; icon: React.ElementType; description: string }> = {
+const TYPE_META: Record<string, { label: string; color: string; icon: React.ElementType; description: string }> = {
   HOLD:        { label: 'Hold',        color: '#ef4444', icon: Flame,        description: 'Work must stop until signed off' },
   WITNESS:     { label: 'Witness',     color: '#f59e0b', icon: Eye,          description: 'Inspector must be present' },
   SURVEILLANCE:{ label: 'Surveillance',color: '#64748b', icon: ShieldCheck,  description: 'Monitor and verify' },
   REVIEW:      { label: 'Review',      color: '#3b82f6', icon: FileSearch,   description: 'Document review required' },
 }
+const TYPE_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8', icon: ShieldCheck, description: '' })
 
-const STATUS_META: Record<ActivityStatus, { label: string; color: string }> = {
+const STATUS_META: Record<string, { label: string; color: string }> = {
   pending: { label: 'Pending', color: '#94a3b8' },
   passed:  { label: 'Passed',  color: '#22c55e' },
   failed:  { label: 'Failed',  color: '#ef4444' },
   waived:  { label: 'Waived',  color: '#8b5cf6' },
 }
+const STATUS_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8' })
 
-const PLAN_STATUS_META: Record<PlanStatus, { label: string; color: string }> = {
+const PLAN_STATUS_META: Record<string, { label: string; color: string }> = {
   draft:    { label: 'Draft',    color: '#94a3b8' },
   active:   { label: 'Active',   color: '#22c55e' },
   complete: { label: 'Complete', color: '#3b82f6' },
   void:     { label: 'Void',     color: '#6b7280' },
 }
+const PLAN_STATUS_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8' })
+
+
 
 // ─── Zod schema ────────────────────────────────────────────────────────────────
 
@@ -106,8 +111,8 @@ function KpiCard({ label, value, sub, icon: Icon, color }: {
 
 // ─── Activity type badge ───────────────────────────────────────────────────────
 
-function TypeBadge({ type }: { type: InspectionType }) {
-  const meta = TYPE_META[type]
+function TypeBadge({ type }: { type: string }) {
+  const meta = TYPE_META[type] ?? TYPE_FALLBACK(type)
   const Icon = meta.icon
   return (
     <span
@@ -121,8 +126,8 @@ function TypeBadge({ type }: { type: InspectionType }) {
   )
 }
 
-function StatusBadge({ status }: { status: ActivityStatus }) {
-  const meta = STATUS_META[status]
+function StatusBadge({ status }: { status: string }) {
+  const meta = STATUS_META[status] ?? STATUS_FALLBACK(status)
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold"
@@ -133,8 +138,8 @@ function StatusBadge({ status }: { status: ActivityStatus }) {
   )
 }
 
-function PlanStatusBadge({ status }: { status: PlanStatus }) {
-  const meta = PLAN_STATUS_META[status]
+function PlanStatusBadge({ status }: { status: string }) {
+  const meta = PLAN_STATUS_META[status] ?? PLAN_STATUS_FALLBACK(status)
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold"
@@ -172,7 +177,7 @@ function ActivityRow({
   const [noteOpen, setNoteOpen] = React.useState(false)
   const [noteText, setNoteText] = React.useState(act.notes ?? '')
   const isHold = act.inspection_type === 'HOLD'
-  const meta = TYPE_META[act.inspection_type]
+  const meta = TYPE_META[act.inspection_type] ?? TYPE_FALLBACK(act.inspection_type)
 
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
@@ -813,26 +818,30 @@ export function ItpDashboard({ projectId, canManage }: { projectId: string; canM
 // NCR Section
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SEVERITY_META: Record<QualityNcr['severity'], { label: string; color: string; bg: string; icon: React.ElementType }> = {
-  critical: { label: 'Critical', color: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20',   icon: AlertOctagon },
+const SEVERITY_META: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
+  critical: { label: 'Critical', color: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20',    icon: AlertOctagon },
   major:    { label: 'Major',    color: '#f59e0b', bg: 'bg-amber-50 dark:bg-amber-900/20', icon: ShieldAlert  },
   minor:    { label: 'Minor',    color: '#64748b', bg: 'bg-slate-50 dark:bg-slate-800/40', icon: Info         },
 }
+const SEVERITY_FALLBACK = (raw: string) => ({
+  label: raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+  color: '#94a3b8', bg: 'bg-slate-50 dark:bg-slate-800/40', icon: Info,
+})
 
-const CATEGORY_LABELS: Record<NcrCategory, string> = {
+const CATEGORY_LABELS: Record<string, string> = {
   failed_inspection: 'Failed Inspection',
   audit:             'Audit',
   site_observation:  'Site Observation',
 }
 
-const NCR_STATUS_LABELS: Record<QualityNcr['status'], string> = {
+const NCR_STATUS_LABELS: Record<string, string> = {
   open:              'Open',
   in_rectification:  'In Rectification',
   're_inspection':   'Re-Inspection',
   closed:            'Closed',
 }
 
-const NCR_STATUS_COLORS: Record<QualityNcr['status'], string> = {
+const NCR_STATUS_COLORS: Record<string, string> = {
   open:             'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
   in_rectification: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   're_inspection':  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -914,7 +923,7 @@ function NcrDetailPanel({
     onRefresh()
   }
 
-  const meta = SEVERITY_META[ncr.severity]
+  const meta = SEVERITY_META[ncr.severity] ?? SEVERITY_FALLBACK(ncr.severity)
   const Icon = meta.icon
 
   return (
@@ -1241,7 +1250,7 @@ function NcrSection({ projectId }: { projectId: string }) {
             </thead>
             <tbody>
               {rows.map(ncr => {
-                const meta = SEVERITY_META[ncr.severity]
+                const meta = SEVERITY_META[ncr.severity] ?? SEVERITY_FALLBACK(ncr.severity)
                 const Icon = meta.icon
                 return (
                   <tr

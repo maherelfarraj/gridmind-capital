@@ -25,6 +25,9 @@ const SEV_META: Record<AiInsight['severity'], { label: string; color: string; bg
   low:      { label: 'Low',      color: '#3b82f6', bg: '#3b82f615' },
   info:     { label: 'Info',     color: '#94a3b8', bg: '#94a3b815' },
 }
+function sevMeta(sev: string) {
+  return SEV_META[sev as keyof typeof SEV_META] ?? { label: sev || 'Unknown', color: '#94a3b8', bg: '#94a3b815' }
+}
 
 const MODULE_LABELS: Record<AiInsight['module'], string> = {
   predictive_maintenance: 'Predictive Maint.',
@@ -62,7 +65,7 @@ function LiveBadge({ live }: { live: boolean }) {
 
 function InsightCard({ insight, onUpdate }: { insight: AiInsight; onUpdate: () => void }) {
   const [busy, setBusy] = useState(false)
-  const { color, bg, label } = SEV_META[insight.severity]
+  const { color, bg, label } = sevMeta(insight.severity)
   const isOpen = insight.status === 'open'
 
   async function ack() { setBusy(true); await acknowledgeInsightAction(insight.id); onUpdate(); setBusy(false) }

@@ -20,11 +20,12 @@ import type { RiskRecord } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
 
-const RAG_META = {
+const RAG_META: Record<string, { color: string; label: string }> = {
   green: { color: '#22c55e', label: 'Low'    },
   amber: { color: '#f59e0b', label: 'Medium' },
   red:   { color: '#ef4444', label: 'High'   },
 }
+const RAG_FALLBACK = { color: '#94a3b8', label: 'Unknown' }
 const CAT_COLORS = ['#64ffda', '#3b82f6', '#f97316', '#a855f7', '#22c55e', '#f59e0b']
 const CATEGORIES = ['Technical', 'Schedule', 'Commercial', 'Procurement', 'Regulatory', 'External', 'HSE']
 
@@ -156,7 +157,7 @@ function RiskHeatmap({ matrix }: { matrix: { probability: number; impact: number
 
 function RiskRow({ item, onClose }: { item: RiskRecord; onClose: (id: string) => void }) {
   const [exp, setExp] = React.useState(false)
-  const rag = RAG_META[item.rag]
+  const rag = RAG_META[item.rag] ?? RAG_FALLBACK
   return (
     <div className="border-b border-border last:border-0">
       <button type="button" onClick={() => setExp((v) => !v)}

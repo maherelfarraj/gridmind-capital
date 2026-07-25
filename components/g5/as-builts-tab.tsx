@@ -4,7 +4,7 @@ import React from 'react'
 import { Search, Upload, Download, ChevronDown, ChevronUp, Pencil, Link2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { type AsBuilt, type AsBuiltStatus } from './types'
-import { AB_STATUS_META } from './data'
+import { AB_STATUS_META, AB_STATUS_FALLBACK } from './data'
 
 export function AsBuiltsTab({ drawings }: { drawings: AsBuilt[] }) {
   const [search,     setSearch]     = React.useState('')
@@ -110,7 +110,7 @@ export function AsBuiltsTab({ drawings }: { drawings: AsBuilt[] }) {
           </thead>
           <tbody>
             {filtered.map((d) => {
-              const meta   = AB_STATUS_META[d.status]
+              const meta   = AB_STATUS_META[d.status] ?? AB_STATUS_FALLBACK(d.status)
               const isOpen = expanded === d.id
               const openRL = d.redlines.filter((r) => r.status === 'open').length
               return (

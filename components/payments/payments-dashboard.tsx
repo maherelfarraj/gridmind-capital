@@ -30,13 +30,14 @@ import {
 
 // ─── Status metadata ────────────────────────────────────────────────────────
 
-const STATUS_META: Record<PcStatus, { label: string; color: string }> = {
+const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:     { label: 'Draft',     color: '#94a3b8' },
   submitted: { label: 'Submitted', color: '#f59e0b' },
   certified: { label: 'Certified', color: '#3b82f6' },
   invoiced:  { label: 'Invoiced',  color: '#8b5cf6' },
   paid:      { label: 'Paid',      color: '#22c55e' },
 }
+const STATUS_META_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8' })
 
 /** Next-status action buttons per current status. */
 const NEXT_ACTION: Record<PcStatus, { next: PcStatus; label: string; icon: React.ElementType; privileged: boolean } | null> = {
@@ -55,7 +56,7 @@ function fmtDate(iso: string | null): string {
 }
 
 function StatusBadge({ status }: { status: PcStatus }) {
-  const meta = STATUS_META[status]
+  const meta = STATUS_META[status] ?? STATUS_META_FALLBACK(status)
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold"

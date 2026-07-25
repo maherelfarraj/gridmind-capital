@@ -4,7 +4,7 @@ import { Search, ChevronDown, ChevronUp, AlertTriangle, Link2 } from 'lucide-rea
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { cn } from '@/lib/utils'
 import type { CommFailure, FailureStatus, FailureSeverity } from './types'
-import { FAIL_STATUS_META, FAIL_SEV_META } from './data'
+import { FAIL_STATUS_META, FAIL_SEV_META, META_FALLBACK } from './data'
 
 export function FailuresTab({ failures }: { failures: CommFailure[] }) {
   const [search, setSearch] = React.useState('')
@@ -110,8 +110,8 @@ export function FailuresTab({ failures }: { failures: CommFailure[] }) {
       {/* Failure list */}
       <div className="space-y-3">
         {filtered.map((f) => {
-          const sm = FAIL_STATUS_META[f.status]
-          const sev = FAIL_SEV_META[f.severity]
+          const sm  = FAIL_STATUS_META[f.status]   ?? META_FALLBACK(f.status)
+          const sev = FAIL_SEV_META[f.severity]    ?? META_FALLBACK(f.severity)
           const isOpen = expanded === f.id
           return (
             <div key={f.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

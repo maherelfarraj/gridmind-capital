@@ -111,12 +111,20 @@ export const MOCK_SCREENING: OpportunityScreen[] = [
   { id: 's10', criterion: 'GridMind strategic fit & capability',    category: 'Strategic',   result: 'pass',        score: 10, max_score: 10, notes: 'Fits 5-year growth plan; team capacity available' },
 ]
 
-export const STATUS_META = {
+export const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:        { label: 'Draft',        color: '#6b7280' },
   under_review: { label: 'Under Review', color: '#f59e0b' },
   approved:     { label: 'Approved',     color: '#22c55e' },
   rejected:     { label: 'Rejected',     color: '#ef4444' },
-} as const
+}
+
+/** Safe accessor — returns a neutral fallback for unknown keys. */
+export function getStatusMeta(status: string) {
+  return STATUS_META[status] ?? {
+    label: status ? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+    color: '#94a3b8',
+  }
+}
 
 export const DELIVERABLE_STATUS_META = {
   not_started: { label: 'Not Started', color: '#6b7280' },

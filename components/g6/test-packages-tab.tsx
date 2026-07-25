@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TestPackage, TestPackageStatus, TestPriority, TestSystem } from './types'
-import { STATUS_META, PRIORITY_META, SYSTEM_META } from './data'
+import { STATUS_META, PRIORITY_META, SYSTEM_META, META_FALLBACK } from './data'
 
 // ─── Icon helpers ─────────────────────────────────────────────────────────────
 
@@ -109,8 +109,8 @@ function DetailPanel({ pkg, onClose }: { pkg: TestPackage; onClose: () => void }
               <p className="text-sm text-slate-600">{pkg.description}</p>
               <div className="grid grid-cols-2 gap-4">
                 {[
-                  { label: 'System', value: SYSTEM_META[pkg.system].label },
-                  { label: 'Priority', value: PRIORITY_META[pkg.priority].label },
+                  { label: 'System', value: (SYSTEM_META[pkg.system] ?? META_FALLBACK(pkg.system)).label },
+                  { label: 'Priority', value: (PRIORITY_META[pkg.priority] ?? META_FALLBACK(pkg.priority)).label },
                   { label: 'Planned Start', value: pkg.planned_start },
                   { label: 'Planned End', value: pkg.planned_end },
                   { label: 'Actual Start', value: pkg.actual_start ?? '—' },

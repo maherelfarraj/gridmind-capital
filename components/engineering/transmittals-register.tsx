@@ -39,12 +39,16 @@ const PURPOSES: { value: string; label: string }[] = [
 ]
 const PURPOSE_LABEL: Record<string, string> = Object.fromEntries(PURPOSES.map((p) => [p.value, p.label]))
 
-const RESPONSE_CODE_META: Record<TransmittalResponseCode, { label: string; cls: string }> = {
+const RESPONSE_CODE_META: Record<string, { label: string; cls: string }> = {
   A: { label: 'A · Approved',  cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
   B: { label: 'B · As noted',  cls: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300' },
   C: { label: 'C · Revise',    cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
   D: { label: 'D · Rejected',  cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
 }
+const STATUS_META_FALLBACK = (raw: string): { label: string; cls: string } => ({
+  label: raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+  cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+})
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   draft:        { label: 'Draft',        cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -377,8 +381,8 @@ function DetailDialog({
             <div>
               <p className="text-xs text-muted-foreground mb-1">Status</p>
               <div className="flex items-center gap-2">
-                <Badge meta={STATUS_META[status]} />
-                {t.response_code && <Badge meta={RESPONSE_CODE_META[t.response_code]} />}
+                <Badge meta={STATUS_META[status] ?? STATUS_META_FALLBACK(status)} />
+                {t.response_code && <Badge meta={RESPONSE_CODE_META[t.response_code] ?? STATUS_META_FALLBACK(t.response_code)} />}
               </div>
             </div>
           </div>
@@ -619,8 +623,8 @@ export function TransmittalsRegister({ projectId }: { projectId: string }) {
                   <td className={cn('px-4 py-3', t.overdue ? 'text-red-600 dark:text-red-400 font-medium' : 'text-muted-foreground')}>
                     {fmtDate(t.response_due)}
                   </td>
-                  <td className="px-4 py-3">{t.response_code ? <Badge meta={RESPONSE_CODE_META[t.response_code]} /> : <span className="text-muted-foreground">—</span>}</td>
-                  <td className="px-4 py-3"><Badge meta={STATUS_META[t.status]} /></td>
+                  <td className="px-4 py-3">{t.response_code ? <Badge meta={RESPONSE_CODE_META[t.response_code] ?? STATUS_META_FALLBACK(t.response_code)} /> : <span className="text-muted-foreground">—</span>}</td>
+                  <td className="px-4 py-3"><Badge meta={STATUS_META[t.status] ?? STATUS_META_FALLBACK(t.status)} /></td>
                 </tr>
               ))}
             </tbody>
