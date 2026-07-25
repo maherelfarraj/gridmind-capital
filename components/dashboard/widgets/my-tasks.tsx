@@ -12,6 +12,20 @@ const P_META = {
   low:    { label: 'Low',    color: 'text-blue-500',   bg: 'bg-blue-500/10'   },
 }
 
+/**
+ * `t.priority` is database-sourced, so the `as keyof typeof` cast did not make
+ * the lookup safe — an unmapped priority returned undefined and threw.
+ */
+function priorityMeta(priority: string | null | undefined) {
+  return (
+    P_META[priority as keyof typeof P_META] ?? {
+      label: priority ? priority.replace(/_/g, ' ') : 'None',
+      color: 'text-slate-400',
+      bg:    'bg-slate-500/10',
+    }
+  )
+}
+
 function fmtDue(due: string | null): string {
   if (!due) return '—'
   const d = new Date(due)
@@ -38,7 +52,7 @@ export function MyTasksWidget({ config }: { config: WidgetConfig }) {
         )}
         {tasks.map((t) => {
           const isDone = done.includes(t.id)
-          const p = P_META[t.priority as keyof typeof P_META]
+          const p = priorityMeta(t.priority)
           return (
             <div key={t.id} className={cn('flex items-start gap-2.5 rounded-lg px-2.5 py-2 transition-all', isDone ? 'opacity-40' : 'hover:bg-muted/30')}>
               <button

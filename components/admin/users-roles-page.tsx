@@ -805,7 +805,9 @@ interface RoleDetailPanelProps {
 
 function RoleDetailPanel({ role, users, onClose }: RoleDetailPanelProps) {
   const open = !!role
-  const meta = role ? ROLE_META[role] : null
+  // `roleMeta` (= dbRoleMeta) degrades unrecognised/legacy role strings to a
+  // neutral badge instead of returning undefined and throwing on `.label`.
+  const meta = role ? roleMeta(role) : null
   const roleUsers = role ? users.filter(u => u.role === role) : []
 
   React.useEffect(() => {

@@ -8,6 +8,18 @@ import type { G0LiveRisk } from '@/app/actions/gate-submissions'
 
 const LEVEL_ORDER: RiskLevel[] = ['critical', 'high', 'medium', 'low']
 
+// `r.level` on live rows comes from the DB and may fall outside RiskLevel, so
+// this render path needs a neutral fallback. The LEVEL_ORDER-driven sites above
+// always pass known keys and don't.
+function riskMeta(level: string | null | undefined) {
+  return (
+    RISK_META[level as RiskLevel] ?? {
+      label: level ? level.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+      color: '#94a3b8',
+    }
+  )
+}
+
 export function RisksTab({ liveData }: { liveData?: G0LiveRisk[] }) {
   const [selectedLevel, setSelectedLevel] = React.useState<RiskLevel | 'all'>('all')
 
@@ -79,7 +91,7 @@ export function RisksTab({ liveData }: { liveData?: G0LiveRisk[] }) {
       {/* Risk register */}
       <div className="space-y-3">
         {filtered.map((r) => {
-          const meta = RISK_META[r.level]
+          const meta = riskMeta(r.level)
           const score = Math.round(r.probability * r.impact / 100)
           return (
             <div key={r.id} className="rounded-xl border border-border bg-card overflow-hidden">

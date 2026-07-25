@@ -12,6 +12,21 @@ const TYPE_META = {
   upload:   { icon: Upload,      color: 'text-amber-500',  bg: 'bg-amber-500/10', label: 'Upload'   },
 }
 
+/**
+ * `d.type` comes from the database, so the `as keyof typeof` cast was a lie —
+ * any value outside the three keys returned undefined and `m.icon` threw.
+ */
+function typeMeta(type: string | null | undefined) {
+  return (
+    TYPE_META[type as keyof typeof TYPE_META] ?? {
+      icon:  FileText,
+      color: 'text-slate-400',
+      bg:    'bg-slate-500/10',
+      label: type ? type.replace(/_/g, ' ') : 'Unknown',
+    }
+  )
+}
+
 export function DocumentQueueWidget({ config }: { config: WidgetConfig }) {
   const { data, isLoading } = useSWR('widget-doc-queue', getDocumentQueue)
   const [dismissed, setDismissed] = React.useState<string[]>([])
@@ -33,7 +48,7 @@ export function DocumentQueueWidget({ config }: { config: WidgetConfig }) {
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">All clear</div>
         )}
         {visible.map((d) => {
-          const m = TYPE_META[d.type as keyof typeof TYPE_META]
+          const m = typeMeta(d.type)
           const Icon = m.icon
           return (
             <div key={d.id} className={cn('flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-muted/30 transition-colors group', d.urgent && 'border border-red-500/20 bg-red-500/5')}>
