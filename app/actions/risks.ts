@@ -5,7 +5,6 @@ import { requireWriter } from '@/lib/auth/guard'
 import type { RiskRecord, RisksDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
 
 function calcRag(score: number): 'green' | 'amber' | 'red' {
   if (score <= 4)  return 'green'

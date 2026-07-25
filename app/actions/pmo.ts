@@ -1,9 +1,9 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -147,6 +147,12 @@ export async function createPmoItem(input: {
   category?: string; rationale?: string; phase?: string
 }): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
+  // This file previously had NO auth guard at all — any authenticated user
+  // (including a `viewer`) could write PMO records via the admin client, which
+  // bypasses RLS. `requireWriter()` rejects viewers and gives us the real actor.
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { type, projectId, title } = input
   if (!projectId || !title) return { error: 'Project and title are required' }
@@ -157,7 +163,12 @@ export async function createPmoItem(input: {
       category: input.category || 'General',
       probability: input.priority === 'critical' || input.priority === 'high' ? 'high' : 'medium',
       impact: input.priority === 'critical' ? 'high' : input.priority === 'low' ? 'low' : 'medium',
-      status: 'open', created_by: DEMO_USER,
+      status: 'open',
+      // The `risks` table has NO `created_by` column — it has `owner_id`.
+      // Writing `created_by` made PostgREST reject the whole insert, so risk
+      // creation from the PMO page ALWAYS failed. Default the owner to the
+      // creator, which is also the attribution `loadPmoDashboard` reads back.
+      owner_id: gate.actor.userId,
     })
     return { error: error?.message }
   }
@@ -168,13 +179,17 @@ export async function createPmoItem(input: {
     description: type === 'decision' ? (input.rationale || '') : type === 'lesson' ? (input.category || 'General') : '',
     status: type === 'decision' ? 'pending' : 'open',
     priority: type === 'lesson' ? (input.phase || 'General') : (input.priority || 'medium'),
-    created_by: DEMO_USER,
+    // `tickets` DOES have `created_by` — stamp the real actor.
+    created_by: gate.actor.userId,
   })
   return { error: error?.message }
 }
 
 export async function seedPmoDemoData(): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const { data: projects } = await supabase.from('projects').select('id').eq('tenant_id', tenantId).limit(3)
@@ -192,7 +207,9 @@ export async function seedPmoDemoData(): Promise<{ error?: string }> {
     for (let i = 0; i < riskSeed.length; i++) {
       await supabase.from('risks').insert({
         tenant_id: tenantId, project_id: pid(i),
-        status: i === 3 ? 'escalated' : 'open', created_by: DEMO_USER, ...riskSeed[i],
+        // `owner_id`, not `created_by` — see createPmoItem above. This seed
+        // silently failed for every risk row before this fix.
+        status: i === 3 ? 'escalated' : 'open', owner_id: gate.actor.userId, ...riskSeed[i],
       })
     }
   }
@@ -211,7 +228,7 @@ export async function seedPmoDemoData(): Promise<{ error?: string }> {
     ]
     for (let i = 0; i < ticketSeed.length; i++) {
       await supabase.from('tickets').insert({
-        tenant_id: tenantId, project_id: pid(i), created_by: DEMO_USER, ...ticketSeed[i],
+        tenant_id: tenantId, project_id: pid(i), created_by: gate.actor.userId, ...ticketSeed[i],
       })
     }
   }

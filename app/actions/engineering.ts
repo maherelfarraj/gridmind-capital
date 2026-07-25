@@ -5,7 +5,7 @@ import { requireWriter } from '@/lib/auth/guard'
 import type { IFCPackage, DrawingRecord, RFIRecord, EngineeringDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
+
 // SOL-2026-001 "Al Dhafra Solar PV - Phase 1". The previous id
 // (a1000000-...-001) was a duplicate-code row that has been deleted.
 const DEMO_PROJECT = 'ce14ed42-0ea0-43e6-b718-cc2c2cb5283d'
@@ -271,7 +271,10 @@ export async function createRFI(data: {
     status:     'open',
     priority:   'normal',
     metadata:   { discipline: data.discipline },
-    created_by: DEMO_USER,
+    // `requireWriter()` above already resolved the real authenticated user;
+    // stamping the hardcoded DEMO_USER here discarded it and attributed every
+    // RFI to the generic admin@gridmind.capital account.
+    created_by: gate.actor.userId,
   })
   return { error: error?.message }
 }
@@ -326,7 +329,7 @@ export async function seedEngineeringDemoData(): Promise<{ error?: string }> {
     await supabase.from('tickets').insert({
       tenant_id: tenantId, project_id: DEMO_PROJECT,
       title: rfi.title, category: 'rfi', status: 'open', priority: 'normal',
-      description: `RFI raised by site engineer`, created_by: DEMO_USER,
+      description: `RFI raised by site engineer`, created_by: gate.actor.userId,
       metadata: { discipline: rfi.discipline },
     })
   }

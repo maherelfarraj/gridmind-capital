@@ -5,7 +5,6 @@ import { requireWriter } from '@/lib/auth/guard'
 import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 // SOL-2026-001 "Al Dhafra Solar PV - Phase 1". The previous id
 // (a1000000-...-001) was a duplicate-code row that has been deleted.
 const DEMO_PROJECT = 'ce14ed42-0ea0-43e6-b718-cc2c2cb5283d'
