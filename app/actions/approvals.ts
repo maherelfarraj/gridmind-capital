@@ -5,6 +5,7 @@ import { requireWriter, requireApprover, getAuthActor } from '@/lib/auth/guard'
 import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
+import { createSignature, type SignatureDraft } from '@/app/actions/signatures'
 
 // profiles.role enum values that action approvals (used to resolve email recipients).
 const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
@@ -299,8 +300,17 @@ export async function decideApproval(opts: {
   decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject'
   rationale: string
   conditions?: string
-  /** Id of the electronic signature captured for this decision (gate approvals). */
-  signatureId?: string
+  /**
+   * UNPERSISTED signature captured for this decision (gate approvals).
+   *
+   * Written HERE — after the authorization guard passes and immediately before the
+   * status write — never at sign time. The pad used to persist on its own "Sign"
+   * button, so a user could sign, abandon the form, and leave a permanent
+   * signature row on an approval that was never decided. Because `signatures` is
+   * append-only and a signature legitimately means "a human put pen to paper",
+   * those orphans then blocked any safe status reconciliation.
+   */
+  signatureDraft?: SignatureDraft
 }): Promise<{ error: string | null }> {
   const gate = await requireApprover()
   if ('error' in gate) return gate
@@ -320,6 +330,28 @@ export async function decideApproval(opts: {
     .eq('id', opts.id)
     .single()
 
+  if (!approval) return { error: 'Approval not found' }
+
+  // Persist the signature only now that the caller is authorized AND the target
+  // approval exists. If it fails we abort without touching the decision, so we
+  // never record a decision whose signature is missing.
+  let signatureId: string | undefined
+  if (opts.signatureDraft) {
+    const sigRes = await createSignature({
+      dataUrl:     opts.signatureDraft.dataUrl,
+      entityType:  'gate_approval',
+      entityId:    opts.id,
+      projectId:   approval.object_type === 'opportunity' ? approval.object_id : null,
+      statement:   opts.signatureDraft.statement,
+      signerName:  opts.signatureDraft.signerName,
+      signerRole:  opts.signatureDraft.signerRole,
+      // This IS the decision call, so the orphan guard does not apply.
+      allowUndecided: true,
+    })
+    if ('error' in sigRes) return { error: `Could not record your signature: ${sigRes.error}` }
+    signatureId = sigRes.signature.id
+  }
+
   const { error } = await supabase
     .from('approvals')
     .update({
@@ -331,7 +363,7 @@ export async function decideApproval(opts: {
         `\n\n[Decision: ${opts.decision.replace('_', ' ')}]`,
         `\nRationale: ${opts.rationale}`,
         opts.conditions ? `\nConditions: ${opts.conditions}` : '',
-        opts.signatureId ? `\n[Signed: ${opts.signatureId}]` : '',
+        signatureId ? `\n[Signed: ${signatureId}]` : '',
       ].join(''),
     })
     .eq('id', opts.id)

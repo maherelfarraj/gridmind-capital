@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
   createSignature,
+  type SignatureDraft,
   type SignatureEntityType,
   type SignatureRecord,
 } from '@/app/actions/signatures'
@@ -20,6 +21,21 @@ interface SignaturePadProps {
   signerName?: string
   signerRole?: string | null
   submitLabel?: string
+  /**
+   * Defer persistence to the caller.
+   *
+   * When true the pad performs NO server write: it hands the rendered signature
+   * back via `onDraft` and the caller persists it atomically with the action being
+   * authorized (see SignatureDraft). Use this whenever the signature authorizes a
+   * SEPARATE submit step, so abandoning the form leaves nothing behind.
+   *
+   * Leave false only when the signature IS the terminal action (e.g. issuing a
+   * certificate, where the row already exists and the signed image is needed
+   * immediately to render the PDF).
+   */
+  defer?: boolean
+  /** Required when `defer` is set. Receives the unpersisted signature. */
+  onDraft?: (draft: SignatureDraft) => void
   onSigned?: (signature: SignatureRecord) => void
   onCancel?: () => void
 }
@@ -37,6 +53,8 @@ export function SignaturePad({
   signerName = '',
   signerRole = null,
   submitLabel = 'Sign',
+  defer = false,
+  onDraft,
   onSigned,
   onCancel,
 }: SignaturePadProps) {
@@ -192,8 +210,22 @@ export function SignaturePad({
     const canvas = canvasRef.current
     if (!canvas) return
 
-    setSaving(true)
     const dataUrl = canvas.toDataURL('image/png')
+
+    // Deferred mode: hand the signature back UNPERSISTED. No server write happens
+    // here, so closing or abandoning the form leaves no orphan signature row.
+    if (defer) {
+      if (!onDraft) { setError('Signature could not be captured.'); return }
+      onDraft({
+        dataUrl,
+        statement,
+        signerName: mode === 'type' ? typedName : signerName,
+        signerRole,
+      })
+      return
+    }
+
+    setSaving(true)
     const res = await createSignature({
       dataUrl,
       entityType,
