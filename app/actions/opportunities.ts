@@ -147,17 +147,60 @@ export async function createOpportunity(data: {
   return { id: proj.id }
 }
 
+/**
+ * Submit an opportunity for G0 review.
+ *
+ * Submission is NOT acceptance. This deliberately leaves `projects.status` at
+ * 'planning' — the project only becomes 'active' when an approver actually
+ * decides the G0 approval (see `decideApproval`). This function previously wrote
+ * `status: 'active'` here, which meant a project looked accepted the moment it
+ * was submitted, and made "approved" and "active" unrelated to each other.
+ *
+ * Instead it guarantees the pending approval exists, so submitting twice cannot
+ * queue duplicate reviews.
+ */
 export async function submitOpportunityForReview(projectId: string): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  const { error } = await supabase
+
+  // Confirm the project belongs to this tenant before touching approvals.
+  const { data: project, error: fetchError } = await supabase
     .from('projects')
-    .update({ status: 'active' })
+    .select('id, code, name, budget_usd')
     .eq('id', projectId)
     .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  if (fetchError) return { error: fetchError.message }
+  if (!project) return { error: 'Opportunity not found' }
+
+  // Idempotent: reuse an existing open review rather than raising a second one.
+  const { data: existing, error: existingError } = await supabase
+    .from('approvals')
+    .select('id')
+    .eq('object_type', 'opportunity')
+    .eq('object_id', projectId)
+    .eq('status', 'pending')
+    .maybeSingle()
+
+  if (existingError) return { error: existingError.message }
+  if (existing) return {}
+
+  const { error } = await supabase.from('approvals').insert({
+    tenant_id:    tenantId,
+    object_type:  'opportunity',
+    object_id:    projectId,
+    title:        project.code,
+    description:  `G0 Gate review for ${project.name}`,
+    status:       'pending',
+    priority:     'normal',
+    amount:       project.budget_usd,
+    requester_id: gate.actor.userId,
+  })
+
   return { error: error?.message }
 }
 
