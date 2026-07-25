@@ -10,11 +10,12 @@ import type { GateLane, PipelineProject } from './dashboard-data'
 // RAG helpers
 // ─────────────────────────────────────────────────────────────
 
-const RAG_META = {
+const RAG_META: Record<string, { label: string; color: string; Icon: React.ElementType }> = {
   green: { label: 'On Track',  color: '#22c55e', Icon: CheckCircle2 },
   amber: { label: 'At Risk',   color: '#f59e0b', Icon: AlertTriangle },
   red:   { label: 'Off Track', color: '#ef4444', Icon: AlertTriangle },
 }
+const RAG_FALLBACK = { label: 'Unknown', color: '#94a3b8', Icon: AlertTriangle }
 
 // ─────────────────────────────────────────────────────────────
 // Project mini-card
@@ -27,7 +28,7 @@ interface ProjectCardProps {
 }
 
 function ProjectCard({ project, laneColor, onSelect }: ProjectCardProps) {
-  const rag = RAG_META[project.healthRag]
+  const rag = RAG_META[project.healthRag] ?? RAG_FALLBACK
 
   return (
     <button
@@ -179,7 +180,7 @@ function ProjectFlyout({ project, lanes, onClose }: ProjectFlyoutProps) {
   if (!project) return null
 
   const lane = lanes.find((l) => l.gate === project.gate)
-  const rag = RAG_META[project.healthRag]
+  const rag = RAG_META[project.healthRag] ?? RAG_FALLBACK
 
   return (
     <>

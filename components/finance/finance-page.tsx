@@ -164,15 +164,16 @@ function WbsRow({ line }: { line: WbsLine }) {
 
 // ─── Commitment Row ───────────────────────────────────────────
 
-const COMMIT_STATUS_META: Record<CommitmentLine['status'], { label: string; color: string }> = {
+const COMMIT_STATUS_META: Record<string, { label: string; color: string }> = {
   committed: { label: 'Committed', color: '#3b82f6' },
   invoiced:  { label: 'Invoiced',  color: '#f59e0b' },
   paid:      { label: 'Paid',      color: '#22c55e' },
   disputed:  { label: 'Disputed',  color: '#ef4444' },
 }
+const COMMIT_STATUS_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8' })
 
 function CommitmentRow({ line }: { line: CommitmentLine }) {
-  const meta = COMMIT_STATUS_META[line.status]
+  const meta = COMMIT_STATUS_META[line.status] ?? COMMIT_STATUS_FALLBACK(line.status)
   return (
     <tr className="border-b border-border hover:bg-muted/20 transition-colors">
       <td className="px-4 py-2.5">

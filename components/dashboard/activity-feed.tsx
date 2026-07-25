@@ -18,7 +18,7 @@ import type { ActivityItem, ActivityVerb } from './dashboard-data'
 // Verb metadata
 // ─────────────────────────────────────────────────────────────
 
-const VERB_META: Record<ActivityVerb, { Icon: React.ElementType; color: string; bgColor: string; label: string }> = {
+const VERB_META: Record<string, { Icon: React.ElementType; color: string; bgColor: string; label: string }> = {
   'gate-advanced':   { Icon: GitBranch,    color: '#64ffda', bgColor: 'rgba(100,255,218,0.12)', label: 'Gate Advanced'  },
   'approved':        { Icon: CheckCircle2, color: '#22c55e', bgColor: 'rgba(34,197,94,0.12)',   label: 'Approved'       },
   'comment':         { Icon: MessageSquare,color: '#3b82f6', bgColor: 'rgba(59,130,246,0.12)',  label: 'Comment'        },
@@ -28,6 +28,7 @@ const VERB_META: Record<ActivityVerb, { Icon: React.ElementType; color: string; 
   'milestone':       { Icon: Flag,         color: '#f59e0b', bgColor: 'rgba(245,158,11,0.12)',  label: 'Milestone'      },
   'user-joined':     { Icon: UserPlus,     color: '#a855f7', bgColor: 'rgba(168,85,247,0.12)',  label: 'User Joined'    },
 }
+const VERB_FALLBACK = { Icon: GitBranch, color: '#94a3b8', bgColor: 'rgba(148,163,184,0.12)', label: 'Activity' }
 
 // ─────────────────────────────────────────────────────────────
 // Single event row
@@ -39,7 +40,7 @@ interface EventRowProps {
 }
 
 function EventRow({ item, isLast }: EventRowProps) {
-  const verb = VERB_META[item.verb]
+  const verb = VERB_META[item.verb] ?? VERB_FALLBACK
 
   return (
     <li className="relative flex gap-3">

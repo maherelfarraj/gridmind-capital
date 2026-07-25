@@ -134,13 +134,19 @@ const PHASE_LABEL: Record<string, string> = {
   commissioning: 'Commissioning', om: 'Handover & O&M', finance: 'Handover & O&M',
 }
 
-const STATUS_META: Record<ProjectRowStatus, { label: string; variant: string; dot?: boolean }> = {
-  active:    { label: 'Active',    variant: 'approved', dot: true },
-  'at-risk': { label: 'At Risk',   variant: 'critical', dot: true },
+const STATUS_META: Record<string, { label: string; variant: string; dot?: boolean }> = {
+  active:    { label: 'Active',    variant: 'approved',  dot: true },
+  'at-risk': { label: 'At Risk',   variant: 'critical',  dot: true },
   planning:  { label: 'Planning',  variant: 'submitted', dot: true },
-  completed: { label: 'Completed', variant: 'approved', dot: true },
-  'on-hold': { label: 'On Hold',   variant: 'draft',    dot: true },
+  completed: { label: 'Completed', variant: 'approved',  dot: true },
+  'on-hold': { label: 'On Hold',   variant: 'draft',     dot: true },
+  draft:     { label: 'Draft',     variant: 'draft',     dot: true },
+  cancelled: { label: 'Cancelled', variant: 'rejected',  dot: false },
 }
+
+function cap(s: string) { return s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) }
+const STATUS_META_FALLBACK = (raw: string): { label: string; variant: string; dot?: boolean } =>
+  ({ label: cap(raw) || 'Unknown', variant: 'draft', dot: true })
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -300,8 +306,8 @@ function RecentProjects({ projects, onRowClick, onViewAll, loading = false }: Re
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => <ProjectRowSkeleton key={i} />)
                 : projects.map((p) => {
-                    const statusMeta = STATUS_META[p.status]
-                    const phaseVariant = PHASE_VARIANT[p.phase] as Parameters<typeof Badge>[0]['variant']
+                    const statusMeta = STATUS_META[p.status] ?? STATUS_META_FALLBACK(p.status)
+                    const phaseVariant = (PHASE_VARIANT[p.phase] ?? 'intake') as Parameters<typeof Badge>[0]['variant']
                     const isClickable = !!onRowClick
                     return (
                       <tr

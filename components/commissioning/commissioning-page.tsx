@@ -21,20 +21,22 @@ import {
 import type { CommissioningTest, HandoverRecord } from '@/lib/types/action-types'
 
 // ── Helpers ───────────────────────────────────────────────────
-const TEST_STATUS_META: Record<CommissioningTest['status'], { label: string; color: string; icon: React.ElementType }> = {
+const TEST_STATUS_META: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   pending:     { label: 'Pending',     color: '#94a3b8', icon: Clock },
   in_progress: { label: 'In Progress', color: '#f59e0b', icon: Clock },
   passed:      { label: 'Passed',      color: '#22c55e', icon: CheckCircle2 },
   failed:      { label: 'Failed',      color: '#ef4444', icon: XCircle },
   conditional: { label: 'Conditional', color: '#f97316', icon: AlertTriangle },
 }
+const TEST_STATUS_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8', icon: Clock })
 
-const DOC_STATUS_META: Record<HandoverRecord['status'], { label: string; color: string }> = {
+const DOC_STATUS_META: Record<string, { label: string; color: string }> = {
   pending:   { label: 'Pending',   color: '#94a3b8' },
   submitted: { label: 'Submitted', color: '#3b82f6' },
   approved:  { label: 'Approved',  color: '#22c55e' },
   rejected:  { label: 'Rejected',  color: '#ef4444' },
 }
+const DOC_STATUS_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8' })
 
 const DOC_TYPE_LABELS: Record<HandoverRecord['document_type'], string> = {
   as_built: 'As-Built', operation_manual: 'O&M Manual',
@@ -75,7 +77,7 @@ const NEXT_STATUS: Partial<Record<CommissioningTest['status'], CommissioningTest
 
 function TestRow({ test, onUpdate }: { test: CommissioningTest; onUpdate: () => void }) {
   const [busy, setBusy] = useState(false)
-  const { icon: Icon, color, label } = TEST_STATUS_META[test.status]
+  const { icon: Icon, color, label } = TEST_STATUS_META[test.status] ?? TEST_STATUS_FALLBACK(test.status)
   const nexts = NEXT_STATUS[test.status] ?? []
 
   async function advance(status: CommissioningTest['status']) {
@@ -113,7 +115,7 @@ function TestRow({ test, onUpdate }: { test: CommissioningTest; onUpdate: () => 
                 onClick={() => advance(s)}
                 className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-muted disabled:opacity-40 transition-colors"
               >
-                → {TEST_STATUS_META[s].label}
+                → {(TEST_STATUS_META[s] ?? TEST_STATUS_FALLBACK(s)).label}
               </button>
             ))}
           </div>
@@ -126,7 +128,7 @@ function TestRow({ test, onUpdate }: { test: CommissioningTest; onUpdate: () => 
 // ── Doc Row ───────────────────────────────────────────────────
 function DocRow({ doc, onUpdate }: { doc: HandoverRecord; onUpdate: () => void }) {
   const [busy, setBusy] = useState(false)
-  const { label, color } = DOC_STATUS_META[doc.status]
+  const { label, color } = DOC_STATUS_META[doc.status] ?? DOC_STATUS_FALLBACK(doc.status)
 
   async function approve() {
     setBusy(true)

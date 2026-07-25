@@ -248,26 +248,28 @@ function NewPermitDialog({ onCreated }: { onCreated: () => void }) {
 
 // ─── Config maps ──────────────────────────────────────────────
 
-const SEVERITY_META: Record<HseIncidentSeverity, { label: string; color: string; icon: React.ElementType }> = {
+const SEVERITY_META: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   fatality:    { label: 'Fatality',    color: '#1e1e2e', icon: AlertOctagon  },
   ltif:        { label: 'LTIF',        color: '#ef4444', icon: AlertOctagon  },
   mtc:         { label: 'MTC',         color: '#f97316', icon: AlertTriangle },
   'near-miss': { label: 'Near-Miss',   color: '#f59e0b', icon: AlertTriangle },
   observation: { label: 'Observation', color: '#3b82f6', icon: Activity      },
 }
+const SEVERITY_META_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8', icon: AlertTriangle })
 
-const PERMIT_STATUS_META: Record<HsePermit['status'], { label: string; color: string }> = {
+const PERMIT_STATUS_META: Record<string, { label: string; color: string }> = {
   active:    { label: 'Active',     color: '#22c55e' },
   expired:   { label: 'Expired',    color: '#ef4444' },
   cancelled: { label: 'Cancelled',  color: '#94a3b8' },
   pending:   { label: 'Pending',    color: '#f59e0b' },
 }
+const PERMIT_STATUS_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8' })
 
 // ─── Incident Row (expandable) ────────────────────────────────
 
 function IncidentRow({ item }: { item: HseIncident }) {
   const [open, setOpen] = React.useState(false)
-  const meta = SEVERITY_META[item.severity]
+  const meta = SEVERITY_META[item.severity] ?? SEVERITY_META_FALLBACK(item.severity)
   const Icon = meta.icon
   const actionPct = item.actionCount > 0 ? Math.round((item.closedActions / item.actionCount) * 100) : 100
 
@@ -546,7 +548,7 @@ export function HsePage() {
                 </thead>
                 <tbody>
                   {permits.map((p) => {
-                    const pMeta = PERMIT_STATUS_META[p.status]
+                    const pMeta = PERMIT_STATUS_META[p.status] ?? PERMIT_STATUS_FALLBACK(p.status)
                     return (
                       <tr key={p.id} className="border-b border-border hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-2.5 font-mono text-xs text-[#64ffda]">{p.ref}</td>

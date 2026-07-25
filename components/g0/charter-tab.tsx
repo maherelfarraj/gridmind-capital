@@ -2,7 +2,7 @@
 import * as React from 'react'
 import { FileText, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_CHARTER, STATUS_META } from './data'
+import { MOCK_CHARTER, getStatusMeta } from './data'
 import type { G0FormData } from '@/app/actions/gate-submissions'
 
 export function CharterTab({ formData }: { formData?: G0FormData | null }) {
@@ -22,7 +22,7 @@ export function CharterTab({ formData }: { formData?: G0FormData | null }) {
     capex_estimate_usd:  parseFloat(formData.capexEstimateUsd || formData.budgetMax || '') || base.capex_estimate_usd,
     target_irr_pct:      parseFloat(formData.targetIrrPct || formData.expectedIrr || '') || base.target_irr_pct,
   } : base
-  const meta = STATUS_META[c.status]
+  const meta = getStatusMeta(c.status)
   const [showScope, setShowScope] = React.useState(true)
 
   return (

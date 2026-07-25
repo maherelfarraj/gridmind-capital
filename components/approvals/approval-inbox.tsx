@@ -145,7 +145,7 @@ interface StatusMeta {
   badgeCls: string
 }
 
-const STATUS_META: Record<ApprovalStatus, StatusMeta> = {
+const STATUS_META: Record<string, StatusMeta> = {
   pending: {
     Icon: Clock,
     iconBg: 'bg-amber-100 dark:bg-amber-900/30',
@@ -192,6 +192,14 @@ const STATUS_META: Record<ApprovalStatus, StatusMeta> = {
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
+const STATUS_META_FALLBACK = (raw: string): StatusMeta => ({
+  Icon: Clock,
+  iconBg: 'bg-slate-100 dark:bg-slate-800',
+  iconColor: 'text-slate-500',
+  label: raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+  badgeCls: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400',
+})
+
 // ─────────────────────────────────────────────────────────────
 
 function isUrgent(due_date: string | null): boolean {
@@ -298,7 +306,7 @@ const ApprovalItemCard = React.memo(function ApprovalItemCard({
   record,
   onClick,
 }: ApprovalItemCardProps) {
-  const meta = STATUS_META[record.status]
+  const meta = STATUS_META[record.status] ?? STATUS_META_FALLBACK(record.status)
   const urgent = isUrgent(record.due_date) && !isCompleted(record.status)
   const { label: dateLabel, urgency } = formatRelativeDate(record)
   const initials = getInitials(record.requested_by_name)

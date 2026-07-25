@@ -60,7 +60,7 @@ interface RoleMeta {
   permissions: string[]
 }
 
-const ROLE_META: Record<UserRole, RoleMeta> = {
+const ROLE_META: Record<string, RoleMeta> = {
   super_admin:           { label: 'Super Admin',           badge: 'bg-purple-100 text-purple-700 border-purple-200',    avatar: 'bg-purple-200 text-purple-800',    description: 'Full platform access with all administrative privileges.', permissions: ['All modules', 'Tenant management', 'User management', 'System configuration', 'Audit logs', 'Billing'] },
   tenant_admin:          { label: 'Tenant Admin',          badge: 'bg-blue-100 text-blue-700 border-blue-200',          avatar: 'bg-blue-200 text-blue-800',         description: 'Organisation-level admin managing users and settings.',     permissions: ['User management', 'Settings', 'All modules', 'Reports', 'Integrations'] },
   executive_sponsor:     { label: 'Executive Sponsor',     badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', avatar: 'bg-emerald-200 text-emerald-800',   description: 'Executive oversight with read access across all projects.',  permissions: ['Portfolio view', 'Executive dashboard', 'Reports', 'Stage gates'] },
@@ -76,6 +76,15 @@ const ROLE_META: Record<UserRole, RoleMeta> = {
   finance_controller:    { label: 'Finance Controller',    badge: 'bg-violet-100 text-violet-700 border-violet-200',    avatar: 'bg-violet-200 text-violet-800',      description: 'Controls financial reporting, budgets, and cost tracking.',  permissions: ['Finance module', 'Cost control', 'Actuals', 'Forecasts', 'Invoices'] },
   client_pmc:            { label: 'Client / PMC',          badge: 'bg-sky-100 text-sky-700 border-sky-200',             avatar: 'bg-sky-200 text-sky-800',             description: 'Client or PMC representative with view access.',             permissions: ['Client portal', 'Progress reports', 'Documents (view)', 'Meetings'] },
   viewer:                { label: 'Viewer',                badge: 'bg-slate-100 text-slate-700 border-slate-200',       avatar: 'bg-slate-200 text-slate-800',        description: 'Read-only access to assigned projects.',                     permissions: ['Project view', 'Reports (read)', 'Documents (read)'] },
+}
+function roleMeta(role: string): RoleMeta {
+  return ROLE_META[role] ?? {
+    label: role ? role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+    badge:  'bg-slate-100 text-slate-600 border-slate-200',
+    avatar: 'bg-slate-200 text-slate-700',
+    description: 'Unrecognised role.',
+    permissions: [],
+  }
 }
 
 /* ─────────────────────────────────────────────
@@ -107,8 +116,8 @@ function getInitials(name: string): string {
    ROLE BADGE
 ───────────────────────────────────────────── */
 
-function RoleBadge({ role, onClick }: { role: UserRole; onClick?: () => void }) {
-  const meta = ROLE_META[role]
+function RoleBadge({ role, onClick }: { role: string; onClick?: () => void }) {
+  const meta = roleMeta(role)
   return (
     <button
       type="button"
@@ -131,7 +140,7 @@ function RoleBadge({ role, onClick }: { role: UserRole; onClick?: () => void }) 
 ───────────────────────────────────────────── */
 
 function UserAvatar({ user }: { user: UserProfile }) {
-  const meta = ROLE_META[user.role]
+  const meta = roleMeta(user.role)
   return (
     <div className="flex items-center gap-3 min-w-0">
       <span
@@ -927,7 +936,7 @@ export function UsersRolesPage({
       list = list.filter(u =>
         u.name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
-        ROLE_META[u.role].label.toLowerCase().includes(q),
+        roleMeta(u.role).label.toLowerCase().includes(q),
       )
     }
     if (roleFilter !== 'all')   list = list.filter(u => u.role === roleFilter)
@@ -966,7 +975,7 @@ export function UsersRolesPage({
         name: data.full_name,
         email: data.email,
         role: data.role,
-        department: data.department ?? ROLE_META[data.role].label.split(' ')[0],
+        department: data.department ?? roleMeta(data.role).label.split(' ')[0],
         status: 'active',
         lastActive: 'Just now',
         joinedAt: new Date().toISOString().split('T')[0],

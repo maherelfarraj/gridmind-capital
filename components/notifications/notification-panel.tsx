@@ -104,14 +104,15 @@ const MOCK_MENTIONS: Mention[] = [
 
 // ─── Helpers ──────────────────────────────────────────────���─────────────────
 
-const TYPE_META: Record<NotifType, { icon: React.ElementType; color: string; border: string; bg: string }> = {
-  urgent:   { icon: AlertCircle,  color: '#ef4444', border: 'border-l-red-500',   bg: 'bg-red-500/8'   },
-  approval: { icon: CheckCircle2, color: '#22c55e', border: 'border-l-green-500', bg: 'bg-green-500/8' },
-  document: { icon: FileText,     color: '#3b82f6', border: 'border-l-blue-500',  bg: 'bg-blue-500/8'  },
-  mention:  { icon: User,         color: '#8b5cf6', border: 'border-l-violet-500',bg: 'bg-violet-500/8'},
-  budget:   { icon: DollarSign,   color: '#f59e0b', border: 'border-l-amber-500', bg: 'bg-amber-500/8' },
-  task:     { icon: CheckSquare,  color: '#22c55e', border: 'border-l-green-500', bg: 'bg-green-500/8' },
+const TYPE_META: Record<string, { icon: React.ElementType; color: string; border: string; bg: string }> = {
+  urgent:   { icon: AlertCircle,  color: '#ef4444', border: 'border-l-red-500',    bg: 'bg-red-500/8'    },
+  approval: { icon: CheckCircle2, color: '#22c55e', border: 'border-l-green-500',  bg: 'bg-green-500/8'  },
+  document: { icon: FileText,     color: '#3b82f6', border: 'border-l-blue-500',   bg: 'bg-blue-500/8'   },
+  mention:  { icon: User,         color: '#8b5cf6', border: 'border-l-violet-500', bg: 'bg-violet-500/8' },
+  budget:   { icon: DollarSign,   color: '#f59e0b', border: 'border-l-amber-500',  bg: 'bg-amber-500/8'  },
+  task:     { icon: CheckSquare,  color: '#22c55e', border: 'border-l-green-500',  bg: 'bg-green-500/8'  },
 }
+const TYPE_META_FALLBACK = { icon: FileText, color: '#94a3b8', border: 'border-l-slate-400', bg: 'bg-slate-500/8' }
 
 const ACTIVITY_ICONS: Record<ActivityItem['type'], React.ElementType> = {
   approval: CheckCircle2,
@@ -134,7 +135,7 @@ function NotifCard({
   onDismiss: (id: string) => void
   onView: (notif: Notification) => void
 }) {
-  const meta = TYPE_META[notif.type]
+  const meta = TYPE_META[notif.type] ?? TYPE_META_FALLBACK
   const Icon = meta.icon
 
   return (

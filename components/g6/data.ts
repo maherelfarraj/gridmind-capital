@@ -7,7 +7,7 @@ import type {
 
 // ─── Meta Maps ───────────────────────────────────────────────────────────────
 
-export const STATUS_META: Record<TestPackageStatus, { label: string; color: string; bg: string }> = {
+export const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   not_started:     { label: 'Not Started',     color: '#475569', bg: '#f1f5f9' },
   in_progress:     { label: 'In Progress',     color: '#d97706', bg: '#fef3c7' },
   complete:        { label: 'Complete',        color: '#16a34a', bg: '#dcfce7' },
@@ -15,14 +15,14 @@ export const STATUS_META: Record<TestPackageStatus, { label: string; color: stri
   retest_required: { label: 'Retest Required', color: '#ea580c', bg: '#ffedd5' },
 }
 
-export const PRIORITY_META: Record<TestPriority, { label: string; color: string; bg: string }> = {
+export const PRIORITY_META: Record<string, { label: string; color: string; bg: string }> = {
   critical: { label: 'Critical', color: '#991b1b', bg: '#fecaca' },
   high:     { label: 'High',     color: '#ea580c', bg: '#ffedd5' },
   medium:   { label: 'Medium',   color: '#d97706', bg: '#fef3c7' },
   low:      { label: 'Low',      color: '#16a34a', bg: '#dcfce7' },
 }
 
-export const SYSTEM_META: Record<TestSystem, { label: string; color: string; bg: string }> = {
+export const SYSTEM_META: Record<string, { label: string; color: string; bg: string }> = {
   turbine_generator:       { label: 'Turbine Generator',       color: '#c2410c', bg: '#ffedd5' },
   cooling_water:           { label: 'Cooling Water',           color: '#1d4ed8', bg: '#dbeafe' },
   electrical_power:        { label: 'Electrical Power',        color: '#a16207', bg: '#fef9c3' },
@@ -33,7 +33,7 @@ export const SYSTEM_META: Record<TestSystem, { label: string; color: string; bg:
   water_treatment:         { label: 'Water Treatment',         color: '#0e7490', bg: '#cffafe' },
 }
 
-export const PERF_STATUS_META: Record<PerfTestStatus, { label: string; color: string; bg: string }> = {
+export const PERF_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   not_started:       { label: 'Not Started',       color: '#475569', bg: '#f1f5f9' },
   pending:           { label: 'Pending',           color: '#475569', bg: '#f1f5f9' },
   pass:              { label: 'Pass',              color: '#16a34a', bg: '#dcfce7' },
@@ -50,7 +50,7 @@ export const ENRG_STATUS_META: Record<EnergizationStatus, { label: string; color
   hold:        { label: 'Hold',        color: '#dc2626', bg: '#fee2e2' },
 }
 
-export const FAIL_STATUS_META: Record<FailureStatus, { label: string; color: string; bg: string }> = {
+export const FAIL_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   open:                { label: 'Open',                color: '#dc2626', bg: '#fee2e2' },
   under_investigation: { label: 'Under Investigation', color: '#d97706', bg: '#fef3c7' },
   corrective_action:   { label: 'Corrective Action',   color: '#7c3aed', bg: '#ede9fe' },
@@ -58,7 +58,7 @@ export const FAIL_STATUS_META: Record<FailureStatus, { label: string; color: str
   closed:              { label: 'Closed',              color: '#16a34a', bg: '#dcfce7' },
 }
 
-export const FAIL_SEV_META: Record<FailureSeverity, { label: string; color: string; bg: string }> = {
+export const FAIL_SEV_META: Record<string, { label: string; color: string; bg: string }> = {
   critical: { label: 'Critical', color: '#991b1b', bg: '#fecaca' },
   major:    { label: 'Major',    color: '#dc2626', bg: '#fee2e2' },
   minor:    { label: 'Minor',    color: '#d97706', bg: '#fef3c7' },
@@ -78,6 +78,13 @@ export const DOC_STATUS_META: Record<DocStatus, { label: string; color: string; 
   approved:     { label: 'Approved',     color: '#16a34a', bg: '#dcfce7' },
   superseded:   { label: 'Superseded',   color: '#9ca3af', bg: '#f3f4f6' },
 }
+
+/** Fallback for any map with `{ label, color, bg }` shape. */
+export const META_FALLBACK = (raw: string): { label: string; color: string; bg: string } => ({
+  label: raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+  color: '#64748b',
+  bg: '#f1f5f9',
+})
 
 // ─── Mock Test Packages ──────────────────────────────────────────────────────
 

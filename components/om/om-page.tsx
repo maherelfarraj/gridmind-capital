@@ -20,6 +20,7 @@ const STATUS_META: Record<Asset['status'], { label: string; color: string }> = {
   faulty:         { label: 'Faulty',         color: '#ef4444' },
   decommissioned: { label: 'Decommissioned', color: '#94a3b8' },
 }
+const STATUS_META_FALLBACK = (raw: string) => ({ label: raw || 'Unknown', color: '#94a3b8' })
 
 const CRIT_COLOR: Record<Asset['criticality'], string> = {
   critical: '#ef4444', high: '#f97316', medium: '#f59e0b', low: '#22c55e',
@@ -55,7 +56,7 @@ function LiveBadge({ live }: { live: boolean }) {
 
 function AssetRow({ asset, onUpdate }: { asset: Asset; onUpdate: () => void }) {
   const [busy, setBusy] = useState(false)
-  const { label, color } = STATUS_META[asset.status]
+  const { label, color } = STATUS_META[asset.status] ?? STATUS_META_FALLBACK(asset.status)
 
   async function markFaulty() {
     setBusy(true)

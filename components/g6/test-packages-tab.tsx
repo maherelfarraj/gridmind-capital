@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TestPackage, TestPackageStatus, TestPriority, TestSystem } from './types'
-import { STATUS_META, PRIORITY_META, SYSTEM_META } from './data'
+import { STATUS_META, PRIORITY_META, SYSTEM_META, META_FALLBACK } from './data'
 
 // ─── Icon helpers ─────────────────────────────────────────────────────────────
 
