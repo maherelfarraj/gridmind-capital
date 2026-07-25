@@ -35,6 +35,7 @@ const ILLUSTRATIVE: ApprovalsDashboard = {
     { object_type: 'purchase_order',  levels: 1, roles: ['Project Manager'] },
     { object_type: 'change_order',    levels: 2, roles: ['Project Manager', 'Commercial Director'] },
   ],
+  scope: 'mine',
 }
 
 function KpiCard({ label, value, sub, accent, icon: Icon }: {
@@ -76,7 +77,9 @@ export default function ApprovalsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Approvals</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Review and action pending approvals across all projects
+            {d?.scope === 'tenant'
+              ? 'Review and action pending approvals across all projects'
+              : 'Review and action approvals routed to your role'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -88,6 +91,18 @@ export default function ApprovalsPage() {
           )}>
             {isLive ? 'Live' : 'Illustrative'}
           </span>
+          {d && (
+            <span
+              className="text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-400"
+              title={
+                d.scope === 'tenant'
+                  ? 'Admin view: counts cover every approval in your tenant'
+                  : 'Counts cover only the approval types routed to your role'
+              }
+            >
+              {d.scope === 'tenant' ? 'Tenant-wide' : 'My scope'}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => mutate()}
@@ -99,9 +114,14 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI strip. Counts follow the same role routing as the inbox below, so
+          they can never contradict the list again. */}
       {d && (
-        <div className="flex flex-wrap gap-3" role="region" aria-label="Approval statistics">
+        <div
+          className="flex flex-wrap gap-3"
+          role="region"
+          aria-label={d.scope === 'tenant' ? 'Approval statistics, tenant-wide' : 'Approval statistics for your role'}
+        >
           <KpiCard label="Total"    value={d.total}    accent="#64ffda" icon={GitMerge}     />
           <KpiCard label="Pending"  value={d.pending}  accent="#f59e0b" icon={Clock}         />
           <KpiCard label="Approved" value={d.approved} accent="#22c55e" icon={CheckCircle2}  />

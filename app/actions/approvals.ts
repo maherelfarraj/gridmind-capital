@@ -65,6 +65,98 @@ async function applyApprovalLifecycle(
   return error ? `Approval recorded, but project status update failed: ${error.message}` : null
 }
 
+/** Resolved visibility scope for one actor. */
+interface ApprovalScope {
+  tenantId: string | null
+  dbRole: string
+  isAdmin: boolean
+  /** `null` = no object_type restriction (admin). `[]` = routes to nothing. */
+  allowedObjectTypes: string[] | null
+}
+
+/**
+ * Resolve WHICH approvals the current actor may see. Shared by the inbox list
+ * (`getApprovals`) and the KPI/chart aggregates (`loadApprovalsDashboard`) so the
+ * two can never drift apart again.
+ *
+ * They previously drifted: the list was role-scoped while the counters were not,
+ * so a non-admin saw "3 PENDING" cards and chart bars above an "All caught up"
+ * list. That self-contradiction is ALSO the signature of a swallowed query error,
+ * so keeping these in one place preserves the diagnostic.
+ *
+ * @throws if the routing lookup fails — never returns "sees nothing" on error.
+ */
+async function resolveApprovalScope(
+  supabase: ReturnType<typeof createAdminClient>,
+  context: string,
+): Promise<ApprovalScope | { error: string }> {
+  const auth = await getAuthActor()
+  if ('error' in auth) return { error: auth.error }
+
+  const dbRole = auth.actor.role
+  // `actor.tenantId` is nullable; fall back to the documented tenant resolver.
+  const tenantId = auth.actor.tenantId ?? (await getCurrentTenantId())
+  const isAdmin = (DB_ADMIN_ROLES as readonly string[]).includes(dbRole)
+
+  // Admins are intentionally tenant-wide (still tenant-filtered, never global).
+  if (isAdmin) return { tenantId, dbRole, isAdmin, allowedObjectTypes: null }
+
+  let rulesQuery = supabase
+    .from('approval_rules')
+    .select('object_type')
+    .eq('is_active', true)
+    .overlaps('required_roles', [dbRole])
+  if (tenantId) rulesQuery = rulesQuery.eq('tenant_id', tenantId)
+
+  const { data: rules, error: rulesError } = await rulesQuery
+  if (rulesError) {
+    console.error(`[v0] ${context}: approval_rules lookup failed:`, rulesError.message)
+    throw new Error(`Could not determine your approval routing: ${rulesError.message}`)
+  }
+
+  return {
+    tenantId,
+    dbRole,
+    isAdmin,
+    allowedObjectTypes: Array.from(new Set((rules ?? []).map((r) => r.object_type).filter(Boolean))),
+  }
+}
+
+/**
+ * Pending-approval count for the nav badge (desktop sidebar + mobile tab bar).
+ *
+ * Uses the SAME routing + tenant scope as the inbox list and the KPI cards. It
+ * was previously only tenant-filtered, so a non-admin saw a red "3" badge that
+ * opened onto an "All caught up" inbox.
+ */
+export async function getPendingApprovalCount(): Promise<number> {
+  const supabase = createAdminClient()
+
+  let scope: Awaited<ReturnType<typeof resolveApprovalScope>>
+  try {
+    scope = await resolveApprovalScope(supabase, 'getPendingApprovalCount')
+  } catch (err) {
+    // A badge must never break the whole dashboard shell it renders in.
+    console.error('[v0] getPendingApprovalCount: scope resolution failed:', err)
+    return 0
+  }
+  if ('error' in scope) return 0
+
+  let query = supabase
+    .from('approvals')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'pending')
+  if (scope.tenantId) query = query.eq('tenant_id', scope.tenantId)
+  if (scope.allowedObjectTypes !== null) query = query.in('object_type', scope.allowedObjectTypes)
+
+  const { count, error } = await query
+  if (error) {
+    console.error('[v0] getPendingApprovalCount: count query failed:', error.message)
+    return 0
+  }
+  return count ?? 0
+}
+
 /**
  * Fetch approvals for the inbox.
  *
@@ -86,45 +178,29 @@ export async function getApprovals(approverRole?: string): Promise<ApprovalRecor
   // Authorization is resolved SERVER-SIDE from the session, never from the
   // caller-supplied `approverRole` (a client-passed role label is spoofable, and
   // it is in the wrong vocabulary — see below). `approverRole` is display-only.
-  const auth = await getAuthActor()
-  if ('error' in auth) return []
-  const dbRole = auth.actor.role
-
   // Resolve which object_types this approver is responsible for.
   //
   // Two bugs previously made this return [] for EVERY non-admin role, so the
-  // inbox was permanently empty while the KPI counters (which are unscoped)
-  // still showed a pending count:
+  // inbox was permanently empty while the KPI counters (then unscoped) still
+  // showed a pending count:
   //   1. It filtered `approval_rules.approver_role`, which DOES NOT EXIST on
   //      that table — the real column is `required_roles text[]`. (`approver_role`
   //      belongs to the separate `approval_matrix` table.) The resulting 400 was
   //      discarded by destructuring only `data`, so the failure looked like
-  //      "this role approves nothing" and hit the `return []` below.
+  //      "this role approves nothing" and hit a `return []`.
   //   2. It compared against ROLE_LABELS display strings ("Project Manager")
   //      while `required_roles` holds DbUserRole enum values ("project_manager").
   //      Fixing the column name alone would still have matched nothing.
-  let allowedObjectTypes: string[] | null = null
-  if (!(DB_ADMIN_ROLES as readonly string[]).includes(dbRole)) {
-    const { data: rules, error: rulesError } = await supabase
-      .from('approval_rules')
-      .select('object_type, required_roles')
-      .eq('is_active', true)
-      .overlaps('required_roles', [dbRole])
-
-    // Never swallow this again: a query failure must not masquerade as "no
-    // approvals assigned to you". Returning [] here is indistinguishable from a
-    // genuinely empty inbox, so fail loudly instead and let the error surface.
-    if (rulesError) {
-      console.error('[v0] getApprovals: approval_rules lookup failed:', rulesError.message)
-      throw new Error(`Could not determine your approval routing: ${rulesError.message}`)
-    }
-    allowedObjectTypes = Array.from(new Set((rules ?? []).map((r) => r.object_type).filter(Boolean)))
-  }
+  const scope = await resolveApprovalScope(supabase, 'getApprovals')
+  if ('error' in scope) return []
+  const { allowedObjectTypes, tenantId } = scope
 
   let query = supabase
     .from('approvals')
     .select('id, object_type, title, status, priority, created_at, description, amount')
     .order('created_at', { ascending: false })
+
+  if (tenantId) query = query.eq('tenant_id', tenantId)
 
   // Scope to the approver's object types. If the role has no rules, it sees nothing.
   if (allowedObjectTypes !== null) {
@@ -342,21 +418,57 @@ export interface ApprovalsDashboard {
   byObjectType: { name: string; value: number }[]
   byStatus: { name: string; value: number; color: string }[]
   approvalRules: { object_type: string; levels: number; roles: string[] }[]
+  /**
+   * Which population these numbers describe, so the UI can label them honestly:
+   * 'mine' = only the object_types routed to this actor, 'tenant' = every
+   * approval in the tenant (admins only).
+   */
+  scope: 'mine' | 'tenant'
 }
 
+/**
+ * KPI cards + charts for /approvals.
+ *
+ * Scoped with the SAME `approval_rules` routing as `getApprovals`, and filtered
+ * by tenant. Previously this selected every approvals row with no role scope and
+ * no tenant filter, so the counters both leaked across tenants and contradicted
+ * the role-scoped list rendered directly beneath them.
+ */
 export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
   const supabase = createAdminClient()
-  const [appRes, rulesRes] = await Promise.all([
-    supabase.from('approvals').select('id, object_type, status, priority, created_at').order('created_at', { ascending: false }),
-    // Real columns are `approval_levels` and `required_roles text[]`. This
-    // previously selected `level` and `approver_role` — NEITHER of which exists
-    // on this table — so it 400'd and the `?? []` below turned the failure into
-    // a permanently empty "Approval Rules" panel.
-    supabase
-      .from('approval_rules')
-      .select('object_type, approval_levels, required_roles')
-      .order('approval_levels'),
-  ])
+
+  const scope = await resolveApprovalScope(supabase, 'loadApprovalsDashboard')
+  if ('error' in scope) {
+    return {
+      total: 0, pending: 0, approved: 0, rejected: 0, overdue: 0,
+      byObjectType: [], byStatus: [], approvalRules: [], scope: 'mine',
+    }
+  }
+  const { allowedObjectTypes, tenantId, isAdmin } = scope
+
+  let approvalsQuery = supabase
+    .from('approvals')
+    .select('id, object_type, status, priority, created_at')
+    .order('created_at', { ascending: false })
+  if (tenantId) approvalsQuery = approvalsQuery.eq('tenant_id', tenantId)
+  if (allowedObjectTypes !== null) {
+    // `.in()` with an empty list yields zero rows, which is the correct answer
+    // for a role that routes to nothing.
+    approvalsQuery = approvalsQuery.in('object_type', allowedObjectTypes)
+  }
+
+  // Real columns are `approval_levels` and `required_roles text[]`. This
+  // previously selected `level` and `approver_role` — NEITHER of which exists
+  // on this table — so it 400'd and the `?? []` below turned the failure into
+  // a permanently empty "Approval Rules" panel.
+  let rulesQuery = supabase
+    .from('approval_rules')
+    .select('object_type, approval_levels, required_roles')
+    .order('approval_levels')
+  if (tenantId) rulesQuery = rulesQuery.eq('tenant_id', tenantId)
+  if (allowedObjectTypes !== null) rulesQuery = rulesQuery.in('object_type', allowedObjectTypes)
+
+  const [appRes, rulesRes] = await Promise.all([approvalsQuery, rulesQuery])
 
   const rows  = appRes.data  ?? []
   const rules = rulesRes.data ?? []
@@ -411,6 +523,7 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
     byObjectType,
     byStatus,
     approvalRules,
+    scope: isAdmin ? 'tenant' : 'mine',
   }
 }
 
