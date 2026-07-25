@@ -9,6 +9,8 @@
  *
  * Run: node --env-file-if-exists=/vercel/share/.env.project scripts/pilot-invite.mjs
  */
+import { resolveMx } from 'node:dns/promises'
+
 import { createClient } from '@supabase/supabase-js'
 
 const url =
@@ -36,14 +38,53 @@ const admin = createClient(url, serviceKey, {
  * Names marked placeholder are seat titles; `full_name` is a display field and
  * can be corrected later in /admin/users without touching identity.
  */
+/**
+ * Mail domain for the roster.
+ *
+ * Supabase Auth validates the domain and returns `email_address_invalid` for
+ * one that does not resolve. `gridmind.capital` is NXDOMAIN (no MX, no A), so
+ * every invite to it fails; `gsi.jo` has live Outlook MX and invites fine.
+ *
+ * Override per run:
+ *   node scripts/pilot-invite.mjs --domain=gsi.jo
+ */
+const DOMAIN =
+  process.argv.find((a) => a.startsWith('--domain='))?.split('=')[1] ??
+  'gridmind.capital'
+
+const at = (local) => `${local}@${DOMAIN}`
+
 const ROSTER = [
-  { seat: null,  email: 'maher@gridmind.capital', fullName: 'Maher Al Farraj', role: 'tenant_admin',     placeholder: false },
-  { seat: 'PD',  email: 'ahmad@gridmind.capital', fullName: 'Ahmad Obaisi',    role: 'project_director',  placeholder: false },
-  { seat: 'DEV', email: 'pm1@gridmind.capital',   fullName: 'Project Developer (pilot)',         role: 'project_manager',  placeholder: true },
-  { seat: 'DM',  email: 'eng1@gridmind.capital',  fullName: 'Design Manager (pilot)',            role: 'engineer',         placeholder: true },
-  { seat: 'FIN', email: 'fin1@gridmind.capital',  fullName: 'Finance Manager (pilot)',           role: 'finance_manager',  placeholder: true },
-  { seat: 'GCM', email: 'eng2@gridmind.capital',  fullName: 'Grid Connection Manager (pilot)',   role: 'engineer',         placeholder: true },
+  { seat: null,  email: at('maher'), fullName: 'Maher Al Farraj', role: 'tenant_admin',     placeholder: false },
+  { seat: 'PD',  email: at('ahmad'), fullName: 'Ahmad Obaisi',    role: 'project_director',  placeholder: false },
+  { seat: 'DEV', email: at('pm1'),   fullName: 'Project Developer (pilot)',         role: 'project_manager',  placeholder: true },
+  { seat: 'DM',  email: at('eng1'),  fullName: 'Design Manager (pilot)',            role: 'engineer',         placeholder: true },
+  { seat: 'FIN', email: at('fin1'),  fullName: 'Finance Manager (pilot)',           role: 'finance_manager',  placeholder: true },
+  { seat: 'GCM', email: at('eng2'),  fullName: 'Grid Connection Manager (pilot)',   role: 'engineer',         placeholder: true },
 ]
+
+// ── preflight: can the domain receive mail at all? ──────────────────────
+// Supabase rejects addresses at non-resolving domains with a per-address
+// `email_address_invalid`, which reads like a bad address rather than a bad
+// domain. Check once up front so the failure is unambiguous.
+{
+  let mx = []
+  try {
+    mx = await resolveMx(DOMAIN)
+  } catch {
+    mx = []
+  }
+  if (mx.length === 0) {
+    console.error(
+      `[v0] ABORT — "${DOMAIN}" has no MX records (does not resolve).\n` +
+        `[v0] Supabase Auth will reject every address at this domain.\n` +
+        `[v0] Re-run against a real mail domain, e.g.:\n` +
+        `[v0]   node scripts/pilot-invite.mjs --domain=gsi.jo`,
+    )
+    process.exit(1)
+  }
+  console.log(`[v0] Domain "${DOMAIN}" OK — ${mx.length} MX record(s).`)
+}
 
 // ── resolve tenant from the pilot project ───────────────────────────────
 const { data: project, error: projErr } = await admin
