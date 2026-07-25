@@ -5,7 +5,6 @@ import { requireWriter } from '@/lib/auth/guard'
 import type { Opportunity, OpportunitiesDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:        '#94a3b8',
@@ -67,7 +66,9 @@ export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboa
   return {
     total:      items.length,
     submitted:  approvals.filter((a) => a.status === 'pending').length,
-    underReview:approvals.filter((a) => a.status === 'under_review').length,
+    // The approval_status enum is pending | approved | rejected | delegated —
+    // there is no `under_review` member, so this KPI was hardwired to 0.
+    underReview:approvals.filter((a) => a.status === 'delegated').length,
     approved:   approvals.filter((a) => a.status === 'approved').length,
     rejected:   approvals.filter((a) => a.status === 'rejected').length,
     byTechnology: Object.entries(byTech).map(([name, value]) => ({ name, value })),
@@ -110,24 +111,38 @@ export async function createOpportunity(data: {
       status:           'planning',
       current_phase:    0,
       health:           'green',
-      project_manager:  DEMO_USER,
-      created_by:       DEMO_USER,
+      // Stamp the REAL authenticated creator, not a hardcoded uuid.
+      // `requireWriter()` already resolved them above; the previous code
+      // discarded that and wrote DEMO_USER (= admin@gridmind.capital), so every
+      // opportunity looked like it was raised by the generic admin account.
+      // There is no FK on these columns, so the bad value failed silently.
+      project_manager:  gate.actor.userId,
+      created_by:       gate.actor.userId,
     })
     .select('id')
     .single()
 
   if (pe || !proj) return { error: pe?.message ?? 'Failed to create project' }
 
-  // 2. Create approval record for G0 review
-  await supabase.from('approvals').insert({
-    tenant_id:   tenantId,
-    object_type: 'opportunity',
-    title:       data.code,
-    description: `G0 Gate review for ${data.name}`,
-    status:      'pending',
-    priority:    'normal',
-    amount:      data.budget_usd,
+  // 2. Create approval record for G0 review.
+  // `object_id` + `requester_id` were previously left NULL, which orphaned the
+  // approval: it could only be found by string-matching `title` to the project
+  // code, and nothing recorded who raised it.
+  const { error: ae } = await supabase.from('approvals').insert({
+    tenant_id:    tenantId,
+    object_type:  'opportunity',
+    object_id:    proj.id,
+    title:        data.code,
+    description:  `G0 Gate review for ${data.name}`,
+    status:       'pending',
+    priority:     'normal',
+    amount:       data.budget_usd,
+    requester_id: gate.actor.userId,
   })
+
+  // Surface the failure instead of silently returning a project with no
+  // approval attached — the caller shows this in a toast.
+  if (ae) return { id: proj.id, error: `Project created, but approval failed: ${ae.message}` }
 
   return { id: proj.id }
 }
@@ -172,8 +187,8 @@ export async function seedOpportunitiesDemoData(): Promise<{ error?: string }> {
 
   for (const d of demos) {
     await supabase.from('projects').insert({
-      tenant_id: tenantId, created_by: DEMO_USER,
-      project_manager: DEMO_USER,
+      tenant_id: tenantId, created_by: gate.actor.userId,
+      project_manager: gate.actor.userId,
       status: 'planning', current_phase: 0,
       description: `G0 opportunity — ${d.technology} project at ${d.location}`,
       ...d,
