@@ -189,6 +189,33 @@ function NotifCard({
   )
 }
 
+// Declared at module scope, not inside NotificationsTab. A component defined
+// during render is a brand-new type on every render, so React unmounts and
+// remounts the whole group instead of updating it.
+function Group({
+  label,
+  items,
+  onDismiss,
+  onView,
+}: {
+  label: string
+  items: Notification[]
+  onDismiss: (id: string) => void
+  onView: (n: Notification) => void
+}) {
+  if (!items.length) return null
+  return (
+    <div>
+      <p className="px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
+      <div className="space-y-1 px-2">
+        {items.map((n) => (
+          <NotifCard key={n.id} notif={n} onDismiss={onDismiss} onView={onView} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Notifications tab ───────────────────────────────────────────────────────
 
 function NotificationsTab({
@@ -207,20 +234,6 @@ function NotificationsTab({
   const yesterday = notifications.filter((n) => n.date === 'yesterday')
   const earlier   = notifications.filter((n) => n.date === 'earlier')
 
-  function Group({ label, items }: { label: string; items: Notification[] }) {
-    if (!items.length) return null
-    return (
-      <div>
-        <p className="px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
-        <div className="space-y-1 px-2">
-          {items.map((n) => (
-            <NotifCard key={n.id} notif={n} onDismiss={onDismiss} onView={onView} />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div>
       {urgent.length > 0 && (
@@ -237,9 +250,9 @@ function NotificationsTab({
       )}
       <ScrollArea className="h-[calc(100vh-220px)]">
         <div className="space-y-2 pb-6">
-          <Group label="Today"     items={today}     />
-          <Group label="Yesterday" items={yesterday} />
-          <Group label="Earlier"   items={earlier}   />
+          <Group label="Today"     items={today}     onDismiss={onDismiss} onView={onView} />
+          <Group label="Yesterday" items={yesterday} onDismiss={onDismiss} onView={onView} />
+          <Group label="Earlier"   items={earlier}   onDismiss={onDismiss} onView={onView} />
           {notifications.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Bell size={32} className="text-muted-foreground/30 mb-3" />

@@ -7,23 +7,18 @@ import { AdminConsole } from '@/components/admin/admin-console'
 import { PlatformHealthCard } from '@/components/admin/platform-health-card'
 import { getUsers, updateUserRole } from '@/app/actions/admin'
 import type { UserProfile, UserRole } from '@/components/admin/users-roles-page'
+import { isDbUserRole } from '@/lib/auth/roles'
 
 export default function AdminConsolePage() {
   const { data: rawUsers, isLoading, mutate } = useSWR('admin-users', getUsers)
 
-  const DB_ROLE_MAP: Record<string, UserRole> = {
-    system_admin:    'super_admin',
-    tenant_admin:    'tenant_admin',
-    admin:           'tenant_admin',
-    project_manager: 'project_manager',
-    pmo_director:    'pmo_director',
-    viewer:          'viewer',
-    member:          'viewer',
-  }
-
+  // The users screen now speaks the database `user_role` vocabulary directly,
+  // so no translation is needed. The previous map collapsed engineer /
+  // hse_manager / finance_manager / commissioning_manager / commercial_manager /
+  // project_director all to 'viewer', mislabelling those users and letting a
+  // role edit silently downgrade them.
   function toComponentRole(dbRole: string | null | undefined): UserRole {
-    if (!dbRole) return 'viewer'
-    return DB_ROLE_MAP[dbRole] ?? 'viewer'
+    return isDbUserRole(dbRole) ? dbRole : 'viewer'
   }
 
   function toRelativeTime(iso: string | null | undefined): string {
@@ -44,7 +39,10 @@ export default function AdminConsolePage() {
   })), [rawUsers])
 
   const handleUpdateRole = async (userId: string, role: UserRole) => {
-    await updateUserRole(userId, role)
+    const res = await updateUserRole(userId, role)
+    // The action returns { error } rather than throwing; ignoring it made a
+    // rejected write look successful until the next refetch reverted the row.
+    if (res?.error) throw new Error(res.error)
     mutate()
   }
 

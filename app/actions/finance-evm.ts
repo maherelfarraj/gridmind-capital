@@ -95,7 +95,10 @@ export async function seedFinanceEvmDemoAction() {
   if (existing && existing.length > 0) return { seeded: false }
 
   const { data: projects } = await sb.from('projects').select('id').eq('tenant_id', tenantId).limit(1)
-  const pid = projects?.[0]?.id ?? 'a1000000-0000-0000-0000-000000000001'
+  const pid = projects?.[0]?.id
+  // No hardcoded fallback id: project_id is a FK, so seeding against a
+  // nonexistent project would fail. Bail out instead.
+  if (!pid) return { seeded: false }
 
   const BAC = 320_000_000
   const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06']

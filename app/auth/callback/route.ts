@@ -1,18 +1,51 @@
-import { createClient } from '@/lib/supabase/server'
+import type { EmailOtpType } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * Auth callback. Handles BOTH shapes of Supabase auth redirect:
+ *
+ *  1. `?code=...`                    — PKCE / OAuth code exchange.
+ *  2. `?token_hash=...&type=...`     — email links (invite, magiclink, signup,
+ *                                      recovery, email_change).
+ *
+ * Shape 2 matters because email links generated with `admin.generateLink()`
+ * carry a hashed token, not a PKCE code. Without this branch those links fall
+ * through to /auth/error and the invited user can never sign in.
+ */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type') as EmailOtpType | null
 
-  if (code) {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
-    }
+  // Only allow same-origin relative paths, so `next` can't be used as an
+  // open-redirect into an attacker-controlled host.
+  const requestedNext = searchParams.get('next') ?? '/dashboard'
+  const next = requestedNext.startsWith('/') && !requestedNext.startsWith('//')
+    ? requestedNext
+    : '/dashboard'
+
+  const supabase = await createClient()
+
+  if (tokenHash && type) {
+    const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
+    if (!error) return NextResponse.redirect(`${origin}${next}`)
+    return NextResponse.redirect(
+      `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
+    )
   }
 
-  return NextResponse.redirect(`${origin}/auth/error`)
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) return NextResponse.redirect(`${origin}${next}`)
+    return NextResponse.redirect(
+      `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
+    )
+  }
+
+  return NextResponse.redirect(
+    `${origin}/auth/error?reason=${encodeURIComponent('Missing authentication code.')}`,
+  )
 }

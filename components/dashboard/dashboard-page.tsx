@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   FolderKanban,
   Clock,
@@ -621,13 +622,13 @@ export function DashboardPage({
           </div>
           {/* Footer */}
           <div className="border-t border-slate-100 dark:border-border px-5 py-3 text-center">
-            <a
+            <Link
               href="/approvals"
               className="inline-flex items-center gap-1 text-sm text-sky-600 hover:text-sky-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded transition-colors"
             >
               View All Approvals
               <ArrowRight className="size-3.5" aria-hidden="true" />
-            </a>
+            </Link>
           </div>
         </div>
       </div>

@@ -5,6 +5,18 @@ import { Mail, CheckCircle2, Shield, Smartphone, Monitor, Tablet, LogOut, AlertT
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
+// Fixed 5x5 pattern for the decorative 2FA QR placeholder. Must be a module
+// constant, not Math.random(): a random pattern differs between the server and
+// client renders, which triggers a hydration mismatch, and it would reshuffle
+// on every re-render.
+const QR_PLACEHOLDER_CELLS: boolean[] = [
+  true,  true,  false, true,  true,
+  true,  false, true,  false, true,
+  false, true,  true,  true,  false,
+  true,  false, true,  false, true,
+  true,  true,  false, true,  true,
+]
+
 const SESSIONS = [
   { id: 's1', device: 'MacBook Pro 16"', browser: 'Chrome 124', location: 'Riyadh, SA', ip: '82.11.44.201', lastActive: 'Now',         icon: Monitor,    current: true },
   { id: 's2', device: 'iPhone 15 Pro',   browser: 'Safari iOS', location: 'Riyadh, SA', ip: '82.11.44.201', lastActive: '2h ago',      icon: Smartphone, current: false },
@@ -121,8 +133,8 @@ export function AccountTab({ onSave }: { onSave: () => void }) {
             {/* QR placeholder */}
             <div className="size-32 rounded-lg bg-white border border-border flex items-center justify-center">
               <div className="grid grid-cols-5 gap-0.5 p-2 opacity-70">
-                {Array.from({ length: 25 }).map((_, i) => (
-                  <div key={i} className={cn('size-3 rounded-sm', Math.random() > 0.5 ? 'bg-black' : 'bg-transparent')} />
+                {QR_PLACEHOLDER_CELLS.map((filled, i) => (
+                  <div key={i} className={cn('size-3 rounded-sm', filled ? 'bg-black' : 'bg-transparent')} />
                 ))}
               </div>
             </div>

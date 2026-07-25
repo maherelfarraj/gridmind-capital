@@ -126,10 +126,13 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   if (isUuid) {
     query = query.eq('id', id)
   } else {
-    query = query.ilike('code', id)
+    // Codes are not guaranteed unique historically, so order deterministically
+    // (oldest wins) and take one row. Using .single() here would throw when a
+    // code is duplicated and surface as a bogus "project not found".
+    query = query.ilike('code', id).order('created_at', { ascending: true })
   }
 
-  const { data, error } = await query.single()
+  const { data, error } = await query.limit(1).maybeSingle()
 
   if (error || !data) return null
 
@@ -282,11 +285,32 @@ export async function createProjectFull(
   const isDate = (d: string | null) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d)
 
   // Ensure a unique code (retry with a suffix on collision).
-  let code = input.codeHint?.trim() || `PRJ-${new Date().getFullYear()}-001`
+  // Prefer a real sequential code over the client's hint: the wizard can only
+  // guess, so two wizards open at once would propose colliding codes and burn
+  // retries producing suffixed codes like PRJ-2026-042-73.
+  const codeYear = new Date().getFullYear()
+  const codePrefix = `PRJ-${codeYear}-`
+  let code = input.codeHint?.trim() || `${codePrefix}001`
+
+  const { data: lastCoded } = await admin
+    .from('projects')
+    .select('code')
+    .eq('tenant_id', tenantId)
+    .like('code', `${codePrefix}%`)
+    .order('code', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (lastCoded?.code) {
+    const lastSeq = Number.parseInt(String(lastCoded.code).slice(codePrefix.length, codePrefix.length + 3), 10)
+    if (Number.isFinite(lastSeq)) {
+      code = `${codePrefix}${String(lastSeq + 1).padStart(3, '0')}`
+    }
+  }
 
   // 1) Project.
   let projectId = ''
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     const { data, error } = await admin
       .from('projects')
       .insert({
@@ -312,12 +336,18 @@ export async function createProjectFull(
       break
     }
     if (error?.code === '23505') {
-      code = `${input.codeHint}-${Math.floor(10 + Math.random() * 89)}`
+      // Walk the sequence forward deterministically rather than picking a random
+      // suffix, so concurrent creates converge on the next free code instead of
+      // gambling on an unused number.
+      const seq = Number.parseInt(code.slice(codePrefix.length, codePrefix.length + 3), 10)
+      code = Number.isFinite(seq)
+        ? `${codePrefix}${String(seq + 1 + attempt).padStart(3, '0')}`
+        : `${codePrefix}${String(Date.now() % 1000).padStart(3, '0')}`
       continue
     }
     return { error: error?.message ?? 'Failed to create project.' }
   }
-  if (!projectId) return { error: `Could not allocate a unique code near "${input.codeHint}".` }
+  if (!projectId) return { error: `Could not allocate a unique project code near "${code}".` }
 
   const rollback = async (msg: string): Promise<{ error: string }> => {
     await admin.from('projects').delete().eq('id', projectId)

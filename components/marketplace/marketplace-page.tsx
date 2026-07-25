@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import useSWR from 'swr'
+import { useClientNow } from '@/lib/hooks/use-client-now'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -176,8 +177,11 @@ function SystemRow({ system }: { system: IntegrationSystem }) {
     not_configured:  { label: 'Not configured',  color: '#94a3b8', Icon: WifiOff },
   }[system.status]
 
-  const lastPingAgo = system.last_ping
-    ? Math.round((Date.now() - new Date(system.last_ping).getTime()) / 1000)
+  // Mount-time clock: Date.now() during render is impure, so a "5s ago" ping
+  // rendered on the server would not match the client's hydration render.
+  const now = useClientNow(30_000)
+  const lastPingAgo = system.last_ping && now !== null
+    ? Math.round((now - new Date(system.last_ping).getTime()) / 1000)
     : null
 
   return (

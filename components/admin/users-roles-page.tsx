@@ -13,17 +13,25 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
+import {
+  DB_ADMIN_ROLES,
+  DB_ROLE_META,
+  DB_ROLE_OPTIONS,
+  dbRoleMeta,
+  type DbUserRole,
+  type DbRoleMeta,
+} from '@/lib/auth/roles'
 
 /* ─────────────────────────────────────────────
    TYPES
 ───────────────────────────────────────────── */
 
-export type UserRole =
-  | 'super_admin' | 'tenant_admin' | 'executive_sponsor' | 'pmo_director'
-  | 'project_manager' | 'engineering_manager' | 'procurement_manager'
-  | 'construction_manager' | 'hse_manager' | 'qaqc_manager'
-  | 'commissioning_manager' | 'om_manager' | 'finance_controller'
-  | 'client_pmc' | 'viewer'
+/**
+ * Role vocabulary comes from `lib/auth/roles.ts`, which mirrors the Postgres
+ * `user_role` enum. Do NOT redefine roles here — a role that isn't in the enum
+ * cannot be saved, and the UI would mislabel every row that uses it.
+ */
+export type UserRole = DbUserRole
 
 export interface UserProfile {
   id: string
@@ -49,56 +57,27 @@ export interface UsersRolesProps {
 }
 
 /* ─────────────────────────────────────────────
-   ROLE META — 15 roles with spec-exact colors
+   ROLE META — sourced from the canonical enum
 ───────────────────────────────────────────── */
 
-interface RoleMeta {
-  label: string
-  badge: string    // bg + text + border
-  avatar: string   // bg + text
-  description: string
-  permissions: string[]
-}
+type RoleMeta = DbRoleMeta
 
-const ROLE_META: Record<string, RoleMeta> = {
-  super_admin:           { label: 'Super Admin',           badge: 'bg-purple-100 text-purple-700 border-purple-200',    avatar: 'bg-purple-200 text-purple-800',    description: 'Full platform access with all administrative privileges.', permissions: ['All modules', 'Tenant management', 'User management', 'System configuration', 'Audit logs', 'Billing'] },
-  tenant_admin:          { label: 'Tenant Admin',          badge: 'bg-blue-100 text-blue-700 border-blue-200',          avatar: 'bg-blue-200 text-blue-800',         description: 'Organisation-level admin managing users and settings.',     permissions: ['User management', 'Settings', 'All modules', 'Reports', 'Integrations'] },
-  executive_sponsor:     { label: 'Executive Sponsor',     badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', avatar: 'bg-emerald-200 text-emerald-800',   description: 'Executive oversight with read access across all projects.',  permissions: ['Portfolio view', 'Executive dashboard', 'Reports', 'Stage gates'] },
-  pmo_director:          { label: 'PMO Director',          badge: 'bg-indigo-100 text-indigo-700 border-indigo-200',    avatar: 'bg-indigo-200 text-indigo-800',     description: 'Directs the PMO with full project management rights.',       permissions: ['Project management', 'Resource planning', 'Reports', 'Stage gates', 'Risk'] },
-  project_manager:       { label: 'Project Manager',       badge: 'bg-cyan-100 text-cyan-700 border-cyan-200',          avatar: 'bg-cyan-200 text-cyan-800',          description: 'Manages individual projects end-to-end.',                    permissions: ['Project management', 'Schedule', 'Cost', 'Documents', 'Risk', 'HSE'] },
-  engineering_manager:   { label: 'Engineering Manager',   badge: 'bg-orange-100 text-orange-700 border-orange-200',    avatar: 'bg-orange-200 text-orange-800',      description: 'Leads engineering deliverables and technical review.',       permissions: ['Engineering module', 'Documents', 'BIM', 'RFIs', 'Submittals'] },
-  procurement_manager:   { label: 'Procurement Manager',   badge: 'bg-pink-100 text-pink-700 border-pink-200',          avatar: 'bg-pink-200 text-pink-800',          description: 'Manages procurement, contracts, and supply chain.',          permissions: ['Procurement', 'Contracts', 'Variations', 'Vendor management'] },
-  construction_manager:  { label: 'Construction Manager',  badge: 'bg-amber-100 text-amber-700 border-amber-200',       avatar: 'bg-amber-200 text-amber-800',        description: 'Oversees field construction activities and safety.',         permissions: ['Construction', 'HSE', 'Toolbox talks', 'Inspections', 'Progress'] },
-  hse_manager:           { label: 'HSE Manager',           badge: 'bg-red-100 text-red-700 border-red-200',             avatar: 'bg-red-200 text-red-800',             description: 'Manages health, safety, and environmental compliance.',       permissions: ['HSE module', 'Incidents', 'Observations', 'Audits', 'Permits'] },
-  qaqc_manager:          { label: 'QA/QC Manager',         badge: 'bg-teal-100 text-teal-700 border-teal-200',          avatar: 'bg-teal-200 text-teal-800',          description: 'Oversees quality assurance and quality control processes.',   permissions: ['QAQC module', 'Test packs', 'Punch lists', 'NCRs', 'Inspections'] },
-  commissioning_manager: { label: 'Commissioning Mgr',     badge: 'bg-lime-100 text-lime-700 border-lime-200',          avatar: 'bg-lime-200 text-lime-800',          description: 'Leads system commissioning and handover activities.',        permissions: ['Commissioning', 'Test packs', 'Dossiers', 'Punch lists'] },
-  om_manager:            { label: 'O&M Manager',           badge: 'bg-green-100 text-green-700 border-green-200',       avatar: 'bg-green-200 text-green-800',        description: 'Manages operations and maintenance post-handover.',          permissions: ['O&M module', 'Assets', 'Work orders', 'Maintenance', 'Warranties'] },
-  finance_controller:    { label: 'Finance Controller',    badge: 'bg-violet-100 text-violet-700 border-violet-200',    avatar: 'bg-violet-200 text-violet-800',      description: 'Controls financial reporting, budgets, and cost tracking.',  permissions: ['Finance module', 'Cost control', 'Actuals', 'Forecasts', 'Invoices'] },
-  client_pmc:            { label: 'Client / PMC',          badge: 'bg-sky-100 text-sky-700 border-sky-200',             avatar: 'bg-sky-200 text-sky-800',             description: 'Client or PMC representative with view access.',             permissions: ['Client portal', 'Progress reports', 'Documents (view)', 'Meetings'] },
-  viewer:                { label: 'Viewer',                badge: 'bg-slate-100 text-slate-700 border-slate-200',       avatar: 'bg-slate-200 text-slate-800',        description: 'Read-only access to assigned projects.',                     permissions: ['Project view', 'Reports (read)', 'Documents (read)'] },
-}
-function roleMeta(role: string): RoleMeta {
-  return ROLE_META[role] ?? {
-    label: role ? role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
-    badge:  'bg-slate-100 text-slate-600 border-slate-200',
-    avatar: 'bg-slate-200 text-slate-700',
-    description: 'Unrecognised role.',
-    permissions: [],
-  }
-}
+const ROLE_META = DB_ROLE_META
+
+const roleMeta = dbRoleMeta
 
 /* ─────────────────────────────────────────────
    MOCK DATA — spec-exact 10 rows
 ───────────────────────────────────────────── */
 
 const MOCK_USERS: UserProfile[] = [
-  { id: 'u01', name: 'John Doe',      email: 'admin@gridmind.capital',   role: 'super_admin',           department: 'Engineering',   status: 'active',   lastActive: 'Just now',     joinedAt: '2023-01-10' },
+  { id: 'u01', name: 'John Doe',      email: 'admin@gridmind.capital',   role: 'system_admin',          department: 'Engineering',   status: 'active',   lastActive: 'Just now',     joinedAt: '2023-01-10' },
   { id: 'u02', name: 'Sarah Chen',    email: 'sarah@gridmind.capital',   role: 'project_manager',       department: 'Operations',    status: 'active',   lastActive: '2 hours ago',  joinedAt: '2023-03-15' },
-  { id: 'u03', name: 'Mike Ross',     email: 'mike@gridmind.capital',    role: 'engineering_manager',   department: 'Engineering',   status: 'active',   lastActive: 'Yesterday',    joinedAt: '2023-04-20' },
-  { id: 'u04', name: 'Lisa Wang',     email: 'lisa@gridmind.capital',    role: 'pmo_director',          department: 'Management',    status: 'active',   lastActive: '3 days ago',   joinedAt: '2023-02-08' },
-  { id: 'u05', name: 'Tom Baker',     email: 'tom@gridmind.capital',     role: 'construction_manager',  department: 'Field Ops',     status: 'active',   lastActive: '1 week ago',   joinedAt: '2023-05-11' },
-  { id: 'u06', name: 'Emma Davis',    email: 'emma@gridmind.capital',    role: 'finance_controller',    department: 'Finance',       status: 'active',   lastActive: '2 weeks ago',  joinedAt: '2023-06-01' },
-  { id: 'u07', name: 'Alex Kim',      email: 'alex@gridmind.capital',    role: 'procurement_manager',   department: 'Supply Chain',  status: 'inactive', lastActive: '1 month ago',  joinedAt: '2023-07-22' },
+  { id: 'u03', name: 'Mike Ross',     email: 'mike@gridmind.capital',    role: 'engineer',              department: 'Engineering',   status: 'active',   lastActive: 'Yesterday',    joinedAt: '2023-04-20' },
+  { id: 'u04', name: 'Lisa Wang',     email: 'lisa@gridmind.capital',    role: 'project_director',      department: 'Management',    status: 'active',   lastActive: '3 days ago',   joinedAt: '2023-02-08' },
+  { id: 'u05', name: 'Tom Baker',     email: 'tom@gridmind.capital',     role: 'tenant_admin',          department: 'Field Ops',     status: 'active',   lastActive: '1 week ago',   joinedAt: '2023-05-11' },
+  { id: 'u06', name: 'Emma Davis',    email: 'emma@gridmind.capital',    role: 'finance_manager',       department: 'Finance',       status: 'active',   lastActive: '2 weeks ago',  joinedAt: '2023-06-01' },
+  { id: 'u07', name: 'Alex Kim',      email: 'alex@gridmind.capital',    role: 'commercial_manager',    department: 'Supply Chain',  status: 'inactive', lastActive: '1 month ago',  joinedAt: '2023-07-22' },
   { id: 'u08', name: 'Rachel Green',  email: 'rachel@gridmind.capital',  role: 'hse_manager',           department: 'Safety',        status: 'active',   lastActive: '5 hours ago',  joinedAt: '2023-08-14' },
   { id: 'u09', name: 'David Lee',     email: 'david@gridmind.capital',   role: 'commissioning_manager', department: 'Operations',    status: 'active',   lastActive: '1 day ago',    joinedAt: '2023-09-03' },
   { id: 'u10', name: 'Guest User',    email: 'guest@gridmind.capital',   role: 'viewer',                department: '—',             status: 'inactive', lastActive: '3 months ago', joinedAt: '2023-10-30' },
@@ -169,7 +148,7 @@ function StatsBar({ users }: { users: UserProfile[] }) {
   const total    = users.length
   const active   = users.filter(u => u.status === 'active').length
   const inactive = users.filter(u => u.status === 'inactive').length
-  const admins   = users.filter(u => ['super_admin', 'tenant_admin', 'pmo_director'].includes(u.role)).length
+  const admins   = users.filter(u => (DB_ADMIN_ROLES as readonly string[]).includes(u.role)).length
   const pending  = 2 // mock pending invites
 
   const cards = [
@@ -438,6 +417,35 @@ function RowActions({ user, onToggleStatus, onDelete, onEditRole }: RowActionsPr
    LOADING SKELETON
 ───────────────────────────────────────────── */
 
+// Declared at module scope, not inside the page component. A component created
+// during render is a new type each render, so React remounts the button instead
+// of updating it, which can drop focus mid-interaction.
+function SortableHeader({
+  label,
+  field,
+  sort,
+  setSort,
+}: {
+  label: string
+  field: string
+  sort: string
+  setSort: (next: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (sort === `${field}_az` || sort === field || sort === 'newest') setSort(`${field}_za`)
+        else setSort(`${field}_az`)
+      }}
+      className="flex items-center gap-1 uppercase tracking-wider text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+    >
+      {label}
+      <ArrowUpDown className="size-3 opacity-60" />
+    </button>
+  )
+}
+
 function SkeletonRow() {
   return (
     <tr className="border-b border-slate-100">
@@ -621,10 +629,7 @@ function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }: P
    INVITE MODAL
 ───────────────────────────────────────────── */
 
-const ROLE_OPTIONS = (Object.keys(ROLE_META) as UserRole[]).map(key => ({
-  value: key,
-  label: ROLE_META[key].label,
-}))
+const ROLE_OPTIONS = DB_ROLE_OPTIONS
 
 interface InviteModalProps {
   open: boolean
@@ -676,6 +681,9 @@ function InviteModal({ open, onClose, onInvite }: InviteModalProps) {
       setSent(true)
       await new Promise(r => setTimeout(r, 900))
       onClose()
+    } catch {
+      // The parent already surfaced the reason via toast. Keep the modal open
+      // so the admin can correct the input and retry.
     } finally {
       setLoading(false)
     }
@@ -797,7 +805,9 @@ interface RoleDetailPanelProps {
 
 function RoleDetailPanel({ role, users, onClose }: RoleDetailPanelProps) {
   const open = !!role
-  const meta = role ? ROLE_META[role] : null
+  // `roleMeta` (= dbRoleMeta) degrades unrecognised/legacy role strings to a
+  // neutral badge instead of returning undefined and throwing on `.label`.
+  const meta = role ? roleMeta(role) : null
   const roleUsers = role ? users.filter(u => u.role === role) : []
 
   React.useEffect(() => {
@@ -968,7 +978,18 @@ export function UsersRolesPage({
   /* ── Handlers ── */
   async function handleInvite(data: { email: string; full_name: string; role: UserRole; department?: string }) {
     if (onInvite) {
-      await onInvite(data)
+      try {
+        await onInvite(data)
+      } catch (err) {
+        // Surface the real reason instead of a false "Invitation Sent".
+        toast({
+          variant: 'danger',
+          title: 'Invite Failed',
+          description: err instanceof Error ? err.message : 'Could not send the invite.',
+          duration: 6000,
+        })
+        throw err
+      }
     } else {
       const newUser: UserProfile = {
         id: `u${Date.now()}`,
@@ -1023,23 +1044,6 @@ export function UsersRolesPage({
     setUsers(prev => prev.filter(u => !ids.includes(u.id)))
     toast({ variant: 'danger', title: 'Users Deleted', description: `${selected.size} user${selected.size !== 1 ? 's' : ''} removed.`, duration: 3000 })
     setSelected(new Set())
-  }
-
-  /* ── Sort header ── */
-  function SortableHeader({ label, field }: { label: string; field: string }) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          if (sort === `${field}_az` || sort === field || sort === 'newest') setSort(`${field}_za`)
-          else setSort(`${field}_az`)
-        }}
-        className="flex items-center gap-1 uppercase tracking-wider text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
-      >
-        {label}
-        <ArrowUpDown className="size-3 opacity-60" />
-      </button>
-    )
   }
 
   return (
@@ -1101,12 +1105,12 @@ export function UsersRolesPage({
                       className="rounded border-slate-300 text-[#0a192f] focus:ring-[#0a192f]/30 cursor-pointer"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left"><SortableHeader label="User" field="name" /></th>
-                  <th className="w-44 px-4 py-3 text-left"><SortableHeader label="Role" field="role" /></th>
+                  <th className="px-4 py-3 text-left"><SortableHeader label="User" field="name" sort={sort} setSort={setSort} /></th>
+                  <th className="w-44 px-4 py-3 text-left"><SortableHeader label="Role" field="role" sort={sort} setSort={setSort} /></th>
                   <th className="w-36 px-4 py-3 text-left hidden md:table-cell">
                     <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Department</span>
                   </th>
-                  <th className="w-28 px-4 py-3 text-left"><SortableHeader label="Status" field="status" /></th>
+                  <th className="w-28 px-4 py-3 text-left"><SortableHeader label="Status" field="status" sort={sort} setSort={setSort} /></th>
                   <th className="w-36 px-4 py-3 text-left hidden lg:table-cell">
                     <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Last Active</span>
                   </th>

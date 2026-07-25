@@ -377,11 +377,16 @@ export interface PersonLite {
 /** Active people. Pass `internalOnly` to restrict to internal staff. */
 export async function getPeople(opts?: { internalOnly?: boolean }): Promise<PersonLite[]> {
   const admin = createAdminClient()
+  // Scope to the caller's tenant. This previously selected EVERY profile row with
+  // no tenant filter, so a second tenant would have leaked its staff into every
+  // people-picker. Only one tenant exists today, so this was latent, not live.
+  const { tenantId } = await getActor()
   // profiles table has: id, full_name, role, tenant_id, email, department, locale, digit_style
   // is_active and user_type columns do not exist on this schema — omit them.
   const { data, error } = await admin
     .from('profiles')
     .select('id, full_name, role')
+    .eq('tenant_id', tenantId)
     .order('full_name')
   if (error) throw error
   // internalOnly: exclude external roles (subcontractor / client_viewer) from the picker

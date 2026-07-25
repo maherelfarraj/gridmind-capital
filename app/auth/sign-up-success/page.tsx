@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Zap, Mail, CheckCircle } from 'lucide-react'
 
 export const metadata = { title: 'Check Your Email — GridMind Capital' }
@@ -12,12 +13,12 @@ export default function SignUpSuccessPage() {
       <div className="relative z-10 w-full max-w-md text-center">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <a href="/" className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
             <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#00dc82] to-emerald-400 shadow-lg shadow-[#00dc82]/25">
               <Zap className="size-5 text-slate-950" aria-hidden />
             </div>
             <span className="text-xl font-bold tracking-tight text-white">GridMind Capital</span>
-          </a>
+          </Link>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/5 p-10 shadow-2xl backdrop-blur-sm">

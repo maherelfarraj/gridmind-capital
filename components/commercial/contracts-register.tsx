@@ -554,6 +554,37 @@ const SECURITY_STATUS_META: Record<SecurityStatus, { label: string; color: strin
   claimed:  { label: 'Claimed',  color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'   },
 }
 
+/** Humanize an unknown enum value: `parent_company` → `Parent Company`. */
+function humanize(raw: string | null | undefined, fallback = 'Unknown') {
+  return raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : fallback
+}
+
+/**
+ * Safe accessors. These maps are typed on the `SecurityType`/`SecurityStatus`
+ * unions, but the values arrive from the database, so a row written by a newer
+ * migration (or legacy data) lands outside the union at runtime and the
+ * immediate `.icon` / `.color` access would throw.
+ */
+function securityTypeMeta(type: string | null | undefined) {
+  return (
+    SECURITY_TYPE_META[type as SecurityType] ?? {
+      label: humanize(type),
+      icon:  Shield,
+      color: '#94a3b8',
+      bg:    'bg-slate-100 dark:bg-slate-800/50',
+    }
+  )
+}
+
+function securityStatusMeta(status: string | null | undefined) {
+  return (
+    SECURITY_STATUS_META[status as SecurityStatus] ?? {
+      label: humanize(status),
+      color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400',
+    }
+  )
+}
+
 const SECURITY_TYPE_OPTIONS = [
   { value: 'performance_bond',         label: 'Performance Bond'         },
   { value: 'advance_payment_bond',     label: 'Advance Payment Bond'     },
@@ -602,7 +633,7 @@ function SecurityDetail({
   const { toast } = useToast()
   const [acting, setActing] = React.useState<'release' | 'claim' | null>(null)
 
-  const meta   = SECURITY_TYPE_META[security.type]
+  const meta   = securityTypeMeta(security.type)
   const Icon   = meta.icon
   const days   = security.days_to_expiry
   const isExpiredActive = security.status === 'expired' || (security.status === 'active' && days !== null && days < 0)
@@ -638,8 +669,8 @@ function SecurityDetail({
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-0.5">
-              <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', SECURITY_STATUS_META[security.status].color)}>
-                {SECURITY_STATUS_META[security.status].label}
+                <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', securityStatusMeta(security.status).color)}>
+                  {securityStatusMeta(security.status).label}
               </span>
               <ExpiryCell days={days} status={security.status} />
             </div>
@@ -969,7 +1000,7 @@ function SecuritiesSection({
             </thead>
             <tbody>
               {securities.map(s => {
-                const meta     = SECURITY_TYPE_META[s.type]
+                const meta     = securityTypeMeta(s.type)
                 const Icon     = meta.icon
                 const isSelected = selected?.id === s.id
                 const linked   = contracts.find(c => c.id === s.contract_id)
@@ -1010,8 +1041,8 @@ function SecuritiesSection({
                       <ExpiryCell days={s.days_to_expiry} status={s.status} />
                     </td>
                     <td className="px-4 py-3">
-                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', SECURITY_STATUS_META[s.status].color)}>
-                        {SECURITY_STATUS_META[s.status].label}
+                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', securityStatusMeta(s.status).color)}>
+                        {securityStatusMeta(s.status).label}
                       </span>
                     </td>
                     <td className="px-4 py-3">

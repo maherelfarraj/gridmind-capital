@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
-  loadRisksDashboard, createRisk, closeRisk,
+  loadRisksDashboard, createRisk, closeRisk, getRiskOwnerOptions,
 } from '@/app/actions/risks'
 import type { RiskRecord } from '@/lib/types/action-types'
 
@@ -39,25 +39,32 @@ function heatColor(prob: number, imp: number) {
 
 // ─── New risk modal ────────────────────────────────────────────
 
-function NewRiskModal({ open, onClose, onCreated }: {
-  open: boolean; onClose: () => void; onCreated: () => void
+function NewRiskModal({ open, onClose, onCreated, projectId }: {
+  open: boolean; onClose: () => void; onCreated: () => void; projectId?: string
 }) {
   const { toast } = useToast()
   const [loading, setLoading] = React.useState(false)
   const [form, setForm] = React.useState({
-    title: '', category: 'Technical', probability: 3, impact: 3, owner: '', mitigation: '',
+    title: '', category: 'Technical', probability: 3, impact: 3, ownerId: '', mitigation: '',
   })
+  // Owner is a uuid picked from real profiles — `risks.owner_id` is a FK to
+  // profiles, so free text can't be stored. Only fetched while the modal is open.
+  const { data: owners, isLoading: ownersLoading } = useSWR(
+    open ? `risk-owners-${projectId ?? 'all'}` : null,
+    () => getRiskOwnerOptions(projectId),
+  )
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => ({ ...f, [k]: v }))
   }
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.title || !form.owner) { toast({ title: 'Required fields missing', variant: 'danger' }); return }
+    if (!form.title || !form.ownerId) { toast({ title: 'Title and owner are required', variant: 'danger' }); return }
     setLoading(true)
-    const { error } = await createRisk(form)
+    const { error } = await createRisk({ ...form, project_id: projectId })
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'Risk created', variant: 'success' })
+    setForm({ title: '', category: 'Technical', probability: 3, impact: 3, ownerId: '', mitigation: '' })
     onCreated(); onClose()
   }
   if (!open) return null
@@ -69,16 +76,35 @@ function NewRiskModal({ open, onClose, onCreated }: {
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
         <div className="space-y-3">
-          {[
-            { label: 'Title *', key: 'title' as const },
-            { label: 'Owner *', key: 'owner' as const },
-          ].map(({ label, key }) => (
-            <div key={key}>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
-              <input type="text" value={form[key] as string} onChange={(e) => set(key, e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#64ffda]/40" />
-            </div>
-          ))}
+          <div>
+            <label htmlFor="risk-title" className="block text-xs font-medium text-muted-foreground mb-1">Title *</label>
+            <input id="risk-title" type="text" value={form.title} onChange={(e) => set('title', e.target.value)}
+              className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#64ffda]/40" />
+          </div>
+          <div>
+            <label htmlFor="risk-owner" className="block text-xs font-medium text-muted-foreground mb-1">Owner *</label>
+            <select id="risk-owner" value={form.ownerId} onChange={(e) => set('ownerId', e.target.value)}
+              disabled={ownersLoading}
+              className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#64ffda]/40 disabled:opacity-60">
+              <option value="">{ownersLoading ? 'Loading people…' : 'Select an owner…'}</option>
+              {/* Project team members are listed first, then the wider tenant. */}
+              {(owners ?? []).some((o) => o.onTeam) && (
+                <optgroup label="Project team">
+                  {(owners ?? []).filter((o) => o.onTeam).map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}{o.role ? ` — ${o.role}` : ''}</option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label={projectId ? 'Other people' : 'People'}>
+                {(owners ?? []).filter((o) => !o.onTeam).map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}{o.role ? ` — ${o.role}` : ''}</option>
+                ))}
+              </optgroup>
+            </select>
+            {!ownersLoading && (owners?.length ?? 0) === 0 && (
+              <p className="text-[11px] text-muted-foreground mt-1">No people found in this tenant.</p>
+            )}
+          </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
             <select value={form.category} onChange={(e) => set('category', e.target.value)}
@@ -220,7 +246,7 @@ export function RisksPage({ projectId }: { projectId?: string }) {
 
   return (
     <>
-      <NewRiskModal open={modalOpen} onClose={() => setModalOpen(false)} onCreated={() => mutate()} />
+      <NewRiskModal open={modalOpen} onClose={() => setModalOpen(false)} onCreated={() => mutate()} projectId={projectId} />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">

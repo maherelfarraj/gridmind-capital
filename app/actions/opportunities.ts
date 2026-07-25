@@ -5,7 +5,6 @@ import { requireWriter } from '@/lib/auth/guard'
 import type { Opportunity, OpportunitiesDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER   = '20000000-0000-0000-0000-000000000001'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:        '#94a3b8',
@@ -67,7 +66,9 @@ export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboa
   return {
     total:      items.length,
     submitted:  approvals.filter((a) => a.status === 'pending').length,
-    underReview:approvals.filter((a) => a.status === 'under_review').length,
+    // The approval_status enum is pending | approved | rejected | delegated —
+    // there is no `under_review` member, so this KPI was hardwired to 0.
+    underReview:approvals.filter((a) => a.status === 'delegated').length,
     approved:   approvals.filter((a) => a.status === 'approved').length,
     rejected:   approvals.filter((a) => a.status === 'rejected').length,
     byTechnology: Object.entries(byTech).map(([name, value]) => ({ name, value })),
@@ -110,39 +111,96 @@ export async function createOpportunity(data: {
       status:           'planning',
       current_phase:    0,
       health:           'green',
-      project_manager:  DEMO_USER,
-      created_by:       DEMO_USER,
+      // Stamp the REAL authenticated creator, not a hardcoded uuid.
+      // `requireWriter()` already resolved them above; the previous code
+      // discarded that and wrote DEMO_USER (= admin@gridmind.capital), so every
+      // opportunity looked like it was raised by the generic admin account.
+      // There is no FK on these columns, so the bad value failed silently.
+      project_manager:  gate.actor.userId,
+      created_by:       gate.actor.userId,
     })
     .select('id')
     .single()
 
   if (pe || !proj) return { error: pe?.message ?? 'Failed to create project' }
 
-  // 2. Create approval record for G0 review
-  await supabase.from('approvals').insert({
-    tenant_id:   tenantId,
-    object_type: 'opportunity',
-    title:       data.code,
-    description: `G0 Gate review for ${data.name}`,
-    status:      'pending',
-    priority:    'normal',
-    amount:      data.budget_usd,
+  // 2. Create approval record for G0 review.
+  // `object_id` + `requester_id` were previously left NULL, which orphaned the
+  // approval: it could only be found by string-matching `title` to the project
+  // code, and nothing recorded who raised it.
+  const { error: ae } = await supabase.from('approvals').insert({
+    tenant_id:    tenantId,
+    object_type:  'opportunity',
+    object_id:    proj.id,
+    title:        data.code,
+    description:  `G0 Gate review for ${data.name}`,
+    status:       'pending',
+    priority:     'normal',
+    amount:       data.budget_usd,
+    requester_id: gate.actor.userId,
   })
+
+  // Surface the failure instead of silently returning a project with no
+  // approval attached — the caller shows this in a toast.
+  if (ae) return { id: proj.id, error: `Project created, but approval failed: ${ae.message}` }
 
   return { id: proj.id }
 }
 
+/**
+ * Submit an opportunity for G0 review.
+ *
+ * Submission is NOT acceptance. This deliberately leaves `projects.status` at
+ * 'planning' — the project only becomes 'active' when an approver actually
+ * decides the G0 approval (see `decideApproval`). This function previously wrote
+ * `status: 'active'` here, which meant a project looked accepted the moment it
+ * was submitted, and made "approved" and "active" unrelated to each other.
+ *
+ * Instead it guarantees the pending approval exists, so submitting twice cannot
+ * queue duplicate reviews.
+ */
 export async function submitOpportunityForReview(projectId: string): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  const { error } = await supabase
+
+  // Confirm the project belongs to this tenant before touching approvals.
+  const { data: project, error: fetchError } = await supabase
     .from('projects')
-    .update({ status: 'active' })
+    .select('id, code, name, budget_usd')
     .eq('id', projectId)
     .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  if (fetchError) return { error: fetchError.message }
+  if (!project) return { error: 'Opportunity not found' }
+
+  // Idempotent: reuse an existing open review rather than raising a second one.
+  const { data: existing, error: existingError } = await supabase
+    .from('approvals')
+    .select('id')
+    .eq('object_type', 'opportunity')
+    .eq('object_id', projectId)
+    .eq('status', 'pending')
+    .maybeSingle()
+
+  if (existingError) return { error: existingError.message }
+  if (existing) return {}
+
+  const { error } = await supabase.from('approvals').insert({
+    tenant_id:    tenantId,
+    object_type:  'opportunity',
+    object_id:    projectId,
+    title:        project.code,
+    description:  `G0 Gate review for ${project.name}`,
+    status:       'pending',
+    priority:     'normal',
+    amount:       project.budget_usd,
+    requester_id: gate.actor.userId,
+  })
+
   return { error: error?.message }
 }
 
@@ -172,8 +230,8 @@ export async function seedOpportunitiesDemoData(): Promise<{ error?: string }> {
 
   for (const d of demos) {
     await supabase.from('projects').insert({
-      tenant_id: tenantId, created_by: DEMO_USER,
-      project_manager: DEMO_USER,
+      tenant_id: tenantId, created_by: gate.actor.userId,
+      project_manager: gate.actor.userId,
       status: 'planning', current_phase: 0,
       description: `G0 opportunity — ${d.technology} project at ${d.location}`,
       ...d,

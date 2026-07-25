@@ -80,6 +80,16 @@ const STATUS_META: Record<PermitStatus, { label: string; cls: string }> = {
   cancelled: { label: 'Cancelled', cls: 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400' },
 }
 
+/** Mirrors `typeMeta` — degrades unknown DB statuses to a neutral badge. */
+function statusMeta(status: string | null | undefined) {
+  return (
+    STATUS_META[status as PermitStatus] ?? {
+      label: status ? status.replace(/_/g, ' ') : 'Unknown',
+      cls:   'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+    }
+  )
+}
+
 /** Kanban columns. The Closed column aggregates all terminal states. */
 const COLUMNS: { id: PermitStatus; label: string; terminal?: PermitStatus[] }[] = [
   { id: 'requested', label: 'Requested' },
@@ -290,7 +300,7 @@ function DetailDialog({ permit, onClose, onChanged }: {
             </span>
           </DialogTitle>
           <DialogDescription>
-            {meta.label} · <span className={cn('font-medium', STATUS_META[status].cls.split(' ').find((c) => c.startsWith('text-')))}>{STATUS_META[status].label}</span>
+            {meta.label} · <span className={cn('font-medium', statusMeta(status).cls.split(' ').find((c) => c.startsWith('text-')))}>{statusMeta(status).label}</span>
           </DialogDescription>
         </DialogHeader>
 

@@ -5,8 +5,10 @@ import { requireWriter } from '@/lib/auth/guard'
 import type { WorkPackage, InspectionRecord, PunchItem, ConstructionDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
-const DEMO_PROJECT = 'a1000000-0000-0000-0000-000000000001'
+
+// SOL-2026-001 "Al Dhafra Solar PV - Phase 1". The previous id
+// (a1000000-...-001) was a duplicate-code row that has been deleted.
+const DEMO_PROJECT = 'ce14ed42-0ea0-43e6-b718-cc2c2cb5283d'
 
 export async function loadConstructionDashboard(): Promise<ConstructionDashboard> {
   const tenantId = await getCurrentTenantId()
@@ -471,7 +473,8 @@ export async function seedConstructionDemoData(): Promise<{ error?: string }> {
       tenant_id: tenantId, project_id: DEMO_PROJECT,
       title: p.title, category: 'punch_item', status: 'open', priority: 'normal',
       description: `Category ${p.cat} punch item raised during inspection.`,
-      created_by: DEMO_USER,
+      // Real authenticated user from the guard above, not a hardcoded uuid.
+      created_by: gate.actor.userId,
       metadata: { punch_cat: p.cat, discipline: p.disc },
     })
   }

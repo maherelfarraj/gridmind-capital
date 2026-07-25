@@ -37,14 +37,20 @@ export interface OpportunitiesDashboard {
 
 export interface RiskRecord {
   id: string
+  /** Canonical human id — `risks.risk_number` (RSK-####). There is no `code` column. */
   code: string
   title: string
   category: string
+  /** Likelihood 1-5 (5x5 matrix axis). */
   probability: number
+  /** Consequence 1-5 (5x5 matrix axis). */
   impact: number
   score: number
   rag: 'green' | 'amber' | 'red'
   status: string
+  /** profiles.id of the owner, null if unassigned. */
+  ownerId: string | null
+  /** Display name resolved via the profiles join — not a stored column. */
   owner: string
   mitigation: string
   project_id: string | null

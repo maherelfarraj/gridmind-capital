@@ -1,12 +1,10 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireWriter, requireApprover } from '@/lib/auth/guard'
+import { requireWriter, requireApprover, getAuthActor } from '@/lib/auth/guard'
+import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
-
-// Roles that see every approval regardless of routing rules.
-const ADMIN_APPROVER_ROLES = ['Super Admin', 'Tenant Admin', 'Executive Sponsor', 'PMO Director']
 
 // profiles.role enum values that action approvals (used to resolve email recipients).
 const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
@@ -29,22 +27,97 @@ async function resolveApprovers(
 }
 
 /**
+ * Apply the project lifecycle transition implied by an approval decision.
+ *
+ * Acceptance — not submission — drives project status:
+ *   approved → active     (the opportunity is accepted, work may begin)
+ *   rejected → cancelled
+ *   anything else (pending/hold/delegated) → no change
+ *
+ * `project_status` enum = planning | active | on_hold | completed | cancelled.
+ *
+ * This MUST stay shared. There are three separate server actions that write
+ * `approvals.status` — `decideApproval` (desktop detail view),
+ * `syncQueuedApproval` (mobile cards + offline queue) and
+ * `updateApprovalStatus`. Putting the transition in only one of them is exactly
+ * how "approve" appeared to succeed while the project silently stayed 'planning'.
+ *
+ * Returns an error string when the project write fails. There is no FK on
+ * `approvals.object_id` (it is polymorphic across projects/documents/
+ * payment_certificates), so a stale id cannot be caught by the database —
+ * callers must surface this rather than report a clean decision.
+ */
+async function applyApprovalLifecycle(
+  supabase: ReturnType<typeof createAdminClient>,
+  approval: { object_type?: string | null; object_id?: string | null } | null,
+  status: 'approved' | 'rejected' | 'pending' | 'delegated',
+): Promise<string | null> {
+  if (!approval || approval.object_type !== 'opportunity' || !approval.object_id) return null
+
+  const nextStatus = status === 'approved' ? 'active' : status === 'rejected' ? 'cancelled' : null
+  if (!nextStatus) return null
+
+  const { error } = await supabase
+    .from('projects')
+    .update({ status: nextStatus })
+    .eq('id', approval.object_id)
+
+  return error ? `Approval recorded, but project status update failed: ${error.message}` : null
+}
+
+/**
  * Fetch approvals for the inbox.
- * @param approverRole  Human-readable role label (e.g. "Project Manager"). When provided
- *                      and not an admin role, results are scoped to the object_types this
- *                      role is configured to approve in `approval_rules`. Omit for the
- *                      full/admin view.
+ *
+ * Routing source of truth is `approval_rules` (object_type → required_roles).
+ * Do NOT route from `approval_matrix`: that table is gate POLICY documentation
+ * for the Phase 9 admin surfaces (matrix tab, Excel export, B1–B10 health
+ * checks). It has no `object_type` column and its `approver_role` holds role
+ * CODES ('PD', 'PM', 'DM') — a third vocabulary with no bridge to the
+ * `user_role` enum — so matching against it silently yields nothing.
+ *
+ * @param approverRole  Display-only role label (e.g. "Project Manager"). NOT used
+ *                      for authorization — scoping is derived from the session.
+ * @throws if the routing lookup fails, so a broken query can never be rendered
+ *         as an empty "All caught up" inbox.
  */
 export async function getApprovals(approverRole?: string): Promise<ApprovalRecord[]> {
   const supabase = createAdminClient()
 
+  // Authorization is resolved SERVER-SIDE from the session, never from the
+  // caller-supplied `approverRole` (a client-passed role label is spoofable, and
+  // it is in the wrong vocabulary — see below). `approverRole` is display-only.
+  const auth = await getAuthActor()
+  if ('error' in auth) return []
+  const dbRole = auth.actor.role
+
   // Resolve which object_types this approver is responsible for.
+  //
+  // Two bugs previously made this return [] for EVERY non-admin role, so the
+  // inbox was permanently empty while the KPI counters (which are unscoped)
+  // still showed a pending count:
+  //   1. It filtered `approval_rules.approver_role`, which DOES NOT EXIST on
+  //      that table — the real column is `required_roles text[]`. (`approver_role`
+  //      belongs to the separate `approval_matrix` table.) The resulting 400 was
+  //      discarded by destructuring only `data`, so the failure looked like
+  //      "this role approves nothing" and hit the `return []` below.
+  //   2. It compared against ROLE_LABELS display strings ("Project Manager")
+  //      while `required_roles` holds DbUserRole enum values ("project_manager").
+  //      Fixing the column name alone would still have matched nothing.
   let allowedObjectTypes: string[] | null = null
-  if (approverRole && !ADMIN_APPROVER_ROLES.includes(approverRole)) {
-    const { data: rules } = await supabase
+  if (!(DB_ADMIN_ROLES as readonly string[]).includes(dbRole)) {
+    const { data: rules, error: rulesError } = await supabase
       .from('approval_rules')
-      .select('object_type')
-      .eq('approver_role', approverRole)
+      .select('object_type, required_roles')
+      .eq('is_active', true)
+      .overlaps('required_roles', [dbRole])
+
+    // Never swallow this again: a query failure must not masquerade as "no
+    // approvals assigned to you". Returning [] here is indistinguishable from a
+    // genuinely empty inbox, so fail loudly instead and let the error surface.
+    if (rulesError) {
+      console.error('[v0] getApprovals: approval_rules lookup failed:', rulesError.message)
+      throw new Error(`Could not determine your approval routing: ${rulesError.message}`)
+    }
     allowedObjectTypes = Array.from(new Set((rules ?? []).map((r) => r.object_type).filter(Boolean)))
   }
 
@@ -167,7 +240,7 @@ export async function decideApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, object_type, description')
+    .select('title, object_type, object_id, description')
     .eq('id', opts.id)
     .single()
 
@@ -186,6 +259,12 @@ export async function decideApproval(opts: {
       ].join(''),
     })
     .eq('id', opts.id)
+
+  // `hold` maps to 'pending', so the helper correctly makes no lifecycle change.
+  if (!error) {
+    const lifecycleError = await applyApprovalLifecycle(supabase, approval, statusMap[opts.decision])
+    if (lifecycleError) return { error: lifecycleError }
+  }
 
   if (!error && approval) {
     sendApprovalDecisionEmail({
@@ -212,13 +291,31 @@ export async function delegateApproval(opts: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
-  // 'delegated' is not a valid status per the CHECK constraint.
-  // Use 'under_review' and record delegation metadata in the description.
+
+  // The `approval_status` enum is: pending | approved | rejected | delegated.
+  // There is NO `under_review` member, so writing it made every delegation fail
+  // with a 22P02 invalid-enum-input error. `delegated` is the correct value.
+  //
+  // Reassign `assignee_id` to the delegate as well — without it the row stayed
+  // on the original approver's queue and the delegation had no effect.
+  const { data: current, error: readErr } = await supabase
+    .from('approvals')
+    .select('description')
+    .eq('id', opts.id)
+    .single()
+
+  if (readErr) return { error: readErr.message }
+
+  // Append to the audit trail rather than overwriting it.
+  const note = `[Delegated to ${opts.delegateId} at ${new Date().toISOString()}] Reason: ${opts.reason}`
+  const description = current?.description ? `${current.description}\n${note}` : note
+
   const { error } = await supabase
     .from('approvals')
     .update({
-      status:      'under_review',
-      description: `[Delegated to: ${opts.delegateId}]\nReason: ${opts.reason}`,
+      status:      'delegated',
+      assignee_id: opts.delegateId,
+      description,
       updated_at:  new Date().toISOString(),
     })
     .eq('id', opts.id)
@@ -251,11 +348,22 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
   const supabase = createAdminClient()
   const [appRes, rulesRes] = await Promise.all([
     supabase.from('approvals').select('id, object_type, status, priority, created_at').order('created_at', { ascending: false }),
-    supabase.from('approval_rules').select('object_type, level, approver_role').order('level'),
+    // Real columns are `approval_levels` and `required_roles text[]`. This
+    // previously selected `level` and `approver_role` — NEITHER of which exists
+    // on this table — so it 400'd and the `?? []` below turned the failure into
+    // a permanently empty "Approval Rules" panel.
+    supabase
+      .from('approval_rules')
+      .select('object_type, approval_levels, required_roles')
+      .order('approval_levels'),
   ])
 
   const rows  = appRes.data  ?? []
   const rules = rulesRes.data ?? []
+
+  // Never let a failed query render as "no data" (see getApprovals).
+  if (appRes.error) console.error('[v0] loadApprovalsDashboard: approvals query failed:', appRes.error.message)
+  if (rulesRes.error) console.error('[v0] loadApprovalsDashboard: approval_rules query failed:', rulesRes.error.message)
 
   const now = new Date()
   const OVERDUE_DAYS = 5
@@ -281,14 +389,15 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
     return Object.entries(m).map(([name, value]) => ({ name, value, color: statusColors[name] ?? '#94a3b8' }))
   })()
 
-  // Aggregate approval rules per object_type
+  // Aggregate approval rules per object_type. `required_roles` is a text[] of
+  // DbUserRole enum values, so flatten it rather than reading a single column.
   const rulesMap: Record<string, { levels: number; roles: string[] }> = {}
   for (const rule of rules) {
     const key = rule.object_type ?? 'General'
     if (!rulesMap[key]) rulesMap[key] = { levels: 0, roles: [] }
-    rulesMap[key].levels = Math.max(rulesMap[key].levels, rule.level ?? 1)
-    if (rule.approver_role && !rulesMap[key].roles.includes(rule.approver_role)) {
-      rulesMap[key].roles.push(rule.approver_role)
+    rulesMap[key].levels = Math.max(rulesMap[key].levels, rule.approval_levels ?? 1)
+    for (const role of rule.required_roles ?? []) {
+      if (role && !rulesMap[key].roles.includes(role)) rulesMap[key].roles.push(role)
     }
   }
   const approvalRules = Object.entries(rulesMap).map(([object_type, v]) => ({ object_type, ...v }))
@@ -326,20 +435,30 @@ export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
     await supabase.from('approvals').insert({ tenant_id: tenantId, ...d })
   }
 
-  // Seed approval_rules
+  // Seed approval_rules.
+  //
+  // This seed was silently broken: it wrote `level` and `approver_role`, neither
+  // of which exists on this table, and used ROLE_LABELS display strings ("Project
+  // Manager") where `required_roles` holds DbUserRole enum values. Every insert
+  // was rejected by PostgREST, which is why no 'opportunity' routing rule existed
+  // and the inbox had nothing to match against.
   const ruleSeeds = [
-    { object_type: 'opportunity',     level: 1, approver_role: 'Project Manager' },
-    { object_type: 'opportunity',     level: 2, approver_role: 'Executive Sponsor' },
-    { object_type: 'project_charter', level: 1, approver_role: 'Project Manager' },
-    { object_type: 'project_charter', level: 2, approver_role: 'CFO' },
-    { object_type: 'project_charter', level: 3, approver_role: 'Board' },
-    { object_type: 'purchase_order',  level: 1, approver_role: 'Project Manager' },
-    { object_type: 'change_order',    level: 1, approver_role: 'Project Manager' },
-    { object_type: 'change_order',    level: 2, approver_role: 'Commercial Director' },
+    { name: 'Opportunity G0 Gate Review', object_type: 'opportunity',     approval_levels: 1, required_roles: ['project_director', 'system_admin', 'tenant_admin'], is_active: true },
+    { name: 'Project Charter Approval',   object_type: 'project_charter', approval_levels: 2, required_roles: ['project_director', 'finance_manager'],              is_active: true },
+    { name: 'Purchase Order Approval',    object_type: 'purchase_order',  approval_levels: 1, required_roles: ['project_manager', 'finance_manager'],               is_active: true },
+    { name: 'Change Order Approval',      object_type: 'change_order',    approval_levels: 2, required_roles: ['project_manager', 'project_director'],              is_active: true },
   ]
   const { data: exRules } = await supabase.from('approval_rules').select('id').limit(1)
   if ((exRules?.length ?? 0) === 0) {
-    for (const r of ruleSeeds) await supabase.from('approval_rules').insert({ tenant_id: tenantId, ...r })
+    for (const r of ruleSeeds) {
+      const { error: seedError } = await supabase.from('approval_rules').insert({ tenant_id: tenantId, ...r })
+      // A rejected insert used to pass unnoticed here, leaving the routing table
+      // empty while the seed reported success.
+      if (seedError) {
+        console.error(`[v0] seedApprovalsDemoData: approval_rules insert failed for ${r.object_type}:`, seedError.message)
+        return { error: `Failed to seed approval rule for ${r.object_type}: ${seedError.message}` }
+      }
+    }
   }
 
   return {}
@@ -363,7 +482,7 @@ export async function syncQueuedApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, description, object_type')
+    .select('title, description, object_type, object_id')
     .eq('id', opts.id)
     .single()
 
@@ -379,6 +498,13 @@ export async function syncQueuedApproval(opts: {
     .from('approvals')
     .update({ status: opts.decision, description, updated_at: new Date().toISOString() })
     .eq('id', opts.id)
+
+  // Same lifecycle transition as the desktop path — this is the action the
+  // mobile approval cards call, and it previously left the project untouched.
+  if (!error) {
+    const lifecycleError = await applyApprovalLifecycle(supabase, approval, opts.decision)
+    if (lifecycleError) return { error: lifecycleError }
+  }
 
   if (!error && approval) {
     sendApprovalDecisionEmail({
@@ -405,7 +531,7 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
   // Fetch the approval first so we can include context in the email
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, description, object_type')
+    .select('title, description, object_type, object_id')
     .eq('id', id)
     .single()
 
@@ -413,6 +539,12 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
     .from('approvals')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
+
+  // Third decision path — kept in sync via the shared helper.
+  if (!error) {
+    const lifecycleError = await applyApprovalLifecycle(supabase, approval, status)
+    if (lifecycleError) return { error: lifecycleError }
+  }
 
   if (!error && approval) {
     // Fire-and-forget — do not block response on email delivery

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Zap, Mail, Lock, Eye, EyeOff, User, AlertTriangle, CheckCircle, X, Loader2, Building2,
@@ -179,12 +180,12 @@ export function SignUpPage() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <a href="/" className="flex items-center gap-2.5 group">
+          <Link href="/" className="flex items-center gap-2.5 group">
             <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#00dc82] to-emerald-400 shadow-lg shadow-[#00dc82]/25">
               <Zap className="size-5 text-slate-950" aria-hidden />
             </div>
             <span className="text-xl font-bold tracking-tight text-white">GridMind Capital</span>
-          </a>
+          </Link>
         </div>
 
         {/* Card */}

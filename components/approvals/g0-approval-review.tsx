@@ -11,6 +11,7 @@ import type { G0FormData, G0RiskRow, G0StakeholderRow } from '@/app/actions/gate
 import { SignaturePad } from '@/components/signatures/signature-pad'
 import { SignatureDisplay } from '@/components/signatures/signature-display'
 import type { SignatureRecord } from '@/app/actions/signatures'
+import { useClientNow } from '@/lib/hooks/use-client-now'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -321,9 +322,15 @@ export function G0ApprovalReview({
   const cfg         = DECISION_CONFIG[decision]
   const submitted   = timeAgo(approval.created_at)
 
-  // SLA — assume 48h from creation
-  const hoursLeft = Math.max(0, 48 - Math.floor((Date.now() - new Date(approval.created_at).getTime()) / 3600000))
-  const slaColor  = hoursLeft < 24 ? 'text-red-500' : hoursLeft < 48 ? 'text-amber-500' : 'text-slate-500'
+  // SLA — assume 48h from creation. Read the clock via useClientNow (mount-time,
+  // refreshed each minute) rather than Date.now() during render, which is impure
+  // and would desync between the server and client renders.
+  const now = useClientNow(60_000)
+  const hoursLeft = now === null
+    ? null
+    : Math.max(0, 48 - Math.floor((now - new Date(approval.created_at).getTime()) / 3600000))
+  const slaColor  = hoursLeft === null ? 'text-slate-500'
+    : hoursLeft < 24 ? 'text-red-500' : hoursLeft < 48 ? 'text-amber-500' : 'text-slate-500'
 
   async function handleSubmit() {
     setError(null)
@@ -411,7 +418,7 @@ export function G0ApprovalReview({
           </p>
           <span className={`flex items-center gap-1 text-sm ${slaColor}`}>
             <Clock className="w-3.5 h-3.5" aria-hidden />
-            Due in {hoursLeft} hour{hoursLeft !== 1 ? 's' : ''}
+            {hoursLeft === null ? 'Calculating SLA…' : `Due in ${hoursLeft} hour${hoursLeft !== 1 ? 's' : ''}`}
           </span>
         </div>
       </div>

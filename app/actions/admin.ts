@@ -1,7 +1,10 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
+
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/auth/guard'
+import { isDbUserRole } from '@/lib/auth/roles'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 
@@ -99,6 +102,12 @@ export async function updateUserRole(userId: string, role: string): Promise<{ er
   const gate = await requireAdmin()
   if ('error' in gate) return gate
 
+  // `profiles.role` is a Postgres enum. Writing a value outside the enum
+  // raises 22P02, so reject unknown roles up front with a clear message.
+  if (!isDbUserRole(role)) {
+    return { error: `"${role}" is not a valid role.` }
+  }
+
   const supabase = createAdminClient()
 
   const { error } = await supabase
@@ -109,6 +118,137 @@ export async function updateUserRole(userId: string, role: string): Promise<{ er
 
   if (error) return { error: error.message }
   return {}
+}
+
+// ─────────────────────────────────────────────────────────────
+// Invite (internal staff)
+// ─────────────────────────────────────────────────────────────
+
+export interface InviteInternalUserArgs {
+  email: string
+  fullName: string
+  /** Must be a member of the `user_role` enum. */
+  role: string
+  department?: string
+  /** Optional seat in the 19-role org catalog (`roles.id`). */
+  homeRoleId?: string
+  /** Origin used to build the callback URL, e.g. https://app.example.com */
+  siteUrl: string
+}
+
+export interface InviteInternalUserResult {
+  userId?: string
+  /** Fallback action link — always returned so invites work without SMTP. */
+  inviteLink?: string
+  /** True when the email already belonged to a profile (role was updated). */
+  isExisting?: boolean
+  error?: string
+}
+
+/**
+ * Invite an internal staff member.
+ *
+ * Mirrors `inviteExternalUser` but accepts the internal `user_role` enum and
+ * does NOT create `external_access` grants — internal users get access through
+ * their role plus `project_team` seats (see `assignRole` in actions/team.ts).
+ *
+ * A copyable action link is always returned, so the flow still works when
+ * Supabase Auth has no custom SMTP configured.
+ */
+export async function inviteInternalUser(
+  args: InviteInternalUserArgs,
+): Promise<InviteInternalUserResult> {
+  const gate = await requireAdmin()
+  if ('error' in gate) return { error: gate.error }
+
+  const email = args.email.trim().toLowerCase()
+  const fullName = args.fullName.trim()
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: 'Enter a valid email address.' }
+  }
+  if (!isDbUserRole(args.role)) {
+    return { error: `"${args.role}" is not a valid role.` }
+  }
+
+  const tenantId = await getCurrentTenantId()
+  const admin = createAdminClient()
+
+  // Step 1 — does a profile already exist for this email in the tenant?
+  const { data: existing } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('email', email)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  let userId: string
+
+  if (existing) {
+    userId = existing.id
+    const { error: updErr } = await admin
+      .from('profiles')
+      .update({
+        role: args.role,
+        full_name: fullName || undefined,
+        department: args.department?.trim() || null,
+        user_type: 'internal',
+        ...(args.homeRoleId ? { home_role_id: args.homeRoleId } : {}),
+        is_active: true,
+      })
+      .eq('id', userId)
+    if (updErr) return { error: updErr.message }
+  } else {
+    // Step 2 — create the auth user. Sends the invite email when SMTP is set.
+    const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+      data: { role: args.role, tenant_id: tenantId, full_name: fullName },
+      redirectTo: `${args.siteUrl}/auth/callback?next=/`,
+    })
+
+    if (inviteErr || !invited?.user) {
+      return { error: inviteErr?.message ?? 'Failed to invite user.' }
+    }
+    userId = invited.user.id
+
+    // The handle_new_user trigger creates the profile row, but it may not have
+    // fired yet for an invite, so upsert to guarantee correct tenant/role.
+    const { error: upsertErr } = await admin.from('profiles').upsert(
+      {
+        id: userId,
+        tenant_id: tenantId,
+        email,
+        full_name: fullName,
+        role: args.role,
+        department: args.department?.trim() || null,
+        user_type: 'internal',
+        ...(args.homeRoleId ? { home_role_id: args.homeRoleId } : {}),
+        is_active: true,
+      },
+      { onConflict: 'id', ignoreDuplicates: false },
+    )
+    if (upsertErr) return { error: upsertErr.message }
+  }
+
+  // Step 3 — always produce a shareable link as an SMTP-independent fallback.
+  //
+  // We build the URL from `hashed_token` and point it at our own callback
+  // (which calls verifyOtp) rather than returning Supabase's `action_link`.
+  // action_link goes to /auth/v1/verify, which redirects back with the session
+  // in the URL *fragment* — unreadable by a server route handler.
+  let inviteLink: string | undefined
+  const { data: linkData } = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+  })
+  const hashedToken = linkData?.properties?.hashed_token
+  if (hashedToken) {
+    inviteLink =
+      `${args.siteUrl}/auth/callback` +
+      `?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=/`
+  }
+
+  revalidatePath('/admin/users')
+  return { userId, inviteLink, isExisting: !!existing }
 }
 
 export async function deactivateUser(userId: string): Promise<{ error?: string }> {

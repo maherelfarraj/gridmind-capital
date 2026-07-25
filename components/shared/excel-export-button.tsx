@@ -20,7 +20,6 @@ export function ExcelExportButton(props: {
   /** Row count used for logging + empty-state guard. */
   rowCount: number
   /** Builds the sheet(s) at click time so the latest filtered data is used. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   buildSheets: () => ExcelSheet<any>[]
   disabled?: boolean
   size?: ButtonSize

@@ -1,16 +1,17 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireWriter } from '@/lib/auth/guard'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-const DEMO_USER    = '20000000-0000-0000-0000-000000000001'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface PmoRisk {
   id: string; projectId: string; projectName: string
   title: string; category: string; status: string
-  probability: string; impact: string; priority: string; owner: string
+  /** Integer 1-5 since the numeric-score migration (was a 'high'/'medium' text band). */
+  probability: number; impact: number; priority: string; owner: string
 }
 export interface PmoTicketItem {
   id: string; projectId: string; projectName: string
@@ -41,14 +42,22 @@ export interface PmoDashboard {
   lessons: PmoLesson[]
 }
 
-// Derive a priority bucket from risk probability + impact text values.
-function riskPriority(prob: string, impact: string): string {
-  const rank = (v: string) => ({ high: 3, medium: 2, low: 1 } as Record<string, number>)[v?.toLowerCase()] ?? 1
-  const score = rank(prob) * rank(impact)
-  if (score >= 9) return 'critical'
-  if (score >= 6) return 'high'
-  if (score >= 3) return 'medium'
+// Derive a priority bucket from the 1-5 probability x impact score (max 25).
+// Thresholds match calcRag() in app/actions/risks.ts so the PMO page and the
+// Risk Register never disagree about the same row.
+function riskPriority(prob: number, impact: number): string {
+  const score = (Number(prob) || 3) * (Number(impact) || 3)
+  if (score >= 15) return 'critical'
+  if (score >= 10) return 'high'
+  if (score >= 5)  return 'medium'
   return 'low'
+}
+
+/** Map a 'high'/'medium'/'low' band to the stored 1-5 scale. */
+function bandToScore(band: string | undefined): number {
+  return ({ critical: 5, high: 4, medium: 3, low: 2 } as Record<string, number>)[
+    (band ?? '').toLowerCase()
+  ] ?? 3
 }
 
 export async function loadPmoDashboard(): Promise<PmoDashboard> {
@@ -78,9 +87,9 @@ export async function loadPmoDashboard(): Promise<PmoDashboard> {
     title:       r.title ?? '',
     category:    r.category ?? 'General',
     status:      r.status ?? 'open',
-    probability: r.probability ?? 'medium',
-    impact:      r.impact ?? 'medium',
-    priority:    riskPriority(r.probability ?? 'medium', r.impact ?? 'medium'),
+    probability: Number(r.probability) || 3,
+    impact:      Number(r.impact) || 3,
+    priority:    riskPriority(Number(r.probability) || 3, Number(r.impact) || 3),
     owner:       ownerOf(r.owner_id),
   }))
 
@@ -147,6 +156,12 @@ export async function createPmoItem(input: {
   category?: string; rationale?: string; phase?: string
 }): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
+  // This file previously had NO auth guard at all — any authenticated user
+  // (including a `viewer`) could write PMO records via the admin client, which
+  // bypasses RLS. `requireWriter()` rejects viewers and gives us the real actor.
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
   const { type, projectId, title } = input
   if (!projectId || !title) return { error: 'Project and title are required' }
@@ -155,9 +170,16 @@ export async function createPmoItem(input: {
     const { error } = await supabase.from('risks').insert({
       tenant_id: tenantId, project_id: projectId, title,
       category: input.category || 'General',
-      probability: input.priority === 'critical' || input.priority === 'high' ? 'high' : 'medium',
-      impact: input.priority === 'critical' ? 'high' : input.priority === 'low' ? 'low' : 'medium',
-      status: 'open', created_by: DEMO_USER,
+      // probability/impact are integer 1-5 (CHECK constrained) — writing the old
+      // 'high'/'medium' text here would now be rejected outright.
+      probability: bandToScore(input.priority === 'critical' || input.priority === 'high' ? 'high' : 'medium'),
+      impact: bandToScore(input.priority === 'critical' ? 'high' : input.priority === 'low' ? 'low' : 'medium'),
+      status: 'open',
+      // The `risks` table has NO `created_by` column — it has `owner_id`.
+      // Writing `created_by` made PostgREST reject the whole insert, so risk
+      // creation from the PMO page ALWAYS failed. Default the owner to the
+      // creator, which is also the attribution `loadPmoDashboard` reads back.
+      owner_id: gate.actor.userId,
     })
     return { error: error?.message }
   }
@@ -168,13 +190,17 @@ export async function createPmoItem(input: {
     description: type === 'decision' ? (input.rationale || '') : type === 'lesson' ? (input.category || 'General') : '',
     status: type === 'decision' ? 'pending' : 'open',
     priority: type === 'lesson' ? (input.phase || 'General') : (input.priority || 'medium'),
-    created_by: DEMO_USER,
+    // `tickets` DOES have `created_by` — stamp the real actor.
+    created_by: gate.actor.userId,
   })
   return { error: error?.message }
 }
 
 export async function seedPmoDemoData(): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
   const supabase = createAdminClient()
 
   const { data: projects } = await supabase.from('projects').select('id').eq('tenant_id', tenantId).limit(3)
@@ -184,15 +210,18 @@ export async function seedPmoDemoData(): Promise<{ error?: string }> {
   const { data: exRisk } = await supabase.from('risks').select('id').eq('tenant_id', tenantId).limit(1)
   if ((exRisk?.length ?? 0) === 0) {
     const riskSeed = [
-      { title: 'Grid connection permit delayed', category: 'Regulatory',  probability: 'high', impact: 'high' },
-      { title: 'Turbine long-lead delivery risk', category: 'Supply Chain', probability: 'medium', impact: 'high' },
-      { title: 'Solar tracker design change',      category: 'Technical',   probability: 'low', impact: 'medium' },
-      { title: 'FX rate exposure SAR/USD',         category: 'Financial',   probability: 'medium', impact: 'medium' },
+      // Integer 1-5 to match the CHECK-constrained columns.
+      { title: 'Grid connection permit delayed', category: 'Regulatory',  probability: 4, impact: 4 },
+      { title: 'Turbine long-lead delivery risk', category: 'Supply Chain', probability: 3, impact: 4 },
+      { title: 'Solar tracker design change',      category: 'Technical',   probability: 2, impact: 3 },
+      { title: 'FX rate exposure SAR/USD',         category: 'Financial',   probability: 3, impact: 3 },
     ]
     for (let i = 0; i < riskSeed.length; i++) {
       await supabase.from('risks').insert({
         tenant_id: tenantId, project_id: pid(i),
-        status: i === 3 ? 'escalated' : 'open', created_by: DEMO_USER, ...riskSeed[i],
+        // `owner_id`, not `created_by` — see createPmoItem above. This seed
+        // silently failed for every risk row before this fix.
+        status: i === 3 ? 'escalated' : 'open', owner_id: gate.actor.userId, ...riskSeed[i],
       })
     }
   }
@@ -211,7 +240,7 @@ export async function seedPmoDemoData(): Promise<{ error?: string }> {
     ]
     for (let i = 0; i < ticketSeed.length; i++) {
       await supabase.from('tickets').insert({
-        tenant_id: tenantId, project_id: pid(i), created_by: DEMO_USER, ...ticketSeed[i],
+        tenant_id: tenantId, project_id: pid(i), created_by: gate.actor.userId, ...ticketSeed[i],
       })
     }
   }

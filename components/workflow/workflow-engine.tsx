@@ -260,13 +260,18 @@ function WorkflowEditor({ def, onSave, onClose }: {
   onSave: (d: WorkflowDefinition) => void
   onClose: () => void
 }) {
-  const blank: WorkflowDefinition = {
-    id: `WF-CUST-${Date.now()}`, name: '', category: 'custom', description: '',
-    steps: [], status: 'draft', createdBy: 'PMO Director',
-    createdAt: new Date().toISOString(), lastModified: new Date().toISOString(),
-    version: 1, instanceCount: 0,
-  }
-  const [editing, setEditing] = React.useState<WorkflowDefinition>(def ?? blank)
+  // Lazy initializer: the blank definition seeds state exactly once, so the
+  // impure Date.now()/new Date() calls run on mount instead of on every render
+  // (where they would also be recomputed and thrown away).
+  const [editing, setEditing] = React.useState<WorkflowDefinition>(
+    () =>
+      def ?? {
+        id: `WF-CUST-${Date.now()}`, name: '', category: 'custom', description: '',
+        steps: [], status: 'draft', createdBy: 'PMO Director',
+        createdAt: new Date().toISOString(), lastModified: new Date().toISOString(),
+        version: 1, instanceCount: 0,
+      },
+  )
 
   function addStep() {
     const newStep: WfStep = { id: `s${Date.now()}`, label: 'New Step', type: 'action', assignedRole: '', slaHours: 24, status: 'pending' }

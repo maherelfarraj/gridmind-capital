@@ -13,6 +13,23 @@ const STATUS_ICON = {
   pending:     Circle,
 }
 
+type MilestoneStatusKey = keyof typeof STATUS_ICON
+
+/**
+ * `m.status` on live rows is database-sourced and may fall outside the four
+ * known statuses. An unmapped status previously yielded `undefined` for both
+ * the meta (throwing on `.color`) and the icon component — and rendering
+ * `<undefined />` throws "Element type is invalid".
+ */
+function milestoneMeta(status: string | null | undefined) {
+  const meta = MILESTONE_META[status as MilestoneStatusKey] ?? {
+    label: status ? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown',
+    color: '#94a3b8',
+  }
+  const Icon = STATUS_ICON[status as MilestoneStatusKey] ?? Circle
+  return { meta, Icon }
+}
+
 export function MilestonesTab({ liveData }: { liveData?: G0LiveMilestone[] }) {
   const milestones: InitiationMilestone[] = liveData === undefined
     ? MOCK_MILESTONES
@@ -48,8 +65,7 @@ export function MilestonesTab({ liveData }: { liveData?: G0LiveMilestone[] }) {
         <div className="absolute left-5 top-6 bottom-6 w-px bg-border" />
         <div className="space-y-1">
           {milestones.map((m, idx) => {
-            const meta = MILESTONE_META[m.status]
-            const Icon = STATUS_ICON[m.status]
+            const { meta, Icon } = milestoneMeta(m.status)
             return (
               <div key={m.id} className="relative flex gap-4 pl-12 pr-4 py-3 rounded-xl hover:bg-muted/20 transition-colors group">
                 {/* Node */}

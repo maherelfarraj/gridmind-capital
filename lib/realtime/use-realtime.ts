@@ -30,8 +30,13 @@ export function useRealtime({
   onchange,
   enabled = true,
 }: UseRealtimeOptions) {
+  // Latest-ref pattern: sync in an effect, never during render. Writing a ref
+  // while rendering is unsafe under concurrent rendering, where a render can be
+  // discarded and would leave the ref written by an abandoned attempt.
   const onchangeRef = useRef(onchange)
-  onchangeRef.current = onchange
+  useEffect(() => {
+    onchangeRef.current = onchange
+  }, [onchange])
 
   useEffect(() => {
     if (!enabled) return
@@ -56,6 +61,7 @@ export function useRealtime({
     return () => {
       supabase.removeChannel(channel)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // onchange is intentionally excluded: it is read through onchangeRef so a
+    // new callback identity does not tear down and rebuild the subscription.
   }, [table, schema, event, filter, enabled])
 }
