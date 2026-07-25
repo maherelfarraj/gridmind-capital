@@ -65,8 +65,7 @@ export function MilestonesTab({ liveData }: { liveData?: G0LiveMilestone[] }) {
         <div className="absolute left-5 top-6 bottom-6 w-px bg-border" />
         <div className="space-y-1">
           {milestones.map((m, idx) => {
-            const meta = MILESTONE_META[m.status]
-            const Icon = STATUS_ICON[m.status]
+            const { meta, Icon } = milestoneMeta(m.status)
             return (
               <div key={m.id} className="relative flex gap-4 pl-12 pr-4 py-3 rounded-xl hover:bg-muted/20 transition-colors group">
                 {/* Node */}
