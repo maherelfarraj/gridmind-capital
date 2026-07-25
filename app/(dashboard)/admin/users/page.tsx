@@ -3,25 +3,22 @@
 import * as React from 'react'
 import useSWR from 'swr'
 import { formatDistanceToNow } from 'date-fns'
+
 import { UsersRolesPage } from '@/components/admin/users-roles-page'
 import { ExternalAccessTab } from '@/components/admin/external-access-tab'
-import { getUsers, updateUserRole } from '@/app/actions/admin'
+import { getUsers, updateUserRole, inviteInternalUser } from '@/app/actions/admin'
+import { isDbUserRole } from '@/lib/auth/roles'
+import { useToast } from '@/components/ui/toast'
 import type { UserProfile, UserRole } from '@/components/admin/users-roles-page'
 
-// Map DB role strings → component UserRole union
-const DB_ROLE_MAP: Record<string, UserRole> = {
-  system_admin:   'super_admin',
-  tenant_admin:   'tenant_admin',
-  admin:          'tenant_admin',
-  project_manager:'project_manager',
-  pmo_director:   'pmo_director',
-  viewer:         'viewer',
-  member:         'viewer',
-}
-
+/**
+ * `profiles.role` already stores the `user_role` enum, and UsersRolesPage now
+ * speaks that same vocabulary (see lib/auth/roles.ts), so no translation is
+ * needed here. We only guard against unrecognised values so a bad row renders
+ * as Viewer rather than breaking the table.
+ */
 function toComponentRole(dbRole: string | null | undefined): UserRole {
-  if (!dbRole) return 'viewer'
-  return DB_ROLE_MAP[dbRole] ?? 'viewer'
+  return isDbUserRole(dbRole) ? dbRole : 'viewer'
 }
 
 function toRelativeTime(iso: string | null | undefined): string {
@@ -36,6 +33,7 @@ function toRelativeTime(iso: string | null | undefined): string {
 export default function Page() {
   const [activeTab, setActiveTab] = React.useState<'internal' | 'external'>('internal')
   const { data: rawUsers, isLoading, mutate } = useSWR('admin-users', getUsers)
+  const { toast } = useToast()
 
   // Map DB profile shape → UsersRolesPage UserProfile shape
   const users: UserProfile[] = React.useMemo(() => (rawUsers ?? []).map((u) => ({
@@ -50,8 +48,46 @@ export default function Page() {
   })), [rawUsers])
 
   const handleUpdateRole = async (userId: string, role: UserRole) => {
-    await updateUserRole(userId, role)
+    const res = await updateUserRole(userId, role)
+    if (res?.error) {
+      toast({ variant: 'danger', title: 'Role Not Updated', description: res.error, duration: 6000 })
+      return
+    }
     mutate()
+  }
+
+  const handleInvite = async (data: {
+    email: string
+    full_name: string
+    role: UserRole
+    department?: string
+  }) => {
+    const res = await inviteInternalUser({
+      email: data.email,
+      fullName: data.full_name,
+      role: data.role,
+      department: data.department,
+      siteUrl: window.location.origin,
+    })
+
+    // Throwing lets UsersRolesPage show a failure toast instead of "Sent".
+    if (res.error) throw new Error(res.error)
+
+    mutate()
+
+    if (res.inviteLink) {
+      try {
+        await navigator.clipboard.writeText(res.inviteLink)
+        toast({
+          variant: 'success',
+          title: res.isExisting ? 'Existing User Updated' : 'Invite Created',
+          description: `Sign-in link for ${data.email} copied to your clipboard.`,
+          duration: 8000,
+        })
+      } catch {
+        // Clipboard access can be blocked; the invite itself still succeeded.
+      }
+    }
   }
 
   // Wait for data before rendering so the component initialises with real rows
@@ -88,6 +124,7 @@ export default function Page() {
           users={users}
           totalCount={users.length}
           isLoading={false}
+          onInvite={handleInvite}
           onUpdateRole={handleUpdateRole}
         />
       )}
