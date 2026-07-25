@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   FileText,
   MessageSquare,
@@ -604,13 +605,13 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
         <ApprovalQueue items={approvals} loading={loading} maxVisible={5} />
       </CardContent>
       <div className="border-t border-slate-100 dark:border-border px-5 py-3 text-center">
-        <a
+        <Link
           href="/approvals"
           className="inline-flex items-center gap-1 text-sm text-sky-600 hover:underline dark:text-sky-400"
         >
           View All Approvals
           <ArrowRight className="size-3.5" aria-hidden />
-        </a>
+        </Link>
       </div>
     </Card>
   )
@@ -764,9 +765,9 @@ export function ProjectDetailPage({
 
       {/* Breadcrumb */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1 mb-4 -mt-2">
-        <a href="/projects" className="text-sm text-sky-600 hover:underline dark:text-sky-400">
+        <Link href="/projects" className="text-sm text-sky-600 hover:underline dark:text-sky-400">
           Projects
-        </a>
+        </Link>
         <ChevronRight className="size-3.5 text-slate-400 dark:text-muted-foreground" aria-hidden />
         <span className="text-sm text-slate-500 dark:text-muted-foreground">{project.name}</span>
       </nav>

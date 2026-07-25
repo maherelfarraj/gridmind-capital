@@ -215,7 +215,6 @@ export function LoginPage({
   /* Surface external errors as toasts */
   React.useEffect(() => {
     if (externalError) addToast('error', externalError)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalError])
 
   function addToast(type: ToastItem['type'], message: string) {

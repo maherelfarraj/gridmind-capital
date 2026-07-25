@@ -438,6 +438,35 @@ function RowActions({ user, onToggleStatus, onDelete, onEditRole }: RowActionsPr
    LOADING SKELETON
 ───────────────────────────────────────────── */
 
+// Declared at module scope, not inside the page component. A component created
+// during render is a new type each render, so React remounts the button instead
+// of updating it, which can drop focus mid-interaction.
+function SortableHeader({
+  label,
+  field,
+  sort,
+  setSort,
+}: {
+  label: string
+  field: string
+  sort: string
+  setSort: (next: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (sort === `${field}_az` || sort === field || sort === 'newest') setSort(`${field}_za`)
+        else setSort(`${field}_az`)
+      }}
+      className="flex items-center gap-1 uppercase tracking-wider text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+    >
+      {label}
+      <ArrowUpDown className="size-3 opacity-60" />
+    </button>
+  )
+}
+
 function SkeletonRow() {
   return (
     <tr className="border-b border-slate-100">
@@ -1025,23 +1054,6 @@ export function UsersRolesPage({
     setSelected(new Set())
   }
 
-  /* ── Sort header ── */
-  function SortableHeader({ label, field }: { label: string; field: string }) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          if (sort === `${field}_az` || sort === field || sort === 'newest') setSort(`${field}_za`)
-          else setSort(`${field}_az`)
-        }}
-        className="flex items-center gap-1 uppercase tracking-wider text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
-      >
-        {label}
-        <ArrowUpDown className="size-3 opacity-60" />
-      </button>
-    )
-  }
-
   return (
     <>
       <div className="flex flex-col gap-6 p-6 bg-slate-50 min-h-screen">
@@ -1101,12 +1113,12 @@ export function UsersRolesPage({
                       className="rounded border-slate-300 text-[#0a192f] focus:ring-[#0a192f]/30 cursor-pointer"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left"><SortableHeader label="User" field="name" /></th>
-                  <th className="w-44 px-4 py-3 text-left"><SortableHeader label="Role" field="role" /></th>
+                  <th className="px-4 py-3 text-left"><SortableHeader label="User" field="name" sort={sort} setSort={setSort} /></th>
+                  <th className="w-44 px-4 py-3 text-left"><SortableHeader label="Role" field="role" sort={sort} setSort={setSort} /></th>
                   <th className="w-36 px-4 py-3 text-left hidden md:table-cell">
                     <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Department</span>
                   </th>
-                  <th className="w-28 px-4 py-3 text-left"><SortableHeader label="Status" field="status" /></th>
+                  <th className="w-28 px-4 py-3 text-left"><SortableHeader label="Status" field="status" sort={sort} setSort={setSort} /></th>
                   <th className="w-36 px-4 py-3 text-left hidden lg:table-cell">
                     <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Last Active</span>
                   </th>

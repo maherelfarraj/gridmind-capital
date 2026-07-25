@@ -138,7 +138,6 @@ export function excelFileName(code: string, register: string): string {
 export function exportToExcel<T>(opts: {
   code: string
   register: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sheets: ExcelSheet<any>[]
 }): void {
   const wb = XLSX.utils.book_new()
