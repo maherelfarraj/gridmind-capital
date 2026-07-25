@@ -357,12 +357,23 @@ export async function getRiskHeatmap(): Promise<HeatmapRisk[]> {
 
   if (error || !data) return []
 
-  const LVL: Record<string, number> = { low: 1, medium: 2, high: 3, very_high: 3, critical: 3 }
+  // `probability` and `impact` are INTEGER columns on a 1-5 risk scale, but the
+  // heatmap widget is a 3x3 grid keyed 1 (Low) / 2 (Med) / 3 (High). Bucket the
+  // 1-5 value down to 1-3. (Previously this called `.toLowerCase()` on the number,
+  // which threw "toLowerCase is not a function" and 500'd the whole dashboard.)
+  const toBucket = (v: unknown): number => {
+    if (v == null) return 2          // null/undefined → Medium (neutral default)
+    const n = typeof v === 'number' ? v : Number(v)
+    if (!Number.isFinite(n) || n < 1) return 2 // unknown/invalid → Medium
+    if (n <= 2) return 1             // 1-2 → Low
+    if (n === 3) return 2            // 3   → Medium
+    return 3                         // 4-5 → High
+  }
   return data.map((r) => ({
     id:    r.id,
     label: r.title ?? 'Risk',
-    p:     LVL[(r.probability ?? 'medium').toLowerCase()] ?? 2,
-    i:     LVL[(r.impact ?? 'medium').toLowerCase()] ?? 2,
+    p:     toBucket(r.probability),
+    i:     toBucket(r.impact),
   }))
 }
 
