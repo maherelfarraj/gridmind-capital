@@ -308,10 +308,15 @@ export function ClientReport({ projectId }: { projectId: string }) {
         <section>
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Project Overview</h3>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm md:grid-cols-3">
-            <Fact k="Technology" v={s.project.technology} />
+            <Fact k="Technology" v={s.project.technology ?? NOT_SET_LABEL} />
             {/* Unguarded interpolation would print a literal "null MW". */}
             <Fact k="Capacity" v={s.project.capacityMw != null ? `${s.project.capacityMw} MW` : NOT_SET_LABEL} />
-            <Fact k="Location" v={`${s.project.location}, ${s.project.country}`} />
+            {/* Join only the parts we actually have: a NULL site would otherwise
+                print "null, Jordan" in a lender-facing document. */}
+            <Fact
+              k="Location"
+              v={[s.project.location, s.project.country].filter(Boolean).join(', ') || NOT_SET_LABEL}
+            />
             <Fact k="Target completion" v={fmtDate(s.project.targetCompletion)} />
             <Fact k="Current gate" v={s.progress.currentGate} />
             <Fact k="Overall progress" v={`${s.progress.percentComplete}%`} />

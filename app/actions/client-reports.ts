@@ -22,6 +22,7 @@ import { revalidatePath } from 'next/cache'
 import { logExport } from '@/app/actions/exports'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { numOrNull } from '@/lib/format-nullable'
 const BUCKET = 'reports'
 const WRITE_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']
 
@@ -48,7 +49,9 @@ const canWrite = (role: string | null) => role == null || WRITE_ROLES.includes(r
 // ─── Client-safe snapshot ─────────────────────────────────────
 
 export interface ClientReportSnapshot {
-  project: { code: string; name: string; technology: string; capacityMw: number; location: string; country: string; targetCompletion: string | null }
+  // Nullable where the DB is nullable, so the view labels absence ("Not set")
+  // instead of the mapper inventing "0 MW" / "—" for a lender.
+  project: { code: string; name: string; technology: string | null; capacityMw: number | null; location: string | null; country: string | null; targetCompletion: string | null }
   progress: { currentGate: string; percentComplete: number; health: string; status: string }
   gates: { code: string; name: string; status: string; reviewedAt: string | null }[]
   milestones: { title: string; plannedDate: string | null; amount: number; status: string }[]
@@ -87,10 +90,14 @@ async function compileSnapshot(admin: Admin, projectId: string): Promise<ClientR
     project: {
       code: p.code as string,
       name: p.name as string,
-      technology: (p.technology as string) ?? '—',
-      capacityMw: num(p.capacity_mw),
-      location: (p.location as string) ?? '—',
-      country: (p.country as string) ?? '—',
+      technology: (p.technology as string | null) ?? null,
+      // Keep NULL as NULL: `num()` mapped it to 0, which printed a fabricated
+      // "0 MW" in a lender document and made the view's null-check dead code.
+      capacityMw: numOrNull(p.capacity_mw),
+      // '—' here is truthy, so it leaked into the "site, country" join as
+      // "—, Jordan". Leave absence to the view to label.
+      location: (p.location as string | null) ?? null,
+      country: (p.country as string | null) ?? null,
       targetCompletion: (p.target_completion as string) ?? null,
     },
     progress: {
