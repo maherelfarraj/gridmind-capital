@@ -64,6 +64,25 @@ export function formatMoneyExact(value: number | null | undefined): string {
   }).format(value)
 }
 
+/**
+ * "site, country" for display, tolerating either part being NULL and avoiding a
+ * duplicated country. Site strings are free text and are often entered as
+ * "East Amman, Jordan", so a naive join yields "East Amman, Jordan, Jordan".
+ * Returns "Not set" only when both parts are absent.
+ */
+export function formatLocation(
+  site: string | null | undefined,
+  country: string | null | undefined,
+): string {
+  const s = site?.trim() || null
+  const c = country?.trim() || null
+  if (!s) return c ?? NOT_SET_LABEL
+  if (!c) return s
+  // Already ends with ", Jordan" or is exactly "Jordan" -> don't append again.
+  const alreadyNamed = new RegExp(`(^|,\\s*)${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(s)
+  return alreadyNamed ? s : `${s}, ${c}`
+}
+
 /** Capacity with unit, or "Not set" when NULL. A real 0 renders as "0 MW". */
 export function formatCapacity(
   value: number | null | undefined,

@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
-import { NOT_SET_LABEL } from '@/lib/format-nullable'
+import { NOT_SET_LABEL, formatLocation } from '@/lib/format-nullable'
 import {
   listClientReports,
   previewClientReport,
@@ -311,12 +311,11 @@ export function ClientReport({ projectId }: { projectId: string }) {
             <Fact k="Technology" v={s.project.technology ?? NOT_SET_LABEL} />
             {/* Unguarded interpolation would print a literal "null MW". */}
             <Fact k="Capacity" v={s.project.capacityMw != null ? `${s.project.capacityMw} MW` : NOT_SET_LABEL} />
-            {/* Join only the parts we actually have: a NULL site would otherwise
-                print "null, Jordan" in a lender-facing document. */}
-            <Fact
-              k="Location"
-              v={[s.project.location, s.project.country].filter(Boolean).join(', ') || NOT_SET_LABEL}
-            />
+            {/* Join only the parts we have (a NULL site would otherwise print
+                "null, Jordan"), and skip the country when the site string
+                already names it, so "East Amman, Jordan" does not become
+                "East Amman, Jordan, Jordan". */}
+            <Fact k="Location" v={formatLocation(s.project.location, s.project.country)} />
             <Fact k="Target completion" v={fmtDate(s.project.targetCompletion)} />
             <Fact k="Current gate" v={s.progress.currentGate} />
             <Fact k="Overall progress" v={`${s.progress.percentComplete}%`} />
