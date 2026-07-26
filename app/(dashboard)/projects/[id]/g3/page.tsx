@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import useSWR from 'swr'
 import { getG3Data } from '@/app/actions/procurement'
+import { getProject } from '@/app/actions/projects'
 import { motion } from 'framer-motion'
 import {
   BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
@@ -1343,6 +1344,13 @@ export default function G3ProcurementPage() {
     () => getG3Data(id!),
   )
 
+  const { data: project } = useSWR(
+    id ? `project-${id}` : null,
+    () => getProject(id!),
+  )
+  const currentGate    = `G${project?.gate ?? 3}`
+  const completedGates = Array.from({ length: Math.max(0, project?.gate ?? 3) }, (_, i) => `G${i}`)
+
   // Fall back to mock while data loads; cast to page-local types (compatible shapes)
   const rfqs      = ((g3Data && g3Data.rfqs.length      > 0 ? g3Data.rfqs      : null) ?? MOCK_RFQS)      as unknown as RFQ[]
   const vendors   = ((g3Data && g3Data.vendors.length   > 0 ? g3Data.vendors   : null) ?? MOCK_VENDORS)   as unknown as Vendor[]
@@ -1390,7 +1398,7 @@ export default function G3ProcurementPage() {
       </div>
 
       {/* Phase gate stepper */}
-      <PhaseGateStepper currentGate="G3" completedGates={['G0', 'G1', 'G2']} projectId={id} />
+      <PhaseGateStepper currentGate={currentGate} completedGates={completedGates} projectId={id} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

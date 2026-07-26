@@ -373,14 +373,3 @@ export function filterSectionsByRole(sections: NavSection[], role: UserRole): Na
     }))
     .filter((section) => section.items.length > 0)
 }
-
-// ─────────────────────────────────────────────────────────────
-// Mock current user (replace with real auth session)
-// ─────────────────────────────────────────────────────────────
-
-export const MOCK_USER = {
-  name: 'Alex Carter',
-  role: 'admin' as UserRole,
-  roleLabel: 'Platform Admin',
-  initials: 'AC',
-}

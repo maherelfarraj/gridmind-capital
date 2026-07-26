@@ -6,7 +6,6 @@ export {
   NAV_BOTTOM,
   PHASE_META,
   filterNavByRole,
-  MOCK_USER,
 } from './nav-config'
 export type {
   NavItem,

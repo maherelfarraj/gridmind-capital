@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import useSWR from 'swr'
 import { getG2Data } from '@/app/actions/engineering'
+import { getProject } from '@/app/actions/projects'
 import {
   ChevronRight, Plus, MessageCircle, Send, FileUp, X, Zap, CheckCircle,
   Clock, FileText, Eye, AlertTriangle, Search, ChevronDown, Download,
@@ -1070,6 +1071,13 @@ export default function G2EngineeringPage() {
     () => getG2Data(projectId),
   )
 
+  const { data: project } = useSWR(
+    projectId ? `project-${projectId}` : null,
+    () => getProject(projectId),
+  )
+  const currentGate    = `G${project?.gate ?? 2}`
+  const completedGates = Array.from({ length: Math.max(0, project?.gate ?? 2) }, (_, i) => `G${i}`)
+
   // Use real data when available, fall back to mock while loading
   const packages     = g2Data?.packages     ?? MOCK_PACKAGES
   const drawings     = g2Data?.drawings     ?? MOCK_DRAWINGS
@@ -1124,7 +1132,7 @@ export default function G2EngineeringPage() {
       </div>
 
       {/* Phase Gate Stepper */}
-      <PhaseGateStepper currentGate="G2" completedGates={['G0', 'G1']} projectId={projectId} />
+      <PhaseGateStepper currentGate={currentGate} completedGates={completedGates} projectId={projectId} />
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

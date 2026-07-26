@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import useSWR from 'swr'
 import { getG6Data } from '@/app/actions/commissioning'
+import { getProject } from '@/app/actions/projects'
 import { ChevronRight, Plus, TrendingUp, Zap, AlertTriangle, FlaskConical, CheckCircle, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
@@ -64,6 +65,13 @@ export default function G6Page() {
     () => getG6Data(id!),
   )
 
+  const { data: project } = useSWR(
+    id ? `project-${id}` : null,
+    () => getProject(id!),
+  )
+  const currentGate    = `G${project?.gate ?? 6}`
+  const completedGates = Array.from({ length: Math.max(0, project?.gate ?? 6) }, (_, i) => `G${i}`)
+
   const testPackages = ((g6Data && g6Data.testPackages.length > 0
     ? g6Data.testPackages : null) ?? MOCK_TEST_PACKAGES) as unknown as typeof MOCK_TEST_PACKAGES
 
@@ -123,9 +131,9 @@ export default function G6Page() {
           {/* Gate Stepper */}
           <div className="mb-6">
             <PhaseGateStepper
-              currentGate="G6"
-              completedGates={['G0', 'G1', 'G2', 'G3', 'G4', 'G5']}
-              onGateClick={(gate: GateDef, _state: GateState) => { if (gate.code !== 'G6') window.location.href = `/projects/${id}/${gate.code.toLowerCase()}` }}
+              currentGate={currentGate}
+              completedGates={completedGates}
+              onGateClick={(gate: GateDef, _state: GateState) => { if (gate.code !== currentGate) window.location.href = `/projects/${id}/${gate.code.toLowerCase()}` }}
             />
           </div>
 

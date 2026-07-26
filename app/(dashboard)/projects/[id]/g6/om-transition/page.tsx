@@ -2,6 +2,8 @@
 import React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import useSWR from 'swr'
+import { getProject } from '@/app/actions/projects'
 import {
   ChevronRight, CheckCircle2, Circle, PartyPopper, X,
   BarChart2, Calendar, Users, FileCheck2, Zap, Award,
@@ -239,6 +241,13 @@ export default function G6OmTransitionPage() {
   const { id } = useParams<{ id: string }>()
   const [showCelebration, setShowCelebration] = React.useState(false)
 
+  const { data: project } = useSWR(
+    id ? `project-${id}` : null,
+    () => getProject(id!),
+  )
+  const currentGate    = `G${project?.gate ?? 6}`
+  const completedGates = Array.from({ length: Math.max(0, project?.gate ?? 6) }, (_, i) => `G${i}`)
+
   const complete = MOCK_MILESTONES.filter(m => m.status === 'complete').length
   const allDone  = complete === MOCK_MILESTONES.length
   const pct      = Math.round((complete / MOCK_MILESTONES.length) * 100)
@@ -310,8 +319,8 @@ export default function G6OmTransitionPage() {
         {/* Phase gate stepper */}
         <div className="mb-6">
           <PhaseGateStepper
-            currentGate="G6"
-            completedGates={['G0', 'G1', 'G2', 'G3', 'G4', 'G5']}
+            currentGate={currentGate}
+            completedGates={completedGates}
             onGateClick={(gate: GateDef, _state: GateState) => {
               if (gate.code !== 'G6') {
                 window.location.href = `/projects/${id}/${gate.code.toLowerCase()}`

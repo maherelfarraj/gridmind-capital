@@ -17,6 +17,7 @@ import {
   MOCK_SUBCONTRACTORS, DISCIPLINE_PROGRESS,
 } from '@/components/g4/data'
 import { getG4Data } from '@/app/actions/construction'
+import { getProject } from '@/app/actions/projects'
 import { WorkPackagesTab }  from '@/components/g4/work-packages-tab'
 import { HSETab }           from '@/components/g4/hse-tab'
 import { PermitsTab }       from '@/components/g4/permits-tab'
@@ -47,6 +48,13 @@ export default function G4ConstructionPage() {
     projectId ? `g4-data-${projectId}` : null,
     () => getG4Data(projectId),
   )
+
+  const { data: project } = useSWR(
+    projectId ? `project-${projectId}` : null,
+    () => getProject(projectId),
+  )
+  const currentGate    = `G${project?.gate ?? 4}`
+  const completedGates = Array.from({ length: Math.max(0, project?.gate ?? 4) }, (_, i) => `G${i}`)
 
   const workPackages = (g4Data && g4Data.workPackages.length > 0
     ? g4Data.workPackages : null) as unknown as typeof MOCK_WORK_PACKAGES ?? MOCK_WORK_PACKAGES
@@ -110,7 +118,7 @@ export default function G4ConstructionPage() {
           </div>
         </div>
 
-        <PhaseGateStepper currentGate="G4" completedGates={['G0', 'G1', 'G2', 'G3']} projectId={projectId} />
+        <PhaseGateStepper currentGate={currentGate} completedGates={completedGates} projectId={projectId} />
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard icon={<HardHat    className="size-5 text-orange-600" />}  label="Work Packages"     value="24"      color="bg-orange-100" />

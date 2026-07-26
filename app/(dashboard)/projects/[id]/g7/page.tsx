@@ -17,6 +17,7 @@ import {
   MOCK_MAINTENANCE, MOCK_WARRANTIES, MOCK_SLA,
 } from '@/components/g7/data'
 import { getG7Data } from '@/app/actions/handover'
+import { getProject } from '@/app/actions/projects'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TabId = 'checklist' | 'assets' | 'om-transition'
@@ -30,6 +31,18 @@ export default function G7HandoverPage() {
     id ? `g7-data-${id}` : null,
     () => getG7Data(id!),
   )
+
+  // G7 is a post-closeout page that sits beyond the G0–G6 gate model.
+  // Show the stepper with the last recognised gate (G6) as current and
+  // G0–G5 as completed, regardless of DB state, so all nodes are visible.
+  const { data: project } = useSWR(
+    id ? `project-${id}` : null,
+    () => getProject(id!),
+  )
+  // Cap at G6 (index 6) since GATE_DEFINITIONS only defines G0–G6.
+  const rawGate        = Math.min(project?.gate ?? 6, 6)
+  const currentGateG7  = `G${rawGate}`
+  const completedGatesG7 = Array.from({ length: Math.max(0, rawGate) }, (_, i) => `G${i}`)
 
   // Fall back to mock while loading / DB empty
   const milestones  = ((g7Data && g7Data.milestones.length > 0
@@ -87,8 +100,8 @@ export default function G7HandoverPage() {
 
         {/* Gate stepper */}
         <PhaseGateStepper
-          currentGate="G7"
-          completedGates={['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']}
+          currentGate={currentGateG7}
+          completedGates={completedGatesG7}
           projectId={id}
         />
 
