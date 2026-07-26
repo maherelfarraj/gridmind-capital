@@ -1095,11 +1095,12 @@
     "signOff": "Sign Off",
     "noConnection": "No internet connection — working offline",
     "tabs": {
-      "today": "Today",
-      "punch": "Punch",
-      "photos": "Photos",
-      "reports": "Reports"
-    },
+    "today": "Today",
+    "punch": "Punch",
+    "photos": "Photos",
+    "reports": "Reports",
+    "schedule": "Schedule"
+  },
     "dailyReport": {
       "title": "Daily Report",
       "project": "Project",

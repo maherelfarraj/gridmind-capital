@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { CalendarDays, ClipboardCheck, Camera, FileText, Globe } from 'lucide-react'
+import { CalendarDays, ClipboardCheck, Camera, FileText, Globe, TrendingUp } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import { ToastProvider } from '@/components/ui/toast'
@@ -72,10 +72,11 @@ function BottomTabs() {
   const t = useTranslations('field')
 
   const TABS = [
-    { href: '/field',         labelKey: 'tabs.today',   icon: CalendarDays },
-    { href: '/field/punch',   labelKey: 'tabs.punch',   icon: ClipboardCheck },
-    { href: '/field/photos',  labelKey: 'tabs.photos',  icon: Camera },
-    { href: '/field/reports', labelKey: 'tabs.reports', icon: FileText },
+    { href: '/field',          labelKey: 'tabs.today',    icon: CalendarDays },
+    { href: '/field/punch',    labelKey: 'tabs.punch',    icon: ClipboardCheck },
+    { href: '/field/photos',   labelKey: 'tabs.photos',   icon: Camera },
+    { href: '/field/reports',  labelKey: 'tabs.reports',  icon: FileText },
+    { href: '/field/schedule', labelKey: 'tabs.schedule', icon: TrendingUp },
   ] as const
 
   return (
