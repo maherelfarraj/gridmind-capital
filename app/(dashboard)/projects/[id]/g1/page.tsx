@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Gavel, Users, ChevronRight } from 'lucide-react'
 import { getProject } from '@/app/actions/projects'
-import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
+import { LivePhaseGateStepper } from '@/components/project/live-phase-gate-stepper'
+import { LiveGateBadge } from '@/components/project/live-gate-badge'
 
 export default async function G1Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -46,15 +47,18 @@ export default async function G1Page({ params }: { params: Promise<{ id: string 
               G1 · Project Baseline Approved — Development phase
             </p>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground shrink-0">
-            <span className="size-2 rounded-full" style={{ backgroundColor: '#3b82f6' }} aria-hidden />
-            {currentGate} · {project.gateName}
-          </span>
+          <LiveGateBadge projectId={id} fallbackGate={project.gate} fallbackGateName={project.gateName} />
         </div>
       </header>
 
       {/* Phase-gate stepper */}
-      <PhaseGateStepper currentGate={currentGate} completedGates={completedGates} />
+      {/* Live: revalidates projects.current_phase so the stepper cannot show a
+          stale gate after a G1 approval advances the project to G2. */}
+      <LivePhaseGateStepper
+        projectId={id}
+        currentGate={currentGate}
+        completedGates={completedGates}
+      />
 
       {/* Tabbed sections — link to G1 sub-pages */}
       <section>

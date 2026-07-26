@@ -320,8 +320,10 @@ export async function approveGate(input: {
   }
 
   revalidatePath('/team/gates')
-  // The stepper and status panel read projects.current_phase on these routes.
-  revalidatePath(`/projects/${projectId}`)
+  // 'layout' so every nested gate route (/projects/:id/g1, /g2, …) revalidates
+  // too — a plain revalidatePath matches only the exact path, which would leave
+  // the gate sub-pages serving a cached stepper.
+  revalidatePath(`/projects/${projectId}`, 'layout')
   revalidatePath('/projects')
   revalidatePath('/dashboard')
 
