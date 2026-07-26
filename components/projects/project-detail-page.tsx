@@ -38,6 +38,7 @@ import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/w
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
 import { RecordHistoryPanel } from '@/components/admin/audit-log-viewer'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
 import type {
   Project,
@@ -267,10 +268,12 @@ function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { pro
   // Prefer the numeric capacity_mw from the DB. Falling straight through to
   // SPEC_PROJECT_INFO showed the mock "2,000 MW" on every real project, because
   // the `capacity` display string is never populated by the server.
+  // `!= null`, not `> 0`: a real 0 MW (grid-only scope) is a value worth showing,
+  // while NULL means nobody has recorded a capacity yet.
   const capacityLabel =
-    typeof project.capacityMw === 'number' && project.capacityMw > 0
+    typeof project.capacityMw === 'number'
       ? `${project.capacityMw.toLocaleString()} MW`
-      : project.capacity ?? '—'
+      : project.capacity ?? NOT_SET_LABEL
 
   const info = {
     technology:     project.technology    || SPEC_PROJECT_INFO.technology,
@@ -632,9 +635,9 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ��────────────────────────────────────────────────────────────
 // Props + main page
-// ─────────────────────────────────────────────────────────────
+// ───────────────���─────────────────────────────────────────────
 
 export interface ProjectDetailPageProps {
   project: Project

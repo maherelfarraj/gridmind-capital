@@ -95,7 +95,9 @@ export function ProjectWizard({
         bess_mwh: Number(bessMwh) || 0,
         location: location.trim(),
         country: country.trim(),
-        budget_usd: 0,
+        // This wizard collects no budget, so send null ("not stated") rather
+        // than 0, which would announce a "$0" budget in the creation email.
+        budget_usd: null,
         target_completion: targetCompletion || null,
         pdPersonId: pd,
         pmPersonId: pm,

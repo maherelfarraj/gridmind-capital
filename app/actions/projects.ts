@@ -298,7 +298,13 @@ export interface CreateProjectFullInput {
   bess_mwh: number
   location: string
   country: string
-  budget_usd: number
+  /**
+   * NULL = the creator did not state a budget (the wizard has no budget field
+   * yet; it is set later via the edit form). Must not be faked as 0 — that
+   * would announce a "$0" budget in the creation email and mis-route the
+   * amount-threshold approval workflow.
+   */
+  budget_usd: number | null
   target_completion: string | null
   pdPersonId: string
   pmPersonId: string
@@ -419,7 +425,9 @@ export async function createProjectFull(
     'opportunity',
     projectId,
     code ?? `${codePrefix}001`,
-    input.budget_usd ? Number(input.budget_usd) : null,
+    // `!= null`, not truthiness: a real 0 budget is a stated amount and should
+    // be threshold-matched, not treated as "no amount given".
+    input.budget_usd != null ? Number(input.budget_usd) : null,
     actor.userId,
   )
   if (workflowResult.error) return rollback(`G0 approval workflow failed: ${workflowResult.error}`)
@@ -482,7 +490,8 @@ export async function createProjectFull(
     projectCode: code,
     projectName: input.name,
     technology: input.technology,
-    budgetUsd: 0,
+    // Was hardcoded 0, so every creation email announced a "$0" budget.
+    budgetUsd: input.budget_usd ?? null,
     projectId,
   }).catch(() => {})
 

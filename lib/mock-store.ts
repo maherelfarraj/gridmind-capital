@@ -66,13 +66,15 @@ export interface GmcProject {
   region: string
   siteCoordinates: string
   developerSpv: string
-  mwac: number
-  mwp: number
-  mwh?: number
+  /** NULL = capacity not recorded yet (renders "Not set", never "0 MW"). */
+  mwac: number | null
+  mwp: number | null
+  mwh?: number | null
   gridVoltage: string
   codTarget: string
   ppaType: 'PPA' | 'Merchant' | 'Hybrid'
-  capex: number
+  /** NULL = budget not recorded yet (renders "Not set", never "$0"). */
+  capex: number | null
   currency: string
   equityPct: number
   debtPct: number

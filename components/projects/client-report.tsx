@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 import {
   listClientReports,
   previewClientReport,
@@ -308,7 +309,8 @@ export function ClientReport({ projectId }: { projectId: string }) {
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Project Overview</h3>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm md:grid-cols-3">
             <Fact k="Technology" v={s.project.technology} />
-            <Fact k="Capacity" v={`${s.project.capacityMw} MW`} />
+            {/* Unguarded interpolation would print a literal "null MW". */}
+            <Fact k="Capacity" v={s.project.capacityMw != null ? `${s.project.capacityMw} MW` : NOT_SET_LABEL} />
             <Fact k="Location" v={`${s.project.location}, ${s.project.country}`} />
             <Fact k="Target completion" v={fmtDate(s.project.targetCompletion)} />
             <Fact k="Current gate" v={s.progress.currentGate} />

@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { mockStore, type GmcProject } from '@/lib/mock-store'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 import { getProjects, archiveProject, duplicateProject } from '@/app/actions/projects'
 import { parseGateParam } from '@/lib/gate-status'
 import type { Project } from '@/components/projects/projects-list-page'
@@ -54,12 +55,14 @@ function toGmcProject(p: Project): GmcProject {
     region: p.location || '—',
     siteCoordinates: 'N/A',
     developerSpv: p.client_name ?? 'N/A',
-    mwac: p.capacity_mw ?? 0,
-    mwp: p.capacity_mw ?? 0,
+    // `?? null`, not `?? 0`: an unrecorded capacity must stay distinguishable
+    // from a genuine 0 MW (grid/substation scopes legitimately have zero).
+    mwac: p.capacity_mw ?? null,
+    mwp: p.capacity_mw ?? null,
     gridVoltage: 'N/A',
     codTarget: p.target_cod ?? '',
     ppaType: 'PPA',
-    capex: p.budget_amount ?? 0,
+    capex: p.budget_amount ?? null,
     currency: 'USD',
     equityPct: 0,
     debtPct: 0,
@@ -74,9 +77,13 @@ function toGmcProject(p: Project): GmcProject {
   }
 }
 
-/** Format capacity for the MW column: "400 MW", "0 MW" only when truly zero. */
-function fmtMw(mw: number): string {
-  if (!mw) return '—'
+/**
+ * Format capacity for the MW column. NULL renders "Not set"; a real 0 renders
+ * "0 MW". The old `if (!mw)` collapsed both into "—", hiding the difference
+ * between "nobody entered a capacity" and "this scope genuinely has none".
+ */
+function fmtMw(mw: number | null | undefined): string {
+  if (mw == null) return NOT_SET_LABEL
   return `${mw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })} MW`
 }
 
@@ -84,7 +91,9 @@ function fmtMw(mw: number): string {
 type HealthColor = 'green' | 'amber' | 'red'
 
 /* ─── Helpers ───────────────────────────────────────────────── */
-function fmtBudget(n: number, cur: string): string {
+/** NULL budget renders "Not set" — never a fabricated "$0". */
+function fmtBudget(n: number | null | undefined, cur: string): string {
+  if (n == null) return NOT_SET_LABEL
   const sym = cur === 'USD' ? '$' : cur === 'GBP' ? '£' : cur === 'EUR' ? '€' : cur + ' '
   if (n >= 1e9) return `${sym}${(n / 1e9).toFixed(1)}B`
   if (n >= 1e6) return `${sym}${(n / 1e6).toFixed(0)}M`
@@ -396,10 +405,10 @@ export function ProjectRegistry() {
                       <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded text-xs font-medium">{p.type}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{p.country}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{fmtMw(p.mwac)}</td>
+                    <td className={cn('px-4 py-3 whitespace-nowrap', p.mwac == null ? 'italic text-muted-foreground' : 'text-slate-600 dark:text-muted-foreground')}>{fmtMw(p.mwac)}</td>
                     <td className="px-4 py-3"><GateBadge gate={p.currentGate} /></td>
                     <td className="px-4 py-3"><HealthDot health={p.health} /></td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{fmtBudget(p.capex, p.currency)}</td>
+                    <td className={cn('px-4 py-3 whitespace-nowrap', p.capex == null ? 'italic text-muted-foreground' : 'text-slate-600 dark:text-muted-foreground')}>{fmtBudget(p.capex, p.currency)}</td>
                     <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{p.team.projectDirector}</td>
                     <td className="px-4 py-3 text-slate-500 dark:text-muted-foreground whitespace-nowrap text-xs">{fmtDate(p.createdAt)}</td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>

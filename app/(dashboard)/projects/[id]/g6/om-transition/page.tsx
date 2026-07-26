@@ -15,6 +15,7 @@ import type { GateDef, GateState } from '@/components/project/phase-gate-stepper
 import { HandoverChecklist } from '@/components/g7/handover-checklist'
 import { AssetRegistry }     from '@/components/g7/asset-registry'
 import { OmTransition }      from '@/components/g7/om-transition'
+import { NOT_SET_LABEL }     from '@/lib/format-nullable'
 import {
   MOCK_MILESTONES,
   MOCK_ASSETS,
@@ -182,13 +183,14 @@ function CelebrationModal({
   onClose: () => void
   projectName?: string
   projectCode?: string
-  capacityMw?: number
+  capacityMw?: number | null
 }) {
   const stats = [
     { icon: <Calendar size={18} />,   label: 'Project Duration', value: '24 months' },
     { icon: <Users size={18} />,      label: 'Peak Headcount',   value: '412 people' },
     { icon: <FileCheck2 size={18} />, label: 'Docs Issued',      value: '1,847' },
-    { icon: <Zap size={18} />,        label: 'Capacity',         value: capacityMw ? `${capacityMw} MW` : '—' },
+    // `!= null`, not truthiness: 0 MW is a real value for grid-only scopes.
+    { icon: <Zap size={18} />,        label: 'Capacity',         value: capacityMw != null ? `${capacityMw} MW` : NOT_SET_LABEL },
     { icon: <BarChart2 size={18} />,  label: 'Budget Variance',  value: '+1.3%' },
     { icon: <Award size={18} />,      label: 'Safety Record',    value: '0 LTI' },
   ]
