@@ -22,7 +22,6 @@ import {
 import { G0IntakeForm } from '@/components/stage-gate/g0-intake-form'
 import { createProject } from '@/app/actions/projects'
 import { submitG0FormAction, type G0FormData } from '@/app/actions/gate-submissions'
-import { createApproval } from '@/app/actions/approvals'
 
 // ─── Metadata (consumed by the parent RSC layout) ─────────────
 export const dynamic = 'force-dynamic'
@@ -72,24 +71,14 @@ function SuccessScreen({
         </span>
       </div>
 
-      {/* CTA buttons */}
+      {/* CTA buttons — project is still pending approval, so primary action is View Approvals */}
       <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
-        <button
-          type="button"
-          onClick={() => router.push(`/projects/${projectId}`)}
+        <Link
+          href="/approvals"
           className="inline-flex items-center gap-2 rounded-lg bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] hover:opacity-90 transition-opacity px-5 py-2.5 text-sm font-semibold shadow-sm"
         >
-          Open Project <ArrowRight className="size-4" aria-hidden />
-        </button>
-
-        {approvalId && (
-          <Link
-            href="/approvals"
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card hover:bg-muted/60 transition-colors px-5 py-2.5 text-sm font-semibold text-foreground"
-          >
-            <Inbox className="size-4" /> View Approvals
-          </Link>
-        )}
+          <Inbox className="size-4" /> View G0 Approval <ArrowRight className="size-4" aria-hidden />
+        </Link>
 
         <Link
           href="/projects"
@@ -146,26 +135,8 @@ export default function G0IntakePage() {
       return
     }
 
-    // ── Step c: create approval + notify Executive Sponsor ───────
-    const approvalResult = await createApproval({
-      title:       `G0 Investment Intake — ${data.opportunityName}`,
-      description: data.description,
-      objectType:  'projects',
-      priority:    data.priority === 'Critical' ? 'critical'
-                   : data.priority === 'High'   ? 'high'
-                   : data.priority === 'Medium' ? 'normal'
-                   : 'low',
-      approverEmail:  'admin@gridmind.capital',
-      approverName:   'Executive Sponsor',
-      requestedBy:    data.projectSponsor || 'Project Team',
-      projectCode:    projectCode,
-      projectName:    `${data.technologyType || data.technology} — ${data.estimatedCapacityMw || data.capacityMwp} MW`,
-      amount:         parseFloat(data.budgetMax || data.capexEstimateUsd || '0') || undefined,
-    })
-
-    const approvalId = 'id' in approvalResult ? approvalResult.id : null
-
-    setState({ phase: 'success', projectId, projectCode, approvalId })
+    // Approval was created by createProject (same transaction).
+    setState({ phase: 'success', projectId, projectCode, approvalId: projectId })
     router.refresh()
   }
 
