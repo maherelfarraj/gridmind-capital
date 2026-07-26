@@ -264,9 +264,17 @@ function GateStatusCard({
 
 function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { project?: Project; projectId?: string }) {
   const [historyOpen, setHistoryOpen] = React.useState(false)
+  // Prefer the numeric capacity_mw from the DB. Falling straight through to
+  // SPEC_PROJECT_INFO showed the mock "2,000 MW" on every real project, because
+  // the `capacity` display string is never populated by the server.
+  const capacityLabel =
+    typeof project.capacityMw === 'number' && project.capacityMw > 0
+      ? `${project.capacityMw.toLocaleString()} MW`
+      : project.capacity ?? '—'
+
   const info = {
-    technology:     project.technology    ?? SPEC_PROJECT_INFO.technology,
-    capacity:       project.capacity      ?? SPEC_PROJECT_INFO.capacity,
+    technology:     project.technology    || SPEC_PROJECT_INFO.technology,
+    capacity:       capacityLabel,
     epcContractor:  project.epcContractor ?? SPEC_PROJECT_INFO.epcContractor,
     ownerEngineer:  project.ownerEngineer ?? SPEC_PROJECT_INFO.ownerEngineer,
     projectManager: project.projectManager ?? SPEC_PROJECT_INFO.projectManager,
@@ -791,7 +799,19 @@ export function ProjectDetailPage({
       )}
 
       {/* Project Command Center */}
-      <ProjectCommandCenter project={projectData} loading={isLoading} onBack={onBack} onLenderReport={onLenderReport} />
+      {/* onEdit/onComments/onDocuments MUST be forwarded — they were accepted as
+          props on this component but never passed down, so the header's Edit,
+          Comments and Documents buttons all had an undefined onClick and silently
+          did nothing when clicked. */}
+      <ProjectCommandCenter
+        project={projectData}
+        loading={isLoading}
+        onBack={onBack}
+        onEdit={onEdit}
+        onComments={onComments}
+        onDocuments={onDocuments}
+        onLenderReport={onLenderReport}
+      />
 
       {/* Phase Gate Stepper */}
       {!hideStepper && (

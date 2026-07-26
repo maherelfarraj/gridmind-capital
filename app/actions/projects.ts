@@ -542,16 +542,26 @@ export async function updateProject(
 
   if (error) return { error: error.message }
 
-  // Matches the direct-insert audit pattern used by createProject.
-  await supabase.from('audit_logs').insert({
+  // The table is `audit_log` (singular) with columns table_name/record_id/
+  // changed_by/old_values/new_values. NOTE: a DB trigger already logs the
+  // old/new values on every projects UPDATE, but it records changed_by = NULL
+  // because the admin client bypasses auth.uid(). This row supplies the missing
+  // actor attribution so "who changed the budget?" is answerable.
+  const { error: auditError } = await supabase.from('audit_log').insert({
     tenant_id: tenantId,
-    actor_id: actor.userId,
+    table_name: 'projects',
+    record_id: id,
     action: 'update',
-    entity_type: 'projects',
-    entity_id: id,
-    old_data: before,
-    new_data: patch,
+    changed_by: actor.userId,
+    old_values: before,
+    new_values: patch,
   })
+
+  // Don't fail the update if auditing fails, but never let it fail silently —
+  // a swallowed audit error is how a whole audit trail goes missing unnoticed.
+  if (auditError) {
+    console.log('[v0] updateProject: audit_log insert failed:', auditError.message)
+  }
 
   return {}
 }

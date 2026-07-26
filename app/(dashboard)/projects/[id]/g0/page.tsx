@@ -60,10 +60,28 @@ export default function G0Page() {
       location:     project.location || project.country || '—',
       country:      project.country || '—',
       client:       project.client,
-      description:  project.description || MOCK_CHARTER.description,
+      description:  project.description || '—',
       capex_estimate_usd: project.budgetUsd ?? 0,
       // A project that has advanced past G0 necessarily has an approved charter.
       status:       project.gate > 0 ? 'approved' : 'under_review',
+      // MOCK_CHARTER's remaining fields are NEOM/Sirius-specific (12.4% IRR,
+      // 1.35x DSCR, a 25-year NEOM PPA, 400MWp scope lists). Inheriting them
+      // would attribute another project's financials and scope to this one, so
+      // they are blanked until a real G0 charter record exists.
+      sponsor:      '—',
+      pmo_lead:     '—',
+      target_irr_pct: 0,
+      target_dscr:    0,
+      project_duration_months: 0,
+      fid_target:   '—',
+      cod_target:   project.targetCod
+        ? new Date(project.targetCod).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+        : '—',
+      strategic_rationale: '—',
+      scope_included: [],
+      scope_excluded: [],
+      assumptions:    [],
+      constraints:    [],
     }
   }, [project])
 
@@ -145,7 +163,7 @@ export default function G0Page() {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'charter'      && <CharterTab      formData={g0Data?.formData} />}
+          {activeTab === 'charter'      && <CharterTab      formData={g0Data?.formData} charter={charter} />}
           {activeTab === 'screening'    && <ScreeningTab    hasSubmission={g0Data?.hasSubmission} />}
           {activeTab === 'deliverables' && <DeliverablesTab />}
           {activeTab === 'stakeholders' && <StakeholdersTab liveData={g0Data?.stakeholders} />}
