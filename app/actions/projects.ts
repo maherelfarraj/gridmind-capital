@@ -456,15 +456,21 @@ export async function createProjectFull(
   const { error: gateErr } = await admin.from('phase_gates').insert(gateRows)
   if (gateErr) return rollback(`Gate seeding failed: ${gateErr.message}`)
 
-  // 5) Audit.
-  await admin.from('audit_logs').insert({
+  // 5) Audit. The table is `audit_log` (singular) with table_name/record_id/
+  // changed_by/new_values — the previous `audit_logs` insert silently wrote
+  // nothing, so project creation had no attributed audit trail.
+  const { error: auditErr } = await admin.from('audit_log').insert({
     tenant_id: tenantId,
-    actor_id: actor.userId,
+    table_name: 'projects',
+    record_id: projectId,
     action: 'insert',
-    entity_type: 'projects',
-    entity_id: projectId,
-    new_data: { code, name: input.name, pd: input.pdPersonId, pm: input.pmPersonId },
+    changed_by: actor.userId,
+    new_values: { code, name: input.name, pd: input.pdPersonId, pm: input.pmPersonId },
   })
+  // Creation already succeeded, so don't roll back — but surface the failure.
+  if (auditErr) {
+    console.log('[v0] createProject: audit_log insert failed:', auditErr.message)
+  }
 
   sendProjectCreatedEmail({
     to: 'admin@gridmind.capital',
