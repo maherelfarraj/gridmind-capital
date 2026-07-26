@@ -44,7 +44,7 @@ interface G0ApprovalReviewProps {
    * together with the decision, so a signature never exists on an undecided
    * approval. See SignatureDraft.
    */
-  onDecide:       (decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject', rationale: string, conditions?: string, signatureDraft?: SignatureDraft) => Promise<void>
+  onDecide:       (decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject', rationale: string, conditions?: Array<{ title: string; due_date: string }>, signatureDraft?: SignatureDraft) => Promise<void>
   onDelegate:     (delegateId: string, reason: string) => Promise<void>
   onRequestInfo:  (message: string) => Promise<void>
   isSubmitting?:  boolean

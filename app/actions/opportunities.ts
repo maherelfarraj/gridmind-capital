@@ -14,6 +14,29 @@ const STATUS_COLORS: Record<string, string> = {
   completed:    '#10b981',
 }
 
+export interface OpportunitiesDashboard {
+  projects: Array<{
+    id: string
+    code: string
+    name: string
+    technology: string | null
+    capacity_mw: number | null
+    country: string | null
+    location: string | null
+    status: string
+    health: string | null
+    budget_usd: string | null
+    created_at: string
+    current_phase: number
+  }>
+  approvals: Array<{
+    id: string
+    title: string | null
+    status: string
+    object_type: string | null
+  }>
+}
+
 export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboard> {
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
