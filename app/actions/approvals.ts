@@ -126,7 +126,11 @@ export async function createApprovalWorkflow(
     requiredRoles = rule.required_roles ?? ['tenant_admin']
   }
 
-  // Create approvals row
+  // Resolve the first level approver (will be assigned_to on approvals.assignee_id)
+  const firstLevelRole = requiredRoles[0] ?? 'tenant_admin'
+  const firstLevelAssigneeId = await resolveApproveeSeat(supabase, tenantId, firstLevelRole)
+
+  // Create approvals row with initial assignee = first level approver
   const { data: approval, error: apprErr } = await supabase
     .from('approvals')
     .insert({
@@ -138,6 +142,7 @@ export async function createApprovalWorkflow(
       priority: 'normal',
       amount,
       requester_id: createdBy,
+      assignee_id: firstLevelAssigneeId,
       rule_id: rule?.id,
     })
     .select('id')
@@ -305,6 +310,41 @@ export async function getApprovalEvents(approvalId: string) {
     metadata: e.metadata as Record<string, unknown> | null,
     timestamp: e.created_at,
   }))
+}
+
+/**
+ * Backfill decided_by for OPP-001 (known row with known PD).
+ * Sets decided_by to ahmad@gsi.jo profile id (the approver).
+ * Single-row attribution; everything else stays NULL (honest unknown).
+ */
+export async function backfillOPP001DecidedBy(): Promise<{ updated: number; error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return { updated: 0, error: gate.error }
+
+  const supabase = createAdminClient()
+
+  // Find ahmad@gsi.jo profile id
+  const { data: ahmad } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', 'ahmad@gsi.jo')
+    .limit(1)
+    .single()
+
+  if (!ahmad) {
+    return { updated: 0, error: 'Profile ahmad@gsi.jo not found' }
+  }
+
+  // Update OPP-001 approval decided_by
+  const { error } = await supabase
+    .from('approvals')
+    .update({ decided_by: ahmad.id })
+    .eq('object_id', (await supabase.from('projects').select('id').eq('code', 'OPP-001').single()).data?.id)
+    .eq('status', 'approved')
+
+  if (error) return { updated: 0, error: error.message }
+
+  return { updated: 1 }
 }
 
 /**
@@ -850,6 +890,7 @@ export async function decideApproval(opts: {
         .from('approvals')
         .update({
           status: 'approved',
+          decided_by: gate.actor.userId,
           ...decisionStamp('approved'),
           updated_at: new Date().toISOString(),
         })
@@ -875,6 +916,7 @@ export async function decideApproval(opts: {
         status:     decisionStatus,
         decision:   opts.decision,
         decision_note: opts.rationale,
+        decided_by: gate.actor.userId,
         ...decisionStamp(decisionStatus),
         updated_at: new Date().toISOString(),
       })
@@ -1205,6 +1247,7 @@ export async function syncQueuedApproval(opts: {
     .from('approvals')
     .update({
       status: opts.decision,
+      decided_by: gate.actor.userId,
       ...decisionStamp(opts.decision),
       description,
       updated_at: new Date().toISOString(),
@@ -1260,7 +1303,7 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
 
   const { error } = await supabase
     .from('approvals')
-    .update({ status, ...decisionStamp(status), updated_at: new Date().toISOString() })
+    .update({ status, decided_by: gate.actor.userId, ...decisionStamp(status), updated_at: new Date().toISOString() })
     .eq('id', id)
 
   // Third decision path — kept in sync via the shared helper.
