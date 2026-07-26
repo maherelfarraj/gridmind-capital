@@ -262,6 +262,7 @@ export interface CreateProjectFullInput {
   bess_mwh: number
   location: string
   country: string
+  budget_usd: number
   target_completion: string | null
   pdPersonId: string
   pmPersonId: string
@@ -288,6 +289,7 @@ export async function createProjectFull(
 
   const { getActor } = await import('@/lib/db/queries')
   const actor = await getActor()
+  if (!actor.userId) return { error: 'User context required' }
   const admin = createAdminClient()
   const tenantId = actor.tenantId ?? (await getCurrentTenantId())
 
@@ -380,8 +382,8 @@ export async function createProjectFull(
   const workflowResult = await createApprovalWorkflow(
     'opportunity',
     projectId,
-    code,
-    input.budget_usd ?? null,
+    code ?? `${codePrefix}001`,
+    input.budget_usd ? Number(input.budget_usd) : null,
     actor.userId,
   )
   if (workflowResult.error) return rollback(`G0 approval workflow failed: ${workflowResult.error}`)

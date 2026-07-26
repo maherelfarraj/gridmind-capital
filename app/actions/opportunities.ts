@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import { getCurrentTenantId } from '@/lib/tenant'
 import { createApprovalWorkflow } from '@/app/actions/approvals'
+import type { Opportunity, OpportunitiesDashboard } from '@/lib/types/action-types'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:        '#94a3b8',
@@ -12,29 +13,6 @@ const STATUS_COLORS: Record<string, string> = {
   on_hold:      '#f59e0b',
   cancelled:    '#64748b',
   completed:    '#10b981',
-}
-
-export interface OpportunitiesDashboard {
-  projects: Array<{
-    id: string
-    code: string
-    name: string
-    technology: string | null
-    capacity_mw: number | null
-    country: string | null
-    location: string | null
-    status: string
-    health: string | null
-    budget_usd: string | null
-    created_at: string
-    current_phase: number
-  }>
-  approvals: Array<{
-    id: string
-    title: string | null
-    status: string
-    object_type: string | null
-  }>
 }
 
 export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboard> {
@@ -86,18 +64,13 @@ export async function loadOpportunitiesDashboard(): Promise<OpportunitiesDashboa
   }, {})
 
   return {
+    items,
     total:      items.length,
-    submitted:  approvals.filter((a) => a.status === 'pending').length,
-    // The approval_status enum is pending | approved | rejected | delegated —
-    // there is no `under_review` member, so this KPI was hardwired to 0.
     underReview:approvals.filter((a) => a.status === 'delegated').length,
     approved:   approvals.filter((a) => a.status === 'approved').length,
     rejected:   approvals.filter((a) => a.status === 'rejected').length,
-    byTechnology: Object.entries(byTech).map(([name, value]) => ({ name, value })),
-    byStatus: Object.entries(statusCounts).map(([name, value]) => ({
-      name, value, color: STATUS_COLORS[name] ?? '#94a3b8',
-    })),
-    items,
+    byTechnology: byTech,
+    byStatus: statusCounts,
   }
 }
 

@@ -132,7 +132,7 @@ function NewOpportunityModal({ open, onClose, onCreated }: {
 
 function OpportunityCard({ item, onSubmit }: { item: Opportunity; onSubmit: (id: string) => void }) {
   const health  = HEALTH_META[item.health] ?? HEALTH_META.green
-  const budgetM = item.budget_usd ? (item.budget_usd / 1_000_000).toFixed(0) : '—'
+  const budgetM = item.budget_usd ? (Number(item.budget_usd) / 1_000_000).toFixed(0) : '—'
   const approvalIcon = {
     pending:      <Clock   className="size-3.5 text-[#f59e0b]" />,
     under_review: <Clock   className="size-3.5 text-[#3b82f6]" />,
@@ -187,7 +187,7 @@ export function OpportunitiesPage() {
     const items = data?.items ?? []
     if (!search) return items
     const q = search.toLowerCase()
-    return items.filter((p) =>
+    return items.filter((p: any) =>
       p.name.toLowerCase().includes(q) ||
       p.code.toLowerCase().includes(q) ||
       p.country.toLowerCase().includes(q) ||
@@ -209,9 +209,13 @@ export function OpportunitiesPage() {
     { label: 'Rejected',    value: data?.rejected    ?? 0, color: '#ef4444', icon: XCircle      },
   ]
 
-  // chart data
-  const byTech   = data?.byTechnology ?? []
-  const byStatus = data?.byStatus     ?? []
+  // chart data (convert Record to array format)
+  const byTech   = Object.entries(data?.byTechnology ?? {}).map(([name, value]) => ({ name, value }))
+  const byStatus = Object.entries(data?.byStatus ?? {}).map(([name, value]: [string, number]) => ({ 
+    name, 
+    value, 
+    color: STATUS_COLORS[name] ?? '#94a3b8' 
+  }))
 
   return (
     <>
@@ -267,7 +271,7 @@ export function OpportunitiesPage() {
                     <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
                     <Bar dataKey="value" name="Count" radius={[4, 4, 0, 0]}>
-                      {byTech.map((_, i) => <Cell key={i} fill={TECH_COLORS[i % TECH_COLORS.length]} />)}
+                      {byTech.map((_: any, i: number) => <Cell key={i} fill={TECH_COLORS[i % TECH_COLORS.length]} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -289,8 +293,8 @@ export function OpportunitiesPage() {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={byStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
-                      {byStatus.map((entry, i) => <Cell key={i} fill={entry.color ?? STATUS_COLORS[entry.name] ?? '#94a3b8'} />)}
+                    <Pie data={byStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }: any) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
+                      {byStatus.map((entry: any, i: number) => <Cell key={i} fill={entry.color ?? STATUS_COLORS[entry.name] ?? '#94a3b8'} />)}
                     </Pie>
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
                   </PieChart>

@@ -311,7 +311,7 @@ export function G0ApprovalReview({
   // inside handleSubmit, together with the decision it authorizes.
   const [signature, setSignature]       = React.useState<SignatureDraft | null>(null)
   const [rationale, setRationale]       = React.useState('')
-  const [conditions, setConditions]     = React.useState('')
+  const [conditionsText, setConditionsText] = React.useState('')
   const [showDelegate, setShowDelegate] = React.useState(false)
   const [showInfo, setShowInfo]         = React.useState(false)
   const [submitting, setSubmitting]     = React.useState(false)
@@ -343,10 +343,19 @@ export function G0ApprovalReview({
     setError(null)
     setSubmitting(true)
     try {
+      // Parse conditions from text (one per line, or parse due dates if provided)
+      let parsedConditions: Array<{ title: string; due_date: string }> | undefined
+      if (decision === 'conditional_proceed') {
+        const lines = conditionsText.trim().split('\n').filter(l => l.trim())
+        parsedConditions = lines.map(line => ({
+          title: line.trim(),
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Default 30 days
+        }))
+      }
       await onDecide(
         decision,
         rationale,
-        decision === 'conditional_proceed' ? conditions : undefined,
+        parsedConditions,
         // Persisted server-side as part of the decision, never before it.
         signature ?? undefined,
       )
@@ -674,8 +683,8 @@ export function G0ApprovalReview({
                   </label>
                   <textarea
                     rows={3}
-                    value={conditions}
-                    onChange={(e) => setConditions(e.target.value)}
+                    value={conditionsText}
+                    onChange={(e) => setConditionsText(e.target.value)}
                     placeholder="List conditions that must be satisfied..."
                     className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
                   />

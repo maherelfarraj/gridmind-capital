@@ -95,6 +95,7 @@ export function ProjectWizard({
         bess_mwh: Number(bessMwh) || 0,
         location: location.trim(),
         country: country.trim(),
+        budget_usd: 0,
         target_completion: targetCompletion || null,
         pdPersonId: pd,
         pmPersonId: pm,
