@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 CREATE TABLE IF NOT EXISTS gate_submissions (
   id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id   uuid        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  gate_number  integer     NOT NULL CHECK (gate_number BETWEEN 0 AND 14),
+  gate_number  integer     NOT NULL CHECK (gate_number BETWEEN 0 AND 6),
   form_data    jsonb       NOT NULL DEFAULT '{}',
   status       text        NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft','submitted','under_review','approved','rejected')),

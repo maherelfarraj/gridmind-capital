@@ -253,16 +253,10 @@ export async function createProject(payload: {
 // ── Phase 6: transactional wizard create ─────────────────────
 
 // Exact G1–G8 phase names (must equal gates.name so spawn_gate_signoffs joins).
-const WIZARD_PHASE_NAMES: string[] = [
-  'Origination & Feasibility',
-  'Permitting & Grid Application',
-  'Commercial & Financial Close (RTB)',
-  'Detailed Design (IFC)',
-  'Procurement & Manufacturing',
-  'Construction & Installation',
-  'Commissioning & Grid Tests',
-  'Handover & O&M',
-]
+// WIZARD_PHASE_NAMES now uses the canonical 7-gate model (G0–G6), matching GATE_PHASES.
+// This ensures projects created via wizard seed identical phase_gates as all other paths.
+// (Previously WIZARD_PHASE_NAMES had 8 phases with different names, causing data model divergence.)
+const WIZARD_PHASE_NAMES: string[] = GATE_PHASES.map((g) => g.name)
 
 export interface CreateProjectFullInput {
   name: string
@@ -279,8 +273,13 @@ export interface CreateProjectFullInput {
 }
 
 /**
- * Create a project with PD+PM staffing, 8 gate-approver rows, and 8 phase_gates
- * (G1 `in_review` → trigger spawns G1 sign-offs; the wizard inserts none itself).
+ * Create a project with PD+PM staffing and 7 phase_gates (canonical G0–G6 model).
+ * 
+ * Enforces governance: Projects start at status='planning', current_phase=0 with
+ * a pending G0 approval (object_type='opportunity'). This matches createProject and
+ * createOpportunity patterns — no project may be 'active' without recorded approval.
+ * PD/PM staffing is allowed at creation, but no gate is pre-approved.
+ * 
  * No true SQL transaction is available via the JS client, so any failure after
  * the project row triggers a compensating delete (children cascade) — giving
  * all-or-nothing semantics.
@@ -335,7 +334,7 @@ export async function createProjectFull(
     }
   }
 
-  // 1) Project.
+  // 1) Project — starts at planning/phase 0 (not active). Governance gate: must pass G0 approval first.
   let projectId = ''
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data, error } = await admin
@@ -350,7 +349,7 @@ export async function createProjectFull(
         location: input.location || null,
         country: input.country || null,
         target_completion: isDate(input.target_completion) ? input.target_completion : null,
-        status: 'active',
+        status: 'planning',
         current_phase: 0,
         health: 'green',
         project_manager: input.pmPersonId,
@@ -381,6 +380,19 @@ export async function createProjectFull(
     return { error: msg }
   }
 
+  // 1.5) G0 Approval — pending until PD/stakeholders review and decide "Proceed".
+  const { error: approvalErr } = await admin.from('approvals').insert({
+    tenant_id: tenantId,
+    object_type: 'opportunity',
+    object_id: projectId,
+    title: code,
+    description: `G0 gate review for ${input.name.trim()}`,
+    status: 'pending',
+    priority: 'normal',
+    requester_id: actor.userId,
+  })
+  if (approvalErr) return rollback(`G0 approval creation failed: ${approvalErr.message}`)
+
   // 2) Team: PD + PM (inserted BEFORE gates so the spawn trigger finds assignees).
   const { error: teamErr } = await admin.from('project_team').insert([
     { tenant_id: tenantId, project_id: projectId, role_id: pdRoleId, person_id: input.pdPersonId, assigned_by: actor.userId },
@@ -388,13 +400,12 @@ export async function createProjectFull(
   ])
   if (teamErr) return rollback(`Staffing failed: ${teamErr.message}`)
 
-  // 3) Gate approvers (8 rows).
-  const approverRows = WIZARD_PHASE_NAMES.map((_, i) => {
-    const n = i + 1
-    const supplied = input.approvers.find((a) => a.gate_number === n)
+  // 3) Gate approvers (7 rows, G0–G6).
+  const approverRows = GATE_PHASES.map((g) => {
+    const supplied = input.approvers.find((a) => a.gate_number === g.phase)
     return {
       project_id: projectId,
-      gate_number: n,
+      gate_number: g.phase,
       primary_role: supplied?.primary_role || 'PD',
       secondary_role: supplied?.secondary_role || null,
     }
@@ -404,13 +415,16 @@ export async function createProjectFull(
     .upsert(approverRows, { onConflict: 'project_id,gate_number' })
   if (apprErr) return rollback(`Gate approvers failed: ${apprErr.message}`)
 
-  // 4) phase_gates: G1 in_review (spawns sign-offs), G2–G8 pending.
+  // 4) phase_gates: All 7 gates start 'pending' (nothing pre-approved).
+  // G0 approval decides 'Proceed' → applyApprovalLifecycle flips status='active', decideApproval calls advanceProjectGate
+  // (which only runs role+sign-off checks, and viaApproval=true skips sign-offs for G0).
+  // No gate spawn-signoffs trigger runs until a gate is actually in_review (after G0 approval).
   // NOTE: phase_gates has NO tenant_id column.
-  const gateRows = WIZARD_PHASE_NAMES.map((phaseName, i) => ({
+  const gateRows = GATE_PHASES.map((g) => ({
     project_id: projectId,
-    phase_number: i + 1,
-    phase_name: phaseName,
-    status: i === 0 ? 'in_review' : 'pending',
+    phase_number: g.phase,
+    phase_name: g.name,
+    status: 'pending',
   }))
   const { error: gateErr } = await admin.from('phase_gates').insert(gateRows)
   if (gateErr) return rollback(`Gate seeding failed: ${gateErr.message}`)
