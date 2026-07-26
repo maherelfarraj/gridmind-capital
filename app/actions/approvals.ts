@@ -610,6 +610,32 @@ export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
+
+  // Seed approval_rules unconditionally before the demo-approvals guard.
+  // The old code nested this inside the demo-approvals guard, so on any
+  // environment that already had approval rows (e.g. production) the rules
+  // were never written, leaving the inbox invisible to non-admin roles.
+  // Rules have their own guard: re-running is safe.
+  const ruleSeeds = [
+    { name: 'Opportunity G0 Gate Review', object_type: 'opportunity',     approval_levels: 1, required_roles: ['project_director', 'system_admin', 'tenant_admin'], is_active: true },
+    { name: 'Project Charter Approval',   object_type: 'project_charter', approval_levels: 2, required_roles: ['project_director', 'finance_manager'],              is_active: true },
+    { name: 'Purchase Order Approval',    object_type: 'purchase_order',  approval_levels: 1, required_roles: ['project_manager', 'finance_manager'],               is_active: true },
+    { name: 'Change Order Approval',      object_type: 'change_order',    approval_levels: 2, required_roles: ['project_manager', 'project_director'],              is_active: true },
+    { name: 'Subcontract Approval',       object_type: 'subcontract',     approval_levels: 1, required_roles: ['system_admin'],                                     is_active: true },
+    { name: 'Variation Order Approval',   object_type: 'variation',       approval_levels: 1, required_roles: ['project_director', 'project_manager'],              is_active: true },
+  ]
+  const { data: exRules } = await supabase.from('approval_rules').select('id').limit(1)
+  if ((exRules?.length ?? 0) === 0) {
+    for (const r of ruleSeeds) {
+      const { error: ruleErr } = await supabase.from('approval_rules').insert({ tenant_id: tenantId, ...r })
+      if (ruleErr) {
+        console.error(`[v0] seedApprovalsDemoData: approval_rules insert failed for ${r.object_type}:`, ruleErr.message)
+        return { error: `Failed to seed approval rule for ${r.object_type}: ${ruleErr.message}` }
+      }
+    }
+  }
+
+  // Demo approval rows — skip if any already exist (prevents duplicate seeding).
   const { data: ex } = await supabase.from('approvals').select('id').limit(1)
   if ((ex?.length ?? 0) > 0) return {}
 
@@ -623,32 +649,6 @@ export async function seedApprovalsDemoData(): Promise<{ error?: string }> {
   ]
   for (const d of demos) {
     await supabase.from('approvals').insert({ tenant_id: tenantId, ...d })
-  }
-
-  // Seed approval_rules.
-  //
-  // This seed was silently broken: it wrote `level` and `approver_role`, neither
-  // of which exists on this table, and used ROLE_LABELS display strings ("Project
-  // Manager") where `required_roles` holds DbUserRole enum values. Every insert
-  // was rejected by PostgREST, which is why no 'opportunity' routing rule existed
-  // and the inbox had nothing to match against.
-  const ruleSeeds = [
-    { name: 'Opportunity G0 Gate Review', object_type: 'opportunity',     approval_levels: 1, required_roles: ['project_director', 'system_admin', 'tenant_admin'], is_active: true },
-    { name: 'Project Charter Approval',   object_type: 'project_charter', approval_levels: 2, required_roles: ['project_director', 'finance_manager'],              is_active: true },
-    { name: 'Purchase Order Approval',    object_type: 'purchase_order',  approval_levels: 1, required_roles: ['project_manager', 'finance_manager'],               is_active: true },
-    { name: 'Change Order Approval',      object_type: 'change_order',    approval_levels: 2, required_roles: ['project_manager', 'project_director'],              is_active: true },
-  ]
-  const { data: exRules } = await supabase.from('approval_rules').select('id').limit(1)
-  if ((exRules?.length ?? 0) === 0) {
-    for (const r of ruleSeeds) {
-      const { error: seedError } = await supabase.from('approval_rules').insert({ tenant_id: tenantId, ...r })
-      // A rejected insert used to pass unnoticed here, leaving the routing table
-      // empty while the seed reported success.
-      if (seedError) {
-        console.error(`[v0] seedApprovalsDemoData: approval_rules insert failed for ${r.object_type}:`, seedError.message)
-        return { error: `Failed to seed approval rule for ${r.object_type}: ${seedError.message}` }
-      }
-    }
   }
 
   return {}
