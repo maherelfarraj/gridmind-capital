@@ -1104,3 +1104,88 @@ export async function getProjectDocuments(projectCode: string): Promise<import('
     storagePath: d.storage_path ?? null,
   }))
 }
+
+/**
+ * Update the provenance source for a tracked project field.
+ * Admin-only; writes to projects.provenance and audit_log.
+ *
+ * @param projectId UUID of the project
+ * @param field One of: budget_usd, capacity_mw, start_date, target_completion, country, location, technology, bess_mwh
+ * @param newSource One of: contract, financial_model, lender_facility, interconnection, term_sheet
+ * @returns { success: true } or throws an error
+ */
+export async function updateProjectProvenance(
+  projectId: string,
+  field: string,
+  newSource: string,
+): Promise<{ success: true }> {
+  // Admin guard: system_admin, tenant_admin, project_director
+  await requireProjectDirector()
+
+  // Validate field name (8 tracked fields)
+  const validFields = ['budget_usd', 'capacity_mw', 'start_date', 'target_completion', 'country', 'location', 'technology', 'bess_mwh']
+  if (!validFields.includes(field)) {
+    throw new Error(`Invalid field: ${field}. Must be one of: ${validFields.join(', ')}`)
+  }
+
+  // Validate source enum
+  const validSources = ['contract', 'financial_model', 'lender_facility', 'interconnection', 'term_sheet']
+  if (!validSources.includes(newSource)) {
+    throw new Error(`Invalid source: ${newSource}. Must be one of: ${validSources.join(', ')}`)
+  }
+
+  const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
+
+  // Get current provenance and actor info
+  const { data: proj, error: projErr } = await supabase
+    .from('projects')
+    .select('provenance')
+    .eq('id', projectId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (projErr || !proj) throw new Error('Project not found')
+
+  const currentProv = (proj.provenance ?? {}) as Record<string, any>
+  const oldSource = currentProv[field]?.source ?? null
+
+  // Skip if already set to the same source
+  if (oldSource === newSource) {
+    return { success: true }
+  }
+
+  // Update provenance: {source: newSource, at: now()}
+  const updatedProv = {
+    ...currentProv,
+    [field]: { source: newSource, at: new Date().toISOString() },
+  }
+
+  const { error: updateErr } = await supabase
+    .from('projects')
+    .update({ provenance: updatedProv })
+    .eq('id', projectId)
+    .eq('tenant_id', tenantId)
+
+  if (updateErr) throw new Error(`Failed to update provenance: ${updateErr.message}`)
+
+  // Get actor email for audit trail
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .eq('id', user?.id ?? '')
+    .maybeSingle()
+
+  // Write audit_log entry
+  await supabase.from('audit_log').insert({
+    table_name: 'projects',
+    record_id: projectId,
+    action: 'update',
+    changed_by: profile?.id ?? null,
+    old_values: { [field]: { source: oldSource } },
+    new_values: { [field]: { source: newSource }, op: 'provenance_source_change' },
+  })
+
+  return { success: true }
+}

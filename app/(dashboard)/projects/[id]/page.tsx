@@ -7,6 +7,7 @@ import { ProjectDetailPage } from '@/components/projects/project-detail-page'
 import { CommentThread } from '@/components/comments/comment-thread'
 import { StaffingRadar } from '@/components/projects/staffing-radar'
 import { ProjectEditForm } from '@/components/projects/project-edit-form'
+import { ProvenanceEditor } from '@/components/projects/provenance-editor'
 import { useSession } from '@/lib/session-context'
 import { useToast } from '@/components/ui/toast'
 import {
@@ -75,10 +76,10 @@ export default function ProjectDetailRoute() {
     () => getProjectDocuments(projectCode),
   )
 
-  const [activePanel, setActivePanel] = React.useState<'comments' | 'documents' | 'edit' | null>(null)
+  const [activePanel, setActivePanel] = React.useState<'comments' | 'documents' | 'edit' | 'provenance' | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
 
-  const openPanel = React.useCallback((panel: 'comments' | 'documents' | 'edit') => {
+  const openPanel = React.useCallback((panel: 'comments' | 'documents' | 'edit' | 'provenance') => {
     setActivePanel((prev) => (prev === panel ? null : panel))
   }, [])
 
@@ -226,7 +227,7 @@ export default function ProjectDetailRoute() {
         onComments={() => openPanel('comments')}
         onDocuments={() => openPanel('documents')}
         onTeam={() => {}}
-        onSettings={() => {}}
+        onSettings={() => openPanel('provenance')}
         onSubmitApproval={handleSubmitApproval}
         onRequestChanges={handleRequestChanges}
         onLenderReport={canLenderReport ? () => router.push(`/projects/${project.id}/lender-report`) : undefined}
@@ -262,6 +263,18 @@ export default function ProjectDetailRoute() {
                   toast({ title: 'Project updated', variant: 'success' })
                   setActivePanel(null)
                 }}
+              />
+            )}
+            {activePanel === 'provenance' && (
+              <ProvenanceEditor
+                project={project}
+                readOnly={isViewer || !session.roles.some((r) => ['system_admin', 'tenant_admin', 'project_director'].includes(r))}
+                onSaved={() => {
+                  mutateProject()
+                  toast({ title: 'Provenance updated', variant: 'success' })
+                  setActivePanel(null)
+                }}
+                mutate={mutateProject}
               />
             )}
             {activePanel === 'comments' && (
