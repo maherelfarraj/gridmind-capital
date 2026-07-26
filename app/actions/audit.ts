@@ -161,8 +161,8 @@ async function enrichAuditRows(
 }
 
 /**
- * Paginated audit_logs feed, newest-first.
- * Optionally narrowed by tableName (entity_type) and/or recordId (entity_id).
+ * Paginated audit_log feed, newest-first.
+ * Optionally narrowed by tableName and/or recordId.
  * Restricted to system_admin and tenant_admin — returns { error } for all
  * other roles, matching the codebase auth-guard contract.
  */
