@@ -77,16 +77,33 @@ export async function advanceProjectGate(
   // G0 approval advancement (viaApproval=true) bypasses this check — the approval workflow
   // already verified all required stakeholders. G1–G6 advances always check.
   if (!opts?.viaApproval) {
-    const { data: unsignedSignoffs } = await supabase
-      .from('gate_signoffs')
+    // `gate_signoffs` has NO project_id / gate_number columns — it links to a
+    // project only through phase_gates(phase_gate_id → project_id, phase_number).
+    // The previous version filtered on those nonexistent columns, so PostgREST
+    // returned error 42703, `data` came back null, and the discarded error meant
+    // the guard silently passed every time. Resolve the phase_gate first.
+    const { data: phaseGate, error: pgErr } = await supabase
+      .from('phase_gates')
       .select('id')
       .eq('project_id', projectId)
-      .eq('gate_number', current)
-      .neq('status', 'signed')
-      .limit(1)
+      .eq('phase_number', current)
+      .maybeSingle()
 
-    if (unsignedSignoffs && unsignedSignoffs.length > 0) {
-      return { error: `Gate G${current} has unsigned sign-offs. All required sign-offs must be completed before advancing.` }
+    if (pgErr) return { error: `Could not verify gate sign-offs: ${pgErr.message}` }
+
+    if (phaseGate?.id) {
+      const { data: unsignedSignoffs, error: soErr } = await supabase
+        .from('gate_signoffs')
+        .select('id')
+        .eq('phase_gate_id', phaseGate.id)
+        .neq('status', 'signed')
+        .limit(1)
+
+      if (soErr) return { error: `Could not verify gate sign-offs: ${soErr.message}` }
+
+      if (unsignedSignoffs && unsignedSignoffs.length > 0) {
+        return { error: `Gate G${current} has unsigned sign-offs. All required sign-offs must be completed before advancing.` }
+      }
     }
   }
 

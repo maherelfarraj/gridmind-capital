@@ -285,8 +285,47 @@ export async function approveGate(input: {
     metadata: { phase_gate_id: phaseGateId },
   })
 
+  // Approving the gate must also move the project's stepper forward. Without
+  // this, phase_gates.status flipped to 'approved' but projects.current_phase
+  // never changed, so the G0–G6 stepper stayed pinned on the old gate.
+  //
+  // Only advance when the approved gate IS the project's current gate —
+  // otherwise approving an out-of-order gate would bump the stepper wrongly.
+  // advanceProjectGate re-checks the sign-offs itself, so the rule "next gate
+  // unlocks only when every sign-off is signed AND the gate approval is
+  // decided" is enforced on both sides.
+  let advanceWarning: string | undefined
+  const { data: gateRow } = await admin
+    .from('phase_gates')
+    .select('phase_number')
+    .eq('id', phaseGateId)
+    .maybeSingle()
+
+  const { data: projRow } = await admin
+    .from('projects')
+    .select('current_phase')
+    .eq('id', projectId)
+    .maybeSingle()
+
+  if (
+    typeof gateRow?.phase_number === 'number' &&
+    typeof projRow?.current_phase === 'number' &&
+    gateRow.phase_number === projRow.current_phase
+  ) {
+    const { advanceProjectGate } = await import('@/app/actions/phase-gates')
+    const res = await advanceProjectGate(projectId)
+    // The gate approval itself already committed, so a failed advance must not
+    // be reported as a failed approval — surface it as a warning instead.
+    if (res.error) advanceWarning = `Gate approved, but the project stage did not advance: ${res.error}`
+  }
+
   revalidatePath('/team/gates')
-  return {}
+  // The stepper and status panel read projects.current_phase on these routes.
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/projects')
+  revalidatePath('/dashboard')
+
+  return advanceWarning ? { error: advanceWarning } : {}
 }
 
 // ── Tasks (Phase 5) ──────────────────────────────────────────

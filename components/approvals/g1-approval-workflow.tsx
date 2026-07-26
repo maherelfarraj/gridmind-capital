@@ -671,12 +671,14 @@ export function G1ApprovalWorkflow({
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                     {[
                       { label: 'Feasibility Status',   value: g1Data.feasibilityStatus ?? '—' },
-                      { label: 'Feasibility Contractor', value: g1Data.feasibilityContractor || '—' },
                       { label: 'P50 Yield (GWh)',       value: g1Data.p50YieldGwh || '—' },
                       { label: 'P90 Yield (GWh)',       value: g1Data.p90YieldGwh || '—' },
                       { label: 'Base IRR',              value: g1Data.baseIrrPct ? `${g1Data.baseIrrPct}%` : '—' },
                       { label: 'Base DSCR (min)',       value: g1Data.baseDscrMin || '—' },
                       { label: 'LCOE (USD/MWh)',        value: g1Data.lcoeUsdMwh || '—' },
+                      { label: 'Interest Rate',         value: g1Data.interestRatePct ? `${g1Data.interestRatePct}%` : '—' },
+                      { label: 'Debt Ratio',            value: g1Data.debtRatioPct ? `${g1Data.debtRatioPct}%` : '—' },
+                      { label: 'Agreed Tariff',         value: g1Data.tariffUsCentsKwh ? `${g1Data.tariffUsCentsKwh}\u00A2/kWh` : '—' },
                       { label: 'EIA Status',            value: g1Data.eiaStatus ?? '—' },
                       { label: 'Grid Study',            value: g1Data.gridStudyStatus ?? '—' },
                       { label: 'Land Secured',          value: g1Data.landSecured ? 'Yes' : 'No' },
