@@ -19,6 +19,7 @@ import {
 } from '@/app/actions/schedule'
 import { getProject } from '@/app/actions/projects'
 import { ResourceHistogram } from '@/components/resources/resource-histogram'
+import { SCurveChart } from '@/components/schedule/s-curve-chart'
 
 export function ScheduleWorkspace({ projectId }: { projectId: string }) {
   const { toast } = useToast()
@@ -223,6 +224,9 @@ export function ScheduleWorkspace({ projectId }: { projectId: string }) {
             )}
           </>
         )}
+
+        {/* S-curve — planned vs actual cumulative progress */}
+        {activities.length > 0 && <SCurveChart projectId={projectId} />}
 
         {/* Resources histogram — planned vs actual workforce & equipment */}
         <ResourceHistogram projectId={projectId} />

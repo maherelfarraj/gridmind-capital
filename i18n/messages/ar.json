@@ -513,7 +513,7 @@
       "bid_bond": "ضمان العطاء",
       "performance_bond": "ضمان حسن التنفيذ",
       "advance_payment_guarantee": "ضمان الدفعة المقدمة",
-      "retention_bond": "ضمان الاحتجاز"
+      "retention_bond": "ضمان الاحتجا��"
     },
     "milestoneStatuses": {
       "planned": "مخطط",
@@ -571,7 +571,7 @@
     "notifications": "الإشعارات",
     "language": "اللغة والمنطقة",
     "languageLabel": "لغة الواجهة",
-    "digitStyleLabel": "تنسيق الأرقام",
+    "digitStyleLabel": "��نسيق الأرقام",
     "digitStyles": {
       "western": "أرقام غربية (1 2 3)",
       "arabic_indic": "أرقام عربية هندية (١ ٢ ٣)"
@@ -901,7 +901,7 @@
     "origins": {
       "client": "العميل",
       "contractor": "المقاول",
-      "variation": "تغيير في النطاق",
+      "variation": "تغيير في الن��اق",
       "compensation_event": "حدث تعويضي"
     },
     "types": {
@@ -1098,7 +1098,8 @@
       "today": "اليوم",
       "punch": "القائمة",
       "photos": "الصور",
-      "reports": "التقارير"
+      "reports": "التقارير",
+      "schedule": "الجدول"
     },
     "dailyReport": {
       "title": "التقرير اليومي",

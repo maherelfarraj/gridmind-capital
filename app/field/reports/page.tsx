@@ -121,7 +121,7 @@ function ReportRow({
       </Link>
       {submitted && (
         <Link
-          href={`/projects/${projectId}/schedule`}
+          href="/field/schedule"
           className="flex items-center justify-center gap-1.5 border-t border-border bg-primary/5 py-2 text-xs font-semibold text-primary active:bg-primary/10"
         >
           <TrendingUp className="size-3.5" aria-hidden="true" />
