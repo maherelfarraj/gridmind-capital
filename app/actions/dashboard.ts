@@ -78,7 +78,9 @@ export async function getDashboardProjects(): Promise<DashboardProject[]> {
 
   return data.map((p) => {
     const gate    = p.current_phase ?? 0
-    const budgetM = p.budget_usd ? Math.round(p.budget_usd / 1_000_000) : 0
+    // NULL stays NULL so the pipeline board can render "Not set" instead of a
+    // fabricated "$0M". `!= null` (not truthiness) keeps a real 0 as 0.
+    const budgetM = p.budget_usd != null ? Math.round(Number(p.budget_usd) / 1_000_000) : null
     const targetCod = p.target_completion
       ? new Date(p.target_completion).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
       : undefined
@@ -91,7 +93,7 @@ export async function getDashboardProjects(): Promise<DashboardProject[]> {
       gate,
       gateName:      `G${gate}`,
       budgetM,
-      budget_amount: p.budget_usd ?? 0,
+      budget_amount: numOrNull(p.budget_usd),
       currency:      'USD',
       status:        (p.status as DashboardProject['status']) ?? 'active',
       client:        p.location ?? p.country ?? '—',

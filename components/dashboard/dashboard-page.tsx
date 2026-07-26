@@ -44,10 +44,10 @@ export interface DashboardProject {
   phase: PhaseKey | string
   gate: number
   gateName: string
-  /** Budget in USD millions */
-  budgetM: number
+  /** Budget in USD millions. NULL = not recorded (renders "Not set", not "$0M"). */
+  budgetM: number | null
   /** Raw budget in full dollars (optional — normalised to budgetM when provided) */
-  budget_amount?: number
+  budget_amount?: number | null
   currency?: string
   status: ProjectRowStatus
   client: string
@@ -153,7 +153,9 @@ const STATUS_META_FALLBACK = (raw: string): { label: string; variant: string; do
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-function formatBudget(m: number): string {
+/** NULL renders "Not set" — never a fabricated "$0M". */
+function formatBudget(m: number | null | undefined): string {
+  if (m == null) return NOT_SET_LABEL
   if (m >= 1000) return `$${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)}B`
   return `$${m}M`
 }
