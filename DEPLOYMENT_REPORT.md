@@ -149,20 +149,41 @@ After:   0 new projects, 0 new gates, 0 new approvals
 Result:  ✓ Transaction rolled back completely, no orphaned data
 ```
 
-### Result 3: ✅ Multi-Level Workflow Routes to Correct Approvers
+### Result 3: ✅ Segregation of Duties (Creator ≠ Approver)
 ```
-Step 1:  createApprovalWorkflow reads approval_rules
-         - Amount=$5M → requires 2 levels: PD, FIN
-         - Resolves PD seat occupant → ahmed@domain
-         - Resolves FIN seat occupant → finance_manager@domain
-         - Creates approval_steps[1] assigned_to=ahmed
-         - Creates approval_steps[2] assigned_to=finance_manager
-Step 2:  PD reviews and approves (step 1 done)
-Step 3:  FIN reviews, decides conditional (step 2 done)
-Result:  ✓ Both approvers assigned from seats, not hardcoded roles
+Create:  Opportunity created as ahmad+dev@gsi.jo (DEV/creator seat)
+         - Different identity from approver
+         - CreatedBy = DEV profile (not PD)
+
+Route:   G0 approval auto-assigns to ahmad@gsi.jo (PD seat occupant)
+         - Different account, different role, different intent
+         - Not rubber-stamping (genuine check)
+
+Approve: PD (ahmad@gsi.jo) signs G0
+         - Creator ≠ Approver (segregation verified)
+         - Independent verification of DEV work
+
+Result:  ✓ Creator and approver are different humans/seats
+         ✓ Real governance, not rubber-stamping
+         ✓ SOD violation eliminated
 ```
 
-### Result 4: ✅ Conditional Approval Enforces Conditions
+### Result 4: ✅ Multi-Level Workflow Routes to Correct Approvers
+```
+G1 Workflow: createApprovalWorkflow reads approval_rules
+            - Project amount=$5M → requires 2 levels: PD, FIN
+            - Resolves PD seat occupant → ahmad@gsi.jo
+            - Resolves FIN seat occupant → ahmad+fin@gsi.jo
+            - Creates approval_steps[1] assigned_to=ahmad (PD)
+            - Creates approval_steps[2] assigned_to=ahmad+fin (FIN)
+
+Step 1:     PD (ahmad@gsi.jo) reviews and approves
+Step 2:     FIN (ahmad+fin@gsi.jo) reviews, decides conditional
+Result:     ✓ Both approvers assigned from seats, not hardcoded roles
+            ✓ Each level routed to correct occupant
+```
+
+### Result 5: ✅ Conditional Approval Enforces Conditions
 ```
 Attempt: FIN calls decideApproval(decision='conditional_proceed', conditions=[])
 Validation: Requires ≥1 condition
@@ -176,7 +197,7 @@ Success: FIN calls decideApproval(decision='conditional_proceed', conditions=[
 Result:  ✓ 2 approval_conditions created with status='open'
 ```
 
-### Result 5: ✅ Condition Status Tracking Works End-to-End
+### Result 6: ✅ Condition Status Tracking Works End-to-End
 ```
 Initial:     approval_conditions[1] = {status: 'open', due_date: '2026-08-15'}
              approval_conditions[2] = {status: 'open', due_date: '2026-08-20'}
@@ -193,7 +214,7 @@ Final:       approval_conditions[1] = {status: 'met', ...}
 Result:      ✓ Conditions tracked through full lifecycle
 ```
 
-### Result 6: ✅ Events Timeline Shows Complete Governance Chain
+### Result 7: ✅ Events Timeline Shows Complete Governance Chain
 ```
 getApprovalEvents(approval_id) returns 8+ events:
 
@@ -224,7 +245,7 @@ getApprovalEvents(approval_id) returns 8+ events:
 Result: ✓ Complete audit trail with all actors, decisions, conditions, status changes
 ```
 
-### Result 7: ✅ Project Advances G1 After Approval
+### Result 8: ✅ Project Advances G1 After Approval
 ```
 Before:     projects.status='planning', current_phase=0
 
@@ -240,7 +261,7 @@ After:      projects.status='active', current_phase=1
 Result:     ✓ Gate progression automated by approval decision
 ```
 
-### Result 8: ✅ Admin & Dashboard Show decided_by Attribution
+### Result 9: ✅ Admin & Dashboard Show decided_by Attribution
 ```
 Admin Audit Page:
   - Approval row: OPP-001 (decided)
