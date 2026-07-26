@@ -148,4 +148,8 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION create_project_governed(jsonb) TO anon, authenticated;
+-- Security: Revoke execute from client-side roles. The service role (server actions)
+-- bypasses grants and calls this RPC directly, so explicit permission is unnecessary.
+-- This prevents accidental direct RPC calls from the client and keeps governance
+-- enforcement server-side only.
+REVOKE EXECUTE ON FUNCTION create_project_governed(jsonb) FROM anon, authenticated;
