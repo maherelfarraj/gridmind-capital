@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { ApprovalInbox, type ApprovalRecord } from '@/components/approvals/approval-inbox'
 import type { PhaseKey } from '@/components/app-shell/nav-config'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -149,7 +150,7 @@ function cap(s: string) { return s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.
 const STATUS_META_FALLBACK = (raw: string): { label: string; variant: string; dot?: boolean } =>
   ({ label: cap(raw) || 'Unknown', variant: 'draft', dot: true })
 
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────���──────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
@@ -352,7 +353,12 @@ function RecentProjects({ projects, onRowClick, onViewAll, loading = false }: Re
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-foreground">
+                          <span className={cn(
+                            'text-sm tabular-nums',
+                            p.budgetM == null
+                              ? 'italic font-normal text-muted-foreground'
+                              : 'font-semibold text-slate-700 dark:text-foreground',
+                          )}>
                             {formatBudget(p.budgetM)}
                           </span>
                         </td>
@@ -479,7 +485,7 @@ function toApprovalRecord(item: ApprovalItem): ApprovalRecord {
 
 // ─────────────────────────────────────────────────────────────
 // Main DashboardPage
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────��──
 
 export function DashboardPage({
   userName = 'Alex Carter',

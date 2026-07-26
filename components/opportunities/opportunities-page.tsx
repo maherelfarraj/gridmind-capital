@@ -19,6 +19,7 @@ import {
   submitOpportunityForReview,
 } from '@/app/actions/opportunities'
 import type { Opportunity } from '@/lib/types/action-types'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -132,7 +133,11 @@ function NewOpportunityModal({ open, onClose, onCreated }: {
 
 function OpportunityCard({ item, onSubmit }: { item: Opportunity; onSubmit: (id: string) => void }) {
   const health  = HEALTH_META[item.health] ?? HEALTH_META.green
-  const budgetM = item.budget_usd ? (Number(item.budget_usd) / 1_000_000).toFixed(0) : '—'
+  // Must be a complete label, not a bare number: the old code produced '—' and
+  // then rendered it inside `${...}M`, printing a nonsensical "$—M".
+  const budgetLabel = item.budget_usd != null
+    ? `$${(Number(item.budget_usd) / 1_000_000).toFixed(0)}M`
+    : NOT_SET_LABEL
   const approvalIcon = {
     pending:      <Clock   className="size-3.5 text-[#f59e0b]" />,
     under_review: <Clock   className="size-3.5 text-[#3b82f6]" />,
@@ -152,9 +157,9 @@ function OpportunityCard({ item, onSubmit }: { item: Opportunity; onSubmit: (id:
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1"><Zap className="size-3" />{item.technology}</span>
-        <span className="flex items-center gap-1"><TrendingUp className="size-3" />{item.capacity_mw} MW</span>
+        <span className="flex items-center gap-1"><TrendingUp className="size-3" />{item.capacity_mw != null ? `${item.capacity_mw} MW` : NOT_SET_LABEL}</span>
         <span className="flex items-center gap-1"><MapPin className="size-3" />{item.country}</span>
-        <span className="flex items-center gap-1"><DollarSign className="size-3" />${budgetM}M</span>
+        <span className="flex items-center gap-1"><DollarSign className="size-3" />{budgetLabel}</span>
       </div>
 
       <div className="flex items-center justify-between pt-1">

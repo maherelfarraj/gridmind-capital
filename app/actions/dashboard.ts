@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { DashboardStats, DashboardProject } from '@/components/dashboard/dashboard-page'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
+import { numOrNull } from '@/lib/format-nullable'
 
 // Service role client — bypasses RLS for authenticated server actions
 // Safe because the layout already validates the user session before rendering
