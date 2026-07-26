@@ -184,6 +184,87 @@ export async function createApprovalWorkflow(
 }
 
 /**
+ * Mark an approval condition as met, waived, or breached.
+ * Only condition creator, assignee, or admin can update.
+ */
+export async function updateConditionStatus(
+  conditionId: string,
+  status: 'met' | 'waived',
+): Promise<{ error?: string }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+
+  // Fetch condition to verify permissions
+  const { data: condition } = await supabase
+    .from('approval_conditions')
+    .select('id, approval_id, created_by')
+    .eq('id', conditionId)
+    .single()
+
+  if (!condition) return { error: 'Condition not found' }
+
+  // Check authorization: creator, assignee, or admin
+  const approval = await supabase
+    .from('approvals')
+    .select('assignee_id')
+    .eq('id', condition.approval_id)
+    .single()
+
+  const isCreator = gate.actor.userId === condition.created_by
+  const isAssignee = gate.actor.userId === approval.data?.assignee_id
+  const isAdmin = ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number])
+
+  if (!isCreator && !isAssignee && !isAdmin) {
+    return { error: 'You are not authorized to update this condition' }
+  }
+
+  const { error } = await supabase
+    .from('approval_conditions')
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+      updated_by: gate.actor.userId,
+    })
+    .eq('id', conditionId)
+
+  if (error) return { error: error.message }
+
+  // Emit condition_status_changed event
+  const { error: eventErr } = await supabase.from('approval_events').insert({
+    approval_id: condition.approval_id,
+    actor_id: gate.actor.userId,
+    event_type: 'condition_status_changed',
+    metadata: { condition_id: conditionId, status },
+  })
+  if (eventErr) console.log(`[v0] Condition status event warning: ${eventErr.message}`)
+
+  return {}
+}
+
+/**
+ * Auto-breach conditions where due_date < today.
+ * Called on-load or scheduled periodically.
+ */
+export async function autoBreachExpiredConditions(approvalId: string): Promise<void> {
+  const supabase = createAdminClient()
+
+  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+  const { error } = await supabase
+    .from('approval_conditions')
+    .update({
+      status: 'breached',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('approval_id', approvalId)
+    .eq('status', 'open')
+    .lt('due_date', today)
+
+  if (error) console.log(`[v0] Auto-breach warning: ${error.message}`)
+}
+
+/**
  * Apply the project lifecycle transition implied by an approval decision.
  *
  * Acceptance — not submission — drives project status:
@@ -482,7 +563,8 @@ export async function decideApproval(opts: {
   id: string
   decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject'
   rationale: string
-  conditions?: string
+  /** Conditions for conditional_proceed (title, due_date). Required if decision='conditional_proceed'. */
+  conditions?: Array<{ title: string; due_date: string }> // ISO date string
   /**
    * UNPERSISTED signature captured for this decision (gate approvals).
    *
@@ -525,6 +607,18 @@ export async function decideApproval(opts: {
     console.log(`[v0] Admin override: ${gate.actor.role} (${gate.actor.userId}) decided approval assigned to ${approval.assignee_id}`)
   }
 
+  // Conditional approval validation: require ≥1 condition if decision='conditional_proceed'
+  if (opts.decision === 'conditional_proceed') {
+    if (!opts.conditions || opts.conditions.length === 0) {
+      return { error: 'Conditional approval requires at least 1 condition (title + due date)' }
+    }
+    // Validate each condition has title and due_date
+    const invalidCondition = opts.conditions.find(c => !c.title?.trim() || !c.due_date)
+    if (invalidCondition) {
+      return { error: 'All conditions must have a title and due date' }
+    }
+  }
+
   // Step-aware workflow: find the CURRENT lowest-pending approval_step
   const { data: currentStep } = await supabase
     .from('approval_steps')
@@ -560,6 +654,7 @@ export async function decideApproval(opts: {
   // If a step workflow exists, update ONLY the current step; otherwise update the approval directly
   if (currentStep) {
     // Step-aware: mark current step with decision + emit event
+    // Also update approvals.decision column for audit trail
     const { error: stepErr } = await supabase
       .from('approval_steps')
       .update({
@@ -569,6 +664,18 @@ export async function decideApproval(opts: {
         decision_note: opts.rationale,
       })
       .eq('id', currentStep.id)
+
+    // Update approvals row: decision column + decision_note
+    const { error: apprDecisionErr } = await supabase
+      .from('approvals')
+      .update({
+        decision: opts.decision,
+        decision_note: opts.rationale,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', opts.id)
+
+    if (apprDecisionErr) console.log(`[v0] Approval decision column update warning: ${apprDecisionErr.message}`)
 
     if (stepErr) return { error: `Step decision failed: ${stepErr.message}` }
 
@@ -622,20 +729,15 @@ export async function decideApproval(opts: {
       }
     }
   } else {
-    // Legacy path (no approval_steps): update approval directly
+    // Legacy path (no approval_steps): update approval directly with decision column + decision_note
     const { error } = await supabase
       .from('approvals')
       .update({
         status:     decisionStatus,
+        decision:   opts.decision,
+        decision_note: opts.rationale,
         ...decisionStamp(decisionStatus),
         updated_at: new Date().toISOString(),
-        description: [
-          approval?.description ?? '',
-          `\n\n[Decision: ${opts.decision.replace('_', ' ')}]`,
-          `\nRationale: ${opts.rationale}`,
-          opts.conditions ? `\nConditions: ${opts.conditions}` : '',
-          signatureId ? `\n[Signed: ${signatureId}]` : '',
-        ].join(''),
       })
       .eq('id', opts.id)
 
@@ -655,6 +757,31 @@ export async function decideApproval(opts: {
     }
 
     if (error) return { error: error.message }
+  }
+
+  // Create approval_conditions rows if decision='conditional_proceed'
+  if (opts.decision === 'conditional_proceed' && opts.conditions && opts.conditions.length > 0) {
+    const conditionRows = opts.conditions.map((c) => ({
+      approval_id: opts.id,
+      title: c.title.trim(),
+      due_date: c.due_date, // ISO date string
+      status: 'open', // All new conditions start as 'open'
+      created_by: gate.actor.userId,
+    }))
+
+    const { error: condErr } = await supabase.from('approval_conditions').insert(conditionRows)
+    if (condErr) console.log(`[v0] Approval conditions creation warning: ${condErr.message}`)
+
+    // Emit 'condition_added' events for audit trail
+    const eventRows = conditionRows.map((c) => ({
+      approval_id: opts.id,
+      actor_id: gate.actor.userId,
+      event_type: 'condition_added',
+      metadata: { title: c.title, due_date: c.due_date },
+    }))
+
+    const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
+    if (eventErr) console.log(`[v0] Condition events emission warning: ${eventErr.message}`)
   }
 
   if (approval) {

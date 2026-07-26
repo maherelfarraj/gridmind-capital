@@ -195,6 +195,7 @@ export interface WidgetStats {
   activeProjects: number
   totalBudget: number
   openApprovals: number
+  openConditions: number // Approvals with decision='conditional_proceed' + open/breached conditions
   openRisks: number
   avgHealth: number
 }
@@ -202,18 +203,32 @@ export interface WidgetStats {
 export async function getWidgetStats(): Promise<WidgetStats> {
   const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
-  const [projRes, apprRes, riskRes] = await Promise.all([
+  const [projRes, apprRes, riskRes, condRes] = await Promise.all([
     supabase.from('projects').select('status, budget_usd, health').eq('tenant_id', tenantId),
-    supabase.from('approvals').select('status').eq('tenant_id', tenantId),
+    supabase.from('approvals').select('id, status, decision').eq('tenant_id', tenantId),
     supabase.from('risks').select('status').eq('tenant_id', tenantId),
+    // Get conditional approvals with open/breached conditions
+    supabase.from('approval_conditions').select('approval_id, status'),
   ])
   const projects  = projRes.data ?? []
   const approvals = apprRes.data ?? []
   const risks     = riskRes.data ?? []
+  const conditions = condRes.data ?? []
 
   const activeProjects = projects.filter((p) => p.status === 'active').length
   const totalBudget    = projects.reduce((s, p) => s + (Number(p.budget_usd) || 0), 0)
   const openApprovals  = approvals.filter((a) => a.status === 'pending' || a.status === 'delegated').length
+  
+  // Count conditional approvals with open or breached conditions
+  const conditionalApprovalIds = new Set(
+    approvals
+      .filter((a) => a.decision === 'conditional_proceed')
+      .map((a) => a.id)
+  )
+  const openConditions = conditions.filter(
+    (c) => conditionalApprovalIds.has(c.approval_id) && (c.status === 'open' || c.status === 'breached')
+  ).length
+  
   const openRisks      = risks.filter((r) => {
     const st = (r.status ?? '').toLowerCase()
     return st !== 'closed' && st !== 'mitigated'
@@ -224,7 +239,71 @@ export async function getWidgetStats(): Promise<WidgetStats> {
     ? Math.round(projects.reduce((s, p) => s + (HEALTH[p.health ?? 'green'] ?? 60), 0) / projects.length)
     : 0
 
-  return { activeProjects, totalBudget, openApprovals, openRisks, avgHealth }
+  return { activeProjects, totalBudget, openApprovals, openConditions, openRisks, avgHealth }
+}
+
+// ─── Conditional approvals with open/breached conditions ────────────────────────────────
+export interface ConditionalApproval {
+  id: string
+  title: string
+  decision: string
+  conditionCount: number
+  openConditionCount: number
+}
+
+export async function getConditionalApprovalsWithOpenConditions(): Promise<ConditionalApproval[]> {
+  const tenantId = await getCurrentTenantId()
+  const supabase = getServiceClient()
+
+  // Fetch all conditional approvals
+  const { data: approvals } = await supabase
+    .from('approvals')
+    .select('id, title, decision')
+    .eq('tenant_id', tenantId)
+    .eq('decision', 'conditional_proceed')
+
+  if (!approvals || approvals.length === 0) return []
+
+  const approvalIds = approvals.map((a) => a.id)
+
+  // Fetch all conditions for these approvals
+  const { data: conditions } = await supabase
+    .from('approval_conditions')
+    .select('approval_id, status')
+    .in('approval_id', approvalIds)
+
+  const conditionsByApproval = new Map<string, { total: number; open: number }>()
+
+  approvals.forEach((a) => {
+    conditionsByApproval.set(a.id, { total: 0, open: 0 })
+  })
+
+  conditions?.forEach((c) => {
+    const entry = conditionsByApproval.get(c.approval_id)
+    if (entry) {
+      entry.total += 1
+      if (c.status === 'open' || c.status === 'breached') {
+        entry.open += 1
+      }
+    }
+  })
+
+  // Filter to only those with open conditions
+  return approvals
+    .filter((a) => {
+      const entry = conditionsByApproval.get(a.id)
+      return entry && entry.open > 0
+    })
+    .map((a) => {
+      const entry = conditionsByApproval.get(a.id)!
+      return {
+        id: a.id,
+        title: a.title,
+        decision: a.decision,
+        conditionCount: entry.total,
+        openConditionCount: entry.open,
+      }
+    })
 }
 
 // ─── My tasks (open approvals) ────────────────────────────────
@@ -377,7 +456,7 @@ export async function getRiskHeatmap(): Promise<HeatmapRisk[]> {
   }))
 }
 
-// ─── Document queue ───────────────────────────────────────────
+// ─── Document queue ��──────────────────────────────────────────
 export interface QueueDoc {
   id: string; name: string; project: string
   type: 'approval' | 'review' | 'upload'; status: string; when: string; urgent: boolean
