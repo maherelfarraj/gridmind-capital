@@ -1,7 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireWriter, requireApprover, getAuthActor } from '@/lib/auth/guard'
+import { requireWriter, requireApprover, getAuthActor, requireAssignedApprover, ADMIN_ROLES } from '@/lib/auth/guard'
 import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
@@ -25,6 +25,53 @@ async function resolveApprovers(
   return (data ?? [])
     .filter((p) => p.email)
     .map((p) => ({ id: p.id, email: p.email as string, name: p.full_name ?? 'Approver' }))
+}
+
+/**
+ * Resolve the approver seat occupant for a given role.
+ * Falls back to tenant_admin if no profile has the role or the role has no active member.
+ * Used by approval creation paths to set assignee_id before writing the approval row.
+ */
+async function resolveApproveeSeat(
+  supabase: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+  role: string | null | undefined,
+): Promise<string> {
+  if (!role) {
+    // Fallback: assign to tenant_admin
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'tenant_admin')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
+    return data?.id ?? tenantId // Worst case: tenant_id itself (not ideal, but explicit)
+  }
+
+  // Look for an active profile with the specified role
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('role', role)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle()
+
+  if (data?.id) return data.id
+
+  // Role exists but no seat is occupied — assign to tenant_admin
+  const { data: admin } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('role', 'tenant_admin')
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle()
+  return admin?.id ?? tenantId
 }
 
 /**
@@ -353,11 +400,21 @@ export async function decideApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, object_type, object_id, description')
+    .select('title, object_type, object_id, description, assignee_id')
     .eq('id', opts.id)
     .single()
 
   if (!approval) return { error: 'Approval not found' }
+
+  // Verify caller is the assigned approver (or admin override).
+  const approverCheck = await requireAssignedApprover(approval)
+  if ('error' in approverCheck) return approverCheck
+
+  // Log admin override if applicable.
+  if (gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number]) &&
+      gate.actor.userId !== approval.assignee_id) {
+    console.log(`[v0] Admin override: ${gate.actor.role} (${gate.actor.userId}) decided approval assigned to ${approval.assignee_id}`)
+  }
 
   // Persist the signature only now that the caller is authorized AND the target
   // approval exists. If it fails we abort without touching the decision, so we
@@ -673,9 +730,20 @@ export async function syncQueuedApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, description, object_type, object_id')
+    .select('title, description, object_type, object_id, assignee_id')
     .eq('id', opts.id)
     .single()
+
+  // Verify caller is the assigned approver (or admin override).
+  if (!approval) return { error: 'Approval not found' }
+  const approverCheck = await requireAssignedApprover(approval)
+  if ('error' in approverCheck) return approverCheck
+
+  // Log admin override if applicable.
+  if (gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number]) &&
+      gate.actor.userId !== approval.assignee_id) {
+    console.log(`[v0] Admin override: ${gate.actor.role} (${gate.actor.userId}) synced approval assigned to ${approval.assignee_id}`)
+  }
 
   const description = opts.comment
     ? [
@@ -727,9 +795,20 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
   // Fetch the approval first so we can include context in the email
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, description, object_type, object_id')
+    .select('title, description, object_type, object_id, assignee_id')
     .eq('id', id)
     .single()
+
+  // Verify caller is the assigned approver (or admin override).
+  if (!approval) return { error: 'Approval not found' }
+  const approverCheck = await requireAssignedApprover(approval)
+  if ('error' in approverCheck) return approverCheck
+
+  // Log admin override if applicable.
+  if (gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number]) &&
+      gate.actor.userId !== approval.assignee_id) {
+    console.log(`[v0] Admin override: ${gate.actor.role} (${gate.actor.userId}) updated approval assigned to ${approval.assignee_id}`)
+  }
 
   const { error } = await supabase
     .from('approvals')
