@@ -358,9 +358,9 @@ export default function FieldTodayPage() {
         </fieldset>
       )}
 
-      {/* Actions */}
+      {/* Actions — positioned above the field shell bottom nav (z-index: 40) */}
       {canWrite && status !== 'submitted' && (
-        <div className="sticky bottom-2 flex gap-3 pt-2">
+        <div className="sticky bottom-20 z-50 flex gap-3 pt-2">
           <button
             onClick={handleSaveDraft}
             disabled={busy || !projectId}

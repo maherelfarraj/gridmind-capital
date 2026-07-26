@@ -120,7 +120,7 @@ export function FieldShell({ children }: { children: React.ReactNode }) {
           className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-background"
         >
           <TopBar />
-          <main className="flex-1 overflow-y-auto pb-24 pt-16 px-4">{children}</main>
+          <main className="flex-1 overflow-y-auto pb-32 pt-16 px-4">{children}</main>
           <BottomTabs />
         </div>
         {/* SW registration + offline queue flush + install prompt for the field module */}
