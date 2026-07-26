@@ -43,15 +43,16 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     [data],
   )
 
-  const [projectId, setProjectIdState] = React.useState<string | null>(null)
+  // Read localStorage synchronously so the initial render already has the saved value.
+  // A useEffect-based restore races with the "default to first project" effect because
+  // React batches the setState from the restore effect, leaving projectId=null until the
+  // next paint — by which time the default effect fires and overwrites the saved choice.
+  const [projectId, setProjectIdState] = React.useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    return window.localStorage.getItem(STORAGE_KEY)
+  })
 
-  // Restore last-selected project from this device.
-  React.useEffect(() => {
-    const saved = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null
-    if (saved) setProjectIdState(saved)
-  }, [])
-
-  // Default to the first project once loaded (if none chosen yet).
+  // Default to the first project once loaded (only if the user has never chosen one).
   React.useEffect(() => {
     if (!projectId && projects.length > 0) setProjectIdState(projects[0].id)
   }, [projects, projectId])
