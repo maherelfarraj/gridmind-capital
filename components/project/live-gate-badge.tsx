@@ -27,6 +27,7 @@ export function LiveGateBadge({
     { revalidateOnMount: true, revalidateOnFocus: true },
   )
 
+  console.log('[v0] LiveGateBadge swr gate:', project?.gate, '| fallback:', fallbackGate, '| code:', project?.code)
   const gate = typeof project?.gate === 'number' ? project.gate : fallbackGate
   const gateName = project?.gateName ?? fallbackGateName
 

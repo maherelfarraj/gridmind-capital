@@ -10,6 +10,7 @@ export default async function G1Page({ params }: { params: Promise<{ id: string 
   const project = await getProject(id)
   if (!project) notFound()
 
+  console.log('[v0] G1Page server gate:', project.gate, '| gateName:', project.gateName, '| code:', project.code)
   const currentGate = `G${project.gate}`
   const completedGates = Array.from({ length: Math.max(0, project.gate) }, (_, i) => `G${i}`)
 
