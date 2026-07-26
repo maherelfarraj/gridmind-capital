@@ -6,7 +6,8 @@ import { useParams, useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { ArrowLeft, FileText, Users, AlertTriangle, CheckSquare, BarChart2, ClipboardList, Send, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_CHARTER, STATUS_META, MOCK_DELIVERABLES } from '@/components/g0/data'
+import { MOCK_CHARTER, getStatusMeta, MOCK_DELIVERABLES } from '@/components/g0/data'
+import type { ProjectCharter } from '@/components/g0/types'
 import { CharterTab }      from '@/components/g0/charter-tab'
 import { DeliverablesTab } from '@/components/g0/deliverables-tab'
 import { StakeholdersTab } from '@/components/g0/stakeholders-tab'
@@ -14,6 +15,7 @@ import { RisksTab }        from '@/components/g0/risks-tab'
 import { ScreeningTab }    from '@/components/g0/screening-tab'
 import { MilestonesTab }   from '@/components/g0/milestones-tab'
 import { getG0Data } from '@/app/actions/gate-submissions'
+import { getProject } from '@/app/actions/projects'
 
 const TABS = [
   { id: 'charter',      label: 'Project Charter',       icon: FileText    },
@@ -36,12 +38,39 @@ export default function G0Page() {
     () => getG0Data(id!),
   )
 
-  // Fall back to mock values while data loads so the header doesn't flicker
-  const charter    = MOCK_CHARTER
-  const meta       = STATUS_META[charter.status]
+  // Load the ACTUAL project named by the route param. This page previously rendered
+  // MOCK_CHARTER unconditionally, so every /g0 URL displayed SOL-2026-001 (Sirius)
+  // no matter which project id was requested.
+  const { data: project } = useSWR(
+    id ? `project-${id}` : null,
+    () => getProject(id!),
+  )
+
+  // Real project identity; mock values are used only as a pre-load placeholder so
+  // the header does not flicker while SWR resolves.
+  const charter = React.useMemo<ProjectCharter>(() => {
+    if (!project) return MOCK_CHARTER
+    return {
+      ...MOCK_CHARTER,
+      id:           project.id,
+      project_code: project.code,
+      project_name: project.name,
+      technology:   project.technology || MOCK_CHARTER.technology,
+      capacity_mw:  project.capacityMw ?? 0,
+      location:     project.location || project.country || '—',
+      country:      project.country || '—',
+      client:       project.client,
+      description:  project.description || MOCK_CHARTER.description,
+      capex_estimate_usd: project.budgetUsd ?? 0,
+      // A project that has advanced past G0 necessarily has an approved charter.
+      status:       project.gate > 0 ? 'approved' : 'under_review',
+    }
+  }, [project])
+
+  const meta       = getStatusMeta(charter.status)
   const done       = MOCK_DELIVERABLES.filter((d) => d.status === 'approved' || d.status === 'complete').length
   const total      = MOCK_DELIVERABLES.length
-  const donePct    = Math.round((done / total) * 100)
+  const donePct    = total > 0 ? Math.round((done / total) * 100) : 0
 
   return (
     <div className="min-h-screen bg-background">

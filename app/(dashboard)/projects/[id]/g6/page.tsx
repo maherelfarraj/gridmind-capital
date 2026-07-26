@@ -93,7 +93,7 @@ export default function G6Page() {
           <nav className="flex items-center gap-1.5 text-sm text-slate-500 mb-4">
             <Link href="/projects" className="hover:text-slate-700">Projects</Link>
             <ChevronRight size={14} />
-            <Link href={`/projects/${id}`} className="hover:text-slate-700">SOL-2026-001</Link>
+            <Link href={`/projects/${id}`} className="hover:text-slate-700">{project?.code ?? id}</Link>
             <ChevronRight size={14} />
             <span className="text-slate-700 font-medium">G6 Commissioning</span>
           </nav>
@@ -103,6 +103,9 @@ export default function G6Page() {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold text-slate-900">G6: Commissioning Completion</h1>
+                {project?.name && (
+                  <span className="text-sm text-slate-500 truncate max-w-xs">{project.name}</span>
+                )}
                 <span className="bg-teal-100 text-teal-700 text-xs font-bold px-2 py-1 rounded">G6</span>
                 <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-1 rounded">In Progress</span>
               </div>

@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { ProjectDetailPage } from '@/components/projects/project-detail-page'
 import { CommentThread } from '@/components/comments/comment-thread'
 import { StaffingRadar } from '@/components/projects/staffing-radar'
+import { ProjectEditForm } from '@/components/projects/project-edit-form'
 import { useSession } from '@/lib/session-context'
 import { useToast } from '@/components/ui/toast'
 import {
@@ -31,7 +32,7 @@ export default function ProjectDetailRoute() {
   const session = useSession()
   const { toast } = useToast()
 
-  const { data: project, isLoading } = useSWR(
+  const { data: project, isLoading, mutate: mutateProject } = useSWR(
     id ? `project-${id}` : null,
     () => getProject(id),
   )
@@ -187,6 +188,11 @@ export default function ProjectDetailRoute() {
           startDate: String(project.startDate ?? ''),
           targetCod: String(project.targetCod ?? ''),
           location: project.location ? String(project.location) : undefined,
+          // Forwarded so the Edit panel can prefill real values instead of blanks.
+          technology: project.technology,
+          capacityMw: project.capacityMw,
+          country: project.country,
+          description: project.description,
           commentCount: project.commentCount,
           documentCount: project.documentCount,
         }}
@@ -244,8 +250,20 @@ export default function ProjectDetailRoute() {
               &times;
             </button>
           </div>
-          <div className="p-4 text-sm text-muted-foreground">
-            {activePanel === 'edit' && 'Edit panel — form fields coming soon.'}
+          <div className="overflow-y-auto p-4 text-sm text-muted-foreground max-h-[calc(100vh-4rem)]">
+            {activePanel === 'edit' && (
+              <ProjectEditForm
+                project={project}
+                readOnly={isViewer}
+                onCancel={() => setActivePanel(null)}
+                onSaved={() => {
+                  // Refresh the project so the header, gate panel and registry agree.
+                  mutateProject()
+                  toast({ title: 'Project updated', variant: 'success' })
+                  setActivePanel(null)
+                }}
+              />
+            )}
             {activePanel === 'comments' && (
               <CommentThread
                 entityType="project"

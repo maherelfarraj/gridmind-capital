@@ -8,6 +8,7 @@ import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { deriveGateStatus, MAX_GATE } from '@/lib/gate-status'
 
 const PHASE_MAP: Record<number, string> = {
   0: 'intake', 1: 'commercial', 2: 'engineering', 3: 'engineering',
@@ -35,6 +36,8 @@ const GATE_PHASES: { phase: number; name: string }[] = Array.from({ length: 7 },
 
 export interface GetProjectsOptions {
   phase?: string | null
+  /** Filter by exact `projects.current_phase` (G0 → 0, G1 → 1, …). */
+  gate?: number | null
   search?: string | null
   status?: string | null
   page?: number
@@ -55,6 +58,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
   const tenantId = await getCurrentTenantId()
 
   const phase     = opts?.phase     ?? null
+  const gate      = opts?.gate      ?? null
   const search    = opts?.search    ?? null
   const status    = opts?.status    ?? null
   const page      = opts?.page      ?? 1
@@ -65,7 +69,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
 
   let query = supabase
     .from('projects')
-    .select('id, code, name, status, technology, budget_usd, current_phase, target_completion, location, country', { count: 'exact' })
+    .select('id, code, name, status, technology, capacity_mw, budget_usd, current_phase, target_completion, location, country, health', { count: 'exact' })
     .eq('tenant_id', tenantId)
 
   if (phase && phase !== 'all') {
@@ -74,6 +78,16 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
       .filter(([, v]) => v === phase)
       .map(([k]) => Number(k))
     if (phaseNums.length > 0) query = query.in('current_phase', phaseNums)
+  }
+
+  // Gate filter: `gate` is the raw `projects.current_phase` value (G0 → 0, G1 → 1, …).
+  // This is distinct from `phase`, which maps several phases onto one workstream key.
+  if (gate !== null && gate !== undefined) {
+    // current_phase can exceed the governed G0–G6 range (completed projects sit at
+    // 7/8) and those clamp to G6 for display. Use >= at the top gate so the filter
+    // matches what the UI actually shows instead of hiding them.
+    if (gate >= MAX_GATE) query = query.gte('current_phase', gate)
+    else query = query.eq('current_phase', gate)
   }
 
   if (status && status !== 'all') {
@@ -97,16 +111,28 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
 
   if (error || !data) return paginated ? { projects: [], totalCount: 0 } : []
 
+  // PostgREST returns PG `numeric` columns as strings — coerce before the UI does math.
+  const num = (v: unknown) => (v == null ? 0 : Number(v) || 0)
+
   const projects = data.map((p) => ({
     id: p.id,
     code: p.code,
     name: p.name,
     client_name: (p as any).client_name ?? p.location ?? p.country ?? '—',
     phase: PHASE_MAP[p.current_phase ?? 0] ?? 'intake',
-    gate: `G${p.current_phase ?? 0}`,
-    budget_amount: p.budget_usd ?? 0,
+    // Clamped to the governed G0–G6 range via the shared helper so completed
+    // projects at phase 7/8 render as "G6" instead of a nonexistent "G8".
+    gate: deriveGateStatus(p.current_phase).code,
+    current_phase: p.current_phase ?? 0,
+    budget_amount: num(p.budget_usd),
     status: (p.status as Project['status']) ?? 'active',
     target_cod: p.target_completion ?? '',
+    // Real values so the registry can stop rendering "N/A" / "0 MW".
+    country: p.country ?? '',
+    location: p.location ?? '',
+    technology: p.technology ?? '',
+    capacity_mw: num(p.capacity_mw),
+    health: (p as any).health ?? 'green',
   }))
 
   return paginated ? { projects, totalCount: count ?? projects.length } : projects
@@ -152,11 +178,17 @@ export async function getProject(id: string): Promise<ProjectData | null> {
     phase: PHASE_KEY_MAP[gate] ?? 'g0',
     gate,
     gateName: GATE_NAMES[gate] ?? `Gate ${gate}`,
-    budgetUsd: data.budget_usd ?? 0,
+    budgetUsd: Number(data.budget_usd ?? 0) || 0,
     currency: 'USD',
     startDate: data.start_date ?? data.created_at?.split('T')[0] ?? '2024-01-01',
     targetCod: data.target_completion ?? '',
     location: data.location ?? data.country ?? undefined,
+    // Real identity fields so gate pages can render the correct project instead of
+    // falling back to a hardcoded mock charter.
+    technology: data.technology ?? '',
+    capacityMw: Number(data.capacity_mw ?? 0) || 0,
+    country: data.country ?? '',
+    description: data.description ?? '',
     commentCount: 0,
     documentCount: 0,
   }
@@ -246,7 +278,7 @@ export async function createProject(payload: {
   return { id: data.id }
 }
 
-// ── Phase 6: transactional wizard create ─────────────────────
+// ── Phase 6: transactional wizard create ─────────���───────────
 
 // Exact G1–G8 phase names (must equal gates.name so spawn_gate_signoffs joins).
 // WIZARD_PHASE_NAMES now uses the canonical 7-gate model (G0–G6), matching GATE_PHASES.
@@ -445,6 +477,83 @@ export async function createProjectFull(
   }).catch(() => {})
 
   return { id: projectId }
+}
+
+export interface UpdateProjectInput {
+  name?: string
+  country?: string
+  location?: string
+  technology?: string
+  capacity_mw?: number
+  budget_usd?: number
+  target_completion?: string
+  description?: string
+}
+
+/**
+ * Edit an existing project's core fields.
+ *
+ * Tenant-scoped like archiveProject, guarded by requireWriter, and audited with a
+ * before/after snapshot so "who changed the budget?" is answerable.
+ */
+export async function updateProject(
+  id: string,
+  input: UpdateProjectInput,
+): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+  const { actor } = gate
+
+  const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
+
+  // Snapshot the prior values for the audit trail.
+  const { data: before } = await supabase
+    .from('projects')
+    .select('name, country, location, technology, capacity_mw, budget_usd, target_completion, description')
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (!before) return { error: 'Project not found' }
+
+  // Only send keys the caller actually provided, so blank inputs don't null out data.
+  const patch: Record<string, unknown> = {}
+  if (input.name !== undefined)              patch.name = input.name.trim()
+  if (input.country !== undefined)           patch.country = input.country.trim() || null
+  if (input.location !== undefined)          patch.location = input.location.trim() || null
+  if (input.technology !== undefined)        patch.technology = input.technology.trim() || null
+  if (input.capacity_mw !== undefined)       patch.capacity_mw = input.capacity_mw
+  if (input.budget_usd !== undefined)        patch.budget_usd = input.budget_usd
+  if (input.target_completion !== undefined) patch.target_completion = input.target_completion || null
+  if (input.description !== undefined)       patch.description = input.description.trim() || null
+
+  if (Object.keys(patch).length === 0) return {}
+
+  if (typeof patch.name === 'string' && patch.name.length === 0) {
+    return { error: 'Project name is required' }
+  }
+
+  const { error } = await supabase
+    .from('projects')
+    .update(patch)
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+
+  if (error) return { error: error.message }
+
+  // Matches the direct-insert audit pattern used by createProject.
+  await supabase.from('audit_logs').insert({
+    tenant_id: tenantId,
+    actor_id: actor.userId,
+    action: 'update',
+    entity_type: 'projects',
+    entity_id: id,
+    old_data: before,
+    new_data: patch,
+  })
+
+  return {}
 }
 
 export async function archiveProject(id: string): Promise<{ error?: string }> {

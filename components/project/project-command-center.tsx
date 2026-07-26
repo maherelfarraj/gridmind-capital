@@ -62,6 +62,14 @@ export interface ProjectData {
   documentCount?: number
   /** ISO 4217 currency code, e.g. "USD" */
   currency?: string
+  /** Technology, e.g. "Solar PV" */
+  technology?: string
+  /** Installed capacity in MW (from `projects.capacity_mw`) */
+  capacityMw?: number
+  /** Country, e.g. "Jubaland" */
+  country?: string
+  /** Free-text project description */
+  description?: string
 }
 
 /**

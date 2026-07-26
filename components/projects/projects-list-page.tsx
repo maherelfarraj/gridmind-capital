@@ -28,9 +28,16 @@ export interface Project {
   client_name: string
   phase: ProjectPhase | string
   gate: string   // e.g. "G2"
+  /** Raw `projects.current_phase` — the value `gate` is derived from. */
+  current_phase?: number
   budget_amount: number  // full dollars
   status: ProjectStatus | string
   target_cod: string     // ISO date
+  country?: string
+  location?: string
+  technology?: string
+  capacity_mw?: number
+  health?: string
 }
 
 export interface ProjectFilters {
@@ -547,7 +554,7 @@ function LoadingSkeleton() {
   )
 }
 
-/* ─────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────���──────────────────────
    EMPTY STATE
 ───────────────────────────────────────────── */
 

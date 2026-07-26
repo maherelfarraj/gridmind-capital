@@ -33,6 +33,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { ProjectCommandCenter, type ProjectData } from '@/components/project/project-command-center'
 import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-gate-stepper'
+import { deriveGateStatus } from '@/lib/gate-status'
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
@@ -128,6 +129,7 @@ const SPEC_PROJECT_INFO = {
 }
 
 function GateStatusCard({
+  currentPhase,
   gateProgress = { G0: true, G1: true, G2: false },
   deliverables = SPEC_DELIVERABLES,
   overallProgress,
@@ -135,6 +137,8 @@ function GateStatusCard({
   onRequestChanges,
   hideActions = false,
 }: {
+  /** Raw `projects.current_phase`. Drives the gate badge, name and description. */
+  currentPhase?: number
   gateProgress?: Record<string, boolean>
   deliverables?: { name: string; completed: boolean }[]
   overallProgress?: number
@@ -142,9 +146,12 @@ function GateStatusCard({
   onRequestChanges?: () => void
   hideActions?: boolean
 }) {
+  // Derived from the SAME helper the Stage Gate stepper uses, so the two panels
+  // can never disagree (previously this card hardcoded "G2 / Engineering IFC Release").
+  const gateStatus   = deriveGateStatus(currentPhase)
   const completed    = deliverables.filter((d) => d.completed).length
   const total        = deliverables.length
-  const deliverPct   = Math.round((completed / total) * 100)
+  const deliverPct   = total > 0 ? Math.round((completed / total) * 100) : 0
   const pct          = overallProgress ?? deliverPct
 
   return (
@@ -162,13 +169,13 @@ function GateStatusCard({
         {/* Gate badge + name */}
         <div>
           <span className="inline-block rounded-lg bg-sky-100 px-4 py-2 text-3xl font-bold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
-            G2
+            {gateStatus.code}
           </span>
           <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-foreground">
-            Engineering IFC Release
+            {gateStatus.name}
           </p>
           <p className="mt-1 text-sm text-slate-500 dark:text-muted-foreground leading-relaxed">
-            Release Issued For Construction engineering drawings and specifications
+            {gateStatus.description}
           </p>
         </div>
 
@@ -186,7 +193,7 @@ function GateStatusCard({
             aria-valuenow={pct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`G2 progress: ${pct}%`}
+            aria-label={`${gateStatus.code} progress: ${pct}%`}
           >
             <div className="h-full rounded-full bg-sky-600 transition-all duration-700" style={{ width: `${pct}%` }} />
           </div>
@@ -730,9 +737,13 @@ export function ProjectDetailPage({
   hideTimeline = false,
   hideActions  = false,
 }: ProjectDetailPageProps) {
-  const gateNumber      = project.gate ?? 2
-  const currentGateCode = `G${gateNumber}`
-  const completedGates  = Array.from({ length: gateNumber }, (_, i) => `G${i}`)
+  // Single derivation of gate state, shared with GateStatusCard below. Both the
+  // stepper and the "Current Gate Status" panel read these exact values so they
+  // cannot contradict each other.
+  const gateStatus      = deriveGateStatus(project.gate)
+  const gateNumber      = gateStatus.gate
+  const currentGateCode = gateStatus.code
+  const completedGates  = gateStatus.completedGates
 
   const projectData   = toProjectData(project)
   const workflowLogs  = timelineLogs.map(toWorkflowEntry)
@@ -816,6 +827,7 @@ export function ProjectDetailPage({
         <div className="flex flex-col gap-6">
           <ProjectApprovalsCard approvals={approvalItems} loading={isLoading} />
           <GateStatusCard
+            currentPhase={gateNumber}
             gateProgress={gateProgress}
             overallProgress={overallProgress}
             deliverables={deliverables}

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus, Search, SlidersHorizontal, MoreVertical, Archive, Copy, ExternalLink,
   FolderKanban, CheckCircle2, AlertTriangle, XCircle, Loader2, X
@@ -12,30 +12,50 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { mockStore, type GmcProject } from '@/lib/mock-store'
 import { getProjects, archiveProject, duplicateProject } from '@/app/actions/projects'
+import { parseGateParam } from '@/lib/gate-status'
 import type { Project } from '@/components/projects/projects-list-page'
 
 /** Map a live DB row to the display shape used by the registry UI. */
 function toGmcProject(p: Project): GmcProject {
-  const phaseToType: Record<string, GmcProject['type']> = {
-    solar: 'PV', pv: 'PV', wind: 'Wind', bess: 'BESS', storage: 'BESS',
-  }
-  const tok = (p.client_name ?? '').toLowerCase()
-  const type = Object.entries(phaseToType).find(([k]) => tok.includes(k))?.[1] ?? 'PV'
+  // Derive type from the real `technology` column. Order matters: combined
+  // technologies must be tested BEFORE their bare counterparts, otherwise
+  // "Solar PV + BESS" matches `solar` first and the BESS half is lost.
+  // Unmatched technologies fall back to 'Other' rather than 'PV' — defaulting to
+  // PV silently mislabelled every Hydrogen/Hydroelectric/Transmission/Substation
+  // project in the registry as solar.
+  const TECH_RULES: [RegExp, GmcProject['type']][] = [
+    [/\b(pv|solar)\b.*\b(bess|storage|battery)\b/, 'PV+BESS'],
+    [/\bwind\b.*\b(bess|storage|battery)\b/,       'Wind+BESS'],
+    [/\b(bess|storage|battery)\b/,                 'BESS'],
+    [/\b(pv|solar)\b/,                             'PV'],
+    [/\bwind\b/,                                   'Wind'],
+    [/\bhydrogen\b/,                               'Hydrogen'],
+    [/\bhydro(electric|power)?\b/,                 'Hydro'],
+    [/\b(transmission|grid|line)\b/,               'Transmission'],
+    [/\bsubstation\b/,                             'Substation'],
+    [/\bhybrid\b/,                                 'Hybrid'],
+  ]
+  const tok = `${p.technology ?? ''} ${p.client_name ?? ''}`.toLowerCase()
+  const type: GmcProject['type'] = TECH_RULES.find(([re]) => re.test(tok))?.[1] ?? 'Other'
   const statusMap: Record<string, GmcProject['status']> = {
     active: 'active', draft: 'draft', 'on-hold': 'on-hold', completed: 'completed',
     cancelled: 'archived', archived: 'archived', planning: 'draft',
+  }
+  const healthMap: Record<string, GmcProject['health']> = {
+    green: 'green', amber: 'amber', yellow: 'amber', red: 'red',
   }
   return {
     id: p.id,
     code: p.code,
     name: p.name,
     type,
-    country: 'N/A',
-    region: 'N/A',
+    // Real values from `projects.country` / `projects.capacity_mw`.
+    country: p.country || p.location || '—',
+    region: p.location || '—',
     siteCoordinates: 'N/A',
     developerSpv: p.client_name ?? 'N/A',
-    mwac: 0,
-    mwp: 0,
+    mwac: p.capacity_mw ?? 0,
+    mwp: p.capacity_mw ?? 0,
     gridVoltage: 'N/A',
     codTarget: p.target_cod ?? '',
     ppaType: 'PPA',
@@ -46,11 +66,18 @@ function toGmcProject(p: Project): GmcProject {
     targetIrr: 0,
     tariffAssumption: 'N/A',
     team: { projectDirector: '', pmoLead: '', engineeringLead: '', procurementLead: '', constructionManager: '', financeLead: '' },
+    // Gate is derived from `projects.current_phase` server-side.
     currentGate: p.gate ?? 'G0',
-    health: 'green',
+    health: healthMap[String(p.health ?? '').toLowerCase()] ?? 'green',
     status: statusMap[p.status] ?? 'active',
     createdAt: new Date().toISOString(),
   }
+}
+
+/** Format capacity for the MW column: "400 MW", "0 MW" only when truly zero. */
+function fmtMw(mw: number): string {
+  if (!mw) return '—'
+  return `${mw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })} MW`
 }
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -183,18 +210,32 @@ function useToast() {
 /* ─── Main Component ─────────────────────────────────────────── */
 export function ProjectRegistry() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toasts, show } = useToast()
   const [search, setSearch] = React.useState('')
   const [filterType, setFilterType] = React.useState<string>('All')
-  const [filterGate, setFilterGate] = React.useState<string>('All')
+
+  // `?gate=G0` must drive the filter. It is matched against `projects.current_phase`
+  // server-side (G0 → 0, G1 → 1, …), not against a phase-workstream key.
+  const gateParam = parseGateParam(searchParams?.get('gate'))
+  const [filterGate, setFilterGate] = React.useState<string>(
+    gateParam !== null ? `G${gateParam}` : 'All',
+  )
+
+  // Keep the dropdown in sync when the URL changes (back/forward, external links).
+  React.useEffect(() => {
+    setFilterGate(gateParam !== null ? `G${gateParam}` : 'All')
+  }, [gateParam])
+
   const [filterHealth, setFilterHealth] = React.useState<string>('All')
   const [filterOpen, setFilterOpen] = React.useState(false)
   const [archiveTarget, setArchiveTarget] = React.useState<GmcProject | null>(null)
 
-  // Live data — SWR fetches from real DB; falls back to mock when empty
+  // Live data — SWR fetches from real DB; falls back to mock when empty.
+  // The gate filter is pushed down to the query so it matches current_phase exactly.
   const { data: liveRows, mutate } = useSWR<Project[]>(
-    'project-registry-live',
-    () => getProjects({ status: null }),
+    `project-registry-live-${gateParam ?? 'all'}`,
+    () => getProjects({ status: null, gate: gateParam }),
     { revalidateOnFocus: true },
   )
   const projects: GmcProject[] = React.useMemo(() => {
@@ -203,8 +244,12 @@ export function ProjectRegistry() {
         .filter(p => p.status !== 'cancelled' && p.status !== 'archived')
         .map(toGmcProject)
     }
+    // Only fall back to mock data for the unfiltered view. Falling back while a
+    // gate filter is active would surface mock projects from other gates and make
+    // `?gate=G0` look like it was ignored.
+    if (liveRows && gateParam !== null) return []
     return mockStore.getProjects().filter(p => p.status !== 'archived')
-  }, [liveRows])
+  }, [liveRows, gateParam])
 
   const filtered = React.useMemo(() => {
     return projects.filter(p => {
@@ -218,6 +263,16 @@ export function ProjectRegistry() {
       return true
     })
   }, [projects, search, filterType, filterGate, filterHealth])
+
+  /** Gate filter writes to the URL so `?gate=` stays the single source of truth. */
+  const setGateFilter = React.useCallback((value: string) => {
+    setFilterGate(value)
+    const next = new URLSearchParams(searchParams?.toString() ?? '')
+    if (value === 'All') next.delete('gate')
+    else next.set('gate', value)
+    const qs = next.toString()
+    router.replace(qs ? `/projects?${qs}` : '/projects', { scroll: false })
+  }, [router, searchParams])
 
   function handleOpen(p: GmcProject) {
     router.push(`/projects/${p.id}`)
@@ -279,8 +334,8 @@ export function ProjectRegistry() {
           {filterOpen && (
             <div className="absolute right-0 top-full mt-2 z-30 w-64 bg-white dark:bg-card border border-slate-200 dark:border-border rounded-xl shadow-xl p-4 space-y-4">
               {[
-                { label: 'Type', value: filterType, set: setFilterType, opts: ['All', 'PV', 'PV+BESS', 'Wind', 'Wind+BESS', 'BESS'] },
-                { label: 'Gate', value: filterGate, set: setFilterGate, opts: ['All', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'] },
+                { label: 'Type', value: filterType, set: setFilterType, opts: ['All', 'PV', 'PV+BESS', 'Wind', 'Wind+BESS', 'BESS', 'Hydrogen', 'Hydro', 'Transmission', 'Substation', 'Hybrid', 'Other'] },
+                { label: 'Gate', value: filterGate, set: setGateFilter, opts: ['All', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'] },
                 { label: 'Health', value: filterHealth, set: setFilterHealth, opts: ['All', 'Green', 'Amber', 'Red'] },
               ].map(f => (
                 <div key={f.label}>
@@ -341,7 +396,7 @@ export function ProjectRegistry() {
                       <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded text-xs font-medium">{p.type}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{p.country}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{p.mwac.toLocaleString()} MW</td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{fmtMw(p.mwac)}</td>
                     <td className="px-4 py-3"><GateBadge gate={p.currentGate} /></td>
                     <td className="px-4 py-3"><HealthDot health={p.health} /></td>
                     <td className="px-4 py-3 text-slate-600 dark:text-muted-foreground whitespace-nowrap">{fmtBudget(p.capex, p.currency)}</td>

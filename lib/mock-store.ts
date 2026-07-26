@@ -56,7 +56,12 @@ export interface GmcProject {
   id: string
   code: string
   name: string
-  type: 'PV' | 'PV+BESS' | 'Wind' | 'Wind+BESS' | 'BESS'
+  // Widened beyond solar/wind/storage: the DB `technology` column also holds
+  // Hydrogen, Hydroelectric, Transmission and Substation projects, which
+  // previously all fell through a `?? 'PV'` default and rendered as solar.
+  type:
+    | 'PV' | 'PV+BESS' | 'Wind' | 'Wind+BESS' | 'BESS'
+    | 'Hydrogen' | 'Hydro' | 'Transmission' | 'Substation' | 'Hybrid' | 'Other'
   country: string
   region: string
   siteCoordinates: string

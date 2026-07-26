@@ -20,7 +20,12 @@ export interface Project {
   commentCount?: number
   documentCount?: number
   technology?: string
+  /** Display-formatted capacity string, e.g. "400 MW". */
   capacity?: string
+  /** Numeric capacity in MW from `projects.capacity_mw` (source of truth for editing). */
+  capacityMw?: number
+  country?: string
+  description?: string
   epcContractor?: string
   ownerEngineer?: string
   projectManager?: string
