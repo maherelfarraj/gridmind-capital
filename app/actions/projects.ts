@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireProjectDirector } from '@/lib/auth/guard'
 import { sendProjectCreatedEmail } from '@/lib/email/send'
+import { createApprovalWorkflow } from '@/app/actions/approvals'
 import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
 
@@ -210,20 +211,15 @@ export async function createProject(payload: {
     .limit(1)
     .maybeSingle()
 
-  if (!existingApproval) {
-    const { error: ae } = await supabase.from('approvals').insert({
-      tenant_id:    tenantId,
-      object_type:  'opportunity',
-      object_id:    data.id,
-      title:        payload.code,
-      description:  `G0 gate review for ${payload.name}`,
-      status:       'pending',
-      priority:     'normal',
-      amount:       payload.budget_usd,
-      requester_id: gate.actor.userId,
-    })
-    if (ae) return { id: data.id, error: `Project created, but approval failed: ${ae.message}` }
-  }
+  // Use approval workflow (idempotent: skip if pending approval exists)
+  const workflowResult = await createApprovalWorkflow(
+    'opportunity',
+    data.id,
+    payload.code,
+    null, // Amount not available at wizard creation time
+    gate.actor.userId,
+  )
+  if (workflowResult.error) return { id: data.id, error: `Approval workflow failed: ${workflowResult.error}` }
 
   // 3. Seed the G0–G6 gate records. All gates start pending — nothing is pre-approved.
   // Approval of G0 via decideApproval will flip to 'in_review' via applyApprovalLifecycle.
@@ -380,18 +376,15 @@ export async function createProjectFull(
     return { error: msg }
   }
 
-  // 1.5) G0 Approval — pending until PD/stakeholders review and decide "Proceed".
-  const { error: approvalErr } = await admin.from('approvals').insert({
-    tenant_id: tenantId,
-    object_type: 'opportunity',
-    object_id: projectId,
-    title: code,
-    description: `G0 gate review for ${input.name.trim()}`,
-    status: 'pending',
-    priority: 'normal',
-    requester_id: actor.userId,
-  })
-  if (approvalErr) return rollback(`G0 approval creation failed: ${approvalErr.message}`)
+  // 1.5) G0 Approval Workflow — multi-level based on approval_rules (amount threshold-based).
+  const workflowResult = await createApprovalWorkflow(
+    'opportunity',
+    projectId,
+    code,
+    input.budget_usd ?? null,
+    actor.userId,
+  )
+  if (workflowResult.error) return rollback(`G0 approval workflow failed: ${workflowResult.error}`)
 
   // 2) Team: PD + PM (inserted BEFORE gates so the spawn trigger finds assignees).
   const { error: teamErr } = await admin.from('project_team').insert([

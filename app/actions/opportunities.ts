@@ -2,9 +2,8 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
-import type { Opportunity, OpportunitiesDashboard } from '@/lib/types/action-types'
-
 import { getCurrentTenantId } from '@/lib/tenant'
+import { createApprovalWorkflow } from '@/app/actions/approvals'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:        '#94a3b8',
@@ -124,25 +123,20 @@ export async function createOpportunity(data: {
 
   if (pe || !proj) return { error: pe?.message ?? 'Failed to create project' }
 
-  // 2. Create approval record for G0 review.
-  // `object_id` + `requester_id` were previously left NULL, which orphaned the
-  // approval: it could only be found by string-matching `title` to the project
-  // code, and nothing recorded who raised it.
-  const { error: ae } = await supabase.from('approvals').insert({
-    tenant_id:    tenantId,
-    object_type:  'opportunity',
-    object_id:    proj.id,
-    title:        data.code,
-    description:  `G0 Gate review for ${data.name}`,
-    status:       'pending',
-    priority:     'normal',
-    amount:       data.budget_usd,
-    requester_id: gate.actor.userId,
-  })
+  // 2. Create multi-level approval workflow for G0 review.
+  // Uses approval_rules to determine levels (e.g., PD → Finance for amounts > threshold).
+  // Emits 'created' + 'assigned' events for audit trail.
+  const workflowResult = await createApprovalWorkflow(
+    'opportunity',
+    proj.id,
+    data.code,
+    data.budget_usd ?? null,
+    gate.actor.userId,
+  )
 
-  // Surface the failure instead of silently returning a project with no
-  // approval attached — the caller shows this in a toast.
-  if (ae) return { id: proj.id, error: `Project created, but approval failed: ${ae.message}` }
+  if (workflowResult.error) {
+    return { id: proj.id, error: `Project created, but approval workflow failed: ${workflowResult.error}` }
+  }
 
   return { id: proj.id }
 }
