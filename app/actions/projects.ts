@@ -182,6 +182,8 @@ export async function createProject(payload: {
   // Guard: Postgres DATE columns reject empty strings — convert to null
   const isValidDate = (d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d)
 
+  // 1. Insert project at G0/planning (not active) — same as createOpportunity.
+  // No project may be active without a recorded G0 approval decision.
   const { data, error } = await supabase
     .from('projects')
     .insert({
@@ -189,22 +191,47 @@ export async function createProject(payload: {
       start_date:        isValidDate(payload.start_date)        ? payload.start_date        : null,
       target_completion: isValidDate(payload.target_completion) ? payload.target_completion : null,
       tenant_id: tenantId,
-      status: 'active',
-      current_phase: 1,   // G0 (origination) complete, G1 (development) in progress
-      health: 'green',
+      status:           'planning',
+      current_phase:    0,
+      health:           'green',
+      created_by:       gate.actor.userId,
     })
     .select('id')
     .single()
 
   if (error) return { error: error.message }
 
-  // Seed the G0–G6 gate records for the new project.
-  // G0 = approved (project originated), G1 = in_review (active gate), G2–G6 = pending.
+  // 2. Create approval record for G0 review (idempotent: check if one already exists).
+  const { data: existingApproval } = await supabase
+    .from('approvals')
+    .select('id')
+    .eq('object_id', data.id)
+    .eq('object_type', 'opportunity')
+    .limit(1)
+    .maybeSingle()
+
+  if (!existingApproval) {
+    const { error: ae } = await supabase.from('approvals').insert({
+      tenant_id:    tenantId,
+      object_type:  'opportunity',
+      object_id:    data.id,
+      title:        payload.code,
+      description:  `G0 gate review for ${payload.name}`,
+      status:       'pending',
+      priority:     'normal',
+      amount:       payload.budget_usd,
+      requester_id: gate.actor.userId,
+    })
+    if (ae) return { id: data.id, error: `Project created, but approval failed: ${ae.message}` }
+  }
+
+  // 3. Seed the G0–G6 gate records. All gates start pending — nothing is pre-approved.
+  // Approval of G0 via decideApproval will flip to 'in_review' via applyApprovalLifecycle.
   const gateRows = GATE_PHASES.map((g) => ({
     project_id:   data.id,
     phase_number: g.phase,
     phase_name:   g.name,
-    status:       g.phase === 0 ? 'approved' : g.phase === 1 ? 'in_review' : 'pending',
+    status:       'pending',
   }))
   const { error: gateErr } = await supabase.from('phase_gates').insert(gateRows)
   if (gateErr) console.log('[v0] phase_gates seed failed:', gateErr.message)
