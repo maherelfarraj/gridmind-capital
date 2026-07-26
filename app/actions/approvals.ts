@@ -405,14 +405,15 @@ export async function decideApproval(opts: {
     // Advance the project's gate stepper when a G0 opportunity approval is approved.
     // applyApprovalLifecycle already flipped status (planning→active); this call
     // bumps current_phase (0→1) so the PhaseGateStepper reflects the new gate.
-    // G1–G6 advances are handled separately by gate-approval-dialog/advanceProjectGate.
+    // viaApproval=true bypasses the gate sign-off check — approval workflow already verified stakeholders.
+    // G1–G6 advances are handled separately by gate-approval-dialog/advanceProjectGate (without viaApproval).
     if (
       approval.object_type === 'opportunity' &&
       approval.object_id &&
       statusMap[opts.decision] === 'approved'
     ) {
       const { advanceProjectGate } = await import('@/app/actions/phase-gates')
-      const advErr = await advanceProjectGate(approval.object_id)
+      const advErr = await advanceProjectGate(approval.object_id, { viaApproval: true })
       if (advErr.error) return { error: advErr.error }
     }
   }

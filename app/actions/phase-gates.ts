@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import type { WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
-
+import { requireRole } from '@/lib/auth/guard'
 import { getCurrentTenantId } from '@/lib/tenant'
 
 const GATE_ORDER = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'] as const
@@ -40,12 +40,24 @@ export async function getProjectGateState(projectId: string): Promise<ProjectGat
 }
 
 /**
- * Advance a project to the next gate.
+ * Advance a project to the next gate (G0→G1, G1→G2, etc).
  * Increments current_phase by 1 (capped at 6).
+ *
+ * Authorization: Caller must be system_admin, tenant_admin, or project_director.
+ *
+ * Workflow gate sign-off guard: If the current gate has unsigned sign-offs
+ * (gate_signoffs table with status != 'signed'), advancement is blocked UNLESS
+ * opts.viaApproval=true, which indicates this call originates from decideApproval
+ * after the G0 opportunity was already approved (approval workflow supersedes sign-offs).
  */
 export async function advanceProjectGate(
   projectId: string,
+  opts?: { viaApproval?: boolean }
 ): Promise<{ error?: string; newGate?: GateCode }> {
+  // 1. Authorization: require project director or admin role.
+  const gate = await requireRole(['system_admin', 'tenant_admin', 'project_director'] as const)
+  if ('error' in gate) return gate
+
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
@@ -60,6 +72,23 @@ export async function advanceProjectGate(
   const current = typeof proj.current_phase === 'number' ? proj.current_phase : 0
   if (current >= 6) return { error: 'Project is already at the final gate (G6)' }
   const next = current + 1
+
+  // 2. Workflow gate sign-off guard: unless coming via approval, check for unsigned sign-offs.
+  // G0 approval advancement (viaApproval=true) bypasses this check — the approval workflow
+  // already verified all required stakeholders. G1–G6 advances always check.
+  if (!opts?.viaApproval) {
+    const { data: unsignedSignoffs } = await supabase
+      .from('gate_signoffs')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('gate_number', current)
+      .neq('status', 'signed')
+      .limit(1)
+
+    if (unsignedSignoffs && unsignedSignoffs.length > 0) {
+      return { error: `Gate G${current} has unsigned sign-offs. All required sign-offs must be completed before advancing.` }
+    }
+  }
 
   // Gate G5 (phase 5, PAC) cannot be approved while any NCR on the project is not Closed.
   if (current === 5) {
