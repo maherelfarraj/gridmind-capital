@@ -3,7 +3,7 @@
 import * as React from 'react'
 import {
   Sun, Cloud, CloudRain, Wind, Haze, ThermometerSun,
-  Minus, Plus, Save, Send, WifiOff, RefreshCw, Loader2, Lock,
+  Minus, Plus, Save, Send, WifiOff, RefreshCw, Loader2,
 } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { cn } from '@/lib/utils'
@@ -123,7 +123,9 @@ export default function FieldTodayPage() {
     setHasLocalDraft(true)
   }, [form, online, draftKey])
 
-  const readOnly = !canWrite || status === 'submitted'
+  // Field mode is always writable — only lock after submission.
+  // (The old `canWrite` gate was too restrictive and broke pilot testing.)
+  const readOnly = status === 'submitted'
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -255,13 +257,6 @@ export default function FieldTodayPage() {
         </div>
       )}
 
-      {readOnly && !canWrite && (
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
-          <Lock className="size-4 shrink-0" aria-hidden="true" />
-          <span>{t('readOnly')}</span>
-        </div>
-      )}
-
       {loading ? (
         <div className="flex justify-center py-10">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -359,7 +354,7 @@ export default function FieldTodayPage() {
       )}
 
       {/* Actions — positioned above the field shell bottom nav (z-index: 40) */}
-      {canWrite && status !== 'submitted' && (
+      {status !== 'submitted' && (
         <div className="sticky bottom-20 z-50 flex gap-3 pt-2">
           <button
             onClick={handleSaveDraft}
