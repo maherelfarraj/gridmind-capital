@@ -84,7 +84,7 @@ export function SCurveChart({ projectId }: SCurveChartProps) {
                 fontSize: 12,
               }}
               labelStyle={{ color: 'var(--foreground)', fontWeight: 600 }}
-              formatter={(v: number, name: string) => [`${v}%`, name]}
+              formatter={(v, name) => [`${v != null ? Number(v).toFixed(1) : 0}%`, String(name)]}
             />
             <Legend
               wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
