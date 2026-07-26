@@ -265,6 +265,145 @@ export async function autoBreachExpiredConditions(approvalId: string): Promise<v
 }
 
 /**
+ * Fetch approval events with actor profile details for timeline display.
+ * Includes created/assigned/decided/delegated/condition events.
+ * Auto-breaches expired conditions before returning events.
+ */
+export async function getApprovalEvents(approvalId: string) {
+  const supabase = createAdminClient()
+
+  // Auto-breach any expired conditions before returning events
+  await autoBreachExpiredConditions(approvalId)
+
+  const { data: events } = await supabase
+    .from('approval_events')
+    .select(`
+      id,
+      event_type,
+      metadata,
+      created_at,
+      actor_id,
+      profiles!actor_id (
+        id,
+        full_name,
+        email,
+        role
+      )
+    `)
+    .eq('approval_id', approvalId)
+    .order('created_at', { ascending: true })
+
+  if (!events) return []
+
+  return events.map((e: any) => ({
+    id: e.id,
+    type: e.event_type,
+    actorId: e.actor_id,
+    actorName: e.profiles?.full_name || 'System',
+    actorEmail: e.profiles?.email || null,
+    actorRole: e.profiles?.role || 'Unknown',
+    metadata: e.metadata as Record<string, unknown> | null,
+    timestamp: e.created_at,
+  }))
+}
+
+/**
+ * Atomic project creation via RPC: inserts project (planning, phase 0) + 7 phase_gates (all pending)
+ * + G0 approval (pending) in ONE TRANSACTION with automatic rollback on any failure.
+ *
+ * Called from createOpportunity and createProject after auth/roles are verified.
+ * Replaces separate insert calls with guaranteed consistency.
+ */
+export async function createProjectGoverned(payload: {
+  tenant_id: string
+  code: string
+  name: string
+  technology?: string
+  capacity_mw?: number
+  bess_mwh?: number
+  location?: string
+  country?: string
+  target_completion?: string // ISO date
+  project_manager?: string // UUID
+  amount?: number
+  created_by: string // UUID
+}): Promise<{ project_id?: string; approval_id?: string; error?: string }> {
+  const supabase = createAdminClient()
+
+  // Call RPC function
+  const { data, error } = await supabase.rpc('create_project_governed', {
+    payload: JSON.stringify(payload),
+  })
+
+  if (error || !data) {
+    return { error: error?.message ?? 'RPC call failed' }
+  }
+
+  // Unwrap result from RPC
+  const result = typeof data === 'string' ? JSON.parse(data) : data
+  if (result.error) {
+    return { error: result.error }
+  }
+
+  return {
+    project_id: result.project_id,
+    approval_id: result.approval_id,
+  }
+}
+
+/**
+ * Backfill migration events for existing approvals without events.
+ * Creates one 'migrated' event per approval with created_at from approvals row.
+ * Admin-only operation (run as part of deployment scripts).
+ */
+export async function backfillApprovalEvents(): Promise<{ migrated: number; error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return { migrated: 0, error: gate.error }
+
+  const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
+
+  // Find all approvals for this tenant
+  const { data: allApprovals } = await supabase
+    .from('approvals')
+    .select('id, created_at, title')
+    .eq('tenant_id', tenantId)
+
+  if (!allApprovals || allApprovals.length === 0) {
+    return { migrated: 0 }
+  }
+
+  // Find which already have events
+  const { data: existingEventApprovals } = await supabase
+    .from('approval_events')
+    .select('approval_id')
+
+  const existingIds = new Set(existingEventApprovals?.map((e) => e.approval_id) ?? [])
+
+  // Get approvals that need migration
+  const toMigrate = allApprovals.filter((a) => !existingIds.has(a.id))
+
+  if (toMigrate.length === 0) {
+    return { migrated: 0 }
+  }
+
+  // Create 'migrated' events with created_at = approvals.created_at
+  const migrationEvents = toMigrate.map((a) => ({
+    approval_id: a.id,
+    actor_id: null, // No actor for pre-engine record
+    event_type: 'migrated',
+    metadata: { note: 'pre-engine record', title: a.title },
+    created_at: a.created_at, // Use approval created_at for event timestamp
+  }))
+
+  const { error } = await supabase.from('approval_events').insert(migrationEvents)
+
+  if (error) return { migrated: 0, error: error.message }
+
+  return { migrated: toMigrate.length }
+}
+
+/**
  * Apply the project lifecycle transition implied by an approval decision.
  *
  * Acceptance — not submission — drives project status:
