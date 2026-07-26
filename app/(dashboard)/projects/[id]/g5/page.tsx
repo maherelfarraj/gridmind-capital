@@ -64,8 +64,10 @@ export default function G5MechanicalCompletionPage() {
   const punchItems  = ((g5Data && g5Data.punchItems.length > 0
     ? g5Data.punchItems : null) ?? MOCK_PUNCH_ITEMS) as unknown as typeof MOCK_PUNCH_ITEMS
 
-  // Project name for the completion certificate.
+  // Project data: drives the gate stepper and the completion certificate.
   const { data: project } = useSWR(`project-${projectId}`, () => getProject(projectId))
+  const currentGateG5    = `G${project?.gate ?? 5}`
+  const completedGatesG5 = Array.from({ length: Math.max(0, project?.gate ?? 5) }, (_, i) => `G${i}`)
   const certDeliverables = MC_PROGRESS.map((m) => ({
     label: m.system,
     status: m.pct >= 100 ? 'Complete' : `${m.pct}%`,
@@ -90,7 +92,7 @@ export default function G5MechanicalCompletionPage() {
         </nav>
 
         {/* Phase gate stepper */}
-        <PhaseGateStepper currentGate="G5" completedGates={['G0', 'G1', 'G2', 'G3', 'G4']} projectId={projectId} />
+        <PhaseGateStepper currentGate={currentGateG5} completedGates={completedGatesG5} projectId={projectId} />
 
         {/* Page header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
