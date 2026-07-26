@@ -15,9 +15,11 @@ export default async function G1Page({ params }: { params: Promise<{ id: string 
 
   const sections = [
     {
-      href: `/projects/${id}/g1/approval`,
+      // Points at the real governed flow rather than the retired
+      // `/g1/approval` mock, so users don't take a pointless redirect hop.
+      href: `/team/gates?project=${id}`,
       title: 'Gate Approval',
-      desc: 'Deliverables checklist, multi-level approval workflow and chair decision for the G1 baseline sanction.',
+      desc: 'Sign-off board for the G1 baseline sanction — approver seats, per-role decisions and the gate advancement guard.',
       icon: Gavel,
     },
     {

@@ -635,7 +635,7 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
   )
 }
 
-// ��────────────────────────────────────────────────────────────
+// ��───────────────────────���────────────────────────────────────
 // Props + main page
 // ───────────────���─────────────────────────────────────────────
 
@@ -765,7 +765,9 @@ export function ProjectDetailPage({
   // Gate code → sub-page route (only wired gates navigate; others open the info panel)
   const GATE_ROUTES: Partial<Record<string, string>> = {
     G0: `/projects/${project.id}/g0`,
-    G1: `/projects/${project.id}/g1/approval`,
+    // Gate workspace, consistent with G2-G5. The retired `/g1/approval` mock now
+    // redirects to /team/gates, and the workspace links there directly.
+    G1: `/projects/${project.id}/g1`,
     G2: `/projects/${project.id}/g2`,
     G3: `/projects/${project.id}/g3`,
     G4: `/projects/${project.id}/g4`,
