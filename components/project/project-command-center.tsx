@@ -19,6 +19,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge, type BadgeProps } from '@/components/ui/badge'
 import { PHASE_META, type PhaseKey } from '@/components/app-shell/nav-config'
+import { formatMoney } from '@/lib/format-nullable'
+import { NotSet } from '@/components/ui/not-set'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -48,8 +50,8 @@ export interface ProjectData {
   gate: number
   /** Descriptive gate name, e.g. "Procurement Ready" */
   gateName: string
-  /** Total approved budget in USD */
-  budgetUsd: number
+  /** Total approved budget in USD. NULL = not set yet (renders "Not set"). */
+  budgetUsd: number | null
   /** Start date (ISO string or Date) */
   startDate: string | Date
   /** Target Commercial Operation Date */
@@ -64,8 +66,11 @@ export interface ProjectData {
   currency?: string
   /** Technology, e.g. "Solar PV" */
   technology?: string
-  /** Installed capacity in MW (from `projects.capacity_mw`) */
-  capacityMw?: number
+  /**
+   * Installed capacity in MW (from `projects.capacity_mw`).
+   * NULL = not recorded. A real 0 is valid (substation / grid-upgrade projects).
+   */
+  capacityMw?: number | null
   /** Country, e.g. "Jubaland" */
   country?: string
   /** Free-text project description */
@@ -124,7 +129,7 @@ export function adaptProjectRaw(raw: ProjectRaw): ProjectData {
     phase: phaseKey,
     gate: gateNum,
     gateName: GATE_NAMES[gateNum] ?? `Gate ${gateNum}`,
-    budgetUsd: raw.budget_amount ?? 0,
+    budgetUsd: raw.budget_amount ?? null,
     startDate: raw.start_date ?? new Date().toISOString(),
     targetCod: raw.target_cod ?? new Date().toISOString(),
     location: raw.location ?? 'Location TBD',
@@ -191,18 +196,9 @@ const PHASE_LABEL: Record<PhaseKey, string> = {
   g6: 'G6 · Handover & O&M',
 }
 
-function formatCurrency(value: number): string {
-  if (value >= 1_000_000_000) {
-    return `$${(value / 1_000_000_000).toFixed(2)}B`
-  }
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(1)}M`
-  }
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value)
+/** NULL-safe: renders "Not set" rather than a fabricated "$0". */
+function formatCurrency(value: number | null | undefined): string {
+  return formatMoney(value)
 }
 
 function formatDate(value: string | Date): string {
@@ -232,7 +228,7 @@ function Skeleton({ className }: { className?: string }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────��─────────────────
 // Stat tile
 // ─────────────────────────────────────────────────────────────
 
@@ -504,17 +500,23 @@ export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
               label="Budget"
               iconColor="#10b981"
               value={
-                <span className="inline-flex items-baseline gap-1.5">
-                  <span
-                    className="font-mono text-sm font-bold tracking-tight"
-                    aria-label={`Budget: ${formatCurrency(project.budgetUsd)} ${project.currency ?? 'USD'}`}
-                  >
-                    {formatCurrency(project.budgetUsd)}
+                project.budgetUsd == null ? (
+                  // No currency chip when there is no figure — pairing "Not set"
+                  // with "USD" would imply a real amount exists.
+                  <NotSet className="text-sm" />
+                ) : (
+                  <span className="inline-flex items-baseline gap-1.5">
+                    <span
+                      className="font-mono text-sm font-bold tracking-tight"
+                      aria-label={`Budget: ${formatCurrency(project.budgetUsd)} ${project.currency ?? 'USD'}`}
+                    >
+                      {formatCurrency(project.budgetUsd)}
+                    </span>
+                    <span className="rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {project.currency ?? 'USD'}
+                    </span>
                   </span>
-                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    {project.currency ?? 'USD'}
-                  </span>
-                </span>
+                )
               }
             />
           </div>

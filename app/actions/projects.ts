@@ -9,6 +9,7 @@ import type { ProjectData } from '@/components/project/project-command-center'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 import { deriveGateStatus, MAX_GATE } from '@/lib/gate-status'
+import { numOrNull } from '@/lib/format-nullable'
 
 const PHASE_MAP: Record<number, string> = {
   0: 'intake', 1: 'commercial', 2: 'engineering', 3: 'engineering',
@@ -112,6 +113,8 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
   if (error || !data) return paginated ? { projects: [], totalCount: 0 } : []
 
   // PostgREST returns PG `numeric` columns as strings — coerce before the UI does math.
+  // `budget_usd` / `capacity_mw` are NULLABLE and rendered directly, so they use
+  // `numOrNull` to keep NULL distinct from a real 0 (see lib/format-nullable.ts).
   const num = (v: unknown) => (v == null ? 0 : Number(v) || 0)
 
   const projects = data.map((p) => ({
@@ -124,14 +127,14 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
     // projects at phase 7/8 render as "G6" instead of a nonexistent "G8".
     gate: deriveGateStatus(p.current_phase).code,
     current_phase: p.current_phase ?? 0,
-    budget_amount: num(p.budget_usd),
+    budget_amount: numOrNull(p.budget_usd),
     status: (p.status as Project['status']) ?? 'active',
     target_cod: p.target_completion ?? '',
     // Real values so the registry can stop rendering "N/A" / "0 MW".
     country: p.country ?? '',
     location: p.location ?? '',
     technology: p.technology ?? '',
-    capacity_mw: num(p.capacity_mw),
+    capacity_mw: numOrNull(p.capacity_mw),
     health: (p as any).health ?? 'green',
   }))
 
@@ -178,7 +181,8 @@ export async function getProject(id: string): Promise<ProjectData | null> {
     phase: PHASE_KEY_MAP[gate] ?? 'g0',
     gate,
     gateName: GATE_NAMES[gate] ?? `Gate ${gate}`,
-    budgetUsd: Number(data.budget_usd ?? 0) || 0,
+    // NULL means "no budget recorded yet" and must stay distinguishable from $0.
+    budgetUsd: numOrNull(data.budget_usd),
     currency: 'USD',
     startDate: data.start_date ?? data.created_at?.split('T')[0] ?? '2024-01-01',
     targetCod: data.target_completion ?? '',
@@ -186,7 +190,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
     // Real identity fields so gate pages can render the correct project instead of
     // falling back to a hardcoded mock charter.
     technology: data.technology ?? '',
-    capacityMw: Number(data.capacity_mw ?? 0) || 0,
+    capacityMw: numOrNull(data.capacity_mw),
     country: data.country ?? '',
     description: data.description ?? '',
     commentCount: 0,
@@ -271,7 +275,7 @@ export async function createProject(payload: {
     projectCode: payload.code,
     projectName: payload.name,
     technology: payload.technology,
-    budgetUsd: payload.budget_usd ?? 0,
+    budgetUsd: numOrNull(payload.budget_usd),
     projectId: data.id,
   }).catch(() => {})
 
@@ -490,8 +494,12 @@ export interface UpdateProjectInput {
   country?: string
   location?: string
   technology?: string
-  capacity_mw?: number
-  budget_usd?: number
+  /**
+   * `undefined` = leave unchanged; `null` = explicitly clear back to "not set".
+   * A clearable numeric field needs both, otherwise emptying the input is a no-op.
+   */
+  capacity_mw?: number | null
+  budget_usd?: number | null
   target_completion?: string
   description?: string
 }

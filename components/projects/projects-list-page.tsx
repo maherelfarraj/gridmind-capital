@@ -11,6 +11,8 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge, PhaseBadge } from '@/components/ui/badge'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
+import { NotSet } from '@/components/ui/not-set'
 
 /* ─────────────────────────────────────────────────────────────
    TYPES
@@ -30,13 +32,15 @@ export interface Project {
   gate: string   // e.g. "G2"
   /** Raw `projects.current_phase` — the value `gate` is derived from. */
   current_phase?: number
-  budget_amount: number  // full dollars
+  /** Full dollars. NULL = not recorded yet — renders "Not set", never "$0". */
+  budget_amount: number | null
   status: ProjectStatus | string
   target_cod: string     // ISO date
   country?: string
   location?: string
   technology?: string
-  capacity_mw?: number
+  /** NULL = not recorded yet. A real 0 is valid (substation/grid projects). */
+  capacity_mw?: number | null
   health?: string
 }
 
@@ -146,7 +150,9 @@ export const PROJECTS_MOCK: Project[] = [
    HELPERS
 ───────────────────────────────────────────── */
 
-function formatBudget(dollars: number): string {
+/** NULL budget renders as "Not set" — never as "$0M", which would look real. */
+function formatBudget(dollars: number | null | undefined): string {
+  if (dollars == null) return NOT_SET_LABEL
   const b = dollars / 1e9
   if (b >= 1) return `$${b % 1 === 0 ? b.toFixed(1) : b.toFixed(1)}B`
   const m = dollars / 1e6
@@ -159,8 +165,11 @@ function formatCod(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
-function applyBudgetFilter(amount: number, range: string | null): boolean {
+function applyBudgetFilter(amount: number | null | undefined, range: string | null): boolean {
   if (!range || range === 'All') return true
+  // An unset budget has no known magnitude, so it cannot satisfy a range filter.
+  // (Previously NULL was coerced to 0 upstream and wrongly matched "<$100M".)
+  if (amount == null) return false
   if (range === '<$100M') return amount < 100_000_000
   if (range === '$100M–$1B') return amount >= 100_000_000 && amount <= 1_000_000_000
   if (range === '>$1B') return amount > 1_000_000_000
@@ -789,7 +798,15 @@ export function ProjectsListPage({
     list.sort((a, b) => {
       let cmp = 0
       if (sortBy === 'name')          cmp = a.name.localeCompare(b.name)
-      else if (sortBy === 'budget_amount') cmp = a.budget_amount - b.budget_amount
+      // Unset budgets sort last in BOTH directions. Subtracting nulls would give
+      // NaN, which makes the comparator inconsistent and the order arbitrary.
+      else if (sortBy === 'budget_amount') {
+        const av = a.budget_amount, bv = b.budget_amount
+        if (av == null && bv == null) cmp = 0
+        else if (av == null) return 1
+        else if (bv == null) return -1
+        else cmp = av - bv
+      }
       else if (sortBy === 'target_cod')    cmp = a.target_cod.localeCompare(b.target_cod)
       else                             cmp = a.id.localeCompare(b.id)
       return sortOrder === 'asc' ? cmp : -cmp
@@ -1051,9 +1068,13 @@ export function ProjectsListPage({
                     </td>
                     {/* Budget */}
                     <td className="px-4 py-3.5 text-right">
-                      <span className="text-sm text-slate-700 dark:text-foreground font-mono tabular-nums">
-                        {formatBudget(project.budget_amount)}
-                      </span>
+                      {project.budget_amount == null ? (
+                        <NotSet className="text-sm" />
+                      ) : (
+                        <span className="text-sm text-slate-700 dark:text-foreground font-mono tabular-nums">
+                          {formatBudget(project.budget_amount)}
+                        </span>
+                      )}
                     </td>
                     {/* Status */}
                     <td className="px-4 py-3.5">

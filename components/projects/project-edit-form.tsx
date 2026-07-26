@@ -14,8 +14,9 @@ export interface EditableProject {
   country?: string
   location?: string
   technology?: string
-  capacityMw?: number
-  budgetUsd?: number
+  /** NULL/undefined = not recorded yet; a real 0 is a value and is preserved. */
+  capacityMw?: number | null
+  budgetUsd?: number | null
   /** Accepts a Date or ISO string; normalised by toDateInput before display. */
   targetCod?: string | Date
   description?: string
@@ -50,11 +51,13 @@ export function ProjectEditForm({ project, onSaved, onCancel, readOnly }: Projec
   const [country, setCountry]   = React.useState(project.country ?? '')
   const [location, setLocation] = React.useState(project.location ?? '')
   const [technology, setTechnology] = React.useState(project.technology ?? '')
+  // An empty input means "not set"; a real 0 must round-trip as "0", not blank.
+  // (The old `!== 0` test existed only because NULL used to arrive coerced to 0.)
   const [capacity, setCapacity] = React.useState(
-    project.capacityMw != null && project.capacityMw !== 0 ? String(project.capacityMw) : '',
+    project.capacityMw != null ? String(project.capacityMw) : '',
   )
   const [budget, setBudget]     = React.useState(
-    project.budgetUsd != null && project.budgetUsd !== 0 ? String(project.budgetUsd) : '',
+    project.budgetUsd != null ? String(project.budgetUsd) : '',
   )
   const [targetCod, setTargetCod] = React.useState(toDateInput(project.targetCod))
   const [description, setDescription] = React.useState(project.description ?? '')
@@ -69,8 +72,8 @@ export function ProjectEditForm({ project, onSaved, onCancel, readOnly }: Projec
     setCountry(project.country ?? '')
     setLocation(project.location ?? '')
     setTechnology(project.technology ?? '')
-    setCapacity(project.capacityMw != null && project.capacityMw !== 0 ? String(project.capacityMw) : '')
-    setBudget(project.budgetUsd != null && project.budgetUsd !== 0 ? String(project.budgetUsd) : '')
+    setCapacity(project.capacityMw != null ? String(project.capacityMw) : '')
+    setBudget(project.budgetUsd != null ? String(project.budgetUsd) : '')
     setTargetCod(toDateInput(project.targetCod))
     setDescription(project.description ?? '')
     setError(null)
@@ -95,13 +98,16 @@ export function ProjectEditForm({ project, onSaved, onCancel, readOnly }: Projec
       return
     }
     // Reject non-numeric / negative input before it reaches the DB.
-    const capNum = capacity.trim() === '' ? undefined : Number(capacity)
-    if (capNum !== undefined && (Number.isNaN(capNum) || capNum < 0)) {
+    // An emptied field sends `null` (explicitly clear back to "Not set"), NOT
+    // `undefined` — updateProject skips undefined keys, so clearing a budget
+    // would otherwise be silently ignored.
+    const capNum = capacity.trim() === '' ? null : Number(capacity)
+    if (capNum !== null && (Number.isNaN(capNum) || capNum < 0)) {
       setError('Capacity must be a positive number.')
       return
     }
-    const budgetNum = budget.trim() === '' ? undefined : Number(budget)
-    if (budgetNum !== undefined && (Number.isNaN(budgetNum) || budgetNum < 0)) {
+    const budgetNum = budget.trim() === '' ? null : Number(budget)
+    if (budgetNum !== null && (Number.isNaN(budgetNum) || budgetNum < 0)) {
       setError('Budget must be a positive number.')
       return
     }

@@ -13,6 +13,7 @@
  * the originating action.
  */
 import { createAdminClient } from '@/lib/supabase/admin'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 import { buildEmail, getUserLocale, heading, para, kvTable, btn } from '@/lib/email/render'
 
 const FROM_ADDRESS = process.env.EMAIL_FROM ?? 'notifications@gridmind.capital'
@@ -383,7 +384,8 @@ export async function sendProjectCreatedEmail(opts: {
   projectCode: string
   projectName: string
   technology: string
-  budgetUsd: number
+  /** NULL when no budget has been set yet — renders "Not set", never "$0". */
+  budgetUsd: number | null
   projectId: string
 }) {
   const projectUrl = `${BASE_URL}/projects/${opts.projectId}`
@@ -394,7 +396,7 @@ export async function sendProjectCreatedEmail(opts: {
       ['Code', opts.projectCode],
       ['Name', opts.projectName],
       ['Technology', opts.technology],
-      ['Budget', fmtUsd(opts.budgetUsd)],
+      ['Budget', opts.budgetUsd == null ? NOT_SET_LABEL : fmtUsd(opts.budgetUsd)],
     ])}
     ${btn('Open Project', projectUrl)}
   `)

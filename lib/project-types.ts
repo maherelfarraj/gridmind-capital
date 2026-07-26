@@ -12,7 +12,8 @@ export interface Project {
   phase: string
   gate: number
   gateName: string
-  budgetUsd: number
+  /** NULL = no budget recorded yet — renders "Not set", never "$0". */
+  budgetUsd: number | null
   currency: string
   startDate: string
   targetCod: string
@@ -22,8 +23,11 @@ export interface Project {
   technology?: string
   /** Display-formatted capacity string, e.g. "400 MW". */
   capacity?: string
-  /** Numeric capacity in MW from `projects.capacity_mw` (source of truth for editing). */
-  capacityMw?: number
+  /**
+   * Numeric capacity in MW from `projects.capacity_mw` (source of truth for editing).
+   * NULL = not recorded. A real 0 is valid (substation / grid-upgrade projects).
+   */
+  capacityMw?: number | null
   country?: string
   description?: string
   epcContractor?: string
