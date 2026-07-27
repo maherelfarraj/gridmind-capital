@@ -1,10 +1,8 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import useSWR from 'swr'
-import {
-  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts'
 import {
   Plus, RefreshCw, Loader2, Hammer, HardHat, ClipboardList,
   CheckCircle2, AlertTriangle, X, ClipboardCheck, ChevronRight,
@@ -19,6 +17,12 @@ import {
 } from '@/app/actions/construction'
 import type { WorkPackage, InspectionRecord, PunchItem } from '@/lib/types/action-types'
 import { DailyReportsSection } from './daily-reports-section'
+
+// ── Dynamic chart import ──────────────────────────────────────
+const ConstructionChartsWrapper = dynamic(
+  () => import('./construction-charts-wrapper'),
+  { ssr: false, loading: () => <div className="h-80 bg-muted animate-pulse rounded" /> }
+)
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -223,52 +227,8 @@ export function ConstructionPage() {
           ))}
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Planned vs Actual by Discipline</CardTitle></CardHeader>
-            <CardContent className="h-52">
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm gap-2"><Loader2 className="size-4 animate-spin" />Loading…</div>
-              ) : (data?.wpByDiscipline?.length ?? 0) === 0 ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No data — seed demo first</div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data!.wpByDiscipline} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} formatter={(v) => [`${v}%`, '']} />
-                    <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="planned" name="Planned %" fill="#64748b" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="actual"  name="Actual %"  fill="#64ffda" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Punch List by Category</CardTitle></CardHeader>
-            <CardContent className="h-52">
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm gap-2"><Loader2 className="size-4 animate-spin" />Loading…</div>
-              ) : (data?.punchByCategory?.every((p) => p.value === 0) ?? true) ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No punch items</div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={data!.punchByCategory.filter((p) => p.value > 0)} dataKey="value" nameKey="name"
-                      cx="50%" cy="50%" outerRadius={72}
-                      label={({ name, percent }: { name?: string; percent?: number }) => `${(name ?? '').split('(')[0]} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
-                      {(data?.punchByCategory ?? []).map((e, i) => <Cell key={i} fill={e.color} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        {/* Charts - dynamically loaded */}
+        <ConstructionChartsWrapper data={data} isLoading={isLoading} />
 
         {/* Live badge */}
         <span className={cn('inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full',
