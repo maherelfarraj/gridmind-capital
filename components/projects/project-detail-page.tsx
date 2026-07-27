@@ -58,9 +58,9 @@ const SPEC_PROJECT: ProjectData = {
   code: 'SOL-2026-001',
   client: 'Emirates Water and Electricity Company',
   status: 'active',
-  phase: 'g3',
-  gate: 2,
-  gateName: 'Engineering IFC Release',
+  phase: 'g4',
+  gate: 4,
+  gateName: 'Detailed Design (IFC)',
   budgetUsd: 1_200_000_000,
   currency: 'USD',
   startDate: '2026-01-15',
@@ -73,18 +73,18 @@ const SPEC_PROJECT: ProjectData = {
 const _T = (hrsAgo: number) => new Date(Date.now() - hrsAgo * 3_600_000).toISOString()
 
 const SPEC_LOGS: WorkflowLogEntry[] = [
-  { id: 'l1', action: 'workflow.approve',  object_type: 'Gate',     object_id: 'g1', object_code: 'G1 — Development Approval', actor_name: 'Sarah Al-Zaabi',  actor_role: 'PMO Director',    before_state: 'under_review', after_state: 'approved',  decision_reason: 'Development approval conditions fully satisfied. EWEC sign-off received.',          metadata: null,                                                  created_at: _T(1)   },
+  { id: 'l1', action: 'workflow.approve',  object_type: 'Gate',     object_id: 'g1', object_code: 'G1 — Origination & Feasibility', actor_name: 'Sarah Al-Zaabi',  actor_role: 'PMO Director',    before_state: 'under_review', after_state: 'approved',  decision_reason: 'Feasibility study conditions fully satisfied. Client sign-off received.',          metadata: null,                                                  created_at: _T(1)   },
   { id: 'l2', action: 'workflow.submit',   object_type: 'Document', object_id: 'd1', object_code: 'IFC-DWG-REV-C',            actor_name: 'Ahmed Hassan',    actor_role: 'Lead Engineer',   before_state: 'draft',        after_state: 'submitted', decision_reason: null,                                                                              metadata: { detail: '164 IFC drawings submitted — REV C' },      created_at: _T(6)   },
   { id: 'l3', action: 'workflow.escalate', object_type: 'Finance',  object_id: 'f1', object_code: 'CONT-2026-014',            actor_name: 'James Thornton',  actor_role: 'Finance Lead',    before_state: 'pending',      after_state: 'escalated', decision_reason: 'Module cost escalation exceeds 5% threshold — CFO approval required.',              metadata: null,                                                  created_at: _T(14)  },
   { id: 'l4', action: 'approval.approve',  object_type: 'Contract', object_id: 'c1', object_code: 'CTR-PV-MODULE-001',        actor_name: 'Sarah Al-Zaabi',  actor_role: 'PMO Director',    before_state: 'pending',      after_state: 'approved',  decision_reason: 'Competitive bid. Vendor qualified. Insurance verified.',                           metadata: { detail: 'Contract value: $342M · 18-month supply' }, created_at: _T(24)  },
   { id: 'l5', action: 'comment.create',    object_type: 'Document', object_id: 'd2', object_code: 'SPEC-PV-MODULE-REV2',      actor_name: 'Fatima Al-Rashid',actor_role: 'Owner Engineer',  before_state: null,           after_state: null,        decision_reason: null,                                                                              metadata: { detail: 'Section 4.1 — panel efficiency spec updated to 22.8% per latest datasheet.' }, created_at: _T(36) },
   { id: 'l6', action: 'workflow.submit',   object_type: 'Document', object_id: 'd3', object_code: 'BOM-ELEC-001-DRAFT',       actor_name: 'Ahmed Hassan',    actor_role: 'Lead Engineer',   before_state: 'draft',        after_state: 'submitted', decision_reason: null,                                                                              metadata: { detail: 'Electrical BOM — 2,847 line items' },       created_at: _T(60)  },
   { id: 'l7', action: 'workflow.reject',   object_type: 'Design',   object_id: 'dz', object_code: 'CALC-STRUCT-PILE-V1',      actor_name: 'Lena Brandt',     actor_role: 'Owner Engineer',  before_state: 'under_review', after_state: 'rejected',  decision_reason: 'Pile foundation calculations do not account for Abu Dhabi seismic zone 2a loads.', metadata: null,                                                  created_at: _T(96)  },
-  { id: 'l8', action: 'project.create',    object_type: 'Project',  object_id: 'p1', object_code: 'SOL-2026-001',             actor_name: 'System',          actor_role: 'Platform',        before_state: null,           after_state: 'active',    decision_reason: null,                                                                              metadata: { detail: 'Project created at G0 — Opportunity Accepted.' },                              created_at: _T(432) },
+  { id: 'l8', action: 'project.create',    object_type: 'Project',  object_id: 'p1', object_code: 'SOL-2026-001',             actor_name: 'System',          actor_role: 'Platform',        before_state: null,           after_state: 'active',    decision_reason: null,                                                                              metadata: { detail: 'Project created with intake phase.' },                              created_at: _T(432) },
 ]
 
 const SPEC_APPROVALS: ApprovalItem[] = [
-  { id: 'a1', type: 'gate-review',    title: 'G2 IFC Drawing Package Sign-off',   projectCode: 'SOL-2026-001', projectName: 'Al Dhafra Solar PV', requestedBy: 'A. Hassan',    daysOpen: 5, isOverdue: false, priority: 'critical' },
+  { id: 'a1', type: 'gate-review',    title: 'G4 Detailed Design (IFC) Sign-off',   projectCode: 'SOL-2026-001', projectName: 'Al Dhafra Solar PV', requestedBy: 'A. Hassan',    daysOpen: 5, isOverdue: false, priority: 'critical' },
   { id: 'a2', type: 'budget-variance',title: '+$14M Solar Module Price Revision', projectCode: 'SOL-2026-001', projectName: 'Al Dhafra Solar PV', requestedBy: 'J. Thornton',  daysOpen: 3, isOverdue: false, priority: 'high'     },
   { id: 'a3', type: 'change-order',   title: 'CO-012 Tracker System Upgrade',     projectCode: 'SOL-2026-001', projectName: 'Al Dhafra Solar PV', requestedBy: 'F. Al-Rashid', daysOpen: 1, isOverdue: false, priority: 'medium'   },
 ]
