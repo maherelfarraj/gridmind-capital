@@ -1197,3 +1197,55 @@ export async function updateProjectProvenance(
 
   return { success: true }
 }
+
+/**
+ * Fresh start: Reset project to G0 with all approvals/signatures cleared.
+ * Admin-only testing utility for multi-project testing scenarios.
+ */
+export async function resetProjectToPhase(projectId: string, targetPhase: number) {
+  const tenantId = await getCurrentTenantId()
+  const supabase = createAdminClient()
+  
+  // Verify admin access
+  await requireWriter()
+
+  // Update project to target phase
+  const { error: updateError } = await supabase
+    .from('projects')
+    .update({ current_phase: targetPhase, status: 'active' })
+    .eq('id', projectId)
+    .eq('tenant_id', tenantId)
+
+  if (updateError) throw new Error(`Failed to update project: ${updateError.message}`)
+
+  // Reset all phase_gates to 'pending' status
+  const { error: resetError } = await supabase
+    .from('phase_gates')
+    .update({ status: 'pending' })
+    .eq('project_id', projectId)
+    .eq('tenant_id', tenantId)
+
+  if (resetError) throw new Error(`Failed to reset gates: ${resetError.message}`)
+
+  // Clear all approvals for this project
+  const { error: appError } = await supabase
+    .from('approvals')
+    .update({ status: 'pending', decided_at: null })
+    .eq('object_id', projectId)
+    .eq('tenant_id', tenantId)
+
+  if (appError) throw new Error(`Failed to clear approvals: ${appError.message}`)
+
+  // Log fresh start in audit trail
+  await supabase.from('audit_log').insert({
+    tenant_id: tenantId,
+    table_name: 'projects',
+    record_id: projectId,
+    action: 'update',
+    changed_by: null, // Admin action
+    old_values: null,
+    new_values: { op: 'fresh_start', target_phase: targetPhase },
+  })
+
+  return { success: true, projectId, resetToPhase: targetPhase }
+}
