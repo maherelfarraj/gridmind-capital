@@ -292,7 +292,7 @@ export async function getClientHome(projectId?: string): Promise<ClientHome | nu
     })
   }
   const approved = gates.filter((g) => g.status === 'approved').length
-  const percentComplete = Math.round((approved / 6) * 100)
+  const percentComplete = Math.round((approved / 8) * 100)
 
   // Next upcoming milestone (first non-paid with a future/earliest planned date).
   const ms = msRes.data ?? []

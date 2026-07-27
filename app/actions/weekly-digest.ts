@@ -101,10 +101,10 @@ async function compileUserDigest(
         .eq('project_id', p.id),
     ])
 
-    // Gate + progress (approved gate_records / 6).
+    // Gate + progress (approved gate_records / 8).
     const gates = gatesRes.data ?? []
     const approvedGates = gates.filter((g) => g.status === 'approved').length
-    const progressPct = Math.round((approvedGates / 6) * 100)
+    const progressPct = Math.round((approvedGates / 8) * 100)
     const phase = num(p.current_phase)
 
     // Approvals pending on THEM.
