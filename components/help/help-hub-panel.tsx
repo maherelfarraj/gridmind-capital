@@ -117,13 +117,14 @@ Navigate using the sidebar. Use **⌘K** (or Ctrl+K) to open global search. The 
     body: `GridMind uses a **G1–G8** 8-phase stage-gate framework to govern project progression.
 
 Each gate requires specific deliverables and approvals before a project can advance:
-• G0 – Opportunity Accepted
-• G1 – Project Baseline Approved
-• G2 – Engineering IFC Release
-• G3 – Procurement Award
-• G4 – Construction Mobilization
-• G5 – Mechanical Completion
-• G6 – Handover, Operations & Closeout
+• G1 – Origination & Feasibility
+• G2 – Permitting & Grid Application
+• G3 – Commercial & Financial Close (RTB)
+• G4 – Detailed Design (IFC)
+• G5 – Procurement & Manufacturing
+• G6 – Construction & Installation
+• G7 – Commissioning & Grid Tests
+• G8 – Handover & O&M
 
 > Segregation of duty rules apply — the creator of a workflow cannot be the sole approver.`,
     tags: ['gates', 'approvals', 'workflow'],
@@ -178,10 +179,10 @@ Access audit logs via **Admin → Audit Trail**. Logs can be exported as CSV or 
   // INTAKE
   {
     id: 'int-1',
-    title: 'G0: Opportunity Accepted',
+    title: 'Project Intake',
     module: 'intake',
     icon: Briefcase,
-    body: `Gate **G0** validates the project opportunity before committing resources.
+    body: `Project intake establishes the opportunity before committing engineering resources.
 
 Required deliverables:
 1. Opportunity Assessment
@@ -190,17 +191,17 @@ Required deliverables:
 
 **Approval required from:** Executive Sponsor
 
-The project enters G0 status upon creation. A workflow instance is automatically started and the assigned sponsor must approve within 5 business days.
+The project enters intake status upon creation. A workflow instance is automatically started and the assigned sponsor must approve within 5 business days.
 
-> Missing documents will cause the gate review to be held pending.`,
-    tags: ['G0', 'intake', 'opportunity'],
+> Missing documents will cause the intake review to be held pending.`,
+    tags: ['intake', 'opportunity'],
   },
   {
     id: 'int-2',
     title: 'Opportunity assessment checklist',
     module: 'intake',
     icon: CheckCircle2,
-    body: `Before advancing from G0 to G1, complete the opportunity assessment:
+    body: `Before advancing to G1, complete the opportunity assessment:
 
 1. **Land / site** — Confirm land tenure or lease option agreement is in place.
 2. **Grid** — Obtain preliminary grid connection study or reservation letter.
@@ -209,23 +210,24 @@ The project enters G0 status upon creation. A workflow instance is automatically
 5. **Financial model** — Preliminary IRR/NPV at agreed tariff/PPA assumptions.
 6. **Risk register** — Initial risk identification and top-3 mitigations.
 
-Upload all supporting documents against the project record before submitting for G0 approval.`,
-    tags: ['checklist', 'G0', 'assessment'],
+Upload all supporting documents against the project record before submitting for approval.`,
+    tags: ['checklist', 'assessment'],
   },
 
   // COMMERCIAL
   {
     id: 'com-1',
-    title: 'G1: Project Baseline Approved',
+    title: 'G1: Origination & Feasibility',
     module: 'commercial',
     icon: FileText,
-    body: `Gate **G1** establishes the project baseline before engineering commences.
+    body: `Gate **G1** establishes the project baseline and develops feasibility before engineering commences.
 
 Required deliverables:
 1. Project Charter
-2. Detailed Schedule (Level 3)
-3. Cost Baseline
-4. Risk Register
+2. Feasibility Study
+3. Detailed Schedule (Level 3)
+4. Cost Baseline
+5. Risk Register
 
 **Approval required from:** PMO Director + Executive Sponsor
 
@@ -255,10 +257,10 @@ Configure thresholds in **Tenant Settings → Approval Rules**.
   // ENGINEERING
   {
     id: 'eng-1',
-    title: 'G2: Engineering IFC Release',
+    title: 'G2: Permitting & Grid Application',
     module: 'engineering',
     icon: Zap,
-    body: `Gate **G2** releases Issued For Construction (IFC) drawings.
+    body: `Gate **G2** secures environmental permits and grid connection approvals.
 
 Required deliverables:
 1. IFC Drawings

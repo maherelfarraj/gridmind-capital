@@ -175,9 +175,13 @@ export function ProjectDetailPageClient({
           documentCount: project.documentCount,
         }}
         gateNames={initialGateState?.gateNames}
-        gateProgress={Object.fromEntries(
-          Array.from({ length: 10 }, (_, i) => [`G${i}`, i < project.gate]),
-        )}
+        gateProgress={{
+          currentGate: initialGateState?.currentGate ?? `G${project.gate}`,
+          completedGates: initialGateState?.completedGates ?? [],
+          ...Object.fromEntries(
+            Array.from({ length: 10 }, (_, i) => [`G${i}`, i < project.gate]),
+          ),
+        }}
         deliverables={
           (initialDeliverables && initialDeliverables.length > 0)
             ? initialDeliverables

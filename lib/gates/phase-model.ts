@@ -134,3 +134,75 @@ export function computeCurrentPhase(
 
   return approvedCount
 }
+
+/**
+ * UNIFIED GATE STATE DERIVATION — Single source of truth for all UI displays.
+ * Derives all gate information from fetched phase_gates rows.
+ * Returns consistent values for: completed phase label, active phase, and 1-based gate codes.
+ *
+ * @param phaseGates — Array of phase_gates rows from DB with phase_number (1–8), status, phase_name
+ * @param currentPhase — projects.current_phase (0–8, counts approved gates)
+ * @returns { completedCount, activePhase, completedLabel, activeLabel, completedGates }
+ */
+export interface PhaseState {
+  completedCount: number // 0–8: count of approved gates
+  activePhase: number // 1–8: DB phase_number of first non-approved gate (or 9 if all approved)
+  completedLabel: string // e.g. "Origination & Feasibility" (name of last approved phase)
+  activeLabel: string // e.g. "Permitting & Grid Application" (name of active gate)
+  completedGates: string[] // 1-based gate codes: ["G1"] or ["G1", "G2"]
+}
+
+export function derivePhaseState(
+  phaseGates: Array<{ phase_number: number; status: string; phase_name?: string }> | null | undefined,
+  currentPhase: number | null | undefined,
+): PhaseState {
+  const cp = currentPhase ?? 0
+  const gates = phaseGates ?? []
+
+  // Build a map: phase_number → phase_name
+  const phaseMap: Record<number, string> = {}
+  for (const gate of gates) {
+    if (gate.phase_number >= 1 && gate.phase_number <= TOTAL_PHASES) {
+      phaseMap[gate.phase_number] = gate.phase_name || CANONICAL_PHASE_NAMES[gate.phase_number - 1]
+    }
+  }
+
+  // completedCount = number of approved gates
+  const completedCount = Math.min(cp, TOTAL_PHASES)
+
+  // activePhase = first non-approved DB phase_number (1–8), or 9 if all approved
+  let activePhase = 1
+  for (const gate of gates) {
+    if (gate.status !== 'approved') {
+      activePhase = gate.phase_number
+      break
+    }
+  }
+  if (completedCount >= TOTAL_PHASES) {
+    activePhase = TOTAL_PHASES + 1 // Past the last phase
+  }
+
+  // completedLabel = name of last approved phase (or "—" if none)
+  const completedLabel = completedCount > 0
+    ? phaseMap[completedCount] || CANONICAL_PHASE_NAMES[completedCount - 1] || '—'
+    : '—'
+
+  // activeLabel = name of active gate
+  const activeLabel = activePhase <= TOTAL_PHASES
+    ? phaseMap[activePhase] || CANONICAL_PHASE_NAMES[activePhase - 1] || '—'
+    : '—'
+
+  // completedGates = 1-based gate codes ["G1"], ["G1", "G2"], etc.
+  const completedGates = Array.from(
+    { length: completedCount },
+    (_, i) => `G${i + 1}`,
+  )
+
+  return {
+    completedCount,
+    activePhase,
+    completedLabel,
+    activeLabel,
+    completedGates,
+  }
+}

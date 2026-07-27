@@ -8,7 +8,6 @@ import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-import { deriveGateStatus, MAX_GATE } from '@/lib/gate-status'
 import { numOrNull } from '@/lib/format-nullable'
 import { CANONICAL_PHASE_NAMES, seedPhaseGatesRows } from '@/lib/gates/phase-model'
 
@@ -18,17 +17,17 @@ const PHASE_MAP: Record<number, string> = {
 }
 
 // DEPRECATED: Use CANONICAL_PHASE_NAMES from lib/gates/phase-model.ts instead.
-// Kept temporarily for reference only.
+// Kept temporarily for reference only (now aligned with canonical 8-phase model).
 const GATE_NAMES: Record<number, string> = {
-  0: 'Opportunity Accepted',
-  1: 'Project Baseline Approved',
-  2: 'Engineering IFC Release',
-  3: 'Procurement Award',
-  4: 'Construction Mobilization',
-  5: 'Mechanical Completion',
-  6: 'Handover, Ops & Closeout',
-  7: 'Handover, Ops & Closeout',
-  8: 'Handover, Ops & Closeout',
+  0: 'Project Intake',
+  1: 'Origination & Feasibility',
+  2: 'Permitting & Grid Application',
+  3: 'Commercial & Financial Close (RTB)',
+  4: 'Detailed Design (IFC)',
+  5: 'Procurement & Manufacturing',
+  6: 'Construction & Installation',
+  7: 'Commissioning & Grid Tests',
+  8: 'Handover & O&M',
 }
 
 export interface GetProjectsOptions {
@@ -82,7 +81,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
   if (gate !== null && gate !== undefined) {
     // current_phase can exceed the governed G1–G8 range and those clamp to G8 for display.
     // Use >= at the top gate so the filter matches what the UI actually shows instead of hiding them.
-    if (gate >= MAX_GATE) query = query.gte('current_phase', gate)
+    if (gate >= 8) query = query.gte('current_phase', gate)
     else query = query.eq('current_phase', gate)
   }
 
@@ -117,9 +116,9 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
     name: p.name,
     client_name: (p as any).client_name ?? p.location ?? p.country ?? '—',
     phase: PHASE_MAP[p.current_phase ?? 0] ?? 'intake',
-    // Clamped to the governed G1–G8 range via the shared helper so completed
-    // projects at phase 7/8 render as "G6" instead of a nonexistent "G8".
-    gate: deriveGateStatus(p.current_phase).code,
+    // Gate derivation now unified in project-detail-page via getProjectGateState()
+    // Pass current_phase as-is; currentGate comes from phase_gates table
+    gate: `G${Math.max(0, Math.min(p.current_phase ?? 0, 8))}`,
     current_phase: p.current_phase ?? 0,
     budget_amount: numOrNull(p.budget_usd),
     status: (p.status as Project['status']) ?? 'active',
