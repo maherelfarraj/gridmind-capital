@@ -339,36 +339,47 @@ async function getSignatureEvents(
     .limit(100)
 
   const rows = data ?? []
-  return Promise.all(
-    rows.map(async (r: Record<string, any>): Promise<WorkflowLogEntry> => {
-      const { data: signed } = await supabase.storage
-        .from('documents')
-        .createSignedUrl(r.signature_image_path as string, 3600)
-      const label = SIG_ENTITY_LABEL[r.entity_type as string] ?? 'Signature'
-      return {
-        id: `sig-${r.id}`,
-        action: 'workflow.approve',
-        object_type: 'signature',
-        object_id: r.entity_id as string,
-        object_code: `${label} · Signed`,
-        actor_name: r.signer_name as string,
-        actor_role: (r.signer_role as string) ?? null,
-        before_state: null,
-        after_state: 'signed',
-        decision_reason: null,
-        metadata: {
-          signature: {
-            imageUrl: signed?.signedUrl ?? '',
-            signerName: r.signer_name,
-            signerRole: r.signer_role,
-            signedAt: r.signed_at,
-            ip: r.ip_address,
-          },
-        },
-        created_at: r.signed_at as string,
+  
+  // Batch sign all URLs at once instead of per-row
+  const paths = rows.map((r) => (r.signature_image_path as string) || '').filter(Boolean)
+  const signedUrls: Record<string, string> = {}
+  
+  if (paths.length > 0) {
+    const { data: urlData } = await supabase.storage
+      .from('documents')
+      .createSignedUrls(paths, 3600)
+    urlData?.forEach((item: any) => {
+      if (item?.path && item?.signedUrl) {
+        signedUrls[item.path] = item.signedUrl
       }
-    }),
-  )
+    })
+  }
+
+  return rows.map((r: Record<string, any>): WorkflowLogEntry => {
+    const label = SIG_ENTITY_LABEL[r.entity_type as string] ?? 'Signature'
+    return {
+      id: `sig-${r.id}`,
+      action: 'workflow.approve',
+      object_type: 'signature',
+      object_id: r.entity_id as string,
+      object_code: `${label} · Signed`,
+      actor_name: r.signer_name as string,
+      actor_role: (r.signer_role as string) ?? null,
+      before_state: null,
+      after_state: 'signed',
+      decision_reason: null,
+      metadata: {
+        signature: {
+          imageUrl: signedUrls[r.signature_image_path as string] ?? '',
+          signerName: r.signer_name,
+          signerRole: r.signer_role,
+          signedAt: r.signed_at,
+          ip: r.ip_address,
+        },
+      },
+      created_at: r.signed_at as string,
+    }
+  })
 }
 
 async function getModuleEvents(

@@ -206,41 +206,42 @@ export interface WidgetStats {
 export async function getWidgetStats(): Promise<WidgetStats> {
   const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
-  const [projRes, apprRes, riskRes, condRes] = await Promise.all([
-    supabase.from('projects').select('status, budget_usd, health').eq('tenant_id', tenantId),
-    supabase.from('approvals').select('id, status, decision').eq('tenant_id', tenantId),
-    supabase.from('risks').select('status').eq('tenant_id', tenantId),
-    // Get conditional approvals with open/breached conditions
-    supabase.from('approval_conditions').select('approval_id, status'),
+  const [projCountRes, apprCountRes, riskCountRes, projDataRes, condRes] = await Promise.all([
+    // Count active projects
+    supabase.from('projects').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'active'),
+    // Count pending/delegated approvals
+    supabase.from('approvals').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).in('status', ['pending', 'delegated']),
+    // Count open risks
+    supabase.from('risks').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).not('status', 'in', '("closed","mitigated")'),
+    // Get project data for budget and health calculations
+    supabase.from('projects').select('budget_usd, health').eq('tenant_id', tenantId),
+    // Get conditional approvals with open/breached conditions - add tenant filter
+    supabase.from('approval_conditions').select('approval_id, status').eq('tenant_id', tenantId),
   ])
-  const projects  = projRes.data ?? []
-  const approvals = apprRes.data ?? []
-  const risks     = riskRes.data ?? []
+  
   const conditions = condRes.data ?? []
+  const projects = projDataRes.data ?? []
 
-  const activeProjects = projects.filter((p) => p.status === 'active').length
-  const totalBudget    = projects.reduce((s, p) => s + (Number(p.budget_usd) || 0), 0)
-  const openApprovals  = approvals.filter((a) => a.status === 'pending' || a.status === 'delegated').length
+  // Use database counts
+  const activeProjects = projCountRes.count ?? 0
+  const openApprovals  = apprCountRes.count ?? 0
+  const openRisks      = riskCountRes.count ?? 0
   
-  // Count conditional approvals with open or breached conditions
-  const conditionalApprovalIds = new Set(
-    approvals
-      .filter((a) => a.decision === 'conditional_proceed')
-      .map((a) => a.id)
-  )
-  const openConditions = conditions.filter(
-    (c) => conditionalApprovalIds.has(c.approval_id) && (c.status === 'open' || c.status === 'breached')
-  ).length
+  // Calculate budget sum
+  const totalBudget = projects.reduce((s, p) => s + (Number(p.budget_usd) || 0), 0)
   
-  const openRisks      = risks.filter((r) => {
-    const st = (r.status ?? '').toLowerCase()
-    return st !== 'closed' && st !== 'mitigated'
-  }).length
-
+  // Calculate average health
   const HEALTH: Record<string, number> = { green: 100, amber: 60, red: 25 }
   const avgHealth = projects.length
     ? Math.round(projects.reduce((s, p) => s + (HEALTH[p.health ?? 'green'] ?? 60), 0) / projects.length)
     : 0
+  
+  // Count conditional approvals with open or breached conditions (still need to fetch approval decisions)
+  const approvalsWithDecision = await supabase.from('approvals').select('id, decision').eq('tenant_id', tenantId).eq('decision', 'conditional_proceed')
+  const conditionalApprovalIds = new Set((approvalsWithDecision.data ?? []).map((a) => a.id))
+  const openConditions = conditions.filter(
+    (c) => conditionalApprovalIds.has(c.approval_id) && (c.status === 'open' || c.status === 'breached')
+  ).length
 
   return { activeProjects, totalBudget, openApprovals, openConditions, openRisks, avgHealth }
 }

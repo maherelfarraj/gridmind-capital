@@ -58,13 +58,12 @@ export function NotificationsCenter() {
   // ── Supabase Realtime subscription ──────────────────────────
   React.useEffect(() => {
     const supabase = createClient()
-    let userId: string | undefined
+    let channel: ReturnType<typeof supabase.channel> | undefined
 
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      userId = user.id
-
-      const channel = supabase
+      
+      channel = supabase
         .channel('notifications-realtime')
         .on(
           'postgres_changes',
@@ -72,14 +71,14 @@ export function NotificationsCenter() {
             event: 'INSERT',
             schema: 'public',
             table: 'notifications',
-            filter: `user_id=eq.${userId}`,
+            filter: `user_id=eq.${user.id}`,
           },
           () => mutate(),
         )
         .subscribe()
-
-      return () => { supabase.removeChannel(channel) }
     })
+
+    return () => { if (channel) supabase.removeChannel(channel) }
   }, [mutate])
 
   const filtered = React.useMemo(() => {

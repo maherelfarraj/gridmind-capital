@@ -122,7 +122,7 @@ function ReportTable({ headers, children, empty }: {
 // ─── Individual report views ──────────────────────────────────────────────────
 
 function ProjectStatusReport({ dateRange: _dateRange }: { dateRange: DateRange }) {
-  const { data, isLoading } = useSWR('report-projects', () => getProjects())
+  const { data, isLoading } = useSWR('shared-projects', () => getProjects())
   const rows  = data ?? []
 
   if (isLoading) return <LoadingRows cols={5} />
@@ -282,7 +282,7 @@ function usd(n: number): string {
 }
 
 function VariationsRegisterReport({ dateRange }: { dateRange: DateRange }) {
-  const { data: projects } = useSWR('report-vo-projects', () => getProjects())
+  const { data: projects } = useSWR('shared-projects', () => getProjects())
   const [projectId, setProjectId] = React.useState<string | null>(null)
 
   // Default to the first project once loaded.
@@ -367,7 +367,7 @@ function VariationsRegisterReport({ dateRange }: { dateRange: DateRange }) {
 }
 
 function LenderProgressReport() {
-  const { data: projects, isLoading } = useSWR('report-lender-projects', () => getProjects())
+  const { data: projects, isLoading } = useSWR('shared-projects', () => getProjects())
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const activeProjectId = projectId ?? projects?.[0]?.id ?? null
   const activeProject = (projects ?? []).find((p) => p.id === activeProjectId) ?? null
@@ -431,7 +431,7 @@ function LenderProgressReport() {
 // ─── Per-project report project picker ─────────────────────────────────────────
 
 function useReportProject() {
-  const { data: projects, isLoading } = useSWR('report-perproject-list', () => getProjects())
+  const { data: projects, isLoading } = useSWR('shared-projects', () => getProjects())
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const activeProjectId = projectId ?? projects?.[0]?.id ?? null
   return { projects: projects ?? [], isLoading, activeProjectId, setProjectId }
