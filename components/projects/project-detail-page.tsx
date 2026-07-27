@@ -33,7 +33,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { ProjectCommandCenter, type ProjectData } from '@/components/project/project-command-center'
 import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-gate-stepper'
-import { derivePhaseState } from '@/lib/gates/phase-model'
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
@@ -131,7 +130,7 @@ const SPEC_PROJECT_INFO = {
 
 function GateStatusCard({
   currentPhase,
-  gateProgress = { G0: true, G1: true, G2: false },
+  gateProgress,
   deliverables = SPEC_DELIVERABLES,
   overallProgress,
   onSubmitApproval,
@@ -141,7 +140,8 @@ function GateStatusCard({
 }: {
   /** Raw `projects.current_phase`. Drives the gate badge, name and description. */
   currentPhase?: number
-  gateProgress?: Record<string, boolean>
+  /** Gate progress: can include currentGate, completedGates, or G0-G9 boolean flags */
+  gateProgress?: Record<string, any>
   deliverables?: { name: string; completed: boolean }[]
   overallProgress?: number
   onSubmitApproval?: () => void
@@ -150,27 +150,22 @@ function GateStatusCard({
   /** Optional map of phase_number (1–8) → real gate names from phase_gates table. */
   gateNames?: Record<number, string>
 }) {
-  // Derived from the SAME helper the Stage Gate stepper uses, so the two panels
-  // can never disagree (previously this card hardcoded "G2 / Engineering IFC Release").
-  const baseGateStatus   = deriveGateStatus(currentPhase)
-  
-  // If gateNames provided, derive panel title from the ACTIVE phase (first non-approved)
-  // currentPhase = count of approved phases (0-8), so active phase = currentPhase + 1
+  // UNIFIED gate display: Derive from gateNames (DB-driven canonical names from phase_gates table)
+  // and currentPhase (count of approved gates). Active phase = currentPhase + 1
   const gateStatus = React.useMemo(() => {
-    if (!gateNames || Object.keys(gateNames).length === 0) {
-      return baseGateStatus
+    const cp = typeof currentPhase === 'number' ? currentPhase : 0
+    const activePhaseNum = Math.min(cp + 1, 8)
+    const code = `G${activePhaseNum}`
+    const name = (gateNames && gateNames[activePhaseNum]) ? gateNames[activePhaseNum] : `Gate ${activePhaseNum}`
+    
+    return {
+      code,
+      gate: activePhaseNum,
+      name,
+      description: name,
+      completedGates: Array.from({ length: cp }, (_, i) => `G${i + 1}`),
     }
-    // Active phase is the one after all approved ones
-    const activePhaseNum = (typeof currentPhase === 'number' ? currentPhase : 0) + 1
-    if (activePhaseNum >= 1 && activePhaseNum <= 8 && gateNames[activePhaseNum]) {
-      return {
-        ...baseGateStatus,
-        name: gateNames[activePhaseNum],
-        description: gateNames[activePhaseNum],
-      }
-    }
-    return baseGateStatus
-  }, [baseGateStatus, currentPhase, gateNames])
+  }, [currentPhase, gateNames])
   const completed    = deliverables.filter((d) => d.completed).length
   const total        = deliverables.length
   const deliverPct   = total > 0 ? Math.round((completed / total) * 100) : 0
