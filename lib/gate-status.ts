@@ -1,15 +1,17 @@
 /**
  * Single source of truth for deriving gate display state from `projects.current_phase`.
  *
- * Every surface that shows "which gate is this project at" MUST use these helpers.
- * Previously the detail page's "Current Gate Status" panel hardcoded G2 while the
- * Stage Gate stepper derived its value from `project.gate`, so the two disagreed
- * for every project that wasn't actually at phase 2.
+ * DEPRECATED: Use lib/gates/phase-model.ts instead. This file is maintained for
+ * backward compatibility only. New code should import from phase-model.ts.
+ * 
+ * Every surface that shows "which gate is this project at" MUST use the canonical model
+ * from lib/gates/phase-model.ts to ensure consistent names across the UI.
  */
 
-/** Canonical governed gate model is G0–G6. */
+/** DEPRECATED: Use TOTAL_PHASES from lib/gates/phase-model.ts instead. */
 export const MAX_GATE = 6
 
+/** DEPRECATED: Use CANONICAL_PHASE_NAMES from lib/gates/phase-model.ts instead. */
 export const GATE_NAMES: Record<number, string> = {
   0: 'Opportunity Accepted',
   1: 'Project Baseline Approved',
@@ -20,6 +22,7 @@ export const GATE_NAMES: Record<number, string> = {
   6: 'Handover, Ops & Closeout',
 }
 
+/** DEPRECATED: Use phaseLabel() from lib/gates/phase-model.ts instead. */
 export const GATE_DESCRIPTIONS: Record<number, string> = {
   0: 'Screen and accept the opportunity into the development pipeline',
   1: 'Approve the project baseline: scope, schedule, budget and financing plan',

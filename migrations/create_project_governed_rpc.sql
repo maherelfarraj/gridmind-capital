@@ -1,5 +1,6 @@
--- Atomic governance RPC: creates project + 7 phase_gates + G0 approval in one transaction
+-- Atomic governance RPC: creates project + 8 canonical phase_gates + G0 approval in one transaction
 -- Returns project_id on success, rolls back everything on any failure
+-- phase_gates rows have phase_number 1–8 (0-based current_phase) with canonical names from CANONICAL_PHASE_NAMES
 
 CREATE OR REPLACE FUNCTION create_project_governed(payload jsonb)
 RETURNS jsonb
@@ -63,8 +64,9 @@ BEGIN
     RETURN jsonb_build_object('error', 'Failed to create project');
   END IF;
 
-  -- 2. Insert 7 phase_gates (G0–G6, all pending)
-  FOR v_gate_phase IN 0..6 LOOP
+  -- 2. Insert 8 canonical phase_gates (phase_number 1–8, all pending)
+  -- Maps: phase_number 1–8 to index 0–7 in CANONICAL_PHASE_NAMES
+  FOR v_gate_phase IN 1..8 LOOP
     INSERT INTO phase_gates (
       project_id,
       phase_number,
@@ -76,13 +78,14 @@ BEGIN
       v_project_id,
       v_gate_phase,
       CASE v_gate_phase
-        WHEN 0 THEN 'Origination & Feasibility'
-        WHEN 1 THEN 'Permitting & Grid Application'
-        WHEN 2 THEN 'Commercial & Financial Close'
-        WHEN 3 THEN 'Detailed Design'
-        WHEN 4 THEN 'Procurement & Manufacturing'
-        WHEN 5 THEN 'Construction & Installation'
-        WHEN 6 THEN 'Commissioning & Grid Tests'
+        WHEN 1 THEN 'Origination & Feasibility'
+        WHEN 2 THEN 'Permitting & Grid Application'
+        WHEN 3 THEN 'Commercial & Financial Close (RTB)'
+        WHEN 4 THEN 'Detailed Design (IFC)'
+        WHEN 5 THEN 'Procurement & Manufacturing'
+        WHEN 6 THEN 'Construction & Installation'
+        WHEN 7 THEN 'Commissioning & Grid Tests'
+        WHEN 8 THEN 'Handover & O&M'
       END,
       'pending'::gate_status,
       now(),
