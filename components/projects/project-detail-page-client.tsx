@@ -85,12 +85,9 @@ export function ProjectDetailPageClient({
     ),
   )
 
-  // Derive gate state from server-fetched phase_gates rows
-  const gates = initialGateState?.gates ?? []
-  const completedCount = gates.filter((g: any) => g.status === 'approved').length
-  const gateNamesMap = Object.fromEntries(
-    gates.map((g: any) => [g.phase_number, g.phase_name]),
-  )
+  // Derive gate state from server-fetched ProjectGateState
+  const completedCount = (initialGateState?.completedGates ?? []).length
+  const gateNamesMap = initialGateState?.gateNames ?? {}
 
   const handleSubmitApproval = React.useCallback(async () => {
     if (!project) return

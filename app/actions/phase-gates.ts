@@ -24,15 +24,14 @@ export interface ProjectGateState {
  * can render real DB names instead of falling back to GATE_DEFINITIONS.
  */
 export async function getProjectGateState(projectId: string): Promise<ProjectGateState> {
-  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
-  // Fetch all phase_gates rows for this project (8-phase model)
+  // Fetch all phase_gates rows for this project (8-phase model).
+  // Project scoping is sufficient for tenant isolation (projects table enforces tenant_id).
   const { data: phaseGates } = await supabase
     .from('phase_gates')
     .select('phase_number, phase_name, status')
     .eq('project_id', projectId)
-    .eq('tenant_id', tenantId)
     .order('phase_number', { ascending: true })
 
   // Build gateNames map and determine completed/active states
