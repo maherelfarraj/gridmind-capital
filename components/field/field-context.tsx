@@ -80,7 +80,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     [projects, projectId],
   )
 
-  const value: FieldContextValue = {
+  const value: FieldContextValue = React.useMemo(() => ({
     projects,
     loadingProjects: isLoading,
     projectId,
@@ -89,7 +89,7 @@ export function FieldProvider({ children }: { children: React.ReactNode }) {
     online,
     canWrite,
     userId: session.userId,
-  }
+  }), [projects, isLoading, projectId, project, online, canWrite, session.userId])
 
   return <FieldContext.Provider value={value}>{children}</FieldContext.Provider>
 }

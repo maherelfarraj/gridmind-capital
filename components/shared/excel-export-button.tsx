@@ -42,7 +42,7 @@ export function ExcelExportButton(props: {
     try {
       const sheets = buildSheets()
       const { code } = await logExport({ projectId, register, filters, rowCount })
-      exportToExcel({ code, register, sheets })
+      await exportToExcel({ code, register, sheets })
       toast({ title: 'Exported to Excel', description: `${rowCount} row${rowCount === 1 ? '' : 's'} downloaded.`, variant: 'success' })
     } catch (e) {
       toast({ title: 'Export failed', description: e instanceof Error ? e.message : 'Unexpected error.', variant: 'danger' })

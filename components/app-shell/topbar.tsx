@@ -45,7 +45,7 @@ function LiveClock() {
       )
     }
     tick()
-    const id = setInterval(tick, 1000)
+    const id = setInterval(tick, 30000)
     return () => clearInterval(id)
   }, [])
 
