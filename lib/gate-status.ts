@@ -67,7 +67,7 @@ export function deriveGateStatus(currentPhase: number | null | undefined): GateS
     code: `G${gate}`,
     name: GATE_NAMES[gate] ?? `Gate ${gate}`,
     description: GATE_DESCRIPTIONS[gate] ?? '',
-    completedGates: Array.from({ length: approvedCount }, (_, i) => `G${i}`),
+    completedGates: Array.from({ length: approvedCount }, (_, i) => `G${i + 1}`),
     progressPct: Math.round((gate / MAX_GATE) * 100),
   }
 }

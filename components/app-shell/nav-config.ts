@@ -95,15 +95,15 @@ export type PhaseKey =
 
 // Fallback labels when dynamic phase_names are not available (using CANONICAL_PHASE_NAMES)
 const PHASE_META_FALLBACK: Record<PhaseKey, { label: string; color: string }> = {
-  g0: { label: 'G0 · Opportunity Accepted',      color: '#64748b' },
-  g1: { label: 'G1 · Origination & Feasibility', color: '#3b82f6' },
-  g2: { label: 'G2 · Permitting & Grid',         color: '#6366f1' },
-  g3: { label: 'G3 · Commercial & Financial',    color: '#8b5cf6' },
-  g4: { label: 'G4 · Detailed Design (IFC)',     color: '#a855f7' },
-  g5: { label: 'G5 · Procurement & Mfg',         color: '#f97316' },
-  g6: { label: 'G6 · Construction & Install',    color: '#fb923c' },
-  g7: { label: 'G7 · Commissioning & Tests',     color: '#f59e0b' },
-  g8: { label: 'G8 · Handover & O&M',            color: '#22c55e' },
+  g0: { label: 'Project Intake',                           color: '#64748b' },
+  g1: { label: 'G1 · Origination & Feasibility',           color: '#3b82f6' },
+  g2: { label: 'G2 · Permitting & Grid Application',       color: '#6366f1' },
+  g3: { label: 'G3 · Commercial & Financial Close (RTB)',  color: '#8b5cf6' },
+  g4: { label: 'G4 · Detailed Design (IFC)',               color: '#a855f7' },
+  g5: { label: 'G5 · Procurement & Manufacturing',         color: '#f97316' },
+  g6: { label: 'G6 · Construction & Installation',         color: '#fb923c' },
+  g7: { label: 'G7 · Commissioning & Grid Tests',          color: '#f59e0b' },
+  g8: { label: 'G8 · Handover & O&M',                      color: '#22c55e' },
 }
 
 export const PHASE_META = PHASE_META_FALLBACK
@@ -164,15 +164,14 @@ export const NAV_SECTIONS: NavSection[] = [
         href: '/projects',
         icon: FolderKanban,
         children: [
-          { id: 'g0', label: 'G0 · Opportunity Accepted',      href: '/projects?gate=G0', phase: 'g0' },
-          { id: 'g1', label: 'G1 · Baseline Approved',         href: '/projects?gate=G1', phase: 'g1' },
-          { id: 'g2', label: 'G2 · Engineering IFC',           href: '/projects?gate=G2', phase: 'g2' },
-          { id: 'g3', label: 'G3 · Procurement Award',         href: '/projects?gate=G3', phase: 'g3' },
-          { id: 'g4', label: 'G4 · Construction Mobilization', href: '/projects?gate=G4', phase: 'g4' },
-          { id: 'g5', label: 'G5 · Mechanical Completion',     href: '/projects?gate=G5', phase: 'g5' },
-          { id: 'g6', label: 'G6 · Handover & O&M',            href: '/projects?gate=G6', phase: 'g6' },
-          { id: 'g6-closeout',    label: 'Closeout Checklist', href: '/projects?gate=G6&tab=closeout', phase: 'g6' },
-          { id: 'g6-om-transition', label: 'O&M Transition',  href: '/projects?gate=G6&tab=om-transition', phase: 'g6' },
+          { id: 'g1', label: 'G1 · Origination & Feasibility',           href: '/projects?gate=G1', phase: 'g1' },
+          { id: 'g2', label: 'G2 · Permitting & Grid Application',       href: '/projects?gate=G2', phase: 'g2' },
+          { id: 'g3', label: 'G3 · Commercial & Financial Close (RTB)',  href: '/projects?gate=G3', phase: 'g3' },
+          { id: 'g4', label: 'G4 · Detailed Design (IFC)',               href: '/projects?gate=G4', phase: 'g4' },
+          { id: 'g5', label: 'G5 · Procurement & Manufacturing',         href: '/projects?gate=G5', phase: 'g5' },
+          { id: 'g6', label: 'G6 · Construction & Installation',         href: '/projects?gate=G6', phase: 'g6' },
+          { id: 'g7', label: 'G7 · Commissioning & Grid Tests',          href: '/projects?gate=G7', phase: 'g7' },
+          { id: 'g8', label: 'G8 · Handover & O&M',                      href: '/projects?gate=G8', phase: 'g8' },
         ],
       },
       {

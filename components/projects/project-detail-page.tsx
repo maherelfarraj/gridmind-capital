@@ -33,7 +33,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { ProjectCommandCenter, type ProjectData } from '@/components/project/project-command-center'
 import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-gate-stepper'
-import { deriveGateStatus } from '@/lib/gate-status'
+import { derivePhaseState } from '@/lib/gates/phase-model'
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
@@ -662,7 +662,10 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
 
 export interface ProjectDetailPageProps {
   project: Project
-  gateProgress: Record<string, boolean>
+  gateProgress: Record<string, boolean | string | string[]> & {
+    currentGate?: string
+    completedGates?: string[]
+  }
   /** Overall gate completion percentage (e.g. 65). Overrides deliverable-count-based pct in GateStatusCard. */
   overallProgress?: number
   deliverables: { name: string; completed: boolean }[]
@@ -772,13 +775,12 @@ export function ProjectDetailPage({
   hideTimeline = false,
   hideActions  = false,
 }: ProjectDetailPageProps) {
-  // Single derivation of gate state, shared with GateStatusCard below. Both the
-  // stepper and the "Current Gate Status" panel read these exact values so they
+  // UNIFIED gate state derivation: Pass these from server via gateProgress prop.
+  // The stepper and "Current Gate Status" panel use these same values so they 
   // cannot contradict each other.
-  const gateStatus      = deriveGateStatus(project.gate)
-  const gateNumber      = gateStatus.gate
-  const currentGateCode = gateStatus.code
-  const completedGates  = gateStatus.completedGates
+  const currentGateCode = gateProgress?.currentGate ?? `G${project.gate}`
+  const completedGates  = gateProgress?.completedGates ?? []
+  const gateNumber      = project.gate
 
   const projectData   = toProjectData(project)
   const workflowLogs  = timelineLogs.map(toWorkflowEntry)
