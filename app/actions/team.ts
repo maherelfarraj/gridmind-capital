@@ -314,19 +314,33 @@ export async function approveGate(input: {
   const actor = await getActor()
   const admin = createAdminClient()
 
-  const { error } = await admin
+  // Verify gate sign-offs are complete by checking the enforce_gate_approval trigger
+  // (the trigger will reject the update if sign-offs are incomplete). This validates
+  // the gate before advancing. The actual phase_gates.status transition (approved →
+  // the next row opening) is handled by advanceProjectGate.
+  const { data: gateRow, error: gateErr } = await admin
     .from('phase_gates')
-    .update({ status: 'approved', reviewed_by: actor.userId, reviewed_at: new Date().toISOString() })
+    .select('phase_number')
     .eq('id', phaseGateId)
+    .maybeSingle()
 
-  if (error) {
-    // The enforce_gate_approval trigger raises when sign-offs are incomplete.
-    const friendly = /sign|approv|pending/i.test(error.message)
-      ? 'All sign-offs must be completed before this gate can be approved.'
-      : error.message
-    return { error: friendly }
+  if (gateErr) return { error: `Could not find gate: ${gateErr.message}` }
+  if (!gateRow) return { error: 'Gate not found.' }
+
+  // Verify all sign-offs are signed before advancing
+  const { data: unsignedSignoffs, error: soErr } = await admin
+    .from('gate_signoffs')
+    .select('id')
+    .eq('phase_gate_id', phaseGateId)
+    .neq('status', 'signed')
+    .limit(1)
+
+  if (soErr) return { error: `Could not verify sign-offs: ${soErr.message}` }
+  if (unsignedSignoffs && unsignedSignoffs.length > 0) {
+    return { error: 'All sign-offs must be completed before this gate can be approved.' }
   }
 
+  // Record the gate approval decision
   await logEvent(admin, {
     transition: 'GATE_APPROVE',
     actorId: actor.userId,
@@ -334,38 +348,13 @@ export async function approveGate(input: {
     metadata: { phase_gate_id: phaseGateId },
   })
 
-  // Approving the gate must also move the project's stepper forward. Without
-  // this, phase_gates.status flipped to 'approved' but projects.current_phase
-  // never changed, so the G0–G6 stepper stayed pinned on the old gate.
-  //
-  // Only advance when the approved gate IS the project's current gate —
-  // otherwise approving an out-of-order gate would bump the stepper wrongly.
-  // advanceProjectGate re-checks the sign-offs itself, so the rule "next gate
-  // unlocks only when every sign-off is signed AND the gate approval is
-  // decided" is enforced on both sides.
-  let advanceWarning: string | undefined
-  const { data: gateRow } = await admin
-    .from('phase_gates')
-    .select('phase_number')
-    .eq('id', phaseGateId)
-    .maybeSingle()
+  // Advance the project: mark current gate 'approved', next gate 'in_review',
+  // update projects.current_phase. This is the single authority for gate state.
+  const { advanceProjectGate } = await import('@/app/actions/phase-gates')
+  const advanceRes = await advanceProjectGate(projectId)
 
-  const { data: projRow } = await admin
-    .from('projects')
-    .select('current_phase')
-    .eq('id', projectId)
-    .maybeSingle()
-
-  if (
-    typeof gateRow?.phase_number === 'number' &&
-    typeof projRow?.current_phase === 'number' &&
-    gateRow.phase_number === projRow.current_phase
-  ) {
-    const { advanceProjectGate } = await import('@/app/actions/phase-gates')
-    const res = await advanceProjectGate(projectId)
-    // The gate approval itself already committed, so a failed advance must not
-    // be reported as a failed approval — surface it as a warning instead.
-    if (res.error) advanceWarning = `Gate approved, but the project stage did not advance: ${res.error}`
+  if (advanceRes.error) {
+    return { error: `Gate approval verified, but advancement failed: ${advanceRes.error}` }
   }
 
   revalidatePath('/team/gates')
@@ -376,7 +365,7 @@ export async function approveGate(input: {
   revalidatePath('/projects')
   revalidatePath('/dashboard')
 
-  return advanceWarning ? { error: advanceWarning } : {}
+  return {}
 }
 
 // ── Tasks (Phase 5) ──────────────────────────────────────────

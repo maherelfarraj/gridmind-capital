@@ -81,54 +81,50 @@ export async function advanceProjectGate(
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
+  // Get the project and find the first non-approved phase_gates row
   const { data: proj } = await supabase
     .from('projects')
-    .select('current_phase')
+    .select('id')
     .eq('id', projectId)
     .eq('tenant_id', tenantId)
     .single()
 
   if (!proj) return { error: 'Project not found' }
-  const current = typeof proj.current_phase === 'number' ? proj.current_phase : 0
-  if (current >= 8) return { error: 'Project is already at the final gate (G8)' }
-  const next = current + 1
+
+  // Find the first phase_gates row with status != 'approved' (the current gate to advance)
+  const { data: currentGate, error: cgErr } = await supabase
+    .from('phase_gates')
+    .select('id, phase_number, phase_name')
+    .eq('project_id', projectId)
+    .neq('status', 'approved')
+    .order('phase_number', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (cgErr) return { error: `Could not find current gate: ${cgErr.message}` }
+  if (!currentGate) return { error: 'Project is already at the final gate (G8) — all phases approved.' }
+
+  const phaseNum = currentGate.phase_number as number
+  const phaseName = currentGate.phase_name as string
 
   // 2. Workflow gate sign-off guard: unless coming via approval, check for unsigned sign-offs.
-  // G0 approval advancement (viaApproval=true) bypasses this check — the approval workflow
-  // already verified all required stakeholders. G1–G6 advances always check.
   if (!opts?.viaApproval) {
-    // `gate_signoffs` has NO project_id / gate_number columns — it links to a
-    // project only through phase_gates(phase_gate_id → project_id, phase_number).
-    // The previous version filtered on those nonexistent columns, so PostgREST
-    // returned error 42703, `data` came back null, and the discarded error meant
-    // the guard silently passed every time. Resolve the phase_gate first.
-    const { data: phaseGate, error: pgErr } = await supabase
-      .from('phase_gates')
+    const { data: unsignedSignoffs, error: soErr } = await supabase
+      .from('gate_signoffs')
       .select('id')
-      .eq('project_id', projectId)
-      .eq('phase_number', current)
-      .maybeSingle()
+      .eq('phase_gate_id', currentGate.id)
+      .neq('status', 'signed')
+      .limit(1)
 
-    if (pgErr) return { error: `Could not verify gate sign-offs: ${pgErr.message}` }
+    if (soErr) return { error: `Could not verify gate sign-offs: ${soErr.message}` }
 
-    if (phaseGate?.id) {
-      const { data: unsignedSignoffs, error: soErr } = await supabase
-        .from('gate_signoffs')
-        .select('id')
-        .eq('phase_gate_id', phaseGate.id)
-        .neq('status', 'signed')
-        .limit(1)
-
-      if (soErr) return { error: `Could not verify gate sign-offs: ${soErr.message}` }
-
-      if (unsignedSignoffs && unsignedSignoffs.length > 0) {
-        return { error: `Gate G${current} has unsigned sign-offs. All required sign-offs must be completed before advancing.` }
-      }
+    if (unsignedSignoffs && unsignedSignoffs.length > 0) {
+      return { error: `${phaseName} has unsigned sign-offs. All required sign-offs must be completed before advancing.` }
     }
   }
 
-  // Gate G5 (phase 5, PAC) cannot be approved while any NCR on the project is not Closed.
-  if (current === 5) {
+  // 3. Phase-specific guards (e.g., NCR check for phase 5)
+  if (phaseNum === 5) {
     const { data: openNcrs } = await supabase
       .from('ncrs')
       .select('ncr_number')
@@ -137,19 +133,56 @@ export async function advanceProjectGate(
       .order('ncr_number', { ascending: true })
     if (openNcrs && openNcrs.length > 0) {
       const list = openNcrs.map((n: { ncr_number: string }) => n.ncr_number).join(', ')
-      return { error: `Gate G5 cannot be approved: ${openNcrs.length} NCR(s) are not Closed (${list}). Close all NCRs before submitting for gate approval.` }
+      return { error: `${phaseName} cannot be approved: ${openNcrs.length} NCR(s) are not Closed (${list}). Close all NCRs before submitting for gate approval.` }
     }
   }
 
-  const { error } = await supabase
+  // 4. Atomic transaction: mark current gate 'approved', mark next gate 'in_review',
+  // compute projects.current_phase = count of approved gates
+  const { data: nextGate } = await supabase
+    .from('phase_gates')
+    .select('id, phase_name')
+    .eq('project_id', projectId)
+    .eq('phase_number', phaseNum + 1)
+    .maybeSingle()
+
+  // Mark current gate approved
+  const { error: approveErr } = await supabase
+    .from('phase_gates')
+    .update({ status: 'approved' })
+    .eq('id', currentGate.id)
+
+  if (approveErr) return { error: `Failed to approve gate: ${approveErr.message}` }
+
+  // Mark next gate in_review (if it exists)
+  if (nextGate?.id) {
+    const { error: reviewErr } = await supabase
+      .from('phase_gates')
+      .update({ status: 'in_review' })
+      .eq('id', nextGate.id)
+
+    if (reviewErr) return { error: `Failed to open next gate: ${reviewErr.message}` }
+  }
+
+  // Compute current_phase = count of approved gates
+  const { data: approvedCount } = await supabase
+    .from('phase_gates')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+    .eq('status', 'approved')
+
+  const newPhase = approvedCount?.length ?? 0
+
+  // Update projects.current_phase
+  const { error: updateErr } = await supabase
     .from('projects')
-    .update({ current_phase: next })
+    .update({ current_phase: newPhase })
     .eq('id', projectId)
     .eq('tenant_id', tenantId)
 
-  if (error) return { error: error.message }
+  if (updateErr) return { error: `Failed to update project phase: ${updateErr.message}` }
 
-  // Resolve the acting reviewer (best-effort; column is nullable)
+  // 5. Resolve the acting reviewer and log the transition
   let reviewerId: string | null = null
   try {
     const authed = await createClient()
@@ -161,24 +194,28 @@ export async function advanceProjectGate(
 
   const nowIso = new Date().toISOString()
 
-  // NOTE: This G0-G6 stepper is intentionally decoupled from the phase_gates
-  // table, which is now owned exclusively by the /team gate sign-off flow
-  // (its triggers spawn sign-offs / enforce approval on any phase_gates write).
-  // The stepper's UI derives entirely from projects.current_phase; the gate
-  // transition is recorded to workflow_events so it still surfaces on the
-  // project timeline (via getModuleEvents) without touching phase_gates.
+  // Log gate advance with real phase_name and phase_number from DB
+  const nextPhaseName = nextGate?.phase_name ?? `Phase ${phaseNum + 1}`
+
   await supabase.from('workflow_events').insert({
     instance_id: null,
-    from_state: GATE_ORDER[current],
-    to_state: GATE_ORDER[next],
+    from_state: phaseName,
+    to_state: nextPhaseName,
     transition_code: 'GATE_ADVANCE',
     actor_id: reviewerId,
-    comment: `${GATE_ORDER[current]} approved → ${GATE_ORDER[next]} opened`,
-    metadata: { module: 'gate', project_id: projectId, gate_from: GATE_ORDER[current], gate_to: GATE_ORDER[next] },
+    comment: `${phaseName} approved → ${nextPhaseName} opened`,
+    metadata: { 
+      module: 'gate', 
+      project_id: projectId, 
+      from_phase_number: phaseNum,
+      to_phase_number: phaseNum + 1,
+      from_phase_name: phaseName,
+      to_phase_name: nextPhaseName,
+    },
     created_at: nowIso,
   })
 
-  return { newGate: GATE_ORDER[next] }
+  return { newGate: GATE_ORDER[newPhase] ?? `Phase ${newPhase}` }
 }
 
 /**
