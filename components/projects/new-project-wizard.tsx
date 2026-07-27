@@ -527,7 +527,7 @@ function Step2({ data, errors, onChange }: Step2Props) {
 
 /* ─────────────────────────────────────────────────────────────────
    Step 3: Budget & Timeline
-────────────────────────────────────────────────────────────��──── */
+────────────────────────────────────────────────────────────���──── */
 
 interface Step3Props {
   data: ProjectFormData
@@ -735,7 +735,7 @@ function Step4({ data, errors, confirm, onConfirmChange, onEdit, onSubmit, onCan
       >
         <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" aria-hidden />
         <div>
-          <p className="text-sm font-medium text-amber-800 dark:text-amber-400">This project will start at Gate G0: Opportunity Accepted</p>
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-400">This project will start at Project Intake phase</p>
           <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
             All projects begin in the Intake phase. You will need Executive Sponsor approval to proceed to Gate G1.
           </p>
@@ -854,7 +854,7 @@ function SuccessOverlay({
         <h2 className="text-2xl font-bold text-slate-900 dark:text-foreground mt-2">Project Created Successfully!</h2>
         <p className="text-lg font-mono text-slate-600 dark:text-muted-foreground mt-2">{code}</p>
         <p className="text-sm text-slate-500 dark:text-muted-foreground mt-2 max-w-sm">
-          The project has been created at Gate G0. An approval request has been sent to the Executive Sponsor.
+          The project has been created. An approval request has been sent to the Executive Sponsor.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
           <button
@@ -1169,9 +1169,9 @@ function G0Step({
           <CheckCircle className="size-8 text-[#64ffda]" aria-hidden />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-foreground">G0 Intake Submitted</h2>
+          <h2 className="text-xl font-bold text-foreground">Project Intake Submitted</h2>
           <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-            The Gate 0 Investment Intake package has been saved and the review team has been notified.
+            The Project Intake package has been saved and the review team has been notified.
           </p>
         </div>
         <button
@@ -1190,7 +1190,7 @@ function G0Step({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">Optional — Complete Now or Later</p>
-          <h2 className="text-xl font-bold text-foreground">Gate 0 Investment Intake</h2>
+          <h2 className="text-xl font-bold text-foreground">Project Intake</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             Fill in the G0 package for <span className="font-mono text-[#64ffda]">{projectCode}</span> to start the approval workflow.
           </p>

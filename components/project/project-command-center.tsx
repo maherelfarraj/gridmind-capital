@@ -117,9 +117,15 @@ export function adaptProjectRaw(raw: ProjectRaw): ProjectData {
   const phaseKey = (PHASE_STRING_TO_KEY[raw.phase.toLowerCase()] ?? 'g0') as PhaseKey
 
   const GATE_NAMES: Record<number, string> = {
-    0: 'Investment Intake', 1: 'Development Approval', 2: 'Engineering IFC',
-    3: 'Procurement Ready', 4: 'Construction Mobilization', 5: 'Mechanical Completion',
-    6: 'Handover, Operations & Closeout',
+    0: 'Project Intake',
+    1: 'Origination & Feasibility',
+    2: 'Permitting & Grid Application',
+    3: 'Commercial & Financial Close (RTB)',
+    4: 'Detailed Design (IFC)',
+    5: 'Procurement & Manufacturing',
+    6: 'Construction & Installation',
+    7: 'Commissioning & Grid Tests',
+    8: 'Handover & O&M',
   }
 
   return {
@@ -220,7 +226,7 @@ function formatDate(value: string | Date): string {
 
 // ─────────────────────────────────────────────────────────────
 // Skeleton atoms
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────���──
 
 function Skeleton({ className }: { className?: string }) {
   return (
