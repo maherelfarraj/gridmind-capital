@@ -18,7 +18,7 @@ import {
   getProjectTeamMembers,
   getProjectDocuments,
 } from '@/app/actions/projects'
-import { getProjectTimeline } from '@/app/actions/phase-gates'
+import { getProjectTimeline, getProjectGateState } from '@/app/actions/phase-gates'
 import { loadStaffingRadar } from '@/app/actions/team'
 import { createApproval } from '@/app/actions/approvals'
 
@@ -74,6 +74,11 @@ export default function ProjectDetailRoute() {
   const { data: documents } = useSWR(
     projectCode ? `project-docs-${projectCode}` : null,
     () => getProjectDocuments(projectCode),
+  )
+
+  const { data: gateState } = useSWR(
+    id ? `gate-state-${id}` : null,
+    () => getProjectGateState(id),
   )
 
   const [activePanel, setActivePanel] = React.useState<'comments' | 'documents' | 'edit' | 'provenance' | null>(null)
@@ -216,6 +221,7 @@ export default function ProjectDetailRoute() {
           commentCount: project.commentCount,
           documentCount: project.documentCount,
         }}
+        gateNames={gateState?.gateNames}
         gateProgress={Object.fromEntries(
           Array.from({ length: 10 }, (_, i) => [`G${i}`, i < project.gate]),
         )}

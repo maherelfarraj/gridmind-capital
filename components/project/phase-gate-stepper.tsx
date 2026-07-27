@@ -191,7 +191,7 @@ export function useTranslatedGates(): GateDef[] {
 
 // ─────────────────────────────────────────────────────────────
 // Types
-// ─────────────────────────────────────────────────────────────
+// ────────��────────────────────────────────────────────────────
 
 export type GateState = 'completed' | 'current' | 'future' | 'locked'
 
@@ -839,6 +839,7 @@ export function PhaseGateStepper({
   onGateClick,
   projectId,
   gateDates,
+  gateNames,
 }: PhaseGateStepperProps) {
   const [activeTooltip, setActiveTooltip] = React.useState<number | null>(null)
   const [activePanel, setActivePanel] = React.useState<{ gate: GateDef; state: GateState } | null>(null)
@@ -852,10 +853,32 @@ export function PhaseGateStepper({
 
   // Translated gate definitions (names/purpose/phase in active locale)
   const translatedGates = useTranslatedGates()
+  
+  // If gateNames provided (8-phase model from phase_gates table), overlay them on translatedGates
+  const gatesWithLiveNames = React.useMemo(() => {
+    if (!gateNames || Object.keys(gateNames).length === 0) {
+      return translatedGates
+    }
+    // Map phase_number (1–8) back to gate codes (G1–G8)
+    // GateNames keys are phase_number; GATE_DEFINITIONS codes are G0–G8
+    return translatedGates.map((gate) => {
+      // Extract phase_number from gate.code: G1→1, G2→2, ..., G8→8
+      const phaseNum = parseInt(gate.code.slice(1), 10)
+      if (phaseNum >= 1 && phaseNum <= 8 && gateNames[phaseNum]) {
+        return {
+          ...gate,
+          shortName: gateNames[phaseNum],
+          fullName: gateNames[phaseNum],
+        }
+      }
+      return gate
+    })
+  }, [translatedGates, gateNames])
+  
   // RTL: render gate list in reverse so G0 is on the right
   const locale = useLocale()
   const isRtl = locale === 'ar'
-  const orderedGates = isRtl ? [...translatedGates].reverse() : translatedGates
+  const orderedGates = isRtl ? [...gatesWithLiveNames].reverse() : gatesWithLiveNames
 
   const handleGateClick = React.useCallback((gate: GateDef, state: GateState) => {
     // Locked/future gates show a tooltip only — do not open the full detail panel

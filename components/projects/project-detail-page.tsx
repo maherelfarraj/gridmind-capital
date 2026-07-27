@@ -137,6 +137,7 @@ function GateStatusCard({
   onSubmitApproval,
   onRequestChanges,
   hideActions = false,
+  gateNames,
 }: {
   /** Raw `projects.current_phase`. Drives the gate badge, name and description. */
   currentPhase?: number
@@ -146,10 +147,28 @@ function GateStatusCard({
   onSubmitApproval?: () => void
   onRequestChanges?: () => void
   hideActions?: boolean
+  /** Optional map of phase_number (1–8) → real gate names from phase_gates table. */
+  gateNames?: Record<number, string>
 }) {
   // Derived from the SAME helper the Stage Gate stepper uses, so the two panels
   // can never disagree (previously this card hardcoded "G2 / Engineering IFC Release").
-  const gateStatus   = deriveGateStatus(currentPhase)
+  const baseGateStatus   = deriveGateStatus(currentPhase)
+  
+  // If gateNames provided, override the hardcoded name with the live phase_name
+  const gateStatus = React.useMemo(() => {
+    if (!gateNames || Object.keys(gateNames).length === 0) {
+      return baseGateStatus
+    }
+    // currentPhase is phase_number; gateNames keys are also phase_number
+    if (typeof currentPhase === 'number' && currentPhase >= 1 && currentPhase <= 8 && gateNames[currentPhase]) {
+      return {
+        ...baseGateStatus,
+        name: gateNames[currentPhase],
+        description: gateNames[currentPhase],
+      }
+    }
+    return baseGateStatus
+  }, [baseGateStatus, currentPhase, gateNames])
   const completed    = deliverables.filter((d) => d.completed).length
   const total        = deliverables.length
   const deliverPct   = total > 0 ? Math.round((completed / total) * 100) : 0
@@ -635,7 +654,7 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
   )
 }
 
-// ��───────────────────────���────────────────────────────────────
+// ��───────────────────────�����────────────────────────────────────
 // Props + main page
 // ───────────────���─────────────────────────────────────────────
 
@@ -653,6 +672,8 @@ export interface ProjectDetailPageProps {
   comments: Comment[]
   isLoading?: boolean
   error?: string | null
+  /** Optional map of phase_number (1–8) → real gate names from phase_gates table. */
+  gateNames?: Record<number, string>
   onBack: () => void
   onEdit: () => void
   onComments: () => void
@@ -733,6 +754,7 @@ export function ProjectDetailPage({
   risks,
   timelineLogs,
   approvals,
+  gateNames,
   isLoading    = false,
   error        = null,
   onBack,
@@ -859,6 +881,7 @@ export function ProjectDetailPage({
             onSubmitApproval={onSubmitApproval}
             onRequestChanges={onRequestChanges}
             hideActions={hideActions}
+            gateNames={gateNames}
           />
           <ProjectInfoCard project={project} />
           <ClientAnnouncementsPanel projectId={project.id} isManager />
