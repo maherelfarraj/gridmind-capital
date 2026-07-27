@@ -2,6 +2,26 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // ── Public / self-authenticating paths ───────────────────────────────────
+  // Skip auth checks for paths that don't need them. Check these BEFORE calling
+  // getUser() to avoid unnecessary Supabase network round-trips.
+  const isPublic =
+    pathname === '/login' ||
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/icons/') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/manifest.json' ||
+    pathname === '/sw.js' ||
+    pathname === '/offline.html' ||
+    pathname.startsWith('/workbox-') ||
+    // /field has its own layout-level auth (resolveSession + redirect).
+    // Bypassing here avoids a redundant Supabase round-trip per request.
+    pathname.startsWith('/field')
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -25,11 +45,11 @@ export async function updateSession(request: NextRequest) {
     },
   )
 
-  // IMPORTANT: do not add code between createServerClient and getUser()
+  // Only call getUser() for protected paths that need auth decisions
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser()
+  } = isPublic ? { data: { user: null }, error: null } : await supabase.auth.getUser()
 
   // A stale/rotated refresh token makes getUser() fail on *every* request while
   // the dead cookie survives, costing a wasted auth round-trip each time. Treat

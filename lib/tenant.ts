@@ -10,6 +10,7 @@
  * when no session exists (edge-function callers, local dev without login).
  */
 
+import { cache } from 'react'
 import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -24,8 +25,11 @@ export const DEMO_TENANT_FALLBACK = '00000000-0000-0000-0000-000000000001'
  *
  * Throws 'No tenant' only when a user IS authenticated but the profile
  * lookup itself fails (network / permissions error).
+ *
+ * Wrapped in React cache() to dedupe per HTTP request. Multiple calls within
+ * the same request will return the same result without additional network calls.
  */
-export async function getCurrentTenantId(): Promise<string> {
+export const getCurrentTenantId = cache(async (): Promise<string> => {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -51,4 +55,4 @@ export async function getCurrentTenantId(): Promise<string> {
     // Any other error (cookies unavailable in edge contexts, etc.) → fallback.
     return DEMO_TENANT_FALLBACK
   }
-}
+})
