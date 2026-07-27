@@ -136,7 +136,7 @@ export const MOCK_PROJECTS: PipelineProject[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────
-// Gate pipeline lanes (G0–G9 definitions with project buckets)
+// Gate pipeline lanes (G1–G8 canonical 8-phase model with project buckets)
 // ─────────────────────────────────────────────────────────────
 
 export interface GateLane {
@@ -149,23 +149,28 @@ export interface GateLane {
 
 export function buildGateLanes(projects: PipelineProject[]): GateLane[] {
   const LANE_META: Omit<GateLane, 'projects'>[] = [
-    { gate: 0, phase: 'g0', shortName: 'Intake',        color: '#64748b' },
-    { gate: 1, phase: 'g1', shortName: 'Development',   color: '#3b82f6' },
-    { gate: 2, phase: 'g2', shortName: 'Commercial',    color: '#6366f1' },
-    { gate: 3, phase: 'g3', shortName: 'Engineering',   color: '#8b5cf6' },
-    { gate: 4, phase: 'g4', shortName: 'Procurement',   color: '#a855f7' },
-    { gate: 5, phase: 'g5', shortName: 'Construction',  color: '#f97316' },
-    { gate: 6, phase: 'g6', shortName: 'Handover & O&M', color: '#22c55e' },
+    { gate: 1, phase: 'g1', shortName: 'Origination & Feasibility',          color: '#64748b' },
+    { gate: 2, phase: 'g2', shortName: 'Permitting & Grid Application',     color: '#3b82f6' },
+    { gate: 3, phase: 'g3', shortName: 'Commercial & Financial Close',      color: '#6366f1' },
+    { gate: 4, phase: 'g4', shortName: 'Detailed Design (IFC)',             color: '#8b5cf6' },
+    { gate: 5, phase: 'g5', shortName: 'Procurement & Manufacturing',       color: '#a855f7' },
+    { gate: 6, phase: 'g6', shortName: 'Construction & Installation',       color: '#f97316' },
+    { gate: 7, phase: 'g7', shortName: 'Commissioning & Grid Tests',        color: '#f59e0b' },
+    { gate: 8, phase: 'g8', shortName: 'Handover & O&M',                    color: '#22c55e' },
   ]
   return LANE_META.map((meta) => ({
     ...meta,
-    projects: projects.filter((p) => p.gate === meta.gate),
+    projects: projects.filter((p) => {
+      // Map project.gate to current_phase + 1 for bucketing
+      // Projects with current_phase=8 are completed, go to G8 lane
+      return p.gate === meta.gate
+    }),
   }))
 }
 
 // ───────��─────────────────────────────────────────────────────
 // Approval queue
-// ─────────────────────────────────────────────────────────────
+// ─────���───────────────────────────────────────────────────────
 
 export type ApprovalType =
   | 'gate-review'

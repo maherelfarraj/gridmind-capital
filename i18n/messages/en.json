@@ -121,61 +121,61 @@
   },
 
   "gates": {
-    "G0": {
-      "code": "G0",
-      "short": "Opportunity Accepted",
-      "full": "Gate 0 — Opportunity Accepted",
-      "purpose": "Initial screening and approval to proceed with opportunity assessment",
-      "phase": "Pre-FEED"
-    },
     "G1": {
       "code": "G1",
-      "short": "Proposal & Initial Decision",
-      "full": "Gate 1 — Proposal & Initial Decision",
-      "purpose": "Evaluate the proposal and take the initial go/no-go investment decision",
-      "phase": "FEED"
+      "short": "Origination & Feasibility",
+      "full": "Gate 1 — Origination & Feasibility",
+      "purpose": "Initial opportunity screening and feasibility assessment",
+      "phase": "Origination"
     },
     "G2": {
       "code": "G2",
-      "short": "Submission & Award",
-      "full": "Gate 2 — Submission & Award",
-      "purpose": "Approve tender submission and authorise contract award",
-      "phase": "Tender"
+      "short": "Permitting & Grid Application",
+      "full": "Gate 2 — Permitting & Grid Application",
+      "purpose": "Secure permitting approvals and grid interconnection applications",
+      "phase": "Permitting"
     },
     "G3": {
       "code": "G3",
-      "short": "Contract & Mobilization",
-      "full": "Gate 3 — Contract & Mobilization",
-      "purpose": "Execute the contract and authorise full project mobilisation",
-      "phase": "Mobilisation"
+      "short": "Commercial & Financial Close (RTB)",
+      "full": "Gate 3 — Commercial & Financial Close (RTB)",
+      "purpose": "Finalize commercial terms and close financial arrangements",
+      "phase": "Commercial"
     },
     "G4": {
       "code": "G4",
-      "short": "Engineering, Supply & Execution",
-      "full": "Gate 4 — Engineering, Supply & Execution",
-      "purpose": "Confirm engineering completion, procurement status, and construction progress",
-      "phase": "Execution"
+      "short": "Detailed Design (IFC)",
+      "full": "Gate 4 — Detailed Design (IFC)",
+      "purpose": "Complete detailed engineering and issue-for-construction drawings",
+      "phase": "Design"
     },
     "G5": {
       "code": "G5",
-      "short": "Inspection, Testing & PAC",
-      "full": "Gate 5 — Inspection, Testing & PAC",
-      "purpose": "Confirm mechanical completion, testing sign-off, and issue Provisional Acceptance Certificate",
-      "phase": "Commissioning"
+      "short": "Procurement & Manufacturing",
+      "full": "Gate 5 — Procurement & Manufacturing",
+      "purpose": "Secure long-lead items, manufacturing, and supply chain coordination",
+      "phase": "Procurement"
     },
     "G6": {
       "code": "G6",
-      "short": "DLP, FAC & Closeout",
-      "full": "Gate 6 — DLP, FAC & Closeout",
-      "purpose": "Conclude the Defects Liability Period, issue Final Acceptance Certificate, and close the project",
-      "phase": "Closeout"
+      "short": "Construction & Installation",
+      "full": "Gate 6 — Construction & Installation",
+      "purpose": "Execute on-site construction and complete equipment installation",
+      "phase": "Construction"
     },
     "G7": {
       "code": "G7",
-      "short": "Commercial Closeout",
-      "full": "Gate 7 — Commercial Closeout",
-      "purpose": "Final commercial settlement, release of retentions and guarantees",
-      "phase": "Commercial Closeout"
+      "short": "Commissioning & Grid Tests",
+      "full": "Gate 7 — Commissioning & Grid Tests",
+      "purpose": "System commissioning, testing, and grid connection validation",
+      "phase": "Commissioning"
+    },
+    "G8": {
+      "code": "G8",
+      "short": "Handover & O&M",
+      "full": "Gate 8 — Handover & O&M",
+      "purpose": "Project handover and transition to operations and maintenance",
+      "phase": "Operations"
     }
   },
 

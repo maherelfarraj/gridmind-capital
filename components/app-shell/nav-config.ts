@@ -87,21 +87,23 @@ export interface NavItem {
 
 export type PhaseKey =
   | 'g0' | 'g1' | 'g2' | 'g3' | 'g4'
-  | 'g5' | 'g6'
+  | 'g5' | 'g6' | 'g7' | 'g8'
 
 // ─────────────────────────────────────────────────────────────
 // Phase metadata
 // ─────────────────────────────────────────────────────────────
 
-// Fallback labels when dynamic phase_names are not available
+// Fallback labels when dynamic phase_names are not available (using CANONICAL_PHASE_NAMES)
 const PHASE_META_FALLBACK: Record<PhaseKey, { label: string; color: string }> = {
   g0: { label: 'G0 · Opportunity Accepted',      color: '#64748b' },
-  g1: { label: 'G1 · Baseline Approved',         color: '#3b82f6' },
-  g2: { label: 'G2 · Engineering IFC',           color: '#6366f1' },
-  g3: { label: 'G3 · Procurement Award',         color: '#8b5cf6' },
-  g4: { label: 'G4 · Construction Mobilization', color: '#f97316' },
-  g5: { label: 'G5 · Mechanical Completion',     color: '#f97316' },
-  g6: { label: 'G6 · Handover & O&M',            color: '#22c55e' },
+  g1: { label: 'G1 · Origination & Feasibility', color: '#3b82f6' },
+  g2: { label: 'G2 · Permitting & Grid',         color: '#6366f1' },
+  g3: { label: 'G3 · Commercial & Financial',    color: '#8b5cf6' },
+  g4: { label: 'G4 · Detailed Design (IFC)',     color: '#a855f7' },
+  g5: { label: 'G5 · Procurement & Mfg',         color: '#f97316' },
+  g6: { label: 'G6 · Construction & Install',    color: '#fb923c' },
+  g7: { label: 'G7 · Commissioning & Tests',     color: '#f59e0b' },
+  g8: { label: 'G8 · Handover & O&M',            color: '#22c55e' },
 }
 
 export const PHASE_META = PHASE_META_FALLBACK

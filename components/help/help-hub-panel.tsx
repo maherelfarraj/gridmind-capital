@@ -99,7 +99,7 @@ const TOPICS: InternalTopic[] = [
     body: `GridMind Capital is a Renewable EPC Operating System built to manage the full project lifecycle from initial intake through to operations & maintenance.
 
 Key features:
-• 10-phase gate system (G0–G9)
+• 8-phase gate lifecycle (G1–G8)
 • Multi-tenant architecture with row-level isolation
 • 15 user roles with DOA-governed permissions
 • Immutable audit trails on every write

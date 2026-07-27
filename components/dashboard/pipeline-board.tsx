@@ -301,10 +301,10 @@ export function PipelineBoard({ lanes, loading = false }: PipelineBoardProps) {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Project Pipeline</h2>
-          <p className="text-xs text-muted-foreground">{totalProjects} projects across G0–G9</p>
+          <p className="text-xs text-muted-foreground">{totalProjects} projects across G1–G8</p>
         </div>
         <Badge variant="gate" className="font-mono">
-          G0 → G9
+          G1 → G8
         </Badge>
       </div>
 
