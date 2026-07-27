@@ -292,6 +292,60 @@ ${contextStr || 'No relevant data found.'}
     console.error('[copilot] Failed to save assistant message:', assistantErr)
   }
 
+  // 8. Log to audit trail for regulatory compliance and budget tracking
+  const tenantId = await getCurrentTenantId()
+  const inputTokens = Math.ceil(question.length / 4) // Rough estimate
+  const outputTokens = Math.ceil(response.length / 4)
+  const totalTokens = inputTokens + outputTokens
+  
+  const { error: auditErr } = await supabase
+    .from('copilot_audit_trail')
+    .insert({
+      tenant_id: tenantId,
+      user_id: actor.userId,
+      conversation_id: conversationId,
+      message_id: assistantMsg?.id || '',
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: totalTokens,
+      context_sources: items.map((i) => ({ module: i.module, recordId: i.recordId })),
+      model_used: 'openai/gpt-4-turbo',
+    })
+
+  if (auditErr) {
+    console.warn('[copilot] Failed to log audit trail:', auditErr)
+    // Don't fail the response due to audit logging failure
+  }
+
+  // 9. Update tenant budget
+  const { data: budget } = await supabase
+    .from('copilot_tenant_budget')
+    .select('current_month_tokens, month_start_date')
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (budget) {
+    const today = new Date().toISOString().split('T')[0]
+    const isNewMonth = budget.month_start_date !== today
+    
+    if (isNewMonth) {
+      // Reset budget at month boundary
+      await supabase
+        .from('copilot_tenant_budget')
+        .update({
+          current_month_tokens: totalTokens,
+          month_start_date: today,
+        })
+        .eq('tenant_id', tenantId)
+    } else {
+      // Increment current month usage
+      await supabase
+        .from('copilot_tenant_budget')
+        .update({ current_month_tokens: budget.current_month_tokens + totalTokens })
+        .eq('tenant_id', tenantId)
+    }
+  }
+
   return {
     message: {
       id: assistantMsg?.id || '',
