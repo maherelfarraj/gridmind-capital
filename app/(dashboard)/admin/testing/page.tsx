@@ -28,7 +28,14 @@ export default function AdminTestingPage() {
   async function loadProjects() {
     try {
       const data = await getProjects()
-      setProjects(data.slice(0, 16)) // Show first 16 projects
+      const testProjects = data.map(p => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        current_phase: p.current_phase ?? 0,
+        status: p.status,
+      }))
+      setProjects(testProjects.slice(0, 16)) // Show first 16 projects
       setLoading(false)
     } catch (error) {
       console.error('Failed to load projects:', error)
