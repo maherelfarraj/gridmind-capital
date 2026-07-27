@@ -1,23 +1,14 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import React from 'react'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import useSWR from 'swr'
-import {
-  ChevronRight, FileText, Package, Layers, Settings, CheckSquare,
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
-import { HandoverChecklist } from '@/components/g7/handover-checklist'
-import { AssetRegistry }     from '@/components/g7/asset-registry'
-import { OmTransition }      from '@/components/g7/om-transition'
-import {
-  MOCK_MILESTONES, MOCK_ASSETS, MOCK_OM_PERSONNEL,
-  MOCK_MAINTENANCE, MOCK_WARRANTIES, MOCK_SLA,
-} from '@/components/g7/data'
-import { getG7Data } from '@/app/actions/handover'
-import { getProject } from '@/app/actions/projects'
+/**
+ * Old /g7 route → new /gate/8 (Handover & O&M)
+ * The old G7 page has real HandoverForm content that should migrate into the param route.
+ * Redirect to single source of truth.
+ */
+export default async function G7RedirectPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  redirect(`/stage-gates/${id}/gate/8`)
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TabId = 'checklist' | 'assets' | 'om-transition'

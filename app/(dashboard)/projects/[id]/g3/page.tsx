@@ -1,26 +1,13 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import * as React from 'react'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import useSWR from 'swr'
-import { getG3Data } from '@/app/actions/procurement'
-import { getProject } from '@/app/actions/projects'
-import { motion } from 'framer-motion'
-import {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-} from 'recharts'
-import {
-  ArrowLeft, Plus, Search, Filter, ChevronDown, ChevronUp,
-  Download, Send, CheckCircle2, XCircle, Clock, AlertCircle,
-  Building2, FileText, ShoppingCart, Star, TrendingUp,
-  DollarSign, Package, Gavel, Award, BarChart3, Loader2,
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { PhaseGateStepper } from '@/components/project/phase-gate-stepper'
+/**
+ * Old /g3 route → new /gate/5 (Procurement & Manufacturing)
+ * Redirect to single source of truth.
+ */
+export default async function G3RedirectPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  redirect(`/stage-gates/${id}/gate/5`)
+}
 
 // ─── Types (matching G3ProcurementProps spec) ─────────────────
 

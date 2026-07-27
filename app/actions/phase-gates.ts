@@ -6,18 +6,18 @@ import type { WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { requireRole } from '@/lib/auth/guard'
 import { getCurrentTenantId } from '@/lib/tenant'
 
-const GATE_ORDER = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'] as const
+const GATE_ORDER = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'] as const
 type GateCode = typeof GATE_ORDER[number]
 
 export interface ProjectGateState {
   currentGate: GateCode
   completedGates: GateCode[]
-  approvedThrough: number   // gate index (0-6) — -1 = none approved
+  approvedThrough: number   // gate index (0-8) — -1 = none approved
 }
 
 /**
  * Derive live gate state from the project's current_phase column.
- * current_phase is a 0-based integer (0=G0, 1=G1, … 6=G6).
+ * current_phase is a 0-based integer representing count of approved gates (0=G0, 1=G1, … 8=G8).
  */
 export async function getProjectGateState(projectId: string): Promise<ProjectGateState> {
   const tenantId = await getCurrentTenantId()
@@ -31,7 +31,7 @@ export async function getProjectGateState(projectId: string): Promise<ProjectGat
     .single()
 
   const phase = typeof data?.current_phase === 'number' ? data.current_phase : 0
-  const gateIdx = Math.min(Math.max(phase, 0), 6)
+  const gateIdx = Math.min(Math.max(phase, 0), 8)
 
   const currentGate = GATE_ORDER[gateIdx]
   const completedGates = GATE_ORDER.slice(0, gateIdx) as GateCode[]
@@ -41,7 +41,7 @@ export async function getProjectGateState(projectId: string): Promise<ProjectGat
 
 /**
  * Advance a project to the next gate (G0→G1, G1→G2, etc).
- * Increments current_phase by 1 (capped at 6).
+ * Increments current_phase by 1 (capped at 8).
  *
  * Authorization: Caller must be system_admin, tenant_admin, or project_director.
  *
@@ -70,7 +70,7 @@ export async function advanceProjectGate(
 
   if (!proj) return { error: 'Project not found' }
   const current = typeof proj.current_phase === 'number' ? proj.current_phase : 0
-  if (current >= 6) return { error: 'Project is already at the final gate (G6)' }
+  if (current >= 8) return { error: 'Project is already at the final gate (G8)' }
   const next = current + 1
 
   // 2. Workflow gate sign-off guard: unless coming via approval, check for unsigned sign-offs.

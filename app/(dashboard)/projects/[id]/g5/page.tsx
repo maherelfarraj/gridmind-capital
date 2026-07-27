@@ -1,10 +1,13 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import React from 'react'
-import Link from 'next/link'
-import useSWR from 'swr'
-import { useParams } from 'next/navigation'
-import { useClientNow } from '@/lib/hooks/use-client-now'
+/**
+ * Old /g5 route → new /gate/7 (Commissioning & Grid Tests)
+ * Redirect to single source of truth.
+ */
+export default async function G5RedirectPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  redirect(`/stage-gates/${id}/gate/7`)
+}
 import {
   ChevronRight, Plus, FileText, Download,
   Eye, ClipboardList, AlertCircle, CheckSquare, Award, FolderOpen, BarChart2,
