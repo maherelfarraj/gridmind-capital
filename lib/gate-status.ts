@@ -50,20 +50,24 @@ export interface GateStatus {
 
 /**
  * Derive every gate display value from a single `current_phase` integer.
+ * DEPRECATED: Use lib/gates/phase-model.ts instead for new code.
  *
- * `current_phase` can legitimately exceed MAX_GATE for completed projects
- * (phase 7/8 exist in the DB), so it is clamped rather than treated as invalid.
+ * `current_phase` = count of approved gates (0–8). The ACTIVE gate = current_phase + 1.
+ * This function computes that active gate, which can legitimately exceed MAX_GATE for
+ * completed projects (phase 7/8 exist in the DB), so it is clamped rather than invalid.
  */
 export function deriveGateStatus(currentPhase: number | null | undefined): GateStatus {
   const raw = Number(currentPhase)
-  const gate = Number.isFinite(raw) ? Math.min(MAX_GATE, Math.max(0, Math.trunc(raw))) : 0
+  // currentPhase = count of approved gates. Active gate is the next one (approved + 1).
+  const approvedCount = Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : 0
+  const gate = Math.min(MAX_GATE, approvedCount + 1)
 
   return {
     gate,
     code: `G${gate}`,
     name: GATE_NAMES[gate] ?? `Gate ${gate}`,
     description: GATE_DESCRIPTIONS[gate] ?? '',
-    completedGates: Array.from({ length: gate }, (_, i) => `G${i}`),
+    completedGates: Array.from({ length: approvedCount }, (_, i) => `G${i}`),
     progressPct: Math.round((gate / MAX_GATE) * 100),
   }
 }
