@@ -191,7 +191,7 @@ export function useTranslatedGates(): GateDef[] {
 
 // ─────────────────────────────────────────────────────────────
 // Types
-// ────────�����────────────────────────────────────────────────────
+// ────────������────────────────────────────────────────────────────
 
 export type GateState = 'completed' | 'current' | 'future' | 'locked'
 
@@ -812,12 +812,12 @@ function PhaseGateStepperSkeleton() {
     <div className="rounded-xl border border-border bg-card p-5">
       <Skeleton className="h-5 w-32 mb-5" />
       <div className="flex items-end gap-0 overflow-x-auto pb-1">
-        {Array.from({ length: 10 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex flex-col items-center flex-1 min-w-[64px]">
             <div className="flex items-center w-full justify-center">
               {i > 0 && <Skeleton className="h-0.5 flex-1" />}
               <Skeleton className="size-10 rounded-full shrink-0 mx-1" />
-              {i < 9 && <Skeleton className="h-0.5 flex-1" />}
+              {i < 7 && <Skeleton className="h-0.5 flex-1" />}
             </div>
             <Skeleton className="h-3 w-8 mt-2.5" />
             <Skeleton className="h-2.5 w-12 mt-1" />
