@@ -381,7 +381,7 @@ export async function getActiveGates(): Promise<WidgetGate[]> {
     .slice(0, 8)
     .map((g) => {
       const cp  = g.projects?.current_phase ?? 0
-      const pct = Math.min(100, Math.round((cp / 6) * 100))
+      const pct = Math.min(100, Math.round((cp / 8) * 100))
       const color = pct >= 80 ? '#22c55e' : pct >= 50 ? '#3b82f6' : pct >= 25 ? '#f59e0b' : '#6b7280'
       return {
         id:      g.project_id,
