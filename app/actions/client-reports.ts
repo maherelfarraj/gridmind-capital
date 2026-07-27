@@ -126,7 +126,7 @@ async function compileSnapshot(admin: Admin, projectId: string): Promise<ClientR
     },
     quality: { openNcrs: (ncrRes.data ?? []).length },
     narrative:
-      `As of the reporting date, ${p.code} has completed gate ${approvedGates} of 6 (${percentComplete}%). ` +
+      `As of the reporting date, ${p.code} has completed gate ${approvedGates} of 8 (${percentComplete}%). ` +
       `The project is currently at ${`G${phase}`} with an overall health status of ${(p.health as string) ?? 'green'}.`,
   }
 }
