@@ -849,6 +849,7 @@ export function ProjectDetailPage({
             currentGate={currentGateCode}
             completedGates={completedGates}
             onGateClick={handleGateClick}
+            gateNames={gateNames}
           />
         </section>
       )}
