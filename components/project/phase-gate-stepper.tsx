@@ -126,6 +126,30 @@ export const GATE_DEFINITIONS: GateDef[] = [
     typicalDuration: '4–8 weeks',
     approvers: ['Project Director', 'Asset Owner', 'Financial Lenders', 'O&M Director'],
   },
+  {
+    id: 7,
+    code: 'G7',
+    shortName: 'Commissioning & Grid Tests',
+    fullName: 'G7 — Commissioning & Grid Tests',
+    purpose: 'Comprehensive system testing, grid compliance, and performance verification before commercial operation begins.',
+    phase: 'Commissioning',
+    phaseColor: '#06b6d4',
+    keyDeliverables: ['Commissioning Plan', 'Test Results', 'Grid Code Compliance', 'Performance Verification'],
+    typicalDuration: '2–4 weeks',
+    approvers: ['Commissioning Manager', 'Grid Operator', 'Independent Engineer'],
+  },
+  {
+    id: 8,
+    code: 'G8',
+    shortName: 'Handover & O&M',
+    fullName: 'G8 — Handover & O&M',
+    purpose: 'Formal handover to Operations & Maintenance team, asset transfer, and commencement of operating phase.',
+    phase: 'Operations',
+    phaseColor: '#10b981',
+    keyDeliverables: ['Handover Certificate', 'O&M Manual', 'Warranties Register', 'Asset Register'],
+    typicalDuration: '1–2 weeks',
+    approvers: ['O&M Director', 'Asset Owner', 'Facility Manager'],
+  },
 ]
 
 // ─────────────────────────────────────────────────────────────
@@ -150,7 +174,7 @@ export function useTranslatedGates(): GateDef[] {
   }
 
   return GATE_DEFINITIONS.map((gate) => {
-    const code = gate.code as 'G0' | 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6'
+    const code = gate.code as 'G0' | 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7' | 'G8'
     try {
       return {
         ...gate,
@@ -198,6 +222,12 @@ export interface PhaseGateStepperProps {
    * getGateSchedule (derived from schedule_activities.gate_number).
    */
   gateDates?: Record<number, GateScheduleDates>
+  /**
+   * Optional map of phase_number (1–8) → real gate names from phase_gates table.
+   * When provided, stepper renders these names instead of GATE_DEFINITIONS.
+   * Enables the 8-phase model (G0–G8) with real DB-driven naming.
+   */
+  gateNames?: Record<number, string>
 }
 
 /** Format an ISO date (YYYY-MM-DD) as e.g. "5 Jan 26"; empty string for null. */

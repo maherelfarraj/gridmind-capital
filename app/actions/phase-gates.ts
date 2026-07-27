@@ -13,30 +13,50 @@ export interface ProjectGateState {
   currentGate: GateCode
   completedGates: GateCode[]
   approvedThrough: number   // gate index (0-8) — -1 = none approved
+  gateNames?: Record<number, string>  // phase_number → phase_name from phase_gates table (1–8)
 }
 
 /**
- * Derive live gate state from the project's current_phase column.
+ * Derive live gate state from the project's current_phase column and phase_gates table.
  * current_phase is a 0-based integer representing count of approved gates (0=G0, 1=G1, … 8=G8).
+ * 
+ * Also fetches gate names from phase_gates (phase_number 1–8 → phase_name) so PhaseGateStepper
+ * can render real DB names instead of falling back to GATE_DEFINITIONS.
  */
 export async function getProjectGateState(projectId: string): Promise<ProjectGateState> {
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
-  const { data } = await supabase
+  const { data: proj } = await supabase
     .from('projects')
     .select('current_phase, status')
     .eq('id', projectId)
     .eq('tenant_id', tenantId)
     .single()
 
-  const phase = typeof data?.current_phase === 'number' ? data.current_phase : 0
+  const phase = typeof proj?.current_phase === 'number' ? proj.current_phase : 0
   const gateIdx = Math.min(Math.max(phase, 0), 8)
 
   const currentGate = GATE_ORDER[gateIdx]
   const completedGates = GATE_ORDER.slice(0, gateIdx) as GateCode[]
 
-  return { currentGate, completedGates, approvedThrough: gateIdx - 1 }
+  // Fetch phase_gates rows to build a phase_number → phase_name map
+  const { data: phaseGates } = await supabase
+    .from('phase_gates')
+    .select('phase_number, phase_name')
+    .eq('project_id', projectId)
+    .eq('tenant_id', tenantId)
+
+  const gateNames: Record<number, string> = {}
+  if (phaseGates && phaseGates.length > 0) {
+    for (const gate of phaseGates) {
+      if (typeof gate.phase_number === 'number' && typeof gate.phase_name === 'string') {
+        gateNames[gate.phase_number] = gate.phase_name
+      }
+    }
+  }
+
+  return { currentGate, completedGates, approvedThrough: gateIdx - 1, gateNames: Object.keys(gateNames).length > 0 ? gateNames : undefined }
 }
 
 /**
