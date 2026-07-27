@@ -127,6 +127,7 @@ export function CopilotPanel({
   const [loading, setLoading] = React.useState(false)
   const [conversationId, setConversationId] = React.useState<string>('')
   const [error, setError] = React.useState<string | null>(null)
+  const [isRtl, setIsRtl] = React.useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Initialize conversation on mount
@@ -234,6 +235,12 @@ export function CopilotPanel({
       }
 
       setMessages((prev) => [...prev, response.message])
+      
+      // Detect RTL language (Arabic, Hebrew, Urdu, Persian, etc.)
+      const arabicRegex = /[\u0600-\u06FF]/
+      const hebrewRegex = /[\u0590-\u05FF]/
+      const rtlRegex = new RegExp(`${arabicRegex.source}|${hebrewRegex.source}`)
+      setIsRtl(rtlRegex.test(response.message.content))
     } catch (err) {
       console.error('[copilot] Send error:', err)
       setError('Failed to get response')
@@ -261,7 +268,7 @@ export function CopilotPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:w-96 flex flex-col p-0">
+      <SheetContent side="right" className="w-full sm:w-96 flex flex-col p-0" dir={isRtl ? 'rtl' : 'ltr'}>
         <SheetHeader className="border-b border-border px-6 py-4">
           <SheetTitle className="flex items-center gap-2">
             <Sparkles size={18} className="text-sidebar-primary" aria-hidden="true" />

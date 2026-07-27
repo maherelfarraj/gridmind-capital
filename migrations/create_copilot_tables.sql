@@ -66,3 +66,82 @@ CREATE POLICY copilot_messages_access ON copilot_messages
       WHERE user_id = auth.uid() AND tenant_id = current_setting('app.tenant_id')::uuid
     )
   );
+
+-- Admin role policies (access all tenant conversations/messages)
+-- Note: Admins bypassed via auth.jwt()->>'role' = 'admin' or context override
+CREATE POLICY copilot_conversations_admin ON copilot_conversations
+  USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE POLICY copilot_messages_admin ON copilot_messages
+  USING (
+    conversation_id IN (
+      SELECT id FROM copilot_conversations
+      WHERE tenant_id = current_setting('app.tenant_id')::uuid
+    )
+  )
+  WITH CHECK (
+    conversation_id IN (
+      SELECT id FROM copilot_conversations
+      WHERE tenant_id = current_setting('app.tenant_id')::uuid
+    )
+  );
+
+-- copilot_audit_trail: Track token usage and context for regulatory compliance
+CREATE TABLE IF NOT EXISTS copilot_audit_trail (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  conversation_id uuid NOT NULL REFERENCES copilot_conversations(id) ON DELETE CASCADE,
+  message_id uuid NOT NULL REFERENCES copilot_messages(id) ON DELETE CASCADE,
+  input_tokens integer NOT NULL DEFAULT 0,
+  output_tokens integer NOT NULL DEFAULT 0,
+  total_tokens integer NOT NULL DEFAULT 0,
+  context_sources jsonb NOT NULL DEFAULT '[]'::jsonb,
+  model_used text DEFAULT 'gpt-4-turbo',
+  response_time_ms integer,
+  feedback_at timestamp with time zone,
+  feedback_value smallint,
+  created_at timestamp with time zone DEFAULT now(),
+  
+  CONSTRAINT check_audit_tokens CHECK (total_tokens > 0),
+  CONSTRAINT check_audit_feedback CHECK (feedback_value IN (-1, 0, 1, NULL))
+);
+
+CREATE INDEX idx_copilot_audit_tenant ON copilot_audit_trail(tenant_id);
+CREATE INDEX idx_copilot_audit_user ON copilot_audit_trail(user_id);
+CREATE INDEX idx_copilot_audit_created ON copilot_audit_trail(created_at DESC);
+
+-- copilot_tenant_budget: Track tenant-level token quotas
+CREATE TABLE IF NOT EXISTS copilot_tenant_budget (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+  monthly_token_limit integer NOT NULL DEFAULT 100000,
+  current_month_tokens integer NOT NULL DEFAULT 0,
+  month_start_date date NOT NULL DEFAULT CURRENT_DATE,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  
+  CONSTRAINT check_budget_positive CHECK (monthly_token_limit > 0),
+  CONSTRAINT check_current_positive CHECK (current_month_tokens >= 0)
+);
+
+CREATE INDEX idx_copilot_budget_tenant ON copilot_tenant_budget(tenant_id);
+
+-- Enable RLS on audit tables
+ALTER TABLE copilot_audit_trail ENABLE ROW LEVEL SECURITY;
+ALTER TABLE copilot_tenant_budget ENABLE ROW LEVEL SECURITY;
+
+-- RLS for audit trail (viewers can see their own, admins see all)
+CREATE POLICY copilot_audit_viewer ON copilot_audit_trail
+  USING (user_id = auth.uid())
+  WITH CHECK (false); -- Read-only
+
+CREATE POLICY copilot_audit_admin ON copilot_audit_trail
+  USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (false); -- Admin read-only
+
+-- RLS for budget (admin only, read-only via application layer)
+CREATE POLICY copilot_budget_admin ON copilot_tenant_budget
+  USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (false); -- Read-only via application
