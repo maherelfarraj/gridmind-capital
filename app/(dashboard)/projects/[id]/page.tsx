@@ -33,7 +33,7 @@ export default function ProjectDetailRoute() {
   const session = useSession()
   const { toast } = useToast()
 
-  const { data: project, isLoading, mutate: mutateProject } = useSWR(
+  const { data: project, isLoading, error: projectError, mutate: mutateProject } = useSWR(
     id ? `project-${id}` : null,
     () => getProject(id),
   )
@@ -148,7 +148,26 @@ export default function ProjectDetailRoute() {
     )
   }
 
-  // ── 404 state ──
+  // ── Error state (query failed, not just missing) ──
+  if (projectError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-6">
+        <p className="text-4xl font-bold text-foreground">Error</p>
+        <p className="text-muted-foreground text-sm">
+          Failed to load project: <span className="font-mono text-red-500">{projectError.message}</span>
+        </p>
+        <button
+          type="button"
+          onClick={handleBack}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/80 transition-colors"
+        >
+          Back to Projects
+        </button>
+      </div>
+    )
+  }
+
+  // ── 404 state (query succeeded but row doesn't exist) ──
   if (!project) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-6">
