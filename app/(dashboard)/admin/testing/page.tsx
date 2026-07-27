@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { useRouter } from 'next/navigation'
-import { getAllProjects, resetProjectToPhase } from '@/app/actions/projects'
+import { getProjects, resetProjectToPhase } from '@/app/actions/projects'
 import { getProjectGateState } from '@/app/actions/phase-gates'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,7 +27,7 @@ export default function AdminTestingPage() {
 
   async function loadProjects() {
     try {
-      const data = await getAllProjects()
+      const data = await getProjects()
       setProjects(data.slice(0, 16)) // Show first 16 projects
       setLoading(false)
     } catch (error) {
