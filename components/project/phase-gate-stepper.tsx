@@ -191,7 +191,7 @@ export function useTranslatedGates(): GateDef[] {
 
 // ─────────────────────────────────────────────────────────────
 // Types
-// ────────����────────────────────────────────────────────────────
+// ────────�����────────────────────────────────────────────────────
 
 export type GateState = 'completed' | 'current' | 'future' | 'locked'
 
@@ -913,35 +913,34 @@ export function PhaseGateStepper({
             <Zap className="size-4 text-[#64ffda] shrink-0" aria-hidden="true" />
             <h2 className="text-sm font-semibold text-foreground font-sans">Stage Gate Progress</h2>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground font-mono">
-              {completedGates.length}/10 Complete
-            </span>
-            <Badge variant="gate" className="tabular-nums">
-              {currentGate} Active
-            </Badge>
-          </div>
+  <div className="flex items-center gap-2">
+  <span className="text-xs text-muted-foreground font-mono">
+  {completedGates.length}/8 Complete
+  </span>
+  <Badge variant="gate" className="tabular-nums">
+    {Math.round((completedGates.length / 8) * 100)}%
+  </Badge>
+  </div>
         </div>
 
-        {/* Progress bar */}
-        <div className="px-5 py-3 border-b border-border">
-          <div
-            className="h-1 w-full rounded-full bg-border overflow-hidden"
-            role="progressbar"
-            aria-valuenow={completedGates.length}
-            aria-valuemin={0}
-            aria-valuemax={10}
-            aria-label={`${completedGates.length} of 10 gates completed`}
-          >
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[#22c55e] to-[#64ffda] transition-all duration-500"
-              style={{ width: `${(completedGates.length / 10) * 100}%` }}
-            />
-          </div>
-          <p className="mt-1.5 text-[10px] text-muted-foreground" aria-live="polite">
-            {Math.round((completedGates.length / 10) * 100)}% of gate milestones reached
-          </p>
-        </div>
+  {/* Progress bar */}
+  <div className="px-5 py-3 border-b border-border">
+  <div
+    className="bg-muted rounded-full h-2 overflow-hidden"
+    role="progressbar"
+    aria-valuenow={Math.round((completedGates.length / 8) * 100)}
+    aria-valuemin={0}
+    aria-valuemax={100}
+  >
+    <div
+      className="h-full rounded-full bg-gradient-to-r from-[#22c55e] to-[#64ffda] transition-all duration-500"
+      style={{ width: `${(completedGates.length / 8) * 100}%` }}
+    />
+  </div>
+  <p className="mt-1.5 text-[10px] text-muted-foreground" aria-live="polite">
+  {Math.round((completedGates.length / 8) * 100)}% of gate milestones reached
+  </p>
+  </div>
 
         {/* Stepper scroll area */}
         <div
