@@ -148,7 +148,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   // Try by UUID first, then by code
   let query = supabase
     .from('projects')
-    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, provenance, created_at')
+    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, created_at')
     .eq('tenant_id', tenantId)
 
   // Detect if id looks like a UUID
@@ -164,7 +164,10 @@ export async function getProject(id: string): Promise<ProjectData | null> {
 
   const { data, error } = await query.limit(1).maybeSingle()
 
-  if (error || !data) return null
+  // Surface query errors (42703 missing column, etc) instead of swallowing them as 404.
+  // Only return null if a row legitimately doesn't exist (error=null && !data).
+  if (error) throw new Error(`Failed to fetch project: ${error.message} (code: ${error.code})`)
+  if (!data) return null
 
   const gate = data.current_phase ?? 0
   // Map current_phase (count of approved gates 0–8) to legacy phase keys (g0–g6).
@@ -197,7 +200,6 @@ export async function getProject(id: string): Promise<ProjectData | null> {
     description: data.description ?? '',
     commentCount: 0,
     documentCount: 0,
-    provenance: (data.provenance as Record<string, any>) ?? {},
   }
 }
 
@@ -1148,7 +1150,9 @@ export async function updateProjectProvenance(
     .eq('tenant_id', tenantId)
     .single()
 
-  if (projErr || !proj) throw new Error('Project not found')
+  // Surface query errors (column missing, etc) — don't hide as "project not found"
+  if (projErr) throw new Error(`Failed to fetch project provenance: ${projErr.message} (code: ${projErr.code})`)
+  if (!proj) throw new Error('Project not found')
 
   const currentProv = (proj.provenance ?? {}) as Record<string, any>
   const oldSource = currentProv[field]?.source ?? null

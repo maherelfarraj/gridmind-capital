@@ -75,8 +75,6 @@ export interface ProjectData {
   country?: string
   /** Free-text project description */
   description?: string
-  /** Field-level data source provenance (phase_number → {source, at}) */
-  provenance?: Record<string, any>
 }
 
 /**
