@@ -80,7 +80,7 @@ async function compileSnapshot(admin: Admin, projectId: string): Promise<ClientR
 
   const gates = gatesRes.data ?? []
   const approvedGates = gates.filter((g) => g.status === 'approved').length
-  const percentComplete = Math.round((approvedGates / 6) * 100)
+  const percentComplete = Math.round((approvedGates / 8) * 100)
   const phase = num(p.current_phase)
 
   const vos = voRes.data ?? []
