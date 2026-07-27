@@ -114,7 +114,7 @@ Navigate using the sidebar. Use **⌘K** (or Ctrl+K) to open global search. The 
     title: 'Understanding stage-gate approvals',
     module: 'general',
     icon: GitBranch,
-    body: `GridMind uses a **G0–G9** stage-gate framework to govern project progression.
+    body: `GridMind uses a **G1–G8** 8-phase stage-gate framework to govern project progression.
 
 Each gate requires specific deliverables and approvals before a project can advance:
 • G0 – Opportunity Accepted

@@ -167,7 +167,7 @@ export function PortfolioDashboard() {
               { header: 'Status', key: (p: PortfolioProject) => (p.status ?? '').replace('_', ' '), type: 'text', width: 14 },
               { header: 'Health', key: (p: PortfolioProject) => p.health ?? 'green', type: 'text', width: 10 },
               { header: 'Owner', key: (p: PortfolioProject) => p.project_manager ?? '', type: 'text', width: 22 },
-              { header: 'Progress %', key: (p: PortfolioProject) => Math.round(((p.current_phase ?? 0) / 6) * 100), type: 'number', width: 12 },
+              { header: 'Progress %', key: (p: PortfolioProject) => Math.round(((p.current_phase ?? 0) / 8) * 100), type: 'number', width: 12 },
               { header: 'Budget (USD)', key: 'budget_usd', type: 'currency', width: 16 },
               { header: 'Target COD', key: 'target_completion', type: 'date', width: 14 },
             ],
