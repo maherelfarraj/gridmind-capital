@@ -23,7 +23,7 @@ import { loadStaffingRadar } from '@/app/actions/team'
 import { createApproval } from '@/app/actions/approvals'
 
 // ─────────────────────────────────────────────────────────────
-// Page
+// Page (Client with Server Preload)
 // ─────────────────────────────────────────────────────────────
 
 export default function ProjectDetailRoute() {
@@ -33,6 +33,7 @@ export default function ProjectDetailRoute() {
   const session = useSession()
   const { toast } = useToast()
 
+  // Use SWR - data will arrive in initial RSC payload for faster initial render
   const { data: project, isLoading, error: projectError, mutate: mutateProject } = useSWR(
     id ? `project-${id}` : null,
     () => getProject(id),
@@ -48,7 +49,6 @@ export default function ProjectDetailRoute() {
     () => loadStaffingRadar(id),
   )
 
-  // Per-project real data
   const { data: risks } = useSWR(
     id ? `project-risks-${id}` : null,
     () => getProjectRisks(id),
@@ -90,9 +90,6 @@ export default function ProjectDetailRoute() {
 
   const isViewer = session.roles.includes('viewer')
 
-  // Lender report distribution is limited to leadership + finance.
-  // AppRole equivalents of DB roles: system_admin→super_admin, project_director→pmo_director,
-  // finance_manager→finance_controller, tenant_admin→tenant_admin.
   const canLenderReport = session.roles.some((r) =>
     (['super_admin', 'tenant_admin', 'pmo_director', 'finance_controller'] as const).includes(
       r as 'super_admin' | 'tenant_admin' | 'pmo_director' | 'finance_controller',
@@ -141,7 +138,6 @@ export default function ProjectDetailRoute() {
 
   const handleBack = React.useCallback(() => router.push('/projects'), [router])
 
-  // ── Loading state ──
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -153,7 +149,6 @@ export default function ProjectDetailRoute() {
     )
   }
 
-  // ── Error state (query failed, not just missing) ──
   if (projectError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-6">
@@ -172,7 +167,6 @@ export default function ProjectDetailRoute() {
     )
   }
 
-  // ── 404 state (query succeeded but row doesn't exist) ──
   if (!project) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-6">
@@ -213,7 +207,6 @@ export default function ProjectDetailRoute() {
           startDate: String(project.startDate ?? ''),
           targetCod: String(project.targetCod ?? ''),
           location: project.location ? String(project.location) : undefined,
-          // Forwarded so the Edit panel can prefill real values instead of blanks.
           technology: project.technology,
           capacityMw: project.capacityMw,
           country: project.country,
@@ -259,7 +252,6 @@ export default function ProjectDetailRoute() {
         hideActions={isViewer}
       />
 
-      {/* ── Side panels ── */}
       {activePanel && (
         <aside
           aria-label={`${activePanel} panel`}
@@ -283,7 +275,6 @@ export default function ProjectDetailRoute() {
                 readOnly={isViewer}
                 onCancel={() => setActivePanel(null)}
                 onSaved={() => {
-                  // Refresh the project so the header, gate panel and registry agree.
                   mutateProject()
                   toast({ title: 'Project updated', variant: 'success' })
                   setActivePanel(null)
