@@ -267,7 +267,7 @@ export function ProjectRegistry() {
     }
 
     getPhaseNamesForProjects(projectIds).then(setPhaseNamesMap).catch(() => {
-      // If fetch fails, fall back to gate codes (G0–G6)
+      // If fetch fails, fall back to gate codes (G1–G8)
       setPhaseNamesMap({})
     })
   }, [liveRows])

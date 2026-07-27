@@ -474,7 +474,7 @@ export function StageGateReviewPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Stage Gate Control</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            G0–G6 lifecycle governance — <span className="font-mono text-[#64ffda]">SRS-400</span> Sirius 400MW Solar Farm
+            G1–G8 lifecycle governance — <span className="font-mono text-[#64ffda]">SRS-400</span> Sirius 400MW Solar Farm
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">

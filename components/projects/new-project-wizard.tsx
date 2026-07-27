@@ -527,7 +527,7 @@ function Step2({ data, errors, onChange }: Step2Props) {
 
 /* ─────────────────────────────────────────────────────────────────
    Step 3: Budget & Timeline
-───────────────────────────────────────────────────────────────── */
+────────────────────────────────────────────────────────────��──── */
 
 interface Step3Props {
   data: ProjectFormData
@@ -1059,7 +1059,7 @@ export function NewProjectWizard({
         )}
         <h1 className="text-2xl font-bold text-slate-900 dark:text-foreground tracking-tight mt-4">New Project</h1>
         <p className="text-sm text-slate-500 dark:text-muted-foreground mt-1 mb-6">
-          Create a new EPC project following the 10-phase gate system
+          Create a new EPC project following the 8-phase gate system
         </p>
         <StepIndicator current={step} />
       </div>

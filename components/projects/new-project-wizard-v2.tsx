@@ -75,7 +75,7 @@ const GATES = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']
 /* ─── Provisioning items ──────────────────────────────────────── */
 const PROVISION_ITEMS = [
   'Creating project folder structure',
-  'Initialising G0–G6 gate checklists',
+  'Initialising G1–G8 gate checklists',
   'Provisioning cockpit shells (PMO, Engineering, Procurement, Construction, Commissioning)',
   'Setting up default workflows (Stage Gate, RFQ→PO)',
   'Configuring approval routing rules',

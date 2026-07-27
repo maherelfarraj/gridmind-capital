@@ -295,7 +295,7 @@ const SIG_ENTITY_LABEL: Record<string, string> = {
 
 /**
  * Fetch phase_names for a batch of projects. Used by the registry to show real gate names
- * instead of hardcoded G0–G6 labels. Returns a map of projectId → { phase_number → phase_name }.
+ * instead of hardcoded G1–G8 labels. Returns a map of projectId → { phase_number → phase_name }.
  */
 export async function getPhaseNamesForProjects(projectIds: string[]): Promise<Record<string, Record<number, string>>> {
   if (projectIds.length === 0) return {}
