@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Menu, Bell, Search, ChevronRight, ChevronLeft, Command, Sun, Moon, HardHat } from 'lucide-react'
+import { Menu, Bell, Search, ChevronRight, ChevronLeft, Command, Sun, Moon, HardHat, Sparkles } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useLocale } from 'next-intl'
 import { LanguageSwitcher } from '@/components/i18n/language-switcher'
@@ -24,6 +24,7 @@ export interface TopBarProps {
   notificationCount?: number
   onSearchOpen?: () => void
   onNotifOpen?: () => void
+  onCopilotOpen?: () => void
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -116,7 +117,25 @@ function ThemeToggle() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Notification bell
+// Copilot Button
+// ─────────────────────────────────────────────────────────────
+
+function CopilotButton({ onClick }: { onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Open GridMind Copilot"
+      onClick={onClick}
+      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-150"
+      title="GridMind Copilot"
+    >
+      <Sparkles size={15} aria-hidden="true" />
+    </button>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notification Bell
 // ─────────────────────────────────────────────────────────────
 
 function NotificationBell({ count = 0, onClick }: { count?: number; onClick?: () => void }) {
@@ -194,6 +213,7 @@ export function TopBar({
   notificationCount = 0,
   onSearchOpen,
   onNotifOpen,
+  onCopilotOpen,
 }: TopBarProps) {
   const crumbs: Breadcrumb[] = breadcrumbs.length > 0 ? breadcrumbs : [{ label: title }]
 
@@ -231,6 +251,7 @@ export function TopBar({
         </Link>
         <ThemeToggle />
         <LanguageSwitcher />
+        <CopilotButton onClick={onCopilotOpen} />
         <NotificationBell count={notificationCount} onClick={onNotifOpen} />
       </div>
     </header>
