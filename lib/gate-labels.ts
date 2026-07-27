@@ -9,15 +9,15 @@ const GATE_CODE_TO_PHASE_NUMBER: Record<string, number> = {
 }
 
 const FALLBACK_LABELS: Record<number, string> = {
-  0: 'Opportunity Accepted',
-  1: 'Baseline Approved',
-  2: 'Engineering IFC',
-  3: 'Procurement Award',
-  4: 'Construction Mobilization',
-  5: 'Mechanical Completion',
-  6: 'Handover & O&M',
-  7: 'Handover & O&M',
-  8: 'Closed Out',
+  0: 'Project Intake',
+  1: 'Origination & Feasibility',
+  2: 'Permitting & Grid Application',
+  3: 'Commercial & Financial Close (RTB)',
+  4: 'Detailed Design (IFC)',
+  5: 'Procurement & Manufacturing',
+  6: 'Construction & Installation',
+  7: 'Commissioning & Grid Tests',
+  8: 'Handover & O&M',
 }
 
 /**

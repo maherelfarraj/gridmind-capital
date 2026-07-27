@@ -13,24 +13,28 @@ export const MAX_GATE = 6
 
 /** DEPRECATED: Use CANONICAL_PHASE_NAMES from lib/gates/phase-model.ts instead. */
 export const GATE_NAMES: Record<number, string> = {
-  0: 'Opportunity Accepted',
-  1: 'Project Baseline Approved',
-  2: 'Engineering IFC Release',
-  3: 'Procurement Award',
-  4: 'Construction Mobilization',
-  5: 'Mechanical Completion',
-  6: 'Handover, Ops & Closeout',
+  0: 'Project Intake',
+  1: 'Origination & Feasibility',
+  2: 'Permitting & Grid Application',
+  3: 'Commercial & Financial Close (RTB)',
+  4: 'Detailed Design (IFC)',
+  5: 'Procurement & Manufacturing',
+  6: 'Construction & Installation',
+  7: 'Commissioning & Grid Tests',
+  8: 'Handover & O&M',
 }
 
 /** DEPRECATED: Use phaseLabel() from lib/gates/phase-model.ts instead. */
 export const GATE_DESCRIPTIONS: Record<number, string> = {
-  0: 'Screen and accept the opportunity into the development pipeline',
-  1: 'Approve the project baseline: scope, schedule, budget and financing plan',
-  2: 'Release Issued For Construction engineering drawings and specifications',
-  3: 'Award major equipment and EPC contracts',
-  4: 'Mobilize site, permits and construction resources',
-  5: 'Achieve mechanical completion and begin commissioning',
-  6: 'Complete handover to operations and close out the project',
+  0: 'Project intake and registration',
+  1: 'Develop project concept and establish feasibility',
+  2: 'Secure environmental, grid and regulatory approvals',
+  3: 'Finalize commercial terms and achieve financial close',
+  4: 'Complete detailed design (IFC) for construction',
+  5: 'Procure major equipment and manufacturing',
+  6: 'Execute construction and site installation',
+  7: 'Perform commissioning and grid compliance testing',
+  8: 'Formal handover to operations and asset transfer',
 }
 
 export interface GateStatus {
