@@ -13,6 +13,8 @@ import {
   type AppDigitStyle,
 } from '@/lib/session'
 
+import { cache } from 'react'
+
 // Map DB user_role → AppRole
 const ROLE_MAP: Record<string, AppRole> = {
   system_admin:         'super_admin',
@@ -54,7 +56,9 @@ const ROLE_PERMISSIONS: Record<AppRole, AppPermission[]> = {
 // profile row. We NEVER fall back to a mock/default identity here — doing so
 // would silently grant a real role, permissions and tenant to an account that
 // has not been provisioned.
-async function getSession(): Promise<AppSession | null> {
+//
+// Wrapped in React cache() to dedupe per HTTP request.
+const getSession = cache(async (): Promise<AppSession | null> => {
   const supabase = await createClient()
 
   const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -96,7 +100,7 @@ async function getSession(): Promise<AppSession | null> {
     locale,
     digitStyle,
   }
-}
+})
 
 // Shown when a user is authenticated but has no provisioned profile row.
 // We deliberately do NOT grant any role, permission, or tenant in this state.
@@ -133,32 +137,32 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/auth/login')
-  }
-
   const session = await getSession()
 
-  // Authenticated, but no profile row exists for this account. Do NOT fall
-  // back to a default identity — show a setup-incomplete screen instead.
+  // getSession() calls getAuthActor() which calls supabase.auth.getUser(),
+  // so we don't need a separate getUser() call. If auth failed, session is null.
   if (!session) {
-    return <AccountSetupIncomplete email={user.email ?? ''} />
+    // Check if there's a user (authenticated but no profile) to show the right screen
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (user) {
+      // Authenticated but not provisioned — show setup screen
+      return <AccountSetupIncomplete email={user.email ?? ''} />
+    }
+    // Not authenticated — redirect to login
+    redirect('/auth/login')
   }
 
   // External roles never see the internal dashboard — bounce to their portal.
   if (session.roles.includes('client_viewer')) redirect('/client')
   if (session.roles.includes('subcontractor')) redirect('/portal')
 
-  // Pending approvals scoped to this tenant AND to the roles this user actually
-  // approves for. This was tenant-only, so a non-admin got a red badge that
-  // opened onto an empty inbox — see getPendingApprovalCount.
-  const approvalCount = await getPendingApprovalCount()
-
-  // Live unread notification count for the bell badge
-  const notificationCount = await getUnreadCountAction()
+  // Fetch pending approvals and notifications in parallel
+  const [approvalCount, notificationCount] = await Promise.all([
+    getPendingApprovalCount(),
+    getUnreadCountAction(),
+  ])
 
   return (
     <SessionProvider session={session}>

@@ -1,4 +1,5 @@
 import 'server-only'
+import { cache } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import type {
@@ -20,12 +21,14 @@ export const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
 /**
  * Resolve the acting user + tenant. Mirrors the project-wide getActor()
  * convention: Supabase auth → profiles; falls back to DEMO_TENANT for dev.
+ *
+ * Wrapped in React cache() to dedupe per HTTP request.
  */
-export async function getActor(): Promise<{
+export const getActor = cache(async (): Promise<{
   userId: string | null
   tenantId: string
   role: string | null
-}> {
+}> => {
   try {
     const supabase = await createClient()
     const {
@@ -48,7 +51,7 @@ export async function getActor(): Promise<{
   } catch {
     return { userId: null, tenantId: DEMO_TENANT, role: null }
   }
-}
+})
 
 // ── Org & Roles (Phase 1) ────────────────────────────────────
 

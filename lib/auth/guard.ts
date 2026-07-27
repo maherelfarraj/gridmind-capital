@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -38,8 +39,10 @@ export const APPROVER_ROLES = [
 /**
  * Resolve the authenticated caller and their profile role.
  * Returns { error } when not authenticated.
+ *
+ * Wrapped in React cache() to dedupe per HTTP request.
  */
-export async function getAuthActor(): Promise<GuardResult> {
+export const getAuthActor = cache(async (): Promise<GuardResult> => {
   const supabase = await createClient()
   const {
     data: { user },
@@ -63,7 +66,7 @@ export async function getAuthActor(): Promise<GuardResult> {
       tenantId: profile?.tenant_id ?? null,
     },
   }
-}
+})
 
 /** Require an authenticated caller whose role is in `allowed`. */
 export async function requireRole(allowed: readonly string[]): Promise<GuardResult> {
