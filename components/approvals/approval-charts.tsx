@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid,
@@ -12,7 +13,11 @@ interface ApprovalChartsProps {
   statusData: { name: string; value: number; color: string }[]
 }
 
-export function ApprovalCharts({ byTypeData, statusData }: ApprovalChartsProps) {
+const ChartSkeleton = () => (
+  <div className="w-full h-64 bg-muted animate-pulse rounded" />
+)
+
+function ApprovalChartsContent({ byTypeData, statusData }: ApprovalChartsProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* By Type Bar Chart */}
@@ -62,3 +67,9 @@ export function ApprovalCharts({ byTypeData, statusData }: ApprovalChartsProps) 
     </div>
   )
 }
+
+// Export with dynamic import for code-splitting (ssr: false to avoid hydration mismatch)
+export const ApprovalCharts = dynamic(() => Promise.resolve(ApprovalChartsContent), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+}) as typeof ApprovalChartsContent

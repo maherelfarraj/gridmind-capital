@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { useClientNow } from '@/lib/hooks/use-client-now'
 import {
@@ -502,7 +503,7 @@ const CYCLE_BAR_COLORS: Record<string, string> = {
   red:   'bg-red-500',
 }
 
-// ─── BESS stat cards ──────────────────────────────────────────────────────────
+// ─── BESS stat cards ───────────────────────────────────────────────��──────────
 
 function BessStatCards({ data }: { data: BessDashboard }) {
   const latest = data.latest
