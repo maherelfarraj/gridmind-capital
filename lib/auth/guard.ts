@@ -23,7 +23,7 @@ export interface AuthActor {
 
 export type GuardResult = { actor: AuthActor } | { error: string }
 
-/** Roles allowed to manage tenant/user administration. */
+/** Roles allowed to manage tenant/user administration and override approval assignments. */
 export const ADMIN_ROLES = ['system_admin', 'tenant_admin'] as const
 
 /** Roles allowed to decide/delegate approvals. */
@@ -94,4 +94,38 @@ export function requireApprover(): Promise<GuardResult> {
 /** Convenience: project deletion — restricted to admins and project director. */
 export function requireProjectDirector(): Promise<GuardResult> {
   return requireRole(['system_admin', 'tenant_admin', 'project_director'] as const)
+}
+
+/**
+ * Verify that the caller is authorized to act on an approval.
+ *
+ * Authorization is granted if:
+ * 1. Caller is the assigned approver (approval.assignee_id === actor.userId), OR
+ * 2. Caller is system_admin or tenant_admin (admin override)
+ *
+ * Admin overrides are logged with a note for audit trail.
+ * Returns { error: 'Not the assigned approver' } if unauthorized.
+ */
+export async function requireAssignedApprover(
+  approval: { assignee_id?: string | null } | null,
+): Promise<GuardResult> {
+  const res = await getAuthActor()
+  if ('error' in res) return res
+
+  if (!approval?.assignee_id) {
+    return { error: 'Approval has no assigned approver' }
+  }
+
+  // Caller is the assigned approver — authorized.
+  if (res.actor.userId === approval.assignee_id) {
+    return res
+  }
+
+  // Admin override check.
+  if (ADMIN_ROLES.includes(res.actor.role as typeof ADMIN_ROLES[number])) {
+    // Admin is allowed; caller should log this as an override in the action.
+    return res
+  }
+
+  return { error: 'Not the assigned approver' }
 }

@@ -19,6 +19,7 @@ import {
   submitOpportunityForReview,
 } from '@/app/actions/opportunities'
 import type { Opportunity } from '@/lib/types/action-types'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -132,7 +133,11 @@ function NewOpportunityModal({ open, onClose, onCreated }: {
 
 function OpportunityCard({ item, onSubmit }: { item: Opportunity; onSubmit: (id: string) => void }) {
   const health  = HEALTH_META[item.health] ?? HEALTH_META.green
-  const budgetM = item.budget_usd ? (item.budget_usd / 1_000_000).toFixed(0) : '—'
+  // Must be a complete label, not a bare number: the old code produced '—' and
+  // then rendered it inside `${...}M`, printing a nonsensical "$—M".
+  const budgetLabel = item.budget_usd != null
+    ? `$${(Number(item.budget_usd) / 1_000_000).toFixed(0)}M`
+    : NOT_SET_LABEL
   const approvalIcon = {
     pending:      <Clock   className="size-3.5 text-[#f59e0b]" />,
     under_review: <Clock   className="size-3.5 text-[#3b82f6]" />,
@@ -152,9 +157,9 @@ function OpportunityCard({ item, onSubmit }: { item: Opportunity; onSubmit: (id:
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1"><Zap className="size-3" />{item.technology}</span>
-        <span className="flex items-center gap-1"><TrendingUp className="size-3" />{item.capacity_mw} MW</span>
+        <span className="flex items-center gap-1"><TrendingUp className="size-3" />{item.capacity_mw != null ? `${item.capacity_mw} MW` : NOT_SET_LABEL}</span>
         <span className="flex items-center gap-1"><MapPin className="size-3" />{item.country}</span>
-        <span className="flex items-center gap-1"><DollarSign className="size-3" />${budgetM}M</span>
+        <span className="flex items-center gap-1"><DollarSign className="size-3" />{budgetLabel}</span>
       </div>
 
       <div className="flex items-center justify-between pt-1">
@@ -187,7 +192,7 @@ export function OpportunitiesPage() {
     const items = data?.items ?? []
     if (!search) return items
     const q = search.toLowerCase()
-    return items.filter((p) =>
+    return items.filter((p: any) =>
       p.name.toLowerCase().includes(q) ||
       p.code.toLowerCase().includes(q) ||
       p.country.toLowerCase().includes(q) ||
@@ -209,9 +214,13 @@ export function OpportunitiesPage() {
     { label: 'Rejected',    value: data?.rejected    ?? 0, color: '#ef4444', icon: XCircle      },
   ]
 
-  // chart data
-  const byTech   = data?.byTechnology ?? []
-  const byStatus = data?.byStatus     ?? []
+  // chart data (convert Record to array format)
+  const byTech   = Object.entries(data?.byTechnology ?? {}).map(([name, value]) => ({ name, value }))
+  const byStatus = Object.entries(data?.byStatus ?? {}).map(([name, value]: [string, number]) => ({ 
+    name, 
+    value, 
+    color: STATUS_COLORS[name] ?? '#94a3b8' 
+  }))
 
   return (
     <>
@@ -267,7 +276,7 @@ export function OpportunitiesPage() {
                     <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
                     <Bar dataKey="value" name="Count" radius={[4, 4, 0, 0]}>
-                      {byTech.map((_, i) => <Cell key={i} fill={TECH_COLORS[i % TECH_COLORS.length]} />)}
+                      {byTech.map((_: any, i: number) => <Cell key={i} fill={TECH_COLORS[i % TECH_COLORS.length]} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -289,8 +298,8 @@ export function OpportunitiesPage() {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={byStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
-                      {byStatus.map((entry, i) => <Cell key={i} fill={entry.color ?? STATUS_COLORS[entry.name] ?? '#94a3b8'} />)}
+                    <Pie data={byStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }: any) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
+                      {byStatus.map((entry: any, i: number) => <Cell key={i} fill={entry.color ?? STATUS_COLORS[entry.name] ?? '#94a3b8'} />)}
                     </Pie>
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
                   </PieChart>

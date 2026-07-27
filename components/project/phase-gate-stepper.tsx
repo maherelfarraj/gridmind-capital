@@ -126,6 +126,30 @@ export const GATE_DEFINITIONS: GateDef[] = [
     typicalDuration: '4–8 weeks',
     approvers: ['Project Director', 'Asset Owner', 'Financial Lenders', 'O&M Director'],
   },
+  {
+    id: 7,
+    code: 'G7',
+    shortName: 'Commissioning & Grid Tests',
+    fullName: 'G7 — Commissioning & Grid Tests',
+    purpose: 'Comprehensive system testing, grid compliance, and performance verification before commercial operation begins.',
+    phase: 'Commissioning',
+    phaseColor: '#06b6d4',
+    keyDeliverables: ['Commissioning Plan', 'Test Results', 'Grid Code Compliance', 'Performance Verification'],
+    typicalDuration: '2–4 weeks',
+    approvers: ['Commissioning Manager', 'Grid Operator', 'Independent Engineer'],
+  },
+  {
+    id: 8,
+    code: 'G8',
+    shortName: 'Handover & O&M',
+    fullName: 'G8 — Handover & O&M',
+    purpose: 'Formal handover to Operations & Maintenance team, asset transfer, and commencement of operating phase.',
+    phase: 'Operations',
+    phaseColor: '#10b981',
+    keyDeliverables: ['Handover Certificate', 'O&M Manual', 'Warranties Register', 'Asset Register'],
+    typicalDuration: '1–2 weeks',
+    approvers: ['O&M Director', 'Asset Owner', 'Facility Manager'],
+  },
 ]
 
 // ─────────────────────────────────────────────────────────────
@@ -150,7 +174,7 @@ export function useTranslatedGates(): GateDef[] {
   }
 
   return GATE_DEFINITIONS.map((gate) => {
-    const code = gate.code as 'G0' | 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6'
+    const code = gate.code as 'G0' | 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7' | 'G8'
     try {
       return {
         ...gate,
@@ -167,7 +191,7 @@ export function useTranslatedGates(): GateDef[] {
 
 // ─────────────────────────────────────────────────────────────
 // Types
-// ─────────────────────────────────────────────────────────────
+// ────────��────────────────────────────────────────────────────
 
 export type GateState = 'completed' | 'current' | 'future' | 'locked'
 
@@ -198,6 +222,12 @@ export interface PhaseGateStepperProps {
    * getGateSchedule (derived from schedule_activities.gate_number).
    */
   gateDates?: Record<number, GateScheduleDates>
+  /**
+   * Optional map of phase_number (1–8) → real gate names from phase_gates table.
+   * When provided, stepper renders these names instead of GATE_DEFINITIONS.
+   * Enables the 8-phase model (G0–G8) with real DB-driven naming.
+   */
+  gateNames?: Record<number, string>
 }
 
 /** Format an ISO date (YYYY-MM-DD) as e.g. "5 Jan 26"; empty string for null. */
@@ -809,6 +839,7 @@ export function PhaseGateStepper({
   onGateClick,
   projectId,
   gateDates,
+  gateNames,
 }: PhaseGateStepperProps) {
   const [activeTooltip, setActiveTooltip] = React.useState<number | null>(null)
   const [activePanel, setActivePanel] = React.useState<{ gate: GateDef; state: GateState } | null>(null)
@@ -822,10 +853,32 @@ export function PhaseGateStepper({
 
   // Translated gate definitions (names/purpose/phase in active locale)
   const translatedGates = useTranslatedGates()
+  
+  // If gateNames provided (8-phase model from phase_gates table), overlay them on translatedGates
+  const gatesWithLiveNames = React.useMemo(() => {
+    if (!gateNames || Object.keys(gateNames).length === 0) {
+      return translatedGates
+    }
+    // Map phase_number (1–8) back to gate codes (G1–G8)
+    // GateNames keys are phase_number; GATE_DEFINITIONS codes are G0–G8
+    return translatedGates.map((gate) => {
+      // Extract phase_number from gate.code: G1→1, G2→2, ..., G8→8
+      const phaseNum = parseInt(gate.code.slice(1), 10)
+      if (phaseNum >= 1 && phaseNum <= 8 && gateNames[phaseNum]) {
+        return {
+          ...gate,
+          shortName: gateNames[phaseNum],
+          fullName: gateNames[phaseNum],
+        }
+      }
+      return gate
+    })
+  }, [translatedGates, gateNames])
+  
   // RTL: render gate list in reverse so G0 is on the right
   const locale = useLocale()
   const isRtl = locale === 'ar'
-  const orderedGates = isRtl ? [...translatedGates].reverse() : translatedGates
+  const orderedGates = isRtl ? [...gatesWithLiveNames].reverse() : gatesWithLiveNames
 
   const handleGateClick = React.useCallback((gate: GateDef, state: GateState) => {
     // Locked/future gates show a tooltip only — do not open the full detail panel

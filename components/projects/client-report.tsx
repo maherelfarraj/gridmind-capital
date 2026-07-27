@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+import { NOT_SET_LABEL, formatLocation } from '@/lib/format-nullable'
 import {
   listClientReports,
   previewClientReport,
@@ -307,9 +308,14 @@ export function ClientReport({ projectId }: { projectId: string }) {
         <section>
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Project Overview</h3>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm md:grid-cols-3">
-            <Fact k="Technology" v={s.project.technology} />
-            <Fact k="Capacity" v={`${s.project.capacityMw} MW`} />
-            <Fact k="Location" v={`${s.project.location}, ${s.project.country}`} />
+            <Fact k="Technology" v={s.project.technology ?? NOT_SET_LABEL} />
+            {/* Unguarded interpolation would print a literal "null MW". */}
+            <Fact k="Capacity" v={s.project.capacityMw != null ? `${s.project.capacityMw} MW` : NOT_SET_LABEL} />
+            {/* Join only the parts we have (a NULL site would otherwise print
+                "null, Jordan"), and skip the country when the site string
+                already names it, so "East Amman, Jordan" does not become
+                "East Amman, Jordan, Jordan". */}
+            <Fact k="Location" v={formatLocation(s.project.location, s.project.country)} />
             <Fact k="Target completion" v={fmtDate(s.project.targetCompletion)} />
             <Fact k="Current gate" v={s.progress.currentGate} />
             <Fact k="Overall progress" v={`${s.progress.percentComplete}%`} />

@@ -5,6 +5,7 @@ import { MapPin, Zap, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import type { GateLane, PipelineProject } from './dashboard-data'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 
 // ─────────────────────────────────────────────────────────────
 // RAG helpers
@@ -71,7 +72,10 @@ function ProjectCard({ project, laneColor, onSelect }: ProjectCardProps) {
             {project.mw} MW
           </span>
         )}
-        <span className="text-[10px] text-muted-foreground">${project.budgetM}M</span>
+        {/* Unguarded interpolation would render a literal "$nullM". */}
+        <span className={cn('text-[10px] text-muted-foreground', project.budgetM == null && 'italic')}>
+          {project.budgetM != null ? `$${project.budgetM}M` : NOT_SET_LABEL}
+        </span>
       </div>
 
       {/* Progress bar */}
@@ -245,7 +249,7 @@ function ProjectFlyout({ project, lanes, onClose }: ProjectFlyoutProps) {
             {[
               { label: 'Current Gate', value: `G${project.gate} — ${lane?.shortName ?? ''}` },
               { label: 'Client',       value: project.client },
-              { label: 'Budget',       value: `$${project.budgetM}M` },
+              { label: 'Budget',       value: project.budgetM != null ? `$${project.budgetM}M` : NOT_SET_LABEL },
               { label: 'Capacity',     value: project.mw > 0 ? `${project.mw} MW` : 'N/A' },
               { label: 'Target COD',   value: project.targetCod },
               { label: 'Location',     value: project.location },

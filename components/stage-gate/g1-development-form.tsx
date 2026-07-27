@@ -14,14 +14,15 @@ import { Button } from '@/components/ui/button'
 import { submitG1FormAction, type G1FormData } from '@/app/actions/gate-submissions'
 
 const EMPTY: G1FormData = {
-  feasibilityStatus: 'commissioned', feasibilityContractor: '', windSolarResource: 'satellite',
+  feasibilityStatus: 'commissioned', windSolarResource: 'satellite',
   p50YieldGwh: '', p90YieldGwh: '', gridStudyStatus: 'not-started', connectionPointKv: '',
   eiaStatus: 'not-started', eiaConsultant: '', keyPermitsMissing: '', landSecured: false, landNotes: '',
   modelVersion: '1.0', baseIrrPct: '', baseDscrMin: '', lcoeUsdMwh: '', debtEquityRatio: '70/30',
+  interestRatePct: '', debtRatioPct: '70',
   projectFinanceReady: false,
-  offtakeType: 'tbd', offtakeCounterparty: '', offtakeTerm: '', tariffUsdMwh: '', contractorShortlist: '',
+  offtakeType: 'tbd', offtakeCounterparty: '', offtakeTerm: '', tariffUsCentsKwh: '', contractorShortlist: '',
   projectDirector: '', oeConsultant: '', fidTargetDate: '', codTargetDate: '',
-  totalCapexFinalUsd: '', contingencyPct: '10', requestedDecision: 'conditional',
+  totalCapexFinalUsd: '', contingencyPct: '10',
 }
 
 // ─── Sub-components ───────────────────────────────────────────
@@ -124,7 +125,7 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
 
   const completionPct = React.useMemo(() => {
     const required: (keyof G1FormData)[] = [
-      'feasibilityContractor','p50YieldGwh','gridStudyStatus','eiaConsultant',
+      'p50YieldGwh','gridStudyStatus','eiaConsultant',
       'baseIrrPct','baseDscrMin','offtakeCounterparty','projectDirector','fidTargetDate','codTargetDate','totalCapexFinalUsd',
     ]
     const filled = required.filter((k) => form[k] !== undefined && form[k] !== '' && form[k] !== false).length
@@ -218,9 +219,6 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
                   <option value="complete">Complete</option>
                 </select>
               </Field>
-              <Field label="Feasibility Contractor" required>
-                <input className={inputCls} value={form.feasibilityContractor} onChange={(e) => set('feasibilityContractor', e.target.value)} placeholder="e.g. WSP Global" readOnly={readOnly} />
-              </Field>
               <Field label="Resource Assessment Type">
                 <select className={selectCls} value={form.windSolarResource} onChange={(e) => set('windSolarResource', e.target.value as G1FormData['windSolarResource'])} disabled={readOnly}>
                   <option value="satellite">Satellite Data</option>
@@ -303,6 +301,12 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
                   <option value="80/20">80/20</option>
                 </select>
               </Field>
+              <Field label="Interest Rate (%)" hint="Senior debt all-in interest rate">
+                <input className={inputCls} type="number" min="0" max="100" step="0.01" value={form.interestRatePct} onChange={(e) => set('interestRatePct', e.target.value)} placeholder="6.25" readOnly={readOnly} />
+              </Field>
+              <Field label="Debt Ratio (%)" hint="Debt share of total funding">
+                <input className={inputCls} type="number" min="0" max="100" step="0.01" value={form.debtRatioPct} onChange={(e) => set('debtRatioPct', e.target.value)} placeholder="70" readOnly={readOnly} />
+              </Field>
               <Field label="Project Finance Ready?">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={form.projectFinanceReady} onChange={(e) => set('projectFinanceReady', e.target.checked)} disabled={readOnly} className="rounded border-border accent-[#64ffda]" />
@@ -332,8 +336,8 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
               <Field label="Offtake Term (years)">
                 <input className={inputCls} type="number" min="0" step="1" value={form.offtakeTerm} onChange={(e) => set('offtakeTerm', e.target.value)} placeholder="25" readOnly={readOnly} />
               </Field>
-              <Field label="Agreed Tariff (USD/MWh)">
-                <input className={inputCls} type="number" min="0" step="0.01" value={form.tariffUsdMwh} onChange={(e) => set('tariffUsdMwh', e.target.value)} placeholder="16.5" readOnly={readOnly} />
+              <Field label="Agreed Tariff (¢/kWh)" hint="US cents per kWh">
+                <input className={inputCls} type="number" min="0" step="0.01" value={form.tariffUsCentsKwh} onChange={(e) => set('tariffUsCentsKwh', e.target.value)} placeholder="1.65" readOnly={readOnly} />
               </Field>
             </div>
             <Field label="EPC Contractor Shortlist">
@@ -358,31 +362,16 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
               <Field label="COD Target Date" required>
                 <input className={inputCls} type="date" value={form.codTargetDate} onChange={(e) => set('codTargetDate', e.target.value)} readOnly={readOnly} />
               </Field>
-              <Field label="Total CAPEX — Final Estimate (USD)" required>
-                <input className={inputCls} type="number" min="0" step="1000000" value={form.totalCapexFinalUsd} onChange={(e) => set('totalCapexFinalUsd', e.target.value)} placeholder="385000000" readOnly={readOnly} />
+              <Field label="Total CAPEX — Final Estimate (USD)" required hint="Any whole-dollar amount, e.g. 1500000">
+                {/* step must stay "any": step="1000000" made every value that was not an
+                    exact multiple of 1,000,000 (e.g. 1500000) fail HTML step validation,
+                    which silently blocked form submission. */}
+                <input className={inputCls} type="number" min="0" step="any" value={form.totalCapexFinalUsd} onChange={(e) => set('totalCapexFinalUsd', e.target.value)} placeholder="385000000" readOnly={readOnly} />
               </Field>
               <Field label="Contingency (%)">
                 <input className={inputCls} type="number" min="0" max="100" step="0.5" value={form.contingencyPct} onChange={(e) => set('contingencyPct', e.target.value)} placeholder="10" readOnly={readOnly} />
               </Field>
             </div>
-            <Field label="Requested Gate Decision">
-              <div className="flex flex-wrap gap-2">
-                {([
-                  { value: 'approve-fid', label: 'Approve for FID',      color: '#64ffda' },
-                  { value: 'conditional', label: 'Conditional Approval',  color: '#f59e0b' },
-                  { value: 'hold',        label: 'Hold / Further Study',  color: '#3b82f6' },
-                  { value: 'terminate',   label: 'Terminate Project',     color: '#ef4444' },
-                ] as const).map(({ value, label, color }) => (
-                  <label key={value} className={cn(
-                    'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors text-sm',
-                    form.requestedDecision === value ? 'border-current font-medium' : 'border-border text-muted-foreground hover:border-muted-foreground',
-                  )} style={form.requestedDecision === value ? { color, borderColor: color, backgroundColor: `${color}10` } : {}}>
-                    <input type="radio" name="g1RequestedDecision" value={value} checked={form.requestedDecision === value} onChange={() => set('requestedDecision', value)} disabled={readOnly} className="sr-only" />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </Field>
           </Section>
         )}
 

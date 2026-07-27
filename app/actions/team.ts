@@ -35,6 +35,53 @@ async function logEvent(
 }
 
 /**
+ * Write an attributed row to `audit_log`.
+ *
+ * The table is `audit_log` (SINGULAR) — the old `audit_logs` inserts targeted a
+ * table that does not exist, so every one of these audit trails silently wrote
+ * nothing. Column names differ too: table_name/record_id/changed_by/
+ * old_values/new_values (NOT entity_type/entity_id/actor_id/old_data/new_data).
+ *
+ * `action` is constrained by `audit_log_action_check` to insert|update|delete,
+ * so the domain verb ("assign", "unassign", …) is preserved under new_values.op
+ * rather than being crammed into `action` (which would fail with 23514).
+ *
+ * A DB trigger also audits some tables, but with `changed_by = NULL` because the
+ * admin client bypasses auth.uid(). These app-level rows supply the actor.
+ * The error is always logged — a discarded audit error is how a whole trail
+ * goes missing unnoticed.
+ */
+async function logAudit(
+  admin: ReturnType<typeof createAdminClient>,
+  args: {
+    tenantId: string | null
+    tableName: string
+    recordId: string
+    action: 'insert' | 'update' | 'delete'
+    actorId: string | null
+    op?: string
+    oldValues?: Record<string, unknown> | null
+    newValues?: Record<string, unknown> | null
+  },
+) {
+  const withOp = (v: Record<string, unknown> | null | undefined) =>
+    v == null ? (args.op ? { op: args.op } : null) : args.op ? { op: args.op, ...v } : v
+
+  const { error } = await admin.from('audit_log').insert({
+    tenant_id: args.tenantId,
+    table_name: args.tableName,
+    record_id: args.recordId,
+    action: args.action,
+    changed_by: args.actorId,
+    old_values: args.oldValues ?? null,
+    new_values: withOp(args.newValues),
+  })
+  if (error) {
+    console.log(`[v0] logAudit(${args.tableName}/${args.action}) failed:`, error.message)
+  }
+}
+
+/**
  * Assign a person to a role on a project (idempotent via the
  * (project_id, role_id) unique constraint — upsert replaces the assignee).
  */
@@ -67,13 +114,14 @@ export async function assignRole(input: {
     return { error: error.message }
   }
 
-  await admin.from('audit_logs').insert({
-    tenant_id: actor.tenantId,
-    actor_id: actor.userId,
-    action: 'assign',
-    entity_type: 'project_team',
-    entity_id: projectId,
-    new_data: { project_id: projectId, role_id: roleId, person_id: personId },
+  await logAudit(admin, {
+    tenantId: actor.tenantId,
+    tableName: 'project_team',
+    recordId: projectId,
+    action: 'insert',
+    actorId: actor.userId,
+    op: 'assign',
+    newValues: { project_id: projectId, role_id: roleId, person_id: personId },
   })
 
   await logEvent(admin, {
@@ -106,13 +154,14 @@ export async function unassignRole(input: {
     .eq('role_id', roleId)
   if (error) return { error: error.message }
 
-  await admin.from('audit_logs').insert({
-    tenant_id: actor.tenantId,
-    actor_id: actor.userId,
-    action: 'unassign',
-    entity_type: 'project_team',
-    entity_id: projectId,
-    old_data: { project_id: projectId, role_id: roleId },
+  await logAudit(admin, {
+    tenantId: actor.tenantId,
+    tableName: 'project_team',
+    recordId: projectId,
+    action: 'delete',
+    actorId: actor.userId,
+    op: 'unassign',
+    oldValues: { project_id: projectId, role_id: roleId },
   })
 
   await logEvent(admin, {
@@ -265,19 +314,33 @@ export async function approveGate(input: {
   const actor = await getActor()
   const admin = createAdminClient()
 
-  const { error } = await admin
+  // Verify gate sign-offs are complete by checking the enforce_gate_approval trigger
+  // (the trigger will reject the update if sign-offs are incomplete). This validates
+  // the gate before advancing. The actual phase_gates.status transition (approved →
+  // the next row opening) is handled by advanceProjectGate.
+  const { data: gateRow, error: gateErr } = await admin
     .from('phase_gates')
-    .update({ status: 'approved', reviewed_by: actor.userId, reviewed_at: new Date().toISOString() })
+    .select('phase_number')
     .eq('id', phaseGateId)
+    .maybeSingle()
 
-  if (error) {
-    // The enforce_gate_approval trigger raises when sign-offs are incomplete.
-    const friendly = /sign|approv|pending/i.test(error.message)
-      ? 'All sign-offs must be completed before this gate can be approved.'
-      : error.message
-    return { error: friendly }
+  if (gateErr) return { error: `Could not find gate: ${gateErr.message}` }
+  if (!gateRow) return { error: 'Gate not found.' }
+
+  // Verify all sign-offs are signed before advancing
+  const { data: unsignedSignoffs, error: soErr } = await admin
+    .from('gate_signoffs')
+    .select('id')
+    .eq('phase_gate_id', phaseGateId)
+    .neq('status', 'signed')
+    .limit(1)
+
+  if (soErr) return { error: `Could not verify sign-offs: ${soErr.message}` }
+  if (unsignedSignoffs && unsignedSignoffs.length > 0) {
+    return { error: 'All sign-offs must be completed before this gate can be approved.' }
   }
 
+  // Record the gate approval decision
   await logEvent(admin, {
     transition: 'GATE_APPROVE',
     actorId: actor.userId,
@@ -285,7 +348,23 @@ export async function approveGate(input: {
     metadata: { phase_gate_id: phaseGateId },
   })
 
+  // Advance the project: mark current gate 'approved', next gate 'in_review',
+  // update projects.current_phase. This is the single authority for gate state.
+  const { advanceProjectGate } = await import('@/app/actions/phase-gates')
+  const advanceRes = await advanceProjectGate(projectId)
+
+  if (advanceRes.error) {
+    return { error: `Gate approval verified, but advancement failed: ${advanceRes.error}` }
+  }
+
   revalidatePath('/team/gates')
+  // 'layout' so every nested gate route (/projects/:id/g1, /g2, …) revalidates
+  // too — a plain revalidatePath matches only the exact path, which would leave
+  // the gate sub-pages serving a cached stepper.
+  revalidatePath(`/projects/${projectId}`, 'layout')
+  revalidatePath('/projects')
+  revalidatePath('/dashboard')
+
   return {}
 }
 
@@ -361,13 +440,13 @@ export async function createTask(input: {
     .single()
   if (error) return { error: error.message }
 
-  await admin.from('audit_logs').insert({
-    tenant_id: actor.tenantId,
-    actor_id: actor.userId,
-    action: 'create',
-    entity_type: 'tasks',
-    entity_id: created.id,
-    new_data: { title: title.trim(), assignee_role_id: roleId, assignee_person_id: personId, deliverable_id: input.deliverableId || null },
+  await logAudit(admin, {
+    tenantId: actor.tenantId,
+    tableName: 'tasks',
+    recordId: created.id,
+    action: 'insert',
+    actorId: actor.userId,
+    newValues: { title: title.trim(), assignee_role_id: roleId, assignee_person_id: personId, deliverable_id: input.deliverableId || null },
   })
 
   await logEvent(admin, {
@@ -413,14 +492,14 @@ export async function updateTaskStatus(input: {
   const { error } = await admin.from('tasks').update(patch).eq('id', taskId)
   if (error) return { error: error.message }
 
-  await admin.from('audit_logs').insert({
-    tenant_id: actor.tenantId,
-    actor_id: actor.userId,
+  await logAudit(admin, {
+    tenantId: actor.tenantId,
+    tableName: 'tasks',
+    recordId: taskId,
     action: 'update',
-    entity_type: 'tasks',
-    entity_id: taskId,
-    old_data: prior ? { status: prior.status } : null,
-    new_data: { status },
+    actorId: actor.userId,
+    oldValues: prior ? { status: prior.status } : null,
+    newValues: { status },
   })
 
   await logEvent(admin, {
@@ -571,7 +650,7 @@ type RaciLetterValue = 'R' | 'A/R' | 'C' | 'I'
 
 /**
  * Set (or clear) a RACI cell for a deliverable × role. `letter: null` removes
- * the assignment. Writes an audit_logs row on every change. Catches the
+ * the assignment. Writes an audit_log row on every change. Catches the
  * one-Accountable partial-unique violation (23505 on
  * `one_accountable_per_deliverable`) and surfaces a friendly message so the UI
  * can roll back the optimistic update.
@@ -619,14 +698,15 @@ export async function updateRaciCell(input: {
     }
   }
 
-  await admin.from('audit_logs').insert({
-    tenant_id: actor.tenantId,
-    actor_id: actor.userId,
-    action: 'update',
-    entity_type: 'raci_assignments',
-    entity_id: deliverableId,
-    old_data: oldData,
-    new_data:
+  await logAudit(admin, {
+    tenantId: actor.tenantId,
+    tableName: 'raci_assignments',
+    recordId: deliverableId,
+    // Clearing a cell deletes the row; setting one is an upsert.
+    action: letter === null ? 'delete' : 'update',
+    actorId: actor.userId,
+    oldValues: oldData,
+    newValues:
       letter === null ? null : { deliverable_id: deliverableId, role_id: roleId, letter },
   })
 
@@ -654,7 +734,7 @@ async function logAdminEvent(
   })
 }
 
-/** Change a user's home role (Tab 1) with an audit_logs old/new record. */
+/** Change a user's home role (Tab 1) with an audit_log old/new record. */
 export async function changeUserHomeRole(input: {
   userId: string
   roleId: string | null
@@ -674,14 +754,14 @@ export async function changeUserHomeRole(input: {
   const { error } = await admin.from('profiles').update({ home_role_id: roleId }).eq('id', userId)
   if (error) return { error: error.message }
 
-  await admin.from('audit_logs').insert({
-    tenant_id: actor.tenantId,
-    actor_id: actor.userId,
+  await logAudit(admin, {
+    tenantId: actor.tenantId,
+    tableName: 'profiles',
+    recordId: userId,
     action: 'update',
-    entity_type: 'profiles',
-    entity_id: userId,
-    old_data: { home_role_id: prior?.home_role_id ?? null },
-    new_data: { home_role_id: roleId },
+    actorId: actor.userId,
+    oldValues: { home_role_id: prior?.home_role_id ?? null },
+    newValues: { home_role_id: roleId },
   })
 
   revalidatePath('/admin/roles-flow')

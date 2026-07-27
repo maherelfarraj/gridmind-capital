@@ -33,10 +33,12 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { ProjectCommandCenter, type ProjectData } from '@/components/project/project-command-center'
 import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-gate-stepper'
+import { deriveGateStatus } from '@/lib/gate-status'
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
 import { ApprovalQueue } from '@/components/dashboard/approval-queue'
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
 import { RecordHistoryPanel } from '@/components/admin/audit-log-viewer'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
 import type {
   Project,
@@ -128,23 +130,50 @@ const SPEC_PROJECT_INFO = {
 }
 
 function GateStatusCard({
+  currentPhase,
   gateProgress = { G0: true, G1: true, G2: false },
   deliverables = SPEC_DELIVERABLES,
   overallProgress,
   onSubmitApproval,
   onRequestChanges,
   hideActions = false,
+  gateNames,
 }: {
+  /** Raw `projects.current_phase`. Drives the gate badge, name and description. */
+  currentPhase?: number
   gateProgress?: Record<string, boolean>
   deliverables?: { name: string; completed: boolean }[]
   overallProgress?: number
   onSubmitApproval?: () => void
   onRequestChanges?: () => void
   hideActions?: boolean
+  /** Optional map of phase_number (1–8) → real gate names from phase_gates table. */
+  gateNames?: Record<number, string>
 }) {
+  // Derived from the SAME helper the Stage Gate stepper uses, so the two panels
+  // can never disagree (previously this card hardcoded "G2 / Engineering IFC Release").
+  const baseGateStatus   = deriveGateStatus(currentPhase)
+  
+  // If gateNames provided, derive panel title from the ACTIVE phase (first non-approved)
+  // currentPhase = count of approved phases (0-8), so active phase = currentPhase + 1
+  const gateStatus = React.useMemo(() => {
+    if (!gateNames || Object.keys(gateNames).length === 0) {
+      return baseGateStatus
+    }
+    // Active phase is the one after all approved ones
+    const activePhaseNum = (typeof currentPhase === 'number' ? currentPhase : 0) + 1
+    if (activePhaseNum >= 1 && activePhaseNum <= 8 && gateNames[activePhaseNum]) {
+      return {
+        ...baseGateStatus,
+        name: gateNames[activePhaseNum],
+        description: gateNames[activePhaseNum],
+      }
+    }
+    return baseGateStatus
+  }, [baseGateStatus, currentPhase, gateNames])
   const completed    = deliverables.filter((d) => d.completed).length
   const total        = deliverables.length
-  const deliverPct   = Math.round((completed / total) * 100)
+  const deliverPct   = total > 0 ? Math.round((completed / total) * 100) : 0
   const pct          = overallProgress ?? deliverPct
 
   return (
@@ -162,13 +191,13 @@ function GateStatusCard({
         {/* Gate badge + name */}
         <div>
           <span className="inline-block rounded-lg bg-sky-100 px-4 py-2 text-3xl font-bold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
-            G2
+            {gateStatus.code}
           </span>
           <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-foreground">
-            Engineering IFC Release
+            {gateStatus.name}
           </p>
           <p className="mt-1 text-sm text-slate-500 dark:text-muted-foreground leading-relaxed">
-            Release Issued For Construction engineering drawings and specifications
+            {gateStatus.description}
           </p>
         </div>
 
@@ -186,7 +215,7 @@ function GateStatusCard({
             aria-valuenow={pct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`G2 progress: ${pct}%`}
+            aria-label={`${gateStatus.code} progress: ${pct}%`}
           >
             <div className="h-full rounded-full bg-sky-600 transition-all duration-700" style={{ width: `${pct}%` }} />
           </div>
@@ -257,9 +286,19 @@ function GateStatusCard({
 
 function ProjectInfoCard({ project = SPEC_PROJECT as unknown as Project }: { project?: Project; projectId?: string }) {
   const [historyOpen, setHistoryOpen] = React.useState(false)
+  // Prefer the numeric capacity_mw from the DB. Falling straight through to
+  // SPEC_PROJECT_INFO showed the mock "2,000 MW" on every real project, because
+  // the `capacity` display string is never populated by the server.
+  // `!= null`, not `> 0`: a real 0 MW (grid-only scope) is a value worth showing,
+  // while NULL means nobody has recorded a capacity yet.
+  const capacityLabel =
+    typeof project.capacityMw === 'number'
+      ? `${project.capacityMw.toLocaleString()} MW`
+      : project.capacity ?? NOT_SET_LABEL
+
   const info = {
-    technology:     project.technology    ?? SPEC_PROJECT_INFO.technology,
-    capacity:       project.capacity      ?? SPEC_PROJECT_INFO.capacity,
+    technology:     project.technology    || SPEC_PROJECT_INFO.technology,
+    capacity:       capacityLabel,
     epcContractor:  project.epcContractor ?? SPEC_PROJECT_INFO.epcContractor,
     ownerEngineer:  project.ownerEngineer ?? SPEC_PROJECT_INFO.ownerEngineer,
     projectManager: project.projectManager ?? SPEC_PROJECT_INFO.projectManager,
@@ -617,9 +656,9 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
   )
 }
 
-// ─────────────────────────────────────────────────────────────
+// ��───────────────────────�����────────────────────────────────────
 // Props + main page
-// ─────────────────────────────────────────────────────────────
+// ───────────────���─────────────────────────────────────────────
 
 export interface ProjectDetailPageProps {
   project: Project
@@ -635,6 +674,8 @@ export interface ProjectDetailPageProps {
   comments: Comment[]
   isLoading?: boolean
   error?: string | null
+  /** Optional map of phase_number (1–8) → real gate names from phase_gates table. */
+  gateNames?: Record<number, string>
   onBack: () => void
   onEdit: () => void
   onComments: () => void
@@ -715,6 +756,7 @@ export function ProjectDetailPage({
   risks,
   timelineLogs,
   approvals,
+  gateNames,
   isLoading    = false,
   error        = null,
   onBack,
@@ -730,9 +772,13 @@ export function ProjectDetailPage({
   hideTimeline = false,
   hideActions  = false,
 }: ProjectDetailPageProps) {
-  const gateNumber      = project.gate ?? 2
-  const currentGateCode = `G${gateNumber}`
-  const completedGates  = Array.from({ length: gateNumber }, (_, i) => `G${i}`)
+  // Single derivation of gate state, shared with GateStatusCard below. Both the
+  // stepper and the "Current Gate Status" panel read these exact values so they
+  // cannot contradict each other.
+  const gateStatus      = deriveGateStatus(project.gate)
+  const gateNumber      = gateStatus.gate
+  const currentGateCode = gateStatus.code
+  const completedGates  = gateStatus.completedGates
 
   const projectData   = toProjectData(project)
   const workflowLogs  = timelineLogs.map(toWorkflowEntry)
@@ -743,7 +789,9 @@ export function ProjectDetailPage({
   // Gate code → sub-page route (only wired gates navigate; others open the info panel)
   const GATE_ROUTES: Partial<Record<string, string>> = {
     G0: `/projects/${project.id}/g0`,
-    G1: `/projects/${project.id}/g1/approval`,
+    // Gate workspace, consistent with G2-G5. The retired `/g1/approval` mock now
+    // redirects to /team/gates, and the workspace links there directly.
+    G1: `/projects/${project.id}/g1`,
     G2: `/projects/${project.id}/g2`,
     G3: `/projects/${project.id}/g3`,
     G4: `/projects/${project.id}/g4`,
@@ -780,7 +828,19 @@ export function ProjectDetailPage({
       )}
 
       {/* Project Command Center */}
-      <ProjectCommandCenter project={projectData} loading={isLoading} onBack={onBack} onLenderReport={onLenderReport} />
+      {/* onEdit/onComments/onDocuments MUST be forwarded — they were accepted as
+          props on this component but never passed down, so the header's Edit,
+          Comments and Documents buttons all had an undefined onClick and silently
+          did nothing when clicked. */}
+      <ProjectCommandCenter
+        project={projectData}
+        loading={isLoading}
+        onBack={onBack}
+        onEdit={onEdit}
+        onComments={onComments}
+        onDocuments={onDocuments}
+        onLenderReport={onLenderReport}
+      />
 
       {/* Phase Gate Stepper */}
       {!hideStepper && (
@@ -816,12 +876,14 @@ export function ProjectDetailPage({
         <div className="flex flex-col gap-6">
           <ProjectApprovalsCard approvals={approvalItems} loading={isLoading} />
           <GateStatusCard
+            currentPhase={gateNumber}
             gateProgress={gateProgress}
             overallProgress={overallProgress}
             deliverables={deliverables}
             onSubmitApproval={onSubmitApproval}
             onRequestChanges={onRequestChanges}
             hideActions={hideActions}
+            gateNames={gateNames}
           />
           <ProjectInfoCard project={project} />
           <ClientAnnouncementsPanel projectId={project.id} isManager />

@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { ApprovalInbox, type ApprovalRecord } from '@/components/approvals/approval-inbox'
 import type { PhaseKey } from '@/components/app-shell/nav-config'
 import type { ApprovalItem } from '@/components/dashboard/dashboard-data'
+import { NOT_SET_LABEL } from '@/lib/format-nullable'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -44,10 +45,10 @@ export interface DashboardProject {
   phase: PhaseKey | string
   gate: number
   gateName: string
-  /** Budget in USD millions */
-  budgetM: number
+  /** Budget in USD millions. NULL = not recorded (renders "Not set", not "$0M"). */
+  budgetM: number | null
   /** Raw budget in full dollars (optional — normalised to budgetM when provided) */
-  budget_amount?: number
+  budget_amount?: number | null
   currency?: string
   status: ProjectRowStatus
   client: string
@@ -149,11 +150,13 @@ function cap(s: string) { return s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.
 const STATUS_META_FALLBACK = (raw: string): { label: string; variant: string; dot?: boolean } =>
   ({ label: cap(raw) || 'Unknown', variant: 'draft', dot: true })
 
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────���──────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-function formatBudget(m: number): string {
+/** NULL renders "Not set" — never a fabricated "$0M". */
+function formatBudget(m: number | null | undefined): string {
+  if (m == null) return NOT_SET_LABEL
   if (m >= 1000) return `$${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)}B`
   return `$${m}M`
 }
@@ -350,7 +353,12 @@ function RecentProjects({ projects, onRowClick, onViewAll, loading = false }: Re
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-foreground">
+                          <span className={cn(
+                            'text-sm tabular-nums',
+                            p.budgetM == null
+                              ? 'italic font-normal text-muted-foreground'
+                              : 'font-semibold text-slate-700 dark:text-foreground',
+                          )}>
                             {formatBudget(p.budgetM)}
                           </span>
                         </td>
@@ -477,7 +485,7 @@ function toApprovalRecord(item: ApprovalItem): ApprovalRecord {
 
 // ─────────────────────────────────────────────────────────────
 // Main DashboardPage
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────��──
 
 export function DashboardPage({
   userName = 'Alex Carter',

@@ -1,7 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireWriter, requireApprover, getAuthActor } from '@/lib/auth/guard'
+import { requireWriter, requireApprover, getAuthActor, requireAssignedApprover, ADMIN_ROLES } from '@/lib/auth/guard'
 import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
@@ -25,6 +25,422 @@ async function resolveApprovers(
   return (data ?? [])
     .filter((p) => p.email)
     .map((p) => ({ id: p.id, email: p.email as string, name: p.full_name ?? 'Approver' }))
+}
+
+/**
+ * Resolve the approver seat occupant for a given role.
+ * Falls back to tenant_admin if no profile has the role or the role has no active member.
+ * Used by approval creation paths to set assignee_id before writing the approval row.
+ */
+async function resolveApproveeSeat(
+  supabase: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+  role: string | null | undefined,
+): Promise<string> {
+  if (!role) {
+    // Fallback: assign to tenant_admin
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'tenant_admin')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
+    return data?.id ?? tenantId // Worst case: tenant_id itself (not ideal, but explicit)
+  }
+
+  // Look for an active profile with the specified role
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('role', role)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle()
+
+  if (data?.id) return data.id
+
+  // Role exists but no seat is occupied — assign to tenant_admin
+  const { data: admin } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('role', 'tenant_admin')
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle()
+  return admin?.id ?? tenantId
+}
+
+/**
+ * Create a multi-level approval workflow based on approval_rules.
+ *
+ * Reads the matching approval_rules row for the given object_type and amount.
+ * Creates:
+ * - One approvals row (status='pending')
+ * - One approval_steps row per level (assigned from required_roles)
+ * - approval_events: 'created' + 'assigned' (per level)
+ *
+ * Idempotent: returns early if a pending approval for object_id exists.
+ */
+export async function createApprovalWorkflow(
+  objectType: string,
+  objectId: string,
+  title: string,
+  amount: number | null,
+  createdBy: string,
+): Promise<{ id: string; error?: string }> {
+  const tenantId = await getCurrentTenantId()
+  const supabase = createAdminClient()
+
+  // Idempotent: skip if pending approval exists for this object
+  const { data: existing } = await supabase
+    .from('approvals')
+    .select('id')
+    .eq('object_id', objectId)
+    .eq('object_type', objectType)
+    .eq('status', 'pending')
+    .limit(1)
+    .maybeSingle()
+  if (existing) return { id: existing.id, error: 'Pending approval already exists for this object' }
+
+  // Find matching approval_rule: object_type + amount within min/max, highest priority
+  const { data: rule } = await supabase
+    .from('approval_rules')
+    .select('id, required_roles, approval_levels, min_amount, max_amount')
+    .eq('object_type', objectType)
+    .eq('is_active', true)
+    .lte('min_amount', amount ?? 0)
+    .gte('max_amount', amount ?? 0)
+    .order('min_amount', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  // Fallback if no exact rule match: use default tenant_admin rule
+  let approvalLevels = 1
+  let requiredRoles = ['tenant_admin']
+  if (rule) {
+    approvalLevels = rule.approval_levels ?? 1
+    requiredRoles = rule.required_roles ?? ['tenant_admin']
+  }
+
+  // Resolve the first level approver (will be assigned_to on approvals.assignee_id)
+  const firstLevelRole = requiredRoles[0] ?? 'tenant_admin'
+  const firstLevelAssigneeId = await resolveApproveeSeat(supabase, tenantId, firstLevelRole)
+
+  // Create approvals row with initial assignee = first level approver
+  const { data: approval, error: apprErr } = await supabase
+    .from('approvals')
+    .insert({
+      tenant_id: tenantId,
+      object_type: objectType,
+      object_id: objectId,
+      title,
+      status: 'pending',
+      priority: 'normal',
+      amount,
+      requester_id: createdBy,
+      assignee_id: firstLevelAssigneeId,
+      rule_id: rule?.id,
+    })
+    .select('id')
+    .single()
+
+  if (apprErr || !approval) return { id: '', error: `Approval creation failed: ${apprErr?.message}` }
+
+  // Create approval_steps (one per level)
+  const stepRows = []
+  for (let level = 1; level <= approvalLevels; level++) {
+    const role = requiredRoles[level - 1] ?? 'tenant_admin'
+    const assigneeId = await resolveApproveeSeat(supabase, tenantId, role)
+    stepRows.push({
+      approval_id: approval.id,
+      level,
+      assigned_to: assigneeId,
+      status: 'pending',
+    })
+  }
+
+  const { error: stepErr } = await supabase.from('approval_steps').insert(stepRows)
+  if (stepErr) console.log(`[v0] approval_steps creation warning: ${stepErr.message}`)
+
+  // Emit events: 'created' + 'assigned' per level
+  const eventRows = [
+    {
+      approval_id: approval.id,
+      actor_id: createdBy,
+      event_type: 'created',
+      metadata: { rule: rule?.id, levels: approvalLevels, amount },
+    },
+    ...stepRows.map((s) => ({
+      approval_id: approval.id,
+      actor_id: createdBy,
+      event_type: 'assigned',
+      metadata: { level: s.level, assigned_to: s.assigned_to },
+    })),
+  ]
+
+  const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
+  if (eventErr) console.log(`[v0] approval_events creation warning: ${eventErr.message}`)
+
+  return { id: approval.id }
+}
+
+/**
+ * Mark an approval condition as met, waived, or breached.
+ * Only condition creator, assignee, or admin can update.
+ */
+export async function updateConditionStatus(
+  conditionId: string,
+  status: 'met' | 'waived',
+): Promise<{ error?: string }> {
+  const gate = await requireApprover()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+
+  // Fetch condition to verify permissions
+  const { data: condition } = await supabase
+    .from('approval_conditions')
+    .select('id, approval_id, created_by')
+    .eq('id', conditionId)
+    .single()
+
+  if (!condition) return { error: 'Condition not found' }
+
+  // Check authorization: creator, assignee, or admin
+  const approval = await supabase
+    .from('approvals')
+    .select('assignee_id')
+    .eq('id', condition.approval_id)
+    .single()
+
+  const isCreator = gate.actor.userId === condition.created_by
+  const isAssignee = gate.actor.userId === approval.data?.assignee_id
+  const isAdmin = ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number])
+
+  if (!isCreator && !isAssignee && !isAdmin) {
+    return { error: 'You are not authorized to update this condition' }
+  }
+
+  const { error } = await supabase
+    .from('approval_conditions')
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+      updated_by: gate.actor.userId,
+    })
+    .eq('id', conditionId)
+
+  if (error) return { error: error.message }
+
+  // Emit condition_status_changed event
+  const { error: eventErr } = await supabase.from('approval_events').insert({
+    approval_id: condition.approval_id,
+    actor_id: gate.actor.userId,
+    event_type: 'condition_status_changed',
+    metadata: { condition_id: conditionId, status },
+  })
+  if (eventErr) console.log(`[v0] Condition status event warning: ${eventErr.message}`)
+
+  return {}
+}
+
+/**
+ * Auto-breach conditions where due_date < today.
+ * Called on-load or scheduled periodically.
+ */
+export async function autoBreachExpiredConditions(approvalId: string): Promise<void> {
+  const supabase = createAdminClient()
+
+  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+  const { error } = await supabase
+    .from('approval_conditions')
+    .update({
+      status: 'breached',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('approval_id', approvalId)
+    .eq('status', 'open')
+    .lt('due_date', today)
+
+  if (error) console.log(`[v0] Auto-breach warning: ${error.message}`)
+}
+
+/**
+ * Fetch approval events with actor profile details for timeline display.
+ * Includes created/assigned/decided/delegated/condition events.
+ * Auto-breaches expired conditions before returning events.
+ */
+export async function getApprovalEvents(approvalId: string) {
+  const supabase = createAdminClient()
+
+  // Auto-breach any expired conditions before returning events
+  await autoBreachExpiredConditions(approvalId)
+
+  const { data: events } = await supabase
+    .from('approval_events')
+    .select(`
+      id,
+      event_type,
+      metadata,
+      created_at,
+      actor_id,
+      profiles!actor_id (
+        id,
+        full_name,
+        email,
+        role
+      )
+    `)
+    .eq('approval_id', approvalId)
+    .order('created_at', { ascending: true })
+
+  if (!events) return []
+
+  return events.map((e: any) => ({
+    id: e.id,
+    type: e.event_type,
+    actorId: e.actor_id,
+    actorName: e.profiles?.full_name || 'System',
+    actorEmail: e.profiles?.email || null,
+    actorRole: e.profiles?.role || 'Unknown',
+    metadata: e.metadata as Record<string, unknown> | null,
+    timestamp: e.created_at,
+  }))
+}
+
+/**
+ * Backfill decided_by for OPP-001 (known row with known PD).
+ * Sets decided_by to ahmad@gsi.jo profile id (the approver).
+ * Single-row attribution; everything else stays NULL (honest unknown).
+ */
+export async function backfillOPP001DecidedBy(): Promise<{ updated: number; error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return { updated: 0, error: gate.error }
+
+  const supabase = createAdminClient()
+
+  // Find ahmad@gsi.jo profile id
+  const { data: ahmad } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', 'ahmad@gsi.jo')
+    .limit(1)
+    .single()
+
+  if (!ahmad) {
+    return { updated: 0, error: 'Profile ahmad@gsi.jo not found' }
+  }
+
+  // Update OPP-001 approval decided_by
+  const { error } = await supabase
+    .from('approvals')
+    .update({ decided_by: ahmad.id })
+    .eq('object_id', (await supabase.from('projects').select('id').eq('code', 'OPP-001').single()).data?.id)
+    .eq('status', 'approved')
+
+  if (error) return { updated: 0, error: error.message }
+
+  return { updated: 1 }
+}
+
+/**
+ * Atomic project creation via RPC: inserts project (planning, phase 0) + 7 phase_gates (all pending)
+ * + G0 approval (pending) in ONE TRANSACTION with automatic rollback on any failure.
+ *
+ * Called from createOpportunity and createProject after auth/roles are verified.
+ * Replaces separate insert calls with guaranteed consistency.
+ */
+export async function createProjectGoverned(payload: {
+  tenant_id: string
+  code: string
+  name: string
+  technology?: string
+  capacity_mw?: number
+  bess_mwh?: number
+  location?: string
+  country?: string
+  target_completion?: string // ISO date
+  project_manager?: string // UUID
+  amount?: number
+  created_by: string // UUID
+}): Promise<{ project_id?: string; approval_id?: string; error?: string }> {
+  const supabase = createAdminClient()
+
+  // Call RPC function
+  const { data, error } = await supabase.rpc('create_project_governed', {
+    payload: JSON.stringify(payload),
+  })
+
+  if (error || !data) {
+    return { error: error?.message ?? 'RPC call failed' }
+  }
+
+  // Unwrap result from RPC
+  const result = typeof data === 'string' ? JSON.parse(data) : data
+  if (result.error) {
+    return { error: result.error }
+  }
+
+  return {
+    project_id: result.project_id,
+    approval_id: result.approval_id,
+  }
+}
+
+/**
+ * Backfill migration events for existing approvals without events.
+ * Creates one 'migrated' event per approval with created_at from approvals row.
+ * Admin-only operation (run as part of deployment scripts).
+ */
+export async function backfillApprovalEvents(): Promise<{ migrated: number; error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return { migrated: 0, error: gate.error }
+
+  const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
+
+  // Find all approvals for this tenant
+  const { data: allApprovals } = await supabase
+    .from('approvals')
+    .select('id, created_at, title')
+    .eq('tenant_id', tenantId)
+
+  if (!allApprovals || allApprovals.length === 0) {
+    return { migrated: 0 }
+  }
+
+  // Find which already have events
+  const { data: existingEventApprovals } = await supabase
+    .from('approval_events')
+    .select('approval_id')
+
+  const existingIds = new Set(existingEventApprovals?.map((e) => e.approval_id) ?? [])
+
+  // Get approvals that need migration
+  const toMigrate = allApprovals.filter((a) => !existingIds.has(a.id))
+
+  if (toMigrate.length === 0) {
+    return { migrated: 0 }
+  }
+
+  // Create 'migrated' events with created_at = approvals.created_at
+  const migrationEvents = toMigrate.map((a) => ({
+    approval_id: a.id,
+    actor_id: null, // No actor for pre-engine record
+    event_type: 'migrated',
+    metadata: { note: 'pre-engine record', title: a.title },
+    created_at: a.created_at, // Use approval created_at for event timestamp
+  }))
+
+  const { error } = await supabase.from('approval_events').insert(migrationEvents)
+
+  if (error) return { migrated: 0, error: error.message }
+
+  return { migrated: toMigrate.length }
 }
 
 /**
@@ -326,7 +742,8 @@ export async function decideApproval(opts: {
   id: string
   decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject'
   rationale: string
-  conditions?: string
+  /** Conditions for conditional_proceed (title, due_date). Required if decision='conditional_proceed'. */
+  conditions?: Array<{ title: string; due_date: string }> // ISO date string
   /**
    * UNPERSISTED signature captured for this decision (gate approvals).
    *
@@ -353,11 +770,43 @@ export async function decideApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, object_type, object_id, description')
+    .select('title, object_type, object_id, description, assignee_id')
     .eq('id', opts.id)
     .single()
 
   if (!approval) return { error: 'Approval not found' }
+
+  // Verify caller is the assigned approver (or admin override).
+  const approverCheck = await requireAssignedApprover(approval)
+  if ('error' in approverCheck) return approverCheck
+
+  // Log admin override if applicable.
+  if (gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number]) &&
+      gate.actor.userId !== approval.assignee_id) {
+    console.log(`[v0] Admin override: ${gate.actor.role} (${gate.actor.userId}) decided approval assigned to ${approval.assignee_id}`)
+  }
+
+  // Conditional approval validation: require ≥1 condition if decision='conditional_proceed'
+  if (opts.decision === 'conditional_proceed') {
+    if (!opts.conditions || opts.conditions.length === 0) {
+      return { error: 'Conditional approval requires at least 1 condition (title + due date)' }
+    }
+    // Validate each condition has title and due_date
+    const invalidCondition = opts.conditions.find(c => !c.title?.trim() || !c.due_date)
+    if (invalidCondition) {
+      return { error: 'All conditions must have a title and due date' }
+    }
+  }
+
+  // Step-aware workflow: find the CURRENT lowest-pending approval_step
+  const { data: currentStep } = await supabase
+    .from('approval_steps')
+    .select('id, level, status')
+    .eq('approval_id', opts.id)
+    .eq('status', 'pending')
+    .order('level')
+    .limit(1)
+    .maybeSingle()
 
   // Persist the signature only now that the caller is authorized AND the target
   // approval exists. If it fails we abort without touching the decision, so we
@@ -379,50 +828,149 @@ export async function decideApproval(opts: {
     signatureId = sigRes.signature.id
   }
 
-  const { error } = await supabase
-    .from('approvals')
-    .update({
-      status:     statusMap[opts.decision],
-      // 'hold' maps to 'pending', which correctly CLEARS decided_at (reopened).
-      ...decisionStamp(statusMap[opts.decision]),
-      updated_at: new Date().toISOString(),
-      // Store decision detail in description
-      description: [
-        approval?.description ?? '',
-        `\n\n[Decision: ${opts.decision.replace('_', ' ')}]`,
-        `\nRationale: ${opts.rationale}`,
-        opts.conditions ? `\nConditions: ${opts.conditions}` : '',
-        signatureId ? `\n[Signed: ${signatureId}]` : '',
-      ].join(''),
+  const decisionStatus = statusMap[opts.decision]
+
+  // If a step workflow exists, update ONLY the current step; otherwise update the approval directly
+  if (currentStep) {
+    // Step-aware: mark current step with decision + emit event
+    // Also update approvals.decision column for audit trail
+    const { error: stepErr } = await supabase
+      .from('approval_steps')
+      .update({
+        status: decisionStatus === 'rejected' ? 'rejected' : 'approved',
+        decided_at: new Date().toISOString(),
+        decided_by: gate.actor.userId,
+        decision_note: opts.rationale,
+      })
+      .eq('id', currentStep.id)
+
+    // Update approvals row: decision column + decision_note
+    const { error: apprDecisionErr } = await supabase
+      .from('approvals')
+      .update({
+        decision: opts.decision,
+        decision_note: opts.rationale,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', opts.id)
+
+    if (apprDecisionErr) console.log(`[v0] Approval decision column update warning: ${apprDecisionErr.message}`)
+
+    if (stepErr) return { error: `Step decision failed: ${stepErr.message}` }
+
+    // Emit 'decided' event for this step
+    const { error: eventErr } = await supabase.from('approval_events').insert({
+      approval_id: opts.id,
+      actor_id: gate.actor.userId,
+      event_type: 'decided',
+      metadata: { level: currentStep.level, decision: decisionStatus, rationale: opts.rationale },
     })
-    .eq('id', opts.id)
+    if (eventErr) console.log(`[v0] approval_events emission warning: ${eventErr.message}`)
 
-  // `hold` maps to 'pending', so the helper correctly makes no lifecycle change.
-  if (!error) {
-    const lifecycleError = await applyApprovalLifecycle(supabase, approval, statusMap[opts.decision])
-    if (lifecycleError) return { error: lifecycleError }
+    // Check if all steps are now completed (all non-pending)
+    const { data: pendingSteps } = await supabase
+      .from('approval_steps')
+      .select('id', { count: 'exact' })
+      .eq('approval_id', opts.id)
+      .eq('status', 'pending')
 
-    // Advance the project's gate stepper when a G0 opportunity approval is approved.
-    // applyApprovalLifecycle already flipped status (planning→active); this call
-    // bumps current_phase (0→1) so the PhaseGateStepper reflects the new gate.
-    // G1–G6 advances are handled separately by gate-approval-dialog/advanceProjectGate.
-    if (
-      approval.object_type === 'opportunity' &&
-      approval.object_id &&
-      statusMap[opts.decision] === 'approved'
-    ) {
-      const { advanceProjectGate } = await import('@/app/actions/phase-gates')
-      const advErr = await advanceProjectGate(approval.object_id)
-      if (advErr.error) return { error: advErr.error }
+    // If rejection, skip remaining steps
+    if (decisionStatus === 'rejected') {
+      const { error: skipErr } = await supabase
+        .from('approval_steps')
+        .update({ status: 'skipped' })
+        .eq('approval_id', opts.id)
+        .eq('status', 'pending')
+      if (skipErr) console.log(`[v0] Step skip warning: ${skipErr.message}`)
     }
+
+    // If all steps approved, mark approval as approved
+    if (decisionStatus !== 'rejected' && (!pendingSteps || pendingSteps.length === 0)) {
+      const { error: apprErr } = await supabase
+        .from('approvals')
+        .update({
+          status: 'approved',
+          decided_by: gate.actor.userId,
+          ...decisionStamp('approved'),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', opts.id)
+
+      if (!apprErr) {
+        const lifecycleError = await applyApprovalLifecycle(supabase, approval, 'approved')
+        if (lifecycleError) return { error: lifecycleError }
+
+        // Advance gate for approved opportunities
+        if (approval.object_type === 'opportunity' && approval.object_id) {
+          const { advanceProjectGate } = await import('@/app/actions/phase-gates')
+          const advErr = await advanceProjectGate(approval.object_id, { viaApproval: true })
+          if (advErr.error) return { error: advErr.error }
+        }
+      }
+    }
+  } else {
+    // Legacy path (no approval_steps): update approval directly with decision column + decision_note
+    const { error } = await supabase
+      .from('approvals')
+      .update({
+        status:     decisionStatus,
+        decision:   opts.decision,
+        decision_note: opts.rationale,
+        decided_by: gate.actor.userId,
+        ...decisionStamp(decisionStatus),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', opts.id)
+
+    if (!error) {
+      const lifecycleError = await applyApprovalLifecycle(supabase, approval, decisionStatus)
+      if (lifecycleError) return { error: lifecycleError }
+
+      if (
+        approval.object_type === 'opportunity' &&
+        approval.object_id &&
+        decisionStatus === 'approved'
+      ) {
+        const { advanceProjectGate } = await import('@/app/actions/phase-gates')
+        const advErr = await advanceProjectGate(approval.object_id, { viaApproval: true })
+        if (advErr.error) return { error: advErr.error }
+      }
+    }
+
+    if (error) return { error: error.message }
   }
 
-  if (!error && approval) {
+  // Create approval_conditions rows if decision='conditional_proceed'
+  if (opts.decision === 'conditional_proceed' && opts.conditions && opts.conditions.length > 0) {
+    const conditionRows = opts.conditions.map((c) => ({
+      approval_id: opts.id,
+      title: c.title.trim(),
+      due_date: c.due_date, // ISO date string
+      status: 'open', // All new conditions start as 'open'
+      created_by: gate.actor.userId,
+    }))
+
+    const { error: condErr } = await supabase.from('approval_conditions').insert(conditionRows)
+    if (condErr) console.log(`[v0] Approval conditions creation warning: ${condErr.message}`)
+
+    // Emit 'condition_added' events for audit trail
+    const eventRows = conditionRows.map((c) => ({
+      approval_id: opts.id,
+      actor_id: gate.actor.userId,
+      event_type: 'condition_added',
+      metadata: { title: c.title, due_date: c.due_date },
+    }))
+
+    const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
+    if (eventErr) console.log(`[v0] Condition events emission warning: ${eventErr.message}`)
+  }
+
+  if (approval) {
     sendApprovalDecisionEmail({
       to: 'admin@gridmind.capital',
       requesterName: 'Team',
       title: approval.title ?? opts.id,
-      decision: statusMap[opts.decision] === 'approved' ? 'approved' : 'rejected',
+      decision: decisionStatus === 'approved' ? 'approved' : 'rejected',
       decisionBy: 'Executive Sponsor',
       projectCode: approval.object_type ?? 'G0',
       approvalId: opts.id,
@@ -430,7 +978,7 @@ export async function decideApproval(opts: {
     }).catch(() => {})
   }
 
-  return { error: error?.message ?? null }
+  return { error: null }
 }
 
 export async function delegateApproval(opts: {
@@ -672,9 +1220,20 @@ export async function syncQueuedApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, description, object_type, object_id')
+    .select('title, description, object_type, object_id, assignee_id')
     .eq('id', opts.id)
     .single()
+
+  // Verify caller is the assigned approver (or admin override).
+  if (!approval) return { error: 'Approval not found' }
+  const approverCheck = await requireAssignedApprover(approval)
+  if ('error' in approverCheck) return approverCheck
+
+  // Log admin override if applicable.
+  if (gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number]) &&
+      gate.actor.userId !== approval.assignee_id) {
+    console.log(`[v0] Admin override: ${gate.actor.role} (${gate.actor.userId}) synced approval assigned to ${approval.assignee_id}`)
+  }
 
   const description = opts.comment
     ? [
@@ -688,6 +1247,7 @@ export async function syncQueuedApproval(opts: {
     .from('approvals')
     .update({
       status: opts.decision,
+      decided_by: gate.actor.userId,
       ...decisionStamp(opts.decision),
       description,
       updated_at: new Date().toISOString(),
@@ -726,13 +1286,24 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
   // Fetch the approval first so we can include context in the email
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, description, object_type, object_id')
+    .select('title, description, object_type, object_id, assignee_id')
     .eq('id', id)
     .single()
 
+  // Verify caller is the assigned approver (or admin override).
+  if (!approval) return { error: 'Approval not found' }
+  const approverCheck = await requireAssignedApprover(approval)
+  if ('error' in approverCheck) return approverCheck
+
+  // Log admin override if applicable.
+  if (gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number]) &&
+      gate.actor.userId !== approval.assignee_id) {
+    console.log(`[v0] Admin override: ${gate.actor.role} (${gate.actor.userId}) updated approval assigned to ${approval.assignee_id}`)
+  }
+
   const { error } = await supabase
     .from('approvals')
-    .update({ status, ...decisionStamp(status), updated_at: new Date().toISOString() })
+    .update({ status, decided_by: gate.actor.userId, ...decisionStamp(status), updated_at: new Date().toISOString() })
     .eq('id', id)
 
   // Third decision path — kept in sync via the shared helper.

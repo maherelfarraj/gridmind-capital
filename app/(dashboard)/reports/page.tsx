@@ -20,6 +20,7 @@ import { getPermitsBoard }       from '@/app/actions/workpermits'
 import { getItpDashboard, getNcrRegister } from '@/app/actions/quality'
 import { getContractsRegister, getSecuritiesRegister } from '@/app/actions/contracts'
 import type { RiskRecord }       from '@/lib/types/action-types'
+import { NOT_SET_LABEL }        from '@/lib/format-nullable'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -138,7 +139,10 @@ function ProjectStatusReport({ dateRange: _dateRange }: { dateRange: DateRange }
             <Badge variant="outline" className="text-[11px] font-mono">{p.gate}</Badge>
           </td>
           <td className="px-3 py-2.5 text-right tabular-nums">
-            {p.budget_amount != null ? `$${(p.budget_amount / 1_000_000).toFixed(1)}M` : '—'}
+            {/* Money field: unset renders "Not set", never a fabricated $0.0M. */}
+            {p.budget_amount != null
+              ? `$${(p.budget_amount / 1_000_000).toFixed(1)}M`
+              : <span className="italic text-muted-foreground">{NOT_SET_LABEL}</span>}
           </td>
           <td className="px-3 py-2.5"><StatusPill value={p.status ?? 'active'} /></td>
         </tr>

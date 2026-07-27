@@ -3,10 +3,13 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireProjectDirector } from '@/lib/auth/guard'
 import { sendProjectCreatedEmail } from '@/lib/email/send'
+import { createApprovalWorkflow } from '@/app/actions/approvals'
 import type { Project } from '@/components/projects/projects-list-page'
 import type { ProjectData } from '@/components/project/project-command-center'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { deriveGateStatus, MAX_GATE } from '@/lib/gate-status'
+import { numOrNull } from '@/lib/format-nullable'
 
 const PHASE_MAP: Record<number, string> = {
   0: 'intake', 1: 'commercial', 2: 'engineering', 3: 'engineering',
@@ -34,6 +37,8 @@ const GATE_PHASES: { phase: number; name: string }[] = Array.from({ length: 7 },
 
 export interface GetProjectsOptions {
   phase?: string | null
+  /** Filter by exact `projects.current_phase` (G0 → 0, G1 → 1, …). */
+  gate?: number | null
   search?: string | null
   status?: string | null
   page?: number
@@ -54,6 +59,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
   const tenantId = await getCurrentTenantId()
 
   const phase     = opts?.phase     ?? null
+  const gate      = opts?.gate      ?? null
   const search    = opts?.search    ?? null
   const status    = opts?.status    ?? null
   const page      = opts?.page      ?? 1
@@ -64,7 +70,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
 
   let query = supabase
     .from('projects')
-    .select('id, code, name, status, technology, budget_usd, current_phase, target_completion, location, country', { count: 'exact' })
+    .select('id, code, name, status, technology, capacity_mw, budget_usd, current_phase, target_completion, location, country, health, created_at', { count: 'exact' })
     .eq('tenant_id', tenantId)
 
   if (phase && phase !== 'all') {
@@ -73,6 +79,16 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
       .filter(([, v]) => v === phase)
       .map(([k]) => Number(k))
     if (phaseNums.length > 0) query = query.in('current_phase', phaseNums)
+  }
+
+  // Gate filter: `gate` is the raw `projects.current_phase` value (G0 → 0, G1 → 1, …).
+  // This is distinct from `phase`, which maps several phases onto one workstream key.
+  if (gate !== null && gate !== undefined) {
+    // current_phase can exceed the governed G0–G6 range (completed projects sit at
+    // 7/8) and those clamp to G6 for display. Use >= at the top gate so the filter
+    // matches what the UI actually shows instead of hiding them.
+    if (gate >= MAX_GATE) query = query.gte('current_phase', gate)
+    else query = query.eq('current_phase', gate)
   }
 
   if (status && status !== 'all') {
@@ -96,16 +112,30 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
 
   if (error || !data) return paginated ? { projects: [], totalCount: 0 } : []
 
+  // PostgREST returns PG `numeric` columns as strings — coerce before the UI does math.
+  // `budget_usd` / `capacity_mw` are NULLABLE and rendered directly, so they use
+  // `numOrNull` to keep NULL distinct from a real 0 (see lib/format-nullable.ts).
+
   const projects = data.map((p) => ({
     id: p.id,
     code: p.code,
     name: p.name,
     client_name: (p as any).client_name ?? p.location ?? p.country ?? '—',
     phase: PHASE_MAP[p.current_phase ?? 0] ?? 'intake',
-    gate: `G${p.current_phase ?? 0}`,
-    budget_amount: p.budget_usd ?? 0,
+    // Clamped to the governed G0–G6 range via the shared helper so completed
+    // projects at phase 7/8 render as "G6" instead of a nonexistent "G8".
+    gate: deriveGateStatus(p.current_phase).code,
+    current_phase: p.current_phase ?? 0,
+    budget_amount: numOrNull(p.budget_usd),
     status: (p.status as Project['status']) ?? 'active',
     target_cod: p.target_completion ?? '',
+    // Real values so the registry can stop rendering "N/A" / "0 MW".
+    country: p.country ?? '',
+    location: p.location ?? '',
+    technology: p.technology ?? '',
+    capacity_mw: numOrNull(p.capacity_mw),
+    health: (p as any).health ?? 'green',
+    created_at: p.created_at ?? new Date().toISOString(),
   }))
 
   return paginated ? { projects, totalCount: count ?? projects.length } : projects
@@ -118,7 +148,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   // Try by UUID first, then by code
   let query = supabase
     .from('projects')
-    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, created_at')
+    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, provenance, created_at')
     .eq('tenant_id', tenantId)
 
   // Detect if id looks like a UUID
@@ -134,12 +164,17 @@ export async function getProject(id: string): Promise<ProjectData | null> {
 
   const { data, error } = await query.limit(1).maybeSingle()
 
-  if (error || !data) return null
+  // Surface query errors (42703 missing column, etc) instead of swallowing them as 404.
+  // Only return null if a row legitimately doesn't exist (error=null && !data).
+  if (error) throw new Error(`Failed to fetch project: ${error.message} (code: ${error.code})`)
+  if (!data) return null
 
   const gate = data.current_phase ?? 0
+  // Map current_phase (count of approved gates 0–8) to legacy phase keys (g0–g6).
+  // Phases 7–8 (commissioning, handover) map to g6 for backward compatibility.
   const PHASE_KEY_MAP: Record<number, ProjectData['phase']> = {
     0: 'g0', 1: 'g1', 2: 'g2', 3: 'g3', 4: 'g4',
-    5: 'g5', 6: 'g6', 7: 'g6', 8: 'g6', 9: 'g6',
+    5: 'g5', 6: 'g6', 7: 'g6', 8: 'g6',
   }
 
   return {
@@ -151,13 +186,21 @@ export async function getProject(id: string): Promise<ProjectData | null> {
     phase: PHASE_KEY_MAP[gate] ?? 'g0',
     gate,
     gateName: GATE_NAMES[gate] ?? `Gate ${gate}`,
-    budgetUsd: data.budget_usd ?? 0,
+    // NULL means "no budget recorded yet" and must stay distinguishable from $0.
+    budgetUsd: numOrNull(data.budget_usd),
     currency: 'USD',
     startDate: data.start_date ?? data.created_at?.split('T')[0] ?? '2024-01-01',
     targetCod: data.target_completion ?? '',
     location: data.location ?? data.country ?? undefined,
+    // Real identity fields so gate pages can render the correct project instead of
+    // falling back to a hardcoded mock charter.
+    technology: data.technology ?? '',
+    capacityMw: numOrNull(data.capacity_mw),
+    country: data.country ?? '',
+    description: data.description ?? '',
     commentCount: 0,
     documentCount: 0,
+    provenance: (data.provenance as Record<string, any>) ?? {},
   }
 }
 
@@ -210,6 +253,7 @@ export async function createProject(payload: {
     .limit(1)
     .maybeSingle()
 
+<<<<<<< HEAD
   if (!existingApproval) {
     const { error: ae } = await supabase.from('approvals').insert({
       tenant_id:    tenantId,
@@ -224,6 +268,17 @@ export async function createProject(payload: {
     })
     if (ae) return { id: data.id, error: `Project created, but approval failed: ${ae.message}` }
   }
+=======
+  // Use approval workflow (idempotent: skip if pending approval exists)
+  const workflowResult = await createApprovalWorkflow(
+    'opportunity',
+    data.id,
+    payload.code,
+    null, // Amount not available at wizard creation time
+    gate.actor.userId,
+  )
+  if (workflowResult.error) return { id: data.id, error: `Approval workflow failed: ${workflowResult.error}` }
+>>>>>>> origin/pr41-head
 
   // 3. Seed the G0–G6 gate records. All gates start pending — nothing is pre-approved.
   // Approval of G0 via decideApproval will flip to 'in_review' via applyApprovalLifecycle.
@@ -243,26 +298,20 @@ export async function createProject(payload: {
     projectCode: payload.code,
     projectName: payload.name,
     technology: payload.technology,
-    budgetUsd: payload.budget_usd ?? 0,
+    budgetUsd: numOrNull(payload.budget_usd),
     projectId: data.id,
   }).catch(() => {})
 
   return { id: data.id }
 }
 
-// ── Phase 6: transactional wizard create ─────────────────────
+// ── Phase 6: transactional wizard create ─────────���───────────
 
 // Exact G1–G8 phase names (must equal gates.name so spawn_gate_signoffs joins).
-const WIZARD_PHASE_NAMES: string[] = [
-  'Origination & Feasibility',
-  'Permitting & Grid Application',
-  'Commercial & Financial Close (RTB)',
-  'Detailed Design (IFC)',
-  'Procurement & Manufacturing',
-  'Construction & Installation',
-  'Commissioning & Grid Tests',
-  'Handover & O&M',
-]
+// WIZARD_PHASE_NAMES now uses the canonical 7-gate model (G0–G6), matching GATE_PHASES.
+// This ensures projects created via wizard seed identical phase_gates as all other paths.
+// (Previously WIZARD_PHASE_NAMES had 8 phases with different names, causing data model divergence.)
+const WIZARD_PHASE_NAMES: string[] = GATE_PHASES.map((g) => g.name)
 
 export interface CreateProjectFullInput {
   name: string
@@ -272,6 +321,13 @@ export interface CreateProjectFullInput {
   bess_mwh: number
   location: string
   country: string
+  /**
+   * NULL = the creator did not state a budget (the wizard has no budget field
+   * yet; it is set later via the edit form). Must not be faked as 0 — that
+   * would announce a "$0" budget in the creation email and mis-route the
+   * amount-threshold approval workflow.
+   */
+  budget_usd: number | null
   target_completion: string | null
   pdPersonId: string
   pmPersonId: string
@@ -279,8 +335,13 @@ export interface CreateProjectFullInput {
 }
 
 /**
- * Create a project with PD+PM staffing, 8 gate-approver rows, and 8 phase_gates
- * (G1 `in_review` → trigger spawns G1 sign-offs; the wizard inserts none itself).
+ * Create a project with PD+PM staffing and 7 phase_gates (canonical G0–G6 model).
+ * 
+ * Enforces governance: Projects start at status='planning', current_phase=0 with
+ * a pending G0 approval (object_type='opportunity'). This matches createProject and
+ * createOpportunity patterns — no project may be 'active' without recorded approval.
+ * PD/PM staffing is allowed at creation, but no gate is pre-approved.
+ * 
  * No true SQL transaction is available via the JS client, so any failure after
  * the project row triggers a compensating delete (children cascade) — giving
  * all-or-nothing semantics.
@@ -293,6 +354,7 @@ export async function createProjectFull(
 
   const { getActor } = await import('@/lib/db/queries')
   const actor = await getActor()
+  if (!actor.userId) return { error: 'User context required' }
   const admin = createAdminClient()
   const tenantId = actor.tenantId ?? (await getCurrentTenantId())
 
@@ -335,7 +397,7 @@ export async function createProjectFull(
     }
   }
 
-  // 1) Project.
+  // 1) Project — starts at planning/phase 0 (not active). Governance gate: must pass G0 approval first.
   let projectId = ''
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data, error } = await admin
@@ -350,7 +412,7 @@ export async function createProjectFull(
         location: input.location || null,
         country: input.country || null,
         target_completion: isDate(input.target_completion) ? input.target_completion : null,
-        status: 'active',
+        status: 'planning',
         current_phase: 0,
         health: 'green',
         project_manager: input.pmPersonId,
@@ -381,6 +443,18 @@ export async function createProjectFull(
     return { error: msg }
   }
 
+  // 1.5) G0 Approval Workflow — multi-level based on approval_rules (amount threshold-based).
+  const workflowResult = await createApprovalWorkflow(
+    'opportunity',
+    projectId,
+    code ?? `${codePrefix}001`,
+    // `!= null`, not truthiness: a real 0 budget is a stated amount and should
+    // be threshold-matched, not treated as "no amount given".
+    input.budget_usd != null ? Number(input.budget_usd) : null,
+    actor.userId,
+  )
+  if (workflowResult.error) return rollback(`G0 approval workflow failed: ${workflowResult.error}`)
+
   // 2) Team: PD + PM (inserted BEFORE gates so the spawn trigger finds assignees).
   const { error: teamErr } = await admin.from('project_team').insert([
     { tenant_id: tenantId, project_id: projectId, role_id: pdRoleId, person_id: input.pdPersonId, assigned_by: actor.userId },
@@ -388,13 +462,12 @@ export async function createProjectFull(
   ])
   if (teamErr) return rollback(`Staffing failed: ${teamErr.message}`)
 
-  // 3) Gate approvers (8 rows).
-  const approverRows = WIZARD_PHASE_NAMES.map((_, i) => {
-    const n = i + 1
-    const supplied = input.approvers.find((a) => a.gate_number === n)
+  // 3) Gate approvers (7 rows, G0–G6).
+  const approverRows = GATE_PHASES.map((g) => {
+    const supplied = input.approvers.find((a) => a.gate_number === g.phase)
     return {
       project_id: projectId,
-      gate_number: n,
+      gate_number: g.phase,
       primary_role: supplied?.primary_role || 'PD',
       secondary_role: supplied?.secondary_role || null,
     }
@@ -404,26 +477,35 @@ export async function createProjectFull(
     .upsert(approverRows, { onConflict: 'project_id,gate_number' })
   if (apprErr) return rollback(`Gate approvers failed: ${apprErr.message}`)
 
-  // 4) phase_gates: G1 in_review (spawns sign-offs), G2–G8 pending.
+  // 4) phase_gates: All 7 gates start 'pending' (nothing pre-approved).
+  // G0 approval decides 'Proceed' → applyApprovalLifecycle flips status='active', decideApproval calls advanceProjectGate
+  // (which only runs role+sign-off checks, and viaApproval=true skips sign-offs for G0).
+  // No gate spawn-signoffs trigger runs until a gate is actually in_review (after G0 approval).
   // NOTE: phase_gates has NO tenant_id column.
-  const gateRows = WIZARD_PHASE_NAMES.map((phaseName, i) => ({
+  const gateRows = GATE_PHASES.map((g) => ({
     project_id: projectId,
-    phase_number: i + 1,
-    phase_name: phaseName,
-    status: i === 0 ? 'in_review' : 'pending',
+    phase_number: g.phase,
+    phase_name: g.name,
+    status: 'pending',
   }))
   const { error: gateErr } = await admin.from('phase_gates').insert(gateRows)
   if (gateErr) return rollback(`Gate seeding failed: ${gateErr.message}`)
 
-  // 5) Audit.
-  await admin.from('audit_logs').insert({
+  // 5) Audit. The table is `audit_log` (singular) with table_name/record_id/
+  // changed_by/new_values — the previous `audit_logs` insert silently wrote
+  // nothing, so project creation had no attributed audit trail.
+  const { error: auditErr } = await admin.from('audit_log').insert({
     tenant_id: tenantId,
-    actor_id: actor.userId,
+    table_name: 'projects',
+    record_id: projectId,
     action: 'insert',
-    entity_type: 'projects',
-    entity_id: projectId,
-    new_data: { code, name: input.name, pd: input.pdPersonId, pm: input.pmPersonId },
+    changed_by: actor.userId,
+    new_values: { code, name: input.name, pd: input.pdPersonId, pm: input.pmPersonId },
   })
+  // Creation already succeeded, so don't roll back — but surface the failure.
+  if (auditErr) {
+    console.log('[v0] createProject: audit_log insert failed:', auditErr.message)
+  }
 
   sendProjectCreatedEmail({
     to: 'admin@gridmind.capital',
@@ -431,11 +513,103 @@ export async function createProjectFull(
     projectCode: code,
     projectName: input.name,
     technology: input.technology,
-    budgetUsd: 0,
+    // Was hardcoded 0, so every creation email announced a "$0" budget.
+    budgetUsd: input.budget_usd ?? null,
     projectId,
   }).catch(() => {})
 
   return { id: projectId }
+}
+
+export interface UpdateProjectInput {
+  name?: string
+  country?: string
+  location?: string
+  technology?: string
+  /**
+   * `undefined` = leave unchanged; `null` = explicitly clear back to "not set".
+   * A clearable numeric field needs both, otherwise emptying the input is a no-op.
+   */
+  capacity_mw?: number | null
+  budget_usd?: number | null
+  target_completion?: string
+  description?: string
+}
+
+/**
+ * Edit an existing project's core fields.
+ *
+ * Tenant-scoped like archiveProject, guarded by requireWriter, and audited with a
+ * before/after snapshot so "who changed the budget?" is answerable.
+ */
+export async function updateProject(
+  id: string,
+  input: UpdateProjectInput,
+): Promise<{ error?: string }> {
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+  const { actor } = gate
+
+  const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
+
+  // Snapshot the prior values for the audit trail.
+  const { data: before } = await supabase
+    .from('projects')
+    .select('name, country, location, technology, capacity_mw, budget_usd, target_completion, description')
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (!before) return { error: 'Project not found' }
+
+  // Only send keys the caller actually provided, so blank inputs don't null out data.
+  const patch: Record<string, unknown> = {}
+  if (input.name !== undefined)              patch.name = input.name.trim()
+  if (input.country !== undefined)           patch.country = input.country.trim() || null
+  if (input.location !== undefined)          patch.location = input.location.trim() || null
+  if (input.technology !== undefined)        patch.technology = input.technology.trim() || null
+  if (input.capacity_mw !== undefined)       patch.capacity_mw = input.capacity_mw
+  if (input.budget_usd !== undefined)        patch.budget_usd = input.budget_usd
+  if (input.target_completion !== undefined) patch.target_completion = input.target_completion || null
+  if (input.description !== undefined)       patch.description = input.description.trim() || null
+
+  if (Object.keys(patch).length === 0) return {}
+
+  if (typeof patch.name === 'string' && patch.name.length === 0) {
+    return { error: 'Project name is required' }
+  }
+
+  const { error } = await supabase
+    .from('projects')
+    .update(patch)
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+
+  if (error) return { error: error.message }
+
+  // The table is `audit_log` (singular) with columns table_name/record_id/
+  // changed_by/old_values/new_values. NOTE: a DB trigger already logs the
+  // old/new values on every projects UPDATE, but it records changed_by = NULL
+  // because the admin client bypasses auth.uid(). This row supplies the missing
+  // actor attribution so "who changed the budget?" is answerable.
+  const { error: auditError } = await supabase.from('audit_log').insert({
+    tenant_id: tenantId,
+    table_name: 'projects',
+    record_id: id,
+    action: 'update',
+    changed_by: actor.userId,
+    old_values: before,
+    new_values: patch,
+  })
+
+  // Don't fail the update if auditing fails, but never let it fail silently —
+  // a swallowed audit error is how a whole audit trail goes missing unnoticed.
+  if (auditError) {
+    console.log('[v0] updateProject: audit_log insert failed:', auditError.message)
+  }
+
+  return {}
 }
 
 export async function archiveProject(id: string): Promise<{ error?: string }> {
@@ -952,4 +1126,91 @@ export async function getProjectDocuments(projectCode: string): Promise<import('
     updatedAt: d.created_at ?? '',
     storagePath: d.storage_path ?? null,
   }))
+}
+
+/**
+ * Update the provenance source for a tracked project field.
+ * Admin-only; writes to projects.provenance and audit_log.
+ *
+ * @param projectId UUID of the project
+ * @param field One of: budget_usd, capacity_mw, start_date, target_completion, country, location, technology, bess_mwh
+ * @param newSource One of: contract, financial_model, lender_facility, interconnection, term_sheet
+ * @returns { success: true } or throws an error
+ */
+export async function updateProjectProvenance(
+  projectId: string,
+  field: string,
+  newSource: string,
+): Promise<{ success: true }> {
+  // Admin guard: system_admin, tenant_admin, project_director
+  await requireProjectDirector()
+
+  // Validate field name (8 tracked fields)
+  const validFields = ['budget_usd', 'capacity_mw', 'start_date', 'target_completion', 'country', 'location', 'technology', 'bess_mwh']
+  if (!validFields.includes(field)) {
+    throw new Error(`Invalid field: ${field}. Must be one of: ${validFields.join(', ')}`)
+  }
+
+  // Validate source enum
+  const validSources = ['contract', 'financial_model', 'lender_facility', 'interconnection', 'term_sheet']
+  if (!validSources.includes(newSource)) {
+    throw new Error(`Invalid source: ${newSource}. Must be one of: ${validSources.join(', ')}`)
+  }
+
+  const supabase = createAdminClient()
+  const tenantId = await getCurrentTenantId()
+
+  // Get current provenance and actor info
+  const { data: proj, error: projErr } = await supabase
+    .from('projects')
+    .select('provenance')
+    .eq('id', projectId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  // Surface query errors (column missing, etc) — don't hide as "project not found"
+  if (projErr) throw new Error(`Failed to fetch project provenance: ${projErr.message} (code: ${projErr.code})`)
+  if (!proj) throw new Error('Project not found')
+
+  const currentProv = (proj.provenance ?? {}) as Record<string, any>
+  const oldSource = currentProv[field]?.source ?? null
+
+  // Skip if already set to the same source
+  if (oldSource === newSource) {
+    return { success: true }
+  }
+
+  // Update provenance: {source: newSource, at: now()}
+  const updatedProv = {
+    ...currentProv,
+    [field]: { source: newSource, at: new Date().toISOString() },
+  }
+
+  const { error: updateErr } = await supabase
+    .from('projects')
+    .update({ provenance: updatedProv })
+    .eq('id', projectId)
+    .eq('tenant_id', tenantId)
+
+  if (updateErr) throw new Error(`Failed to update provenance: ${updateErr.message}`)
+
+  // Get actor email for audit trail
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .eq('id', user?.id ?? '')
+    .maybeSingle()
+
+  // Write audit_log entry
+  await supabase.from('audit_log').insert({
+    table_name: 'projects',
+    record_id: projectId,
+    action: 'update',
+    changed_by: profile?.id ?? null,
+    old_values: { [field]: { source: oldSource } },
+    new_values: { [field]: { source: newSource }, op: 'provenance_source_change' },
+  })
+
+  return { success: true }
 }

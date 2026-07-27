@@ -72,10 +72,22 @@ export interface LenderReportData {
     capacity_mw: number | null
     country: string | null
     location: string | null
-    budget_usd: number
+    // Nullable: `num()` turned a missing budget into a confident "$0" for a
+    // lender. Absence must read as "Not set", never as a real figure.
+    budget_usd: number | null
+    target_completion: string | null
     health: string | null
     current_phase: number
   }
+  /**
+   * Per-field data source, keyed by DB column name (budget_usd, capacity_mw,
+   * target_completion, location, country, technology). Read from
+   * projects.provenance.
+   *
+   * A MISSING key means "source unrecorded" — it must NOT be presented as
+   * verified. Only an explicit non-assumption source counts as verified.
+   */
+  provenance: Record<string, string | null>
   facility: LenderFacility | null
   progress: {
     overallPct: number
@@ -234,6 +246,27 @@ function scoreText(v: unknown): number {
   return map[raw] ?? 3
 }
 
+/**
+ * Flatten projects.provenance ({"budget_usd":{"source":"pilot_assumption",…}})
+ * into a plain field -> source map for the view. Tolerates a missing column,
+ * a non-object value, and entries without a `source` key, because the column
+ * defaults to '{}' and older rows predate it.
+ */
+function flattenProvenance(raw: unknown): Record<string, string | null> {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, string | null> = {}
+  for (const [field, meta] of Object.entries(raw as Record<string, unknown>)) {
+    if (meta != null && typeof meta === 'object' && !Array.isArray(meta)) {
+      const src = (meta as Record<string, unknown>).source
+      out[field] = typeof src === 'string' ? src : null
+    } else {
+      // Allow a bare string form ({"budget_usd":"contract"}) as a convenience.
+      out[field] = typeof meta === 'string' ? meta : null
+    }
+  }
+  return out
+}
+
 /** Best-effort parse of an HSE date which may be ISO or free-text ("19 Jul 2025"). */
 function parseLooseDate(v: unknown): number | null {
   if (!v) return null
@@ -336,7 +369,7 @@ export async function getLenderReportData(
     gateState,
   ] = await Promise.all([
     admin.from('projects')
-      .select('id, name, code, technology, capacity_mw, country, location, budget_usd, health, current_phase')
+      .select('id, name, code, technology, capacity_mw, country, location, budget_usd, target_completion, health, current_phase, provenance')
       .eq('id', projectId).eq('tenant_id', tenantId).maybeSingle(),
     getFacility(projectId),
     getProjectProgress(projectId),
@@ -686,10 +719,13 @@ export async function getLenderReportData(
       capacity_mw: projRow?.capacity_mw == null ? null : num(projRow.capacity_mw),
       country: (projRow?.country as string) ?? null,
       location: (projRow?.location as string) ?? null,
-      budget_usd: num(projRow?.budget_usd),
+      // Keep NULL as NULL so the view can label it; num() would print "$0".
+      budget_usd: projRow?.budget_usd == null ? null : num(projRow.budget_usd),
+      target_completion: (projRow?.target_completion as string) ?? null,
       health: (projRow?.health as string) ?? null,
       current_phase: num(projRow?.current_phase),
     },
+    provenance: flattenProvenance(projRow?.provenance),
     facility,
     progress: {
       overallPct: progress.percentComplete,

@@ -67,7 +67,6 @@ export interface G0FormData {
 
 export interface G1FormData {
   feasibilityStatus:     'complete' | 'in-progress' | 'commissioned'
-  feasibilityContractor: string
   windSolarResource:     'measured' | 'modelled' | 'satellite' | 'not-started'
   p50YieldGwh:           string
   p90YieldGwh:           string
@@ -83,11 +82,16 @@ export interface G1FormData {
   baseDscrMin:           string
   lcoeUsdMwh:            string
   debtEquityRatio:       string
+  /** Senior debt interest rate, percent (e.g. "6.25"). */
+  interestRatePct:       string
+  /** Debt share of total funding, percent (e.g. "70"). */
+  debtRatioPct:          string
   projectFinanceReady:   boolean
   offtakeType:           'ppa' | 'fita' | 'merchant' | 'hybrid' | 'tbd'
   offtakeCounterparty:   string
   offtakeTerm:           string
-  tariffUsdMwh:          string
+  /** Agreed tariff in US cents per kWh (¢/kWh), e.g. "1.65". */
+  tariffUsCentsKwh:      string
   contractorShortlist:   string
   projectDirector:       string
   oeConsultant:          string
@@ -95,7 +99,6 @@ export interface G1FormData {
   codTargetDate:         string
   totalCapexFinalUsd:    string
   contingencyPct:        string
-  requestedDecision:     'approve-fid' | 'conditional' | 'hold' | 'terminate'
 }
 
 // ─── Actions ──────────────────────────────────────────────────
