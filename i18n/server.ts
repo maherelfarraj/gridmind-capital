@@ -1,5 +1,6 @@
 // Server-only: uses next/headers and must never be imported by client modules.
 // Pure locale constants live in ./config — safe for both server and client.
+import { cache } from 'react'
 import { getRequestConfig } from 'next-intl/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
@@ -19,8 +20,10 @@ import { DEFAULT_LOCALE, isValidLocale, type Locale } from './config'
  * The DB lookup only runs when there is no valid cookie, so the common path
  * stays cookie-only and cheap. It is fully guarded — any auth/query failure
  * (e.g. unauthenticated or static requests) falls back to the default.
+ *
+ * Wrapped in React cache() to dedupe per HTTP request.
  */
-async function resolveLocale(): Promise<Locale> {
+const resolveLocale = cache(async (): Promise<Locale> => {
   const cookieStore = await cookies()
   const cookieLocale = cookieStore.get('NEXT_LOCALE')?.value
   if (isValidLocale(cookieLocale)) return cookieLocale
@@ -42,7 +45,7 @@ async function resolveLocale(): Promise<Locale> {
   }
 
   return DEFAULT_LOCALE
-}
+})
 
 export default getRequestConfig(async () => {
   const locale = await resolveLocale()
