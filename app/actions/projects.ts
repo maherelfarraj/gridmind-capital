@@ -148,7 +148,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   // Try by UUID first, then by code
   let query = supabase
     .from('projects')
-    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, created_at')
+    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, provenance, created_at')
     .eq('tenant_id', tenantId)
 
   // Detect if id looks like a UUID
@@ -167,9 +167,11 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   if (error || !data) return null
 
   const gate = data.current_phase ?? 0
+  // Map current_phase (count of approved gates 0–8) to legacy phase keys (g0–g6).
+  // Phases 7–8 (commissioning, handover) map to g6 for backward compatibility.
   const PHASE_KEY_MAP: Record<number, ProjectData['phase']> = {
     0: 'g0', 1: 'g1', 2: 'g2', 3: 'g3', 4: 'g4',
-    5: 'g5', 6: 'g6', 7: 'g6', 8: 'g6', 9: 'g6',
+    5: 'g5', 6: 'g6', 7: 'g6', 8: 'g6',
   }
 
   return {
@@ -195,6 +197,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
     description: data.description ?? '',
     commentCount: 0,
     documentCount: 0,
+    provenance: (data.provenance as Record<string, any>) ?? {},
   }
 }
 
