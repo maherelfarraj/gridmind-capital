@@ -165,13 +165,13 @@ export async function advanceProjectGate(
   }
 
   // Compute current_phase = count of approved gates
-  const { data: approvedCount } = await supabase
+  const { count: approvedCount } = await supabase
     .from('phase_gates')
     .select('id', { count: 'exact', head: true })
     .eq('project_id', projectId)
     .eq('status', 'approved')
 
-  const newPhase = approvedCount?.length ?? 0
+  const newPhase = approvedCount ?? 0
 
   // Update projects.current_phase
   const { error: updateErr } = await supabase
