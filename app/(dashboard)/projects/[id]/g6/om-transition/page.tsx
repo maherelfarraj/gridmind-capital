@@ -15,6 +15,7 @@ import type { GateDef, GateState } from '@/components/project/phase-gate-stepper
 import { HandoverChecklist } from '@/components/g7/handover-checklist'
 import { AssetRegistry }     from '@/components/g7/asset-registry'
 import { OmTransition }      from '@/components/g7/om-transition'
+import { NOT_SET_LABEL }     from '@/lib/format-nullable'
 import {
   MOCK_MILESTONES,
   MOCK_ASSETS,
@@ -173,15 +174,27 @@ function CloseoutChecklist() {
 }
 
 // ─── Celebration overlay ──────────────────────────────────────
-function CelebrationModal({ onClose }: { onClose: () => void }) {
+function CelebrationModal({
+  onClose,
+  projectName,
+  projectCode,
+  capacityMw,
+}: {
+  onClose: () => void
+  projectName?: string
+  projectCode?: string
+  capacityMw?: number | null
+}) {
   const stats = [
     { icon: <Calendar size={18} />,   label: 'Project Duration', value: '24 months' },
     { icon: <Users size={18} />,      label: 'Peak Headcount',   value: '412 people' },
     { icon: <FileCheck2 size={18} />, label: 'Docs Issued',      value: '1,847' },
-    { icon: <Zap size={18} />,        label: 'Capacity',         value: '400 MW' },
+    // `!= null`, not truthiness: 0 MW is a real value for grid-only scopes.
+    { icon: <Zap size={18} />,        label: 'Capacity',         value: capacityMw != null ? `${capacityMw} MW` : NOT_SET_LABEL },
     { icon: <BarChart2 size={18} />,  label: 'Budget Variance',  value: '+1.3%' },
     { icon: <Award size={18} />,      label: 'Safety Record',    value: '0 LTI' },
   ]
+  const heading = [projectName, projectCode].filter(Boolean).join(' — ') || 'Project'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
@@ -191,7 +204,7 @@ function CelebrationModal({ onClose }: { onClose: () => void }) {
             <PartyPopper className="inline-block" size={52} />
           </div>
           <h2 className="text-2xl font-black tracking-tight">Project Complete!</h2>
-          <p className="text-emerald-100 mt-1 text-sm">Sirius 400MW Solar — SOL-2026-001</p>
+          <p className="text-emerald-100 mt-1 text-sm">{heading}</p>
           <p className="text-emerald-200 text-xs mt-0.5">
             G6 close-out confirmed {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
@@ -260,7 +273,7 @@ export default function G6OmTransitionPage() {
         <nav className="flex items-center gap-1.5 text-sm text-slate-500 mb-4">
           <Link href="/projects" className="hover:text-slate-700 dark:hover:text-foreground">Projects</Link>
           <ChevronRight size={14} />
-          <Link href={`/projects/${id}`} className="hover:text-slate-700 dark:hover:text-foreground">SOL-2026-001</Link>
+          <Link href={`/projects/${id}`} className="hover:text-slate-700 dark:hover:text-foreground">{project?.code ?? id}</Link>
           <ChevronRight size={14} />
           <Link href={`/projects/${id}/g6`} className="hover:text-slate-700 dark:hover:text-foreground">G6</Link>
           <ChevronRight size={14} />
@@ -357,7 +370,12 @@ export default function G6OmTransitionPage() {
       </div>
 
       {showCelebration && (
-        <CelebrationModal onClose={() => setShowCelebration(false)} />
+        <CelebrationModal
+          onClose={() => setShowCelebration(false)}
+          projectName={project?.name}
+          projectCode={project?.code}
+          capacityMw={project?.capacityMw}
+        />
       )}
     </div>
   )

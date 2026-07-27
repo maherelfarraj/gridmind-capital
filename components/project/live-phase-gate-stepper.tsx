@@ -68,6 +68,7 @@ export function LivePhaseGateStepper({
       currentGate={currentGate}
       completedGates={completedGates}
       gateDates={gateDates}
+      gateNames={data?.gateNames}
       {...rest}
     />
   )

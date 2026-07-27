@@ -17,20 +17,19 @@ export interface Opportunity {
   location: string
   status: string
   health: string
-  budget_usd: number
+  budget_usd: string | number
   created_at: string
   approvalStatus: string | null
 }
 
 export interface OpportunitiesDashboard {
+  items: Opportunity[]
   total: number
-  submitted: number
   underReview: number
   approved: number
   rejected: number
-  byTechnology: { name: string; value: number }[]
-  byStatus: { name: string; value: number; color: string }[]
-  items: Opportunity[]
+  byTechnology: Record<string, number>
+  byStatus: Record<string, number>
 }
 
 // ── Risks ────────────────────────────────────────────────────────────────────
@@ -284,7 +283,7 @@ export interface CommissioningDashboard {
   testsByType: { type: string; count: number }[]
 }
 
-// ── O&M ───────────────────────────────────────────────────────────────────────
+// ── O&M ─────────────────────���─────────────────────────────────────────────────
 
 export interface Asset {
   id: string

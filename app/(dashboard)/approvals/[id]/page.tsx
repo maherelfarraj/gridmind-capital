@@ -122,7 +122,7 @@ export default function ApprovalDetailPage() {
   async function handleDecide(
     decision: 'proceed' | 'conditional_proceed' | 'hold' | 'reject',
     rationale: string,
-    conditions?: string,
+    conditions?: Array<{ title: string; due_date: string }>,
     signatureDraft?: SignatureDraft,
   ) {
     // The draft is persisted inside decideApproval, after its guards pass, so an

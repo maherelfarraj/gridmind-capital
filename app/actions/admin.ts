@@ -392,20 +392,36 @@ export async function getPlatformHealth(): Promise<PlatformHealth | { error: str
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const { count } = await admin
-      .from('audit_logs')
+    // Table is `audit_log` (singular) and the timestamp column is `changed_at`.
+    // Querying the nonexistent `audit_logs`/`created_at` returned a PostgREST
+    // error (which supabase-js does NOT throw, so the catch below never fired):
+    // count came back null, `count ?? 0` made it 0, and the check reported
+    // GREEN "0 changes" — indistinguishable from a genuinely quiet day.
+    const { count, error } = await admin
+      .from('audit_log')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .gte('created_at', today.toISOString())
+      .gte('changed_at', today.toISOString())
 
-    const n = count ?? 0
-    checks.push({
-      key:    'audit_log_today',
-      label:  'Audit log entries today',
-      status: 'green',
-      count:  n,
-      detail: `${n} change${n !== 1 ? 's' : ''} recorded in audit_logs since midnight UTC.`,
-    })
+    if (error) {
+      checks.push({
+        key:    'audit_log_today',
+        label:  'Audit log entries today',
+        status: 'red',
+        count:  -1,
+        detail: `Audit log query failed: ${error.message}`,
+      })
+    } else {
+      const n = count ?? 0
+      checks.push({
+        key:    'audit_log_today',
+        label:  'Audit log entries today',
+        // Zero rows is now meaningful rather than masking a broken query.
+        status: n > 0 ? 'green' : 'amber',
+        count:  n,
+        detail: `${n} change${n !== 1 ? 's' : ''} recorded in audit_log since midnight UTC.`,
+      })
+    }
   } catch {
     checks.push({ key: 'audit_log_today', label: 'Audit log entries today', status: 'amber', count: -1, detail: 'Query failed.' })
   }
@@ -414,7 +430,7 @@ export async function getPlatformHealth(): Promise<PlatformHealth | { error: str
   // Query pg_tables for the known application tables and find those where
   // rowsecurity is false. Requires a security-definer RPC or service role.
   const KNOWN_TABLES = [
-    'profiles', 'projects', 'approvals', 'approval_items', 'audit_logs',
+    'profiles', 'projects', 'approvals', 'approval_items', 'audit_log',
     'comments', 'cost_entries', 'documents', 'document_files',
     'email_log', 'external_access', 'gate_submissions', 'guarantees',
     'hse_incidents', 'hse_permits', 'inspections', 'ncrs',

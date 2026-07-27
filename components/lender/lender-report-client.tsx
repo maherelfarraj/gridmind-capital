@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { useSession } from '@/lib/session-context'
 import { formatUsd, formatUsdCompact, formatDate } from '@/lib/variation-orders/ui'
+import { NOT_SET_LABEL, formatLocation } from '@/lib/format-nullable'
 import {
   getLenderReportData,
   saveLenderReport,
@@ -220,6 +221,13 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
     else toast({ title: 'Report emailed to lender', description: res.sentTo ? `Sent to ${res.sentTo}` : undefined, variant: 'success' })
   }, [snapshotId, projectId, toast])
 
+  // Per-field data source. Defaults to {} so a snapshot saved before the
+  // provenance column existed renders no markers rather than crashing.
+  const prov: Record<string, string | null> = data?.provenance ?? {}
+
+  // Only footnote the ⓘ marker when at least one field actually carries it.
+  const hasAssumption = Object.values(prov).some((s) => s === 'pilot_assumption')
+
   // Auto-composed executive narrative (factual, data-interpolated).
   const narrative = useMemo(() => {
     if (!data) return []
@@ -411,14 +419,45 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
 
               <dl className="mt-10 grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
                 <CoverField label="Project code" value={data.project.code} />
-                <CoverField label="Technology" value={data.project.technology ?? '—'} />
-                <CoverField label="Capacity" value={data.project.capacity_mw ? `${data.project.capacity_mw} MW` : '—'} />
-                <CoverField label="Location" value={[data.project.location, data.project.country].filter(Boolean).join(', ') || '—'} />
+                <CoverField
+                  label="Technology"
+                  value={data.project.technology ?? '—'}
+                  source={prov.technology}
+                />
+                <CoverField
+                  label="Capacity"
+                  value={data.project.capacity_mw != null ? `${data.project.capacity_mw} MW` : '—'}
+                  source={prov.capacity_mw}
+                />
+                {/* Site string often already names the country ("East Amman,
+                    Jordan"), so don't append it twice. */}
+                <CoverField
+                  label="Location"
+                  value={formatLocation(data.project.location, data.project.country)}
+                  source={prov.location ?? prov.country}
+                />
+                <CoverField
+                  label="Total budget"
+                  value={data.project.budget_usd != null ? formatUsdCompact(data.project.budget_usd) : NOT_SET_LABEL}
+                  source={prov.budget_usd}
+                />
+                <CoverField
+                  label="Target completion"
+                  value={data.project.target_completion ? formatDate(data.project.target_completion) : NOT_SET_LABEL}
+                  source={prov.target_completion}
+                />
                 <CoverField label="Reporting period" value={`${formatDate(data.period.start)} — ${formatDate(data.period.end)}`} />
                 <CoverField label="Generated" value={formatDate(data.generatedAt)} />
                 <CoverField label="Lender" value={data.facility?.lender_name || 'Not on file'} />
                 <CoverField label="Facility" value={data.facility ? formatUsdCompact(data.facility.facility_amount) : '—'} />
               </dl>
+
+              {hasAssumption && (
+                <p className="mt-6 max-w-prose text-[11px] leading-relaxed text-neutral-500 text-pretty">
+                  <span aria-hidden="true">ⓘ</span>{' '}
+                  {'Values marked ⓘ are pilot assumptions (management estimates), not sourced from contract, term sheet, or financial model.'}
+                </p>
+              )}
             </div>
 
             <div className="border-t border-neutral-200 pt-4 text-[11px] text-neutral-400">
@@ -923,12 +962,46 @@ export function LenderReportClient({ projectId }: { projectId: string }) {
 }
 
 // ─── Local subcomponents ──────────────────────────────────────────────────────
-function CoverField({ label, value }: { label: string; value: string }) {
+function CoverField({ label, value, source }: { label: string; value: string; source?: string | null }) {
   return (
     <div>
       <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</dt>
-      <dd className="mt-0.5 text-sm font-medium text-neutral-900">{value}</dd>
+      <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-neutral-900">
+        <span>{value}</span>
+        <ProvenanceMark source={source} />
+      </dd>
     </div>
+  )
+}
+
+/**
+ * Data-source marker for a lender-facing figure.
+ *
+ * Renders nothing when the source is unrecorded: an unknown provenance must
+ * never be presented as verified, and a silent marker is safer than a wrong
+ * one. Only an explicit source other than `pilot_assumption` reads as verified.
+ */
+function ProvenanceMark({ source }: { source?: string | null }) {
+  if (!source) return null
+
+  if (source === 'pilot_assumption') {
+    return (
+      <span className="inline-flex items-baseline gap-1 text-[11px] font-normal text-neutral-500">
+        <span aria-hidden="true">ⓘ</span>
+        <span>assumption</span>
+        <span className="sr-only">
+          {'— pilot assumption, not sourced from contract, term sheet, or financial model'}
+        </span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-baseline gap-1 text-[11px] font-normal text-emerald-700">
+      <span aria-hidden="true">✓</span>
+      <span>verified</span>
+      <span className="sr-only">{`— source: ${source.replace(/_/g, ' ')}`}</span>
+    </span>
   )
 }
 

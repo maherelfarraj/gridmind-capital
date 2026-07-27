@@ -3,11 +3,22 @@ import * as React from 'react'
 import { FileText, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MOCK_CHARTER, getStatusMeta } from './data'
+import type { ProjectCharter } from './types'
 import type { G0FormData } from '@/app/actions/gate-submissions'
 
-export function CharterTab({ formData }: { formData?: G0FormData | null }) {
-  // Merge real form data over mock — only override fields present in the intake form
-  const base = MOCK_CHARTER
+export function CharterTab({
+  formData,
+  charter,
+}: {
+  formData?: G0FormData | null
+  /** Real project-derived charter from the page. Without this the tab rendered
+   *  MOCK_CHARTER (a 400MWp NEOM/Saudi project) on top of every real project,
+   *  showing fabricated IRR/DSCR/PPA figures under the correct header. */
+  charter?: Partial<ProjectCharter> | null
+}) {
+  // Merge real form data over the real charter, falling back to mock only when
+  // the page supplied nothing at all.
+  const base = { ...MOCK_CHARTER, ...(charter ?? {}) }
   const c = formData ? {
     ...base,
     project_code:        formData.opportunityCode  || base.project_code,

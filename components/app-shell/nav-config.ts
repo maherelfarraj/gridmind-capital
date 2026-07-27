@@ -93,7 +93,8 @@ export type PhaseKey =
 // Phase metadata
 // ─────────────────────────────────────────────────────────────
 
-export const PHASE_META: Record<PhaseKey, { label: string; color: string }> = {
+// Fallback labels when dynamic phase_names are not available
+const PHASE_META_FALLBACK: Record<PhaseKey, { label: string; color: string }> = {
   g0: { label: 'G0 · Opportunity Accepted',      color: '#64748b' },
   g1: { label: 'G1 · Baseline Approved',         color: '#3b82f6' },
   g2: { label: 'G2 · Engineering IFC',           color: '#6366f1' },
@@ -102,6 +103,8 @@ export const PHASE_META: Record<PhaseKey, { label: string; color: string }> = {
   g5: { label: 'G5 · Mechanical Completion',     color: '#f97316' },
   g6: { label: 'G6 · Handover & O&M',            color: '#22c55e' },
 }
+
+export const PHASE_META = PHASE_META_FALLBACK
 
 // ─────────────────────────────────────────────────────────────
 // Navigation sections
