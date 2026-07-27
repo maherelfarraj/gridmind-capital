@@ -27,36 +27,47 @@ export async function getProjectGateState(projectId: string): Promise<ProjectGat
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
-  const { data: proj } = await supabase
-    .from('projects')
-    .select('current_phase, status')
-    .eq('id', projectId)
-    .eq('tenant_id', tenantId)
-    .single()
-
-  const phase = typeof proj?.current_phase === 'number' ? proj.current_phase : 0
-  const gateIdx = Math.min(Math.max(phase, 0), 8)
-
-  const currentGate = GATE_ORDER[gateIdx]
-  const completedGates = GATE_ORDER.slice(0, gateIdx) as GateCode[]
-
-  // Fetch phase_gates rows to build a phase_number → phase_name map
+  // Fetch all phase_gates rows for this project (8-phase model)
   const { data: phaseGates } = await supabase
     .from('phase_gates')
-    .select('phase_number, phase_name')
+    .select('phase_number, phase_name, status')
     .eq('project_id', projectId)
     .eq('tenant_id', tenantId)
+    .order('phase_number', { ascending: true })
 
+  // Build gateNames map and determine completed/active states
   const gateNames: Record<number, string> = {}
+  const completedGates: GateCode[] = []
+  let currentGate: GateCode = 'G0'
+  let approvedThrough = -1
+
   if (phaseGates && phaseGates.length > 0) {
     for (const gate of phaseGates) {
-      if (typeof gate.phase_number === 'number' && typeof gate.phase_name === 'string') {
-        gateNames[gate.phase_number] = gate.phase_name
+      const phaseNum = gate.phase_number as number
+      const phaseName = gate.phase_name as string
+      const status = gate.status as string
+
+      gateNames[phaseNum] = phaseName
+
+      // Track completed gates (status='approved')
+      if (status === 'approved') {
+        // Map phase_number to gate code: 1→G1, 2→G2, ..., 8→G8
+        const gateCode = `G${phaseNum}` as GateCode
+        completedGates.push(gateCode)
+        approvedThrough = phaseNum
+      } else if (currentGate === 'G0') {
+        // First non-approved gate is the current active gate
+        currentGate = `G${phaseNum}` as GateCode
       }
     }
   }
 
-  return { currentGate, completedGates, approvedThrough: gateIdx - 1, gateNames: Object.keys(gateNames).length > 0 ? gateNames : undefined }
+  return { 
+    currentGate, 
+    completedGates, 
+    approvedThrough, 
+    gateNames: Object.keys(gateNames).length > 0 ? gateNames : undefined 
+  }
 }
 
 /**
@@ -411,7 +422,7 @@ async function getModuleEvents(
   })
 }
 
-// ─── Gate Progress Report ─────────────────────────────────────────────────────
+// ─── Gate Progress Report ───────────────────���─────────────────────────────────
 
 export interface GateProgressRow {
   projectId:   string

@@ -154,17 +154,19 @@ function GateStatusCard({
   // can never disagree (previously this card hardcoded "G2 / Engineering IFC Release").
   const baseGateStatus   = deriveGateStatus(currentPhase)
   
-  // If gateNames provided, override the hardcoded name with the live phase_name
+  // If gateNames provided, derive panel title from the ACTIVE phase (first non-approved)
+  // currentPhase = count of approved phases (0-8), so active phase = currentPhase + 1
   const gateStatus = React.useMemo(() => {
     if (!gateNames || Object.keys(gateNames).length === 0) {
       return baseGateStatus
     }
-    // currentPhase is phase_number; gateNames keys are also phase_number
-    if (typeof currentPhase === 'number' && currentPhase >= 1 && currentPhase <= 8 && gateNames[currentPhase]) {
+    // Active phase is the one after all approved ones
+    const activePhaseNum = (typeof currentPhase === 'number' ? currentPhase : 0) + 1
+    if (activePhaseNum >= 1 && activePhaseNum <= 8 && gateNames[activePhaseNum]) {
       return {
         ...baseGateStatus,
-        name: gateNames[currentPhase],
-        description: gateNames[currentPhase],
+        name: gateNames[activePhaseNum],
+        description: gateNames[activePhaseNum],
       }
     }
     return baseGateStatus

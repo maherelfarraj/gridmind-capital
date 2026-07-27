@@ -70,8 +70,8 @@ function toGmcProject(p: Project, phaseNames?: Record<number, string>): GmcProje
     targetIrr: 0,
     tariffAssumption: 'N/A',
     team: { projectDirector: '', pmoLead: '', engineeringLead: '', procurementLead: '', constructionManager: '', financeLead: '' },
-    // Gate is derived from `projects.current_phase` server-side. Use real phase_name if available.
-    currentGate: (phaseNames && p.current_phase && phaseNames[p.current_phase]) ? phaseNames[p.current_phase] : (p.gate ?? 'G0'),
+    // Gate badge shows active phase (first non-approved). current_phase = count of approved, so active = current_phase + 1
+    currentGate: (phaseNames && typeof p.current_phase === 'number' && phaseNames[p.current_phase + 1]) ? phaseNames[p.current_phase + 1] : (p.gate ?? 'G0'),
     health: healthMap[String(p.health ?? '').toLowerCase()] ?? 'green',
     status: statusMap[p.status] ?? 'active',
     // Use real created_at from DB; fall back to now if missing (shouldn't happen)
