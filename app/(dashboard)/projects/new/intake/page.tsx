@@ -177,7 +177,7 @@ export default function G0IntakePage() {
       {/* Page header */}
       <div className="mb-6 flex flex-col gap-1">
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Gate G0 — Investment Intake
+          Project Intake
         </p>
         <h1 className="text-2xl font-bold text-foreground">New Opportunity Assessment</h1>
         <p className="text-sm text-muted-foreground max-w-xl">

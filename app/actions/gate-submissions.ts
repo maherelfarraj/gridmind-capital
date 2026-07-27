@@ -128,7 +128,7 @@ export async function submitG0FormAction(
     sendApprovalRequestEmail({
       to: 'admin@gridmind.capital',
       approverName: 'Executive Sponsor',
-      title: 'Gate G0 Investment Intake Package',
+      title: 'Project Intake Package',
       requestedBy: formData.projectSponsor || 'Project Team',
       projectCode: projectId.slice(0, 8).toUpperCase(),
       projectName: `${formData.technology} — ${formData.capacityMwp} MWp`,
