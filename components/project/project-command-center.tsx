@@ -75,6 +75,8 @@ export interface ProjectData {
   country?: string
   /** Free-text project description */
   description?: string
+  /** Field-level data source provenance: field → {source, at} for lender report */
+  provenance?: Record<string, { source: string; at: string }>
 }
 
 /**
@@ -228,7 +230,7 @@ function Skeleton({ className }: { className?: string }) {
   )
 }
 
-// ───────────────────────���───────────────────��─────────────────
+// ───────────────────────�����───────────────────��─────────────────
 // Stat tile
 // ─────────────────────────────────────────────────────────────
 

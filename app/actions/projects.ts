@@ -148,7 +148,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
   // Try by UUID first, then by code
   let query = supabase
     .from('projects')
-    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, created_at')
+    .select('id, code, name, description, status, technology, capacity_mw, budget_usd, current_phase, health, location, country, start_date, target_completion, provenance, created_at')
     .eq('tenant_id', tenantId)
 
   // Detect if id looks like a UUID
@@ -200,6 +200,7 @@ export async function getProject(id: string): Promise<ProjectData | null> {
     description: data.description ?? '',
     commentCount: 0,
     documentCount: 0,
+    provenance: (data.provenance as Record<string, any>) ?? {},
   }
 }
 
