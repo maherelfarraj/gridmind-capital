@@ -244,16 +244,7 @@ export async function createProject(payload: {
 
   if (error) return { error: error.message }
 
-  // 2. Create approval record for G0 review (idempotent: check if one already exists).
-  const { data: existingApproval } = await supabase
-    .from('approvals')
-    .select('id')
-    .eq('object_id', data.id)
-    .eq('object_type', 'opportunity')
-    .limit(1)
-    .maybeSingle()
-
-  // Use approval workflow (idempotent: skip if pending approval exists)
+  // 2. Create the multi-level G0 approval workflow (idempotent).
   const workflowResult = await createApprovalWorkflow(
     'opportunity',
     data.id,
