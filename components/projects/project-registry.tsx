@@ -73,7 +73,8 @@ function toGmcProject(p: Project): GmcProject {
     currentGate: p.gate ?? 'G0',
     health: healthMap[String(p.health ?? '').toLowerCase()] ?? 'green',
     status: statusMap[p.status] ?? 'active',
-    createdAt: new Date().toISOString(),
+    // Use real created_at from DB; fall back to now if missing (shouldn't happen)
+    createdAt: p.created_at ?? new Date().toISOString(),
   }
 }
 

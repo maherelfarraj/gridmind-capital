@@ -70,7 +70,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
 
   let query = supabase
     .from('projects')
-    .select('id, code, name, status, technology, capacity_mw, budget_usd, current_phase, target_completion, location, country, health', { count: 'exact' })
+    .select('id, code, name, status, technology, capacity_mw, budget_usd, current_phase, target_completion, location, country, health, created_at', { count: 'exact' })
     .eq('tenant_id', tenantId)
 
   if (phase && phase !== 'all') {
@@ -115,7 +115,6 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
   // PostgREST returns PG `numeric` columns as strings — coerce before the UI does math.
   // `budget_usd` / `capacity_mw` are NULLABLE and rendered directly, so they use
   // `numOrNull` to keep NULL distinct from a real 0 (see lib/format-nullable.ts).
-  const num = (v: unknown) => (v == null ? 0 : Number(v) || 0)
 
   const projects = data.map((p) => ({
     id: p.id,
@@ -136,6 +135,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
     technology: p.technology ?? '',
     capacity_mw: numOrNull(p.capacity_mw),
     health: (p as any).health ?? 'green',
+    created_at: p.created_at ?? new Date().toISOString(),
   }))
 
   return paginated ? { projects, totalCount: count ?? projects.length } : projects

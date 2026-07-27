@@ -42,6 +42,7 @@ export interface Project {
   /** NULL = not recorded yet. A real 0 is valid (substation/grid projects). */
   capacity_mw?: number | null
   health?: string
+  created_at?: string    // ISO timestamp
 }
 
 export interface ProjectFilters {
@@ -871,7 +872,7 @@ export function ProjectsListPage({
         </div>
       </div>
 
-      {/* ── Error state ──────────────────────── */}
+      {/* ── Error state ───��──────────────────── */}
       {error && (
         <div role="alert" className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-400">
           {error}
