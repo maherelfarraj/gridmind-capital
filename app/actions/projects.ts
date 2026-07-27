@@ -80,9 +80,8 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
   // Gate filter: `gate` is the raw `projects.current_phase` value (G0 → 0, G1 → 1, …).
   // This is distinct from `phase`, which maps several phases onto one workstream key.
   if (gate !== null && gate !== undefined) {
-    // current_phase can exceed the governed G0–G6 range (completed projects sit at
-    // 7/8) and those clamp to G6 for display. Use >= at the top gate so the filter
-    // matches what the UI actually shows instead of hiding them.
+    // current_phase can exceed the governed G1–G8 range and those clamp to G8 for display.
+    // Use >= at the top gate so the filter matches what the UI actually shows instead of hiding them.
     if (gate >= MAX_GATE) query = query.gte('current_phase', gate)
     else query = query.eq('current_phase', gate)
   }
@@ -118,7 +117,7 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
     name: p.name,
     client_name: (p as any).client_name ?? p.location ?? p.country ?? '—',
     phase: PHASE_MAP[p.current_phase ?? 0] ?? 'intake',
-    // Clamped to the governed G0–G6 range via the shared helper so completed
+    // Clamped to the governed G1–G8 range via the shared helper so completed
     // projects at phase 7/8 render as "G6" instead of a nonexistent "G8".
     gate: deriveGateStatus(p.current_phase).code,
     current_phase: p.current_phase ?? 0,

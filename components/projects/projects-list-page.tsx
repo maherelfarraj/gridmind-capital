@@ -850,7 +850,7 @@ export function ProjectsListPage({
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-foreground font-sans">Projects</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-muted-foreground">
-            Manage and track all your EPC projects across the 10-phase gate system
+            Manage and track all your EPC projects across the 8-phase gate system
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
