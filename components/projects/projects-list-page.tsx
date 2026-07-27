@@ -43,6 +43,8 @@ export interface Project {
   capacity_mw?: number | null
   health?: string
   created_at?: string    // ISO timestamp
+  /** Map of phase_number (1–8) → phase_name from phase_gates table. Populated by registry. */
+  phaseNames?: Record<number, string>
 }
 
 export interface ProjectFilters {

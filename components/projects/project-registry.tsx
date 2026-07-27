@@ -13,11 +13,12 @@ import { Badge } from '@/components/ui/badge'
 import { mockStore, type GmcProject } from '@/lib/mock-store'
 import { NOT_SET_LABEL } from '@/lib/format-nullable'
 import { getProjects, archiveProject, duplicateProject } from '@/app/actions/projects'
+import { getPhaseNamesForProjects } from '@/app/actions/phase-gates'
 import { parseGateParam } from '@/lib/gate-status'
 import type { Project } from '@/components/projects/projects-list-page'
 
 /** Map a live DB row to the display shape used by the registry UI. */
-function toGmcProject(p: Project): GmcProject {
+function toGmcProject(p: Project, phaseNames?: Record<number, string>): GmcProject {
   // Derive type from the real `technology` column. Order matters: combined
   // technologies must be tested BEFORE their bare counterparts, otherwise
   // "Solar PV + BESS" matches `solar` first and the BESS half is lost.
@@ -69,8 +70,8 @@ function toGmcProject(p: Project): GmcProject {
     targetIrr: 0,
     tariffAssumption: 'N/A',
     team: { projectDirector: '', pmoLead: '', engineeringLead: '', procurementLead: '', constructionManager: '', financeLead: '' },
-    // Gate is derived from `projects.current_phase` server-side.
-    currentGate: p.gate ?? 'G0',
+    // Gate is derived from `projects.current_phase` server-side. Use real phase_name if available.
+    currentGate: (phaseNames && p.current_phase && phaseNames[p.current_phase]) ? phaseNames[p.current_phase] : (p.gate ?? 'G0'),
     health: healthMap[String(p.health ?? '').toLowerCase()] ?? 'green',
     status: statusMap[p.status] ?? 'active',
     // Use real created_at from DB; fall back to now if missing (shouldn't happen)
@@ -162,7 +163,7 @@ function ArchiveModal({ project, onConfirm, onClose }: { project: GmcProject; on
   )
 }
 
-/* ─── Row actions ────────────────────────────────────────────── */
+/* ─── Row actions ──���─────────────────────────────────────────── */
 function RowActions({ project, onOpen, onClone, onArchive }: {
   project: GmcProject
   onOpen: () => void
@@ -248,18 +249,41 @@ export function ProjectRegistry() {
     () => getProjects({ status: null, gate: gateParam }),
     { revalidateOnFocus: true },
   )
+  // Fetch phase_gates names for all live projects so badges show real 8-phase names
+  const [phaseNamesMap, setPhaseNamesMap] = React.useState<Record<string, Record<number, string>>>({})
+  
+  React.useEffect(() => {
+    if (!liveRows?.length) {
+      setPhaseNamesMap({})
+      return
+    }
+    const projectIds = liveRows
+      .filter(p => p.status !== 'cancelled' && p.status !== 'archived')
+      .map(p => p.id)
+    
+    if (projectIds.length === 0) {
+      setPhaseNamesMap({})
+      return
+    }
+
+    getPhaseNamesForProjects(projectIds).then(setPhaseNamesMap).catch(() => {
+      // If fetch fails, fall back to gate codes (G0–G6)
+      setPhaseNamesMap({})
+    })
+  }, [liveRows])
+
   const projects: GmcProject[] = React.useMemo(() => {
     if (liveRows && liveRows.length > 0) {
       return liveRows
         .filter(p => p.status !== 'cancelled' && p.status !== 'archived')
-        .map(toGmcProject)
+        .map(p => toGmcProject(p, phaseNamesMap[p.id]))
     }
     // Only fall back to mock data for the unfiltered view. Falling back while a
     // gate filter is active would surface mock projects from other gates and make
     // `?gate=G0` look like it was ignored.
     if (liveRows && gateParam !== null) return []
     return mockStore.getProjects().filter(p => p.status !== 'archived')
-  }, [liveRows, gateParam])
+  }, [liveRows, phaseNamesMap, gateParam])
 
   const filtered = React.useMemo(() => {
     return projects.filter(p => {

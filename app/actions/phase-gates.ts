@@ -282,6 +282,39 @@ const SIG_ENTITY_LABEL: Record<string, string> = {
   certificate: 'Gate Certificate',
 }
 
+/**
+ * Fetch phase_names for a batch of projects. Used by the registry to show real gate names
+ * instead of hardcoded G0–G6 labels. Returns a map of projectId → { phase_number → phase_name }.
+ */
+export async function getPhaseNamesForProjects(projectIds: string[]): Promise<Record<string, Record<number, string>>> {
+  if (projectIds.length === 0) return {}
+
+  const tenantId = await getCurrentTenantId()
+  const supabase = createAdminClient()
+
+  const { data: phaseGates } = await supabase
+    .from('phase_gates')
+    .select('project_id, phase_number, phase_name')
+    .in('project_id', projectIds)
+    .eq('tenant_id', tenantId)
+
+  const result: Record<string, Record<number, string>> = {}
+  
+  for (const id of projectIds) {
+    result[id] = {}
+  }
+
+  for (const row of (phaseGates ?? [])) {
+    const r = row as any
+    if (!result[r.project_id]) {
+      result[r.project_id] = {}
+    }
+    result[r.project_id][r.phase_number] = r.phase_name
+  }
+
+  return result
+}
+
 /** Electronic signatures for a project → timeline entries carrying the signature image. */
 async function getSignatureEvents(
   supabase: ReturnType<typeof createAdminClient>,
