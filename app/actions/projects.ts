@@ -10,12 +10,15 @@ import type { ProjectData } from '@/components/project/project-command-center'
 import { getCurrentTenantId } from '@/lib/tenant'
 import { deriveGateStatus, MAX_GATE } from '@/lib/gate-status'
 import { numOrNull } from '@/lib/format-nullable'
+import { CANONICAL_PHASE_NAMES, seedPhaseGatesRows } from '@/lib/gates/phase-model'
 
 const PHASE_MAP: Record<number, string> = {
   0: 'intake', 1: 'commercial', 2: 'engineering', 3: 'engineering',
   4: 'procurement', 5: 'construction', 6: 'commissioning', 7: 'om', 8: 'finance',
 }
 
+// DEPRECATED: Use CANONICAL_PHASE_NAMES from lib/gates/phase-model.ts instead.
+// Kept temporarily for reference only.
 const GATE_NAMES: Record<number, string> = {
   0: 'Opportunity Accepted',
   1: 'Project Baseline Approved',
@@ -27,13 +30,6 @@ const GATE_NAMES: Record<number, string> = {
   7: 'Handover, Ops & Closeout',
   8: 'Handover, Ops & Closeout',
 }
-
-// The governed gate model is G0–G6 (matches GATE_ORDER in app/actions/phase-gates.ts).
-// Used to seed phase_gates rows when a project is created.
-const GATE_PHASES: { phase: number; name: string }[] = Array.from({ length: 7 }, (_, i) => ({
-  phase: i,
-  name: GATE_NAMES[i],
-}))
 
 export interface GetProjectsOptions {
   phase?: string | null
@@ -254,14 +250,9 @@ export async function createProject(payload: {
   )
   if (workflowResult.error) return { id: data.id, error: `Approval workflow failed: ${workflowResult.error}` }
 
-  // 3. Seed the G0–G6 gate records. All gates start pending — nothing is pre-approved.
-  // Approval of G0 via decideApproval will flip to 'in_review' via applyApprovalLifecycle.
-  const gateRows = GATE_PHASES.map((g) => ({
-    project_id:   data.id,
-    phase_number: g.phase,
-    phase_name:   g.name,
-    status:       'pending',
-  }))
+  // 3. Seed the canonical 8-phase gate records (phase_number 1–8). All gates start pending.
+  // This ensures every creation path seeds identical rows using CANONICAL_PHASE_NAMES.
+  const gateRows = seedPhaseGatesRows(data.id, tenantId)
   const { error: gateErr } = await supabase.from('phase_gates').insert(gateRows)
   if (gateErr) console.log('[v0] phase_gates seed failed:', gateErr.message)
 
@@ -281,11 +272,10 @@ export async function createProject(payload: {
 
 // ── Phase 6: transactional wizard create ─────────���───────────
 
-// Exact G1–G8 phase names (must equal gates.name so spawn_gate_signoffs joins).
-// WIZARD_PHASE_NAMES now uses the canonical 7-gate model (G0–G6), matching GATE_PHASES.
+// Exact G0–G7 phase names (must equal CANONICAL_PHASE_NAMES so spawn_gate_signoffs joins).
+// WIZARD_PHASE_NAMES uses the canonical 8-gate model, matching CANONICAL_PHASE_NAMES.
 // This ensures projects created via wizard seed identical phase_gates as all other paths.
-// (Previously WIZARD_PHASE_NAMES had 8 phases with different names, causing data model divergence.)
-const WIZARD_PHASE_NAMES: string[] = GATE_PHASES.map((g) => g.name)
+const WIZARD_PHASE_NAMES = [...CANONICAL_PHASE_NAMES]
 
 export interface CreateProjectFullInput {
   name: string
@@ -309,7 +299,7 @@ export interface CreateProjectFullInput {
 }
 
 /**
- * Create a project with PD+PM staffing and 7 phase_gates (canonical G0–G6 model).
+ * Create a project with PD+PM staffing and 8 canonical phase_gates (phase_number 1–8).
  * 
  * Enforces governance: Projects start at status='planning', current_phase=0 with
  * a pending G0 approval (object_type='opportunity'). This matches createProject and
@@ -436,12 +426,14 @@ export async function createProjectFull(
   ])
   if (teamErr) return rollback(`Staffing failed: ${teamErr.message}`)
 
-  // 3) Gate approvers (7 rows, G0–G6).
-  const approverRows = GATE_PHASES.map((g) => {
-    const supplied = input.approvers.find((a) => a.gate_number === g.phase)
+  // 3) Gate approvers (8 rows, phase_number 1–8).
+  // Maps to the 8 canonical phases for approval routing.
+  const approverRows = Array.from({ length: 8 }, (_, i) => {
+    const phase_number = i + 1
+    const supplied = input.approvers.find((a) => a.gate_number === phase_number)
     return {
       project_id: projectId,
-      gate_number: g.phase,
+      gate_number: phase_number,
       primary_role: supplied?.primary_role || 'PD',
       secondary_role: supplied?.secondary_role || null,
     }
@@ -451,17 +443,13 @@ export async function createProjectFull(
     .upsert(approverRows, { onConflict: 'project_id,gate_number' })
   if (apprErr) return rollback(`Gate approvers failed: ${apprErr.message}`)
 
-  // 4) phase_gates: All 7 gates start 'pending' (nothing pre-approved).
+  // 4) phase_gates: All 8 canonical gates start 'pending' (nothing pre-approved).
   // G0 approval decides 'Proceed' → applyApprovalLifecycle flips status='active', decideApproval calls advanceProjectGate
   // (which only runs role+sign-off checks, and viaApproval=true skips sign-offs for G0).
   // No gate spawn-signoffs trigger runs until a gate is actually in_review (after G0 approval).
-  // NOTE: phase_gates has NO tenant_id column.
-  const gateRows = GATE_PHASES.map((g) => ({
-    project_id: projectId,
-    phase_number: g.phase,
-    phase_name: g.name,
-    status: 'pending',
-  }))
+  // Seed the canonical 8-phase gate records (phase_number 1–8). All gates start pending.
+  // This ensures every creation path seeds identical rows using CANONICAL_PHASE_NAMES.
+  const gateRows = seedPhaseGatesRows(projectId, tenantId)
   const { error: gateErr } = await admin.from('phase_gates').insert(gateRows)
   if (gateErr) return rollback(`Gate seeding failed: ${gateErr.message}`)
 
