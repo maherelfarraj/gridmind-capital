@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     url:         'https://gridmind-gules.vercel.app',
     siteName:    'GridMind Capital',
     title:       'GridMind Capital — EPC Project Management',
-    description: 'Enterprise platform for managing solar, wind, and hydrogen EPC projects across the full G0–G9 gate lifecycle.',
+    description: 'Enterprise platform for managing solar, wind, and hydrogen EPC projects across the full 8-phase stage-gate lifecycle (G1–G8).',
     images: [
       {
         url:    '/icons/icon-512.png',

@@ -186,16 +186,20 @@ const PHASE_BADGE_VARIANT: Record<PhaseKey, BadgeProps['variant']> = {
   g4: 'procurement',
   g5: 'construction',
   g6: 'commissioning',
+  g7: 'commissioning',
+  g8: 'secondary',
 }
 
 const PHASE_LABEL: Record<PhaseKey, string> = {
   g0: 'G0 · Intake',
-  g1: 'G1 · Development',
-  g2: 'G2 · Commercial',
-  g3: 'G3 · Engineering',
-  g4: 'G4 · Procurement',
-  g5: 'G5 · Construction',
-  g6: 'G6 · Handover & O&M',
+  g1: 'G1 · Origination & Feasibility',
+  g2: 'G2 · Permitting & Grid',
+  g3: 'G3 · Commercial & Financial',
+  g4: 'G4 · Detailed Design (IFC)',
+  g5: 'G5 · Procurement & Mfg',
+  g6: 'G6 · Construction & Install',
+  g7: 'G7 · Commissioning & Tests',
+  g8: 'G8 · Handover & O&M',
 }
 
 /** NULL-safe: renders "Not set" rather than a fabricated "$0". */
