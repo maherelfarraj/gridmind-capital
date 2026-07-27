@@ -77,8 +77,7 @@ function sortProjects(projects: PortfolioProject[], key: SortKey, dir: SortDir) 
 
 export function PortfolioDashboard() {
   const { data, isLoading } = useSWR('portfolio-stats', getPortfolioStats, {
-    revalidateOnFocus: true,
-    refreshInterval: 60_000,
+    refreshInterval: 300_000,
   })
   const { locale, digitStyle } = useLocalePrefs()
 

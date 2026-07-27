@@ -5,6 +5,7 @@ import { ThemeProvider } from 'next-themes'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { ChunkErrorWatcher } from '@/components/chunk-error-watcher'
+import { SWRProvider } from '@/components/providers/swr-provider'
 import './globals.css'
 
 const inter = Inter({
@@ -125,7 +126,9 @@ export default async function RootLayout({
         <ChunkErrorWatcher />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <NextIntlClientProvider locale={locale} messages={messages}>
-            {children}
+            <SWRProvider>
+              {children}
+            </SWRProvider>
           </NextIntlClientProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}

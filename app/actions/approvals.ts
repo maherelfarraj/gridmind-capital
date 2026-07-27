@@ -643,6 +643,7 @@ export async function getApprovals(approverRole?: string): Promise<ApprovalRecor
     .from('approvals')
     .select('id, object_type, title, status, priority, created_at, description, amount')
     .order('created_at', { ascending: false })
+    .limit(100)
 
   if (tenantId) query = query.eq('tenant_id', tenantId)
 

@@ -563,11 +563,10 @@ export function NotificationPanel({ open, onClose, unreadCount }: NotificationPa
   const [showSettings, setShowSettings] = React.useState(false)
   const [dismissed, setDismissed]       = React.useState<Set<string>>(new Set())
 
-  // Live fetch — refresh every 30s while panel is open
+  // Live fetch — realtime covers updates, no polling needed
   const { data, mutate } = useSWR(
     open ? 'notifications-live' : null,
     () => getNotificationsAction(),
-    { refreshInterval: 30_000, revalidateOnFocus: true },
   )
 
   // Activity feed — fetch once when panel opens

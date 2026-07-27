@@ -69,8 +69,7 @@ type SortDir = 'asc' | 'desc'
 export function PortfolioCashFlow() {
   const router = useRouter()
   const { data, isLoading } = useSWR('portfolio-cash-flow', loadPortfolioCashFlow, {
-    revalidateOnFocus: true,
-    refreshInterval: 60_000,
+    refreshInterval: 300_000,
   })
 
   const [projectFilter, setProjectFilter] = React.useState('All')
