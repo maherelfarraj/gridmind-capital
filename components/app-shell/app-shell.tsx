@@ -11,6 +11,7 @@ import { HelpHubPanel } from '@/components/layout/HelpHubPanel'
 import { ToastProvider } from '@/components/ui/toast'
 import { GlobalCommandPalette } from '@/components/command-palette/global-command-palette'
 import { NotificationPanel } from '@/components/notifications/notification-panel'
+import { CopilotPanel } from '@/components/copilot/copilot-panel'
 import { PwaProvider } from '@/components/pwa/pwa-provider'
 import { BottomTabBar } from '@/components/pwa/bottom-tab-bar'
 
@@ -74,6 +75,7 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [paletteOpen, setPaletteOpen] = React.useState(false)
   const [notifOpen, setNotifOpen]     = React.useState(false)
+  const [copilotOpen, setCopilotOpen] = React.useState(false)
 
   // Global CMD+K / Ctrl+K listener
   React.useEffect(() => {
@@ -178,6 +180,7 @@ export function AppShell({
           notificationCount={notificationCount}
           onSearchOpen={() => setPaletteOpen(true)}
           onNotifOpen={() => setNotifOpen(true)}
+          onCopilotOpen={() => setCopilotOpen(true)}
         />
 
         {/* Scrollable content */}
@@ -212,6 +215,8 @@ export function AppShell({
       />
       {/* ── Global Command Palette ── */}
       <GlobalCommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {/* ── Copilot Panel ── */}
+      <CopilotPanel open={copilotOpen} onOpenChange={setCopilotOpen} />
       {/* ── Notifications & Activity Feed ── */}
       <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} unreadCount={notificationCount} />
       {/* ── Mobile bottom tab bar (≤768px) ── */}
