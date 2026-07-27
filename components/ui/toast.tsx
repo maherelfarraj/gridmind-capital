@@ -62,8 +62,10 @@ export function ToastProvider({
 
   const dismissAll = React.useCallback(() => setToasts([]), [])
 
+  const contextValue = React.useMemo(() => ({ toasts, toast, dismiss, dismissAll }), [toasts, toast, dismiss, dismissAll])
+
   return (
-    <ToastContext.Provider value={{ toasts, toast, dismiss, dismissAll }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <ToastViewport position={position} toasts={toasts} onDismiss={dismiss} />
     </ToastContext.Provider>

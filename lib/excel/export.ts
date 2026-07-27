@@ -1,7 +1,5 @@
 'use client'
 
-import XLSX from 'xlsx-js-style'
-
 // ─────────────────────────────────────────────────────────────
 // Column model
 // ─────────────────────────────────────────────────────────────
@@ -72,7 +70,10 @@ function coerce(value: unknown, type: ColType | undefined): string | number | Da
 // Sheet builder
 // ─────────────────────────────────────────────────────────────
 
-function buildWorksheet<T>(sheet: ExcelSheet<T>): XLSX.WorkSheet {
+function buildWorksheet<T>(
+  sheet: ExcelSheet<T>,
+  XLSX: any, // Lazy-loaded xlsx-js-style module
+): any {
   const { columns, rows, footer } = sheet
   const aoa: (string | number | Date | null)[][] = [
     columns.map((c) => c.header),
@@ -95,7 +96,7 @@ function buildWorksheet<T>(sheet: ExcelSheet<T>): XLSX.WorkSheet {
     const col = columns[C]
     for (let R = range.s.r; R <= lastRow; R++) {
       const addr = XLSX.utils.encode_cell({ r: R, c: C })
-      const cell = ws[addr] as XLSX.CellObject | undefined
+      const cell = ws[addr] as any
       if (!cell) continue
 
       if (R === 0) {
@@ -134,15 +135,21 @@ export function excelFileName(code: string, register: string): string {
  * Build and trigger a client-side download of an .xlsx workbook.
  * One sheet per ExcelSheet. Header row is bold with a fill; currency/number
  * columns are real numbers; date columns are real dates.
+ * 
+ * Lazy-loads xlsx-js-style (~300kB) only when export is triggered,
+ * not on initial page load.
  */
-export function exportToExcel<T>(opts: {
+export async function exportToExcel<T>(opts: {
   code: string
   register: string
   sheets: ExcelSheet<any>[]
-}): void {
+}): Promise<void> {
+  // Lazy-load xlsx-js-style only on demand
+  const XLSX = await import('xlsx-js-style')
+  
   const wb = XLSX.utils.book_new()
   for (const sheet of opts.sheets) {
-    const ws = buildWorksheet(sheet)
+    const ws = buildWorksheet(sheet, XLSX)
     // Sheet names max 31 chars, no special chars
     const safeName = sheet.name.replace(/[\\/?*[\]:]/g, '').slice(0, 31) || 'Sheet1'
     XLSX.utils.book_append_sheet(wb, ws, safeName)

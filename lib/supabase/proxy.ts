@@ -71,46 +71,14 @@ export async function updateSession(request: NextRequest) {
     return response
   }
 
-  const { pathname } = request.nextUrl
-
   // Redirect authenticated users away from auth pages → dashboard
-  const isAuthPage =
-    pathname === '/login' ||
-    pathname.startsWith('/auth/')
+  const isAuthPage = pathname === '/login' || pathname.startsWith('/auth/')
 
   if (isAuthPage && user) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return clearStaleAuthCookies(NextResponse.redirect(url))
   }
-
-  // ── Public / self-authenticating paths ───────────────────────────────────
-  // These paths bypass the proxy auth gate for one of two reasons:
-  //
-  //   a) They are genuinely unauthenticated (login, auth callbacks, public APIs,
-  //      static assets, PWA shell files).
-  //
-  //   b) They carry their own layout-level auth guard and should not be
-  //      double-intercepted here:
-  //        /field   — app/field/layout.tsx  → resolveSession() → redirect
-  //        /portal  — NOT bypassed; the portal layout also guards itself but
-  //                   middleware provides an extra layer for external partners
-  //        /client  — same: kept protected by middleware for defence-in-depth
-  //
-  // If you add a new route with its own auth guard, add it here with a comment.
-  const isPublic =
-    pathname === '/login' ||
-    pathname.startsWith('/auth/') ||
-    pathname.startsWith('/api/') ||
-    pathname.startsWith('/_next/') ||
-    pathname.startsWith('/icons/') ||
-    pathname === '/favicon.ico' ||
-    pathname === '/manifest.json' ||
-    pathname === '/sw.js' ||
-    pathname === '/offline.html' ||
-    // /field has its own layout-level auth (resolveSession + redirect).
-    // Bypassing here avoids a redundant Supabase round-trip per request.
-    pathname.startsWith('/field')
 
   // Protect everything else — redirect to login if no session
   if (!isPublic && !user) {

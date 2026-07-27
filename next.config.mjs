@@ -8,6 +8,13 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '2mb',
     },
+    optimizePackageImports: [
+      'framer-motion',
+      'cmdk',
+      '@tanstack/react-table',
+      '@base-ui/react',
+      'react-syntax-highlighter',
+    ],
   },
   images: {
     remotePatterns: [
