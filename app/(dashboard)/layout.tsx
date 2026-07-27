@@ -139,17 +139,9 @@ export default async function DashboardLayout({
 }) {
   const session = await getSession()
 
-  // getSession() calls getAuthActor() which calls supabase.auth.getUser(),
-  // so we don't need a separate getUser() call. If auth failed, session is null.
+  // getSession() is cached via React cache(), so it deduplicates multiple calls
+  // within this request. If auth failed, session is null.
   if (!session) {
-    // Check if there's a user (authenticated but no profile) to show the right screen
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (user) {
-      // Authenticated but not provisioned — show setup screen
-      return <AccountSetupIncomplete email={user.email ?? ''} />
-    }
     // Not authenticated — redirect to login
     redirect('/auth/login')
   }
