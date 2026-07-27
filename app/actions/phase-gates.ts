@@ -451,16 +451,26 @@ export async function getGateProgressReport(): Promise<GateProgressRow[]> {
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
+  // First fetch projects for this tenant to get their IDs
+  const { data: tenantProjects } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('tenant_id', tenantId)
+
+  if (!tenantProjects?.length) return []
+
+  const projectIds = tenantProjects.map((p) => p.id as string)
+
+  // Then fetch phase_gates filtered by those project IDs
   const { data: gates } = await supabase
     .from('phase_gates')
     .select('project_id, phase_number, phase_name, status, reviewed_at, notes')
-    .eq('tenant_id', tenantId)
+    .in('project_id', projectIds)
     .order('project_id')
     .order('phase_number')
 
   if (!gates?.length) return []
 
-  const projectIds = Array.from(new Set(gates.map((g) => g.project_id as string)))
   const { data: projects } = await supabase
     .from('projects')
     .select('id, code, name')

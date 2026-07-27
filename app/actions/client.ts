@@ -274,11 +274,11 @@ export async function getClientHome(projectId?: string): Promise<ClientHome | nu
   const p = projRes.data
   if (!p) return null
 
-  // Build a 6-gate stepper (G1–G6).
+  // Build an 8-gate stepper (G1–G8).
   const gateRows = gatesRes.data ?? []
   const currentPhase = num(p.current_phase)
   const gates: GateStep[] = []
-  for (let n = 1; n <= 6; n++) {
+  for (let n = 1; n <= 8; n++) {
     const row = gateRows.find((g) => num(g.phase_number) === n)
     const rawStatus = (row?.status as string) ?? 'pending'
     const status: GateStep['status'] =
@@ -288,7 +288,7 @@ export async function getClientHome(projectId?: string): Promise<ClientHome | nu
       code: `G${n}`,
       name: (row?.phase_name as string) ?? `Gate ${n}`,
       status,
-      current: n === currentPhase,
+      current: n === currentPhase + 1,
     })
   }
   const approved = gates.filter((g) => g.status === 'approved').length
@@ -315,7 +315,7 @@ export async function getClientHome(projectId?: string): Promise<ClientHome | nu
       country: (p.country as string) ?? null,
     },
     allProjects: (allProjRes.data ?? []).map((x) => ({ id: x.id, code: x.code, name: x.name })),
-    currentGate: `G${currentPhase}`,
+    currentGate: `G${currentPhase + 1}`,
     percentComplete,
     gates,
     nextMilestone: upcoming

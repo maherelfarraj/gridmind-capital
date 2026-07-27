@@ -42,7 +42,7 @@ export function ClientHome({ home }: { home: ClientHomeData }) {
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <StatCard label="Current Gate" value={home.currentGate} sub="Stage-gate lifecycle" />
-        <StatCard label="Overall Progress" value={`${home.percentComplete}%`} sub={`${home.gates.filter((g) => g.status === 'approved').length} of 6 gates approved`} />
+        <StatCard label="Overall Progress" value={`${home.percentComplete}%`} sub={`${home.gates.filter((g) => g.status === 'approved').length} of 8 gates approved`} />
         <StatCard
           label="Next Milestone"
           value={home.nextMilestone ? formatDate(home.nextMilestone.plannedDate) : '—'}

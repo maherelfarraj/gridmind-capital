@@ -375,8 +375,8 @@ export async function getActiveGates(): Promise<WidgetGate[]> {
     .filter((g) => {
       const st = (g.status ?? '').toLowerCase()
       if (st === 'approved' || st === 'completed') return false
-      // Focus on each project's live gate
-      return g.phase_number === (g.projects?.current_phase ?? 0)
+      // Focus on each project's live gate (phase_number is 1-8, current_phase is 0-8 so add 1)
+      return g.phase_number === (g.projects?.current_phase ?? 0) + 1
     })
     .slice(0, 8)
     .map((g) => {
