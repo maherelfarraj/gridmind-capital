@@ -244,12 +244,12 @@ export async function createProject(payload: {
 
   if (error) return { error: error.message }
 
-  // 2. Create the multi-level G0 approval workflow.
+  // 2. Create the multi-level G0 approval workflow (idempotent).
   const workflowResult = await createApprovalWorkflow(
     'opportunity',
     data.id,
     payload.code,
-    payload.budget_usd,
+    null, // Amount not available at wizard creation time
     gate.actor.userId,
   )
   if (workflowResult.error) return { id: data.id, error: `Approval workflow failed: ${workflowResult.error}` }
