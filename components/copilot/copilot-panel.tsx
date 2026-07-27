@@ -4,6 +4,7 @@ import React, { useRef, useEffect } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
+import { TableCard } from '@/components/copilot/table-card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -69,23 +70,34 @@ function MessageBubble({
           {message.content}
         </div>
 
-        {/* Citations */}
-        {isAssistant && message.citations && message.citations.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {message.citations.map((citation, idx) => (
-              <a
-                key={idx}
-                href={citation.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs text-foreground hover:bg-muted/80 transition-colors"
-              >
-                <span>{citation.label}</span>
-                <ExternalLink size={10} aria-hidden="true" />
-              </a>
-            ))}
-          </div>
-        )}
+          {/* Table Card */}
+          {message.tableCard && (
+            <div className="mt-3 -mx-2">
+              <TableCard
+                title={message.tableCard.title}
+                summary={message.tableCard.summary}
+                columns={message.tableCard.columns}
+                rows={message.tableCard.rows}
+              />
+            </div>
+          )}
+
+          {/* Citations */}
+          {message.citations && message.citations.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {message.citations.map((cite, idx) => (
+                <a
+                  key={idx}
+                  href={cite.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-sm bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20"
+                >
+                  <Badge className="!font-normal">{cite.module}</Badge>
+                </a>
+              ))}
+            </div>
+          )}
 
         {/* Feedback buttons (only for assistant messages) */}
         {isAssistant && onFeedback && (

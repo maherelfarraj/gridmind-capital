@@ -7,6 +7,12 @@ import { getCurrentTenantId } from '@/lib/tenant'
 import { getDashboardStats, getActiveGates } from '@/app/actions/dashboard'
 import { loadRisksDashboard } from '@/app/actions/risks'
 import { getProjectGateState } from '@/app/actions/phase-gates'
+import { type CatalogRow } from '@/lib/copilot/query-catalog'
+import {
+  matchQueryIntent,
+  getCatalogQueryById,
+  getNearestQueries,
+} from '@/lib/copilot/query-catalog-helpers'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -18,6 +24,12 @@ export interface CopilotMessage {
   content: string
   citations?: CitationChip[]
   feedback?: number | null
+  tableCard?: {
+    title: string
+    summary: string
+    columns: any[]
+    rows: CatalogRow[]
+  }
   createdAt: string
 }
 
@@ -169,6 +181,7 @@ export async function askCopilot(
   }
 
   const { actor } = actorResult
+  const tenantId = await getCurrentTenantId()
 
   // 2. Rate limiting check
   const rateCheckResult = await checkRateLimit(actor.userId)
@@ -209,7 +222,72 @@ export async function askCopilot(
     }
   }
 
-  // 4. Assemble lightweight context from existing read actions
+  // 4. First pass: Try to match against whitelisted catalog queries
+  const queryId = matchQueryIntent(question)
+  let tableCard: CopilotMessage['tableCard'] | undefined
+
+  if (queryId) {
+    const catalogQuery = getCatalogQueryById(queryId)
+    if (catalogQuery) {
+      try {
+        const rows = await catalogQuery.run()
+        const summary = `${rows.length} result${rows.length !== 1 ? 's' : ''} found`
+        tableCard = {
+          title: catalogQuery.label,
+          summary,
+          columns: catalogQuery.columns,
+          rows,
+        }
+
+        // Log successful catalog hit
+        await supabase.from('copilot_intent_log').insert({
+          tenant_id: tenantId,
+          user_id: actor.userId,
+          conversation_id: conversationId,
+          question,
+          classified_intent: queryId,
+          matched_query_id: queryId,
+          was_catalog_hit: true,
+          fallback_prose_used: false,
+        }).catch(() => {}) // Ignore logging errors
+
+        // Return table card response
+        const assistantMsg = await supabase
+          .from('copilot_messages')
+          .insert({
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: `Here are the ${catalogQuery.label.toLowerCase()} for you.`,
+            citations: [],
+            tableCard: {
+              title: catalogQuery.label,
+              summary,
+              columns: catalogQuery.columns,
+              rows,
+            },
+          })
+          .select()
+          .single()
+
+        if (assistantMsg.data) {
+          return {
+            message: {
+              id: assistantMsg.data.id,
+              role: 'assistant',
+              content: assistantMsg.data.content,
+              tableCard,
+              createdAt: new Date().toISOString(),
+            },
+          }
+        }
+      } catch (error) {
+        console.error('[copilot] Catalog query error:', error)
+        // Fall through to prose response
+      }
+    }
+  }
+
+  // 5. Fallback: Assemble lightweight context from existing read actions for prose response
   const { items, tokenCount } = await assembleContext(question)
 
   // Cap context at 3,000 tokens
@@ -292,8 +370,37 @@ ${contextStr || 'No relevant data found.'}
     console.error('[copilot] Failed to save assistant message:', assistantErr)
   }
 
+  // 7. Log the intent miss to improve catalog
+  if (!queryId) {
+    const nearestQueries = getNearestQueries(question, 3)
+    const suggestedQueryIds = nearestQueries.map((q) => q.id)
+    
+    await supabase
+      .from('copilot_intent_log')
+      .insert({
+        tenant_id: tenantId,
+        user_id: actor.userId,
+        conversation_id: conversationId,
+        question,
+        classified_intent: null,
+        matched_query_id: null,
+        was_catalog_hit: false,
+        fallback_prose_used: true,
+        suggested_queries: suggestedQueryIds,
+      })
+      .catch(() => {}) // Ignore logging errors
+
+    // Enhance response with suggestions if we couldn't match
+    if (nearestQueries.length > 0) {
+      const suggestionText = `\n\n[Suggested queries: ${nearestQueries.map((q) => q.label).join(', ')}]`
+      if (response.length < 3000) {
+        // Append suggestions if there's room
+        response += suggestionText
+      }
+    }
+  }
+
   // 8. Log to audit trail for regulatory compliance and budget tracking
-  const tenantId = await getCurrentTenantId()
   const inputTokens = Math.ceil(question.length / 4) // Rough estimate
   const outputTokens = Math.ceil(response.length / 4)
   const totalTokens = inputTokens + outputTokens
