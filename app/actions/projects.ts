@@ -244,32 +244,7 @@ export async function createProject(payload: {
 
   if (error) return { error: error.message }
 
-  // 2. Create approval record for G0 review (idempotent: check if one already exists).
-  const { data: existingApproval } = await supabase
-    .from('approvals')
-    .select('id')
-    .eq('object_id', data.id)
-    .eq('object_type', 'opportunity')
-    .limit(1)
-    .maybeSingle()
-
-<<<<<<< HEAD
-  if (!existingApproval) {
-    const { error: ae } = await supabase.from('approvals').insert({
-      tenant_id:    tenantId,
-      object_type:  'opportunity',
-      object_id:    data.id,
-      title:        payload.code,
-      description:  `G0 gate review for ${payload.name}`,
-      status:       'pending',
-      priority:     'normal',
-      amount:       payload.budget_usd,
-      requester_id: gate.actor.userId,
-    })
-    if (ae) return { id: data.id, error: `Project created, but approval failed: ${ae.message}` }
-  }
-=======
-  // Use approval workflow (idempotent: skip if pending approval exists)
+  // 2. Create approval record for G0 review via workflow (idempotent: skip if pending approval exists)
   const workflowResult = await createApprovalWorkflow(
     'opportunity',
     data.id,
@@ -278,7 +253,6 @@ export async function createProject(payload: {
     gate.actor.userId,
   )
   if (workflowResult.error) return { id: data.id, error: `Approval workflow failed: ${workflowResult.error}` }
->>>>>>> origin/pr41-head
 
   // 3. Seed the G0–G6 gate records. All gates start pending — nothing is pre-approved.
   // Approval of G0 via decideApproval will flip to 'in_review' via applyApprovalLifecycle.
