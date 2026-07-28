@@ -20,13 +20,52 @@ export interface CatalogQuery {
   rowLink?: (row: CatalogRow) => string | null
 }
 
-// Catalog is currently demonstration-level
-// Production catalog will map user intents to specific read actions
-// For now, queries return empty results and rely on LLM prose fallback
-
-// Export an empty catalog
-// The system will match intents and fall through to prose LLM responses
-export const COPILOT_CATALOG: CatalogQuery[] = []
+// Suggested operational queries (operational dashboard shortcuts)
+// These are routed via exact phrase match in matchQueryIntent for deterministic results
+export const COPILOT_CATALOG: CatalogQuery[] = [
+  {
+    id: 'active-gates',
+    label: 'Active Gates',
+    intents: ['what gate', 'current phase', 'active phase'],
+    run: async () => [], // Falls back to prose response
+    columns: [],
+  },
+  {
+    id: 'pending-approvals',
+    label: 'Pending Approvals',
+    intents: ['approvals', 'waiting', 'pending'],
+    run: async () => [], // Falls back to prose response
+    columns: [],
+  },
+  {
+    id: 'overdue-projects',
+    label: 'Overdue Projects',
+    intents: ['overdue', 'late', 'delayed'],
+    run: async () => [], // Falls back to prose response
+    columns: [],
+  },
+  {
+    id: 'expiring-permits',
+    label: 'Expiring Permits',
+    intents: ['permits', 'expire', 'expiring'],
+    run: async () => [], // Falls back to prose response
+    columns: [],
+  },
+  {
+    id: 'urgent-risks',
+    label: 'Urgent Risks',
+    intents: ['risks', 'incidents', 'problems'],
+    run: async () => [], // Falls back to prose response
+    columns: [],
+  },
+  {
+    id: 'recent-incidents',
+    label: 'Recent Incidents',
+    intents: ['incidents', 'issues', 'problems', 'week'],
+    run: async () => [], // Falls back to prose response
+    columns: [],
+  },
+]
 
 // Helper to find catalog query by ID
 export const getCatalogQueryById = (id: string): CatalogQuery | null => {

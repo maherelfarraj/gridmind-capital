@@ -421,14 +421,16 @@ ${contextStr || 'No relevant data found.'}
     }
   }
 
-  // 6. Parse citations from response (format: [module:recordId])
-  const citationRegex = /\[([a-z_]+):([a-z0-9_-]+)\]/g
+  // 6. Parse citations from response (format: [module:recordId] where recordId can be UUID or slug)
+  // Supports: [dashboard:stats], [phase_gates:uuid], [projects:slug], etc.
+  const citationRegex = /\[([a-z_]+):([a-z0-9_\-]+(?:-[a-z0-9_\-]*)*)\]/gi
   const citations: CitationChip[] = []
   const citedModules = new Set<string>()
+  let strippedResponse = response
 
   let match
   while ((match = citationRegex.exec(response)) !== null) {
-    const [_, module, recordId] = match
+    const [fullMatch, module, recordId] = match
     const key = `${module}:${recordId}`
     if (!citedModules.has(key)) {
       const contextItem = items.find((i) => i.module === module && i.recordId === recordId)
@@ -440,17 +442,22 @@ ${contextStr || 'No relevant data found.'}
           link: createDeepLink(module, recordId),
         })
         citedModules.add(key)
+        // Strip the citation marker from displayed text
+        strippedResponse = strippedResponse.replace(fullMatch, '')
       }
     }
   }
 
-  // 7. Persist assistant message with citations
+  // Clean up any double spaces created by stripping
+  strippedResponse = strippedResponse.replace(/\s+/g, ' ').trim()
+
+  // 7. Persist assistant message with stripped citations
   const { data: assistantMsg, error: assistantErr } = await adminClient
     .from('copilot_messages')
     .insert({
       conversation_id: finalConversationId,
       role: 'assistant',
-      content: response,
+      content: strippedResponse,
       citations: citations,
     })
     .select()
@@ -544,7 +551,7 @@ ${contextStr || 'No relevant data found.'}
     message: {
       id: assistantMsg?.id || '',
       role: 'assistant',
-      content: response,
+      content: strippedResponse,
       citations,
       createdAt: new Date().toISOString(),
     },
