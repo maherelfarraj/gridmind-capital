@@ -56,12 +56,12 @@ export function CharterTab({
       {/* Key figures */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { label: 'CAPEX (USD)', value: `$${(c.capex_estimate_usd / 1_000_000).toFixed(0)}M` },
-          { label: 'Target IRR', value: `${c.target_irr_pct}%` },
-          { label: 'DSCR', value: `${c.target_dscr}x` },
-          { label: 'Duration', value: `${c.project_duration_months}m` },
-          { label: 'FID Target', value: c.fid_target },
-          { label: 'COD Target', value: c.cod_target },
+          { label: 'CAPEX (USD)', value: c.capex_estimate_usd ? `$${(c.capex_estimate_usd / 1_000_000).toFixed(0)}M` : '—' },
+          { label: 'Target IRR', value: c.target_irr_pct ? `${c.target_irr_pct}%` : '—' },
+          { label: 'DSCR', value: c.target_dscr ? `${c.target_dscr}x` : '—' },
+          { label: 'Duration', value: c.project_duration_months ? `${c.project_duration_months}m` : '—' },
+          { label: 'FID Target', value: c.fid_target || '—' },
+          { label: 'COD Target', value: c.cod_target || '—' },
         ].map((k) => (
           <div key={k.label} className="rounded-xl border border-border bg-card px-4 py-3 text-center">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">{k.label}</p>
@@ -74,11 +74,11 @@ export function CharterTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-xl border border-border bg-card p-5">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">Project Description</p>
-          <p className="text-sm text-foreground leading-relaxed">{c.description}</p>
+          <p className="text-sm text-foreground leading-relaxed">{c.description || '—'}</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-5">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">Strategic Rationale</p>
-          <p className="text-sm text-foreground leading-relaxed">{c.strategic_rationale}</p>
+          <p className="text-sm text-foreground leading-relaxed">{c.strategic_rationale || '—'}</p>
         </div>
       </div>
 
@@ -92,10 +92,10 @@ export function CharterTab({
         {showScope && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-border">
             {[
-              { title: 'Scope Included', items: c.scope_included,  icon: CheckCircle,    color: '#22c55e' },
-              { title: 'Scope Excluded', items: c.scope_excluded,  icon: AlertTriangle,  color: '#ef4444' },
-              { title: 'Assumptions',    items: c.assumptions,     icon: Clock,          color: '#3b82f6' },
-              { title: 'Constraints',    items: c.constraints,     icon: AlertTriangle,  color: '#f59e0b' },
+              { title: 'Scope Included', items: c.scope_included || [],  icon: CheckCircle,    color: '#22c55e' },
+              { title: 'Scope Excluded', items: c.scope_excluded || [],  icon: AlertTriangle,  color: '#ef4444' },
+              { title: 'Assumptions',    items: c.assumptions || [],     icon: Clock,          color: '#3b82f6' },
+              { title: 'Constraints',    items: c.constraints || [],     icon: AlertTriangle,  color: '#f59e0b' },
             ].map(({ title, items, icon: Icon, color }) => (
               <div key={title} className="bg-card p-5">
                 <div className="flex items-center gap-2 mb-3">
@@ -103,12 +103,12 @@ export function CharterTab({
                   <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</p>
                 </div>
                 <ul className="space-y-2">
-                  {items.map((item, i) => (
+                  {items && items.length > 0 ? items.map((item, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-foreground">
                       <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
                       {item}
                     </li>
-                  ))}
+                  )) : <li className="text-xs text-muted-foreground">No items</li>}
                 </ul>
               </div>
             ))}
