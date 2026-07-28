@@ -46,7 +46,16 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient()
 
-  // Handle email links: both token_hash (old format) and token (new Supabase format)
+  // Check if user is already authenticated (Supabase magic links set session before redirect)
+  const { data: { session } } = await supabase.auth.getSession()
+  
+  if (session) {
+    // Supabase already authenticated the user via /auth/v1/verify
+    // Just redirect to next page
+    return NextResponse.redirect(`${origin}${next}`)
+  }
+
+  // Handle email links with explicit token: both token_hash (old format) and token (new Supabase format)
   const tokenValue = tokenHash || token
   if (tokenValue && type) {
     const { error } = await supabase.auth.verifyOtp({ 
