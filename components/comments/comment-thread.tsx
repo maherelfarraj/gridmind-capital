@@ -4,13 +4,13 @@ import React from 'react'
 import useSWR from 'swr'
 import { MessageSquare, Send, Check, AtSign } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_USERS } from '@/lib/mock-store'
 import {
   getComments,
   addComment,
   resolveComment,
   type Comment,
 } from '@/app/actions/comments'
+import { getUsers } from '@/app/actions/admin'
 
 interface CommentThreadProps {
   entityType: string
@@ -58,8 +58,14 @@ export function CommentThread({ entityType, entityId, title = 'Discussion', clas
     { revalidateOnFocus: true },
   )
 
-  const filteredUsers = MOCK_USERS.filter((u) =>
-    u.name.toLowerCase().includes(mentionQuery.toLowerCase()),
+  const { data: allUsers = [] } = useSWR(
+    'admin-users',
+    () => getUsers(),
+    { revalidateOnFocus: false },
+  )
+
+  const filteredUsers = allUsers.filter((u) =>
+    u.full_name && u.full_name.toLowerCase().includes(mentionQuery.toLowerCase()),
   ).slice(0, 5)
 
   function handleBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -176,11 +182,11 @@ export function CommentThread({ entityType, entityId, title = 'Discussion', clas
               <button
                 key={u.id}
                 type="button"
-                onClick={() => insertMention(u.name)}
+                onClick={() => insertMention(u.full_name)}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
               >
                 <AtSign className="size-3.5 text-slate-400" />
-                <span className="font-medium text-slate-700">{u.name}</span>
+                <span className="font-medium text-slate-700">{u.full_name}</span>
                 <span className="ml-auto text-xs text-slate-400">{u.role}</span>
               </button>
             ))}
