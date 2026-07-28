@@ -278,11 +278,8 @@ export function ProjectRegistry() {
         .filter(p => p.status !== 'cancelled' && p.status !== 'archived')
         .map(p => toGmcProject(p, phaseNamesMap[p.id]))
     }
-    // Only fall back to mock data for the unfiltered view. Falling back while a
-    // gate filter is active would surface mock projects from other gates and make
-    // `?gate=G0` look like it was ignored.
-    if (liveRows && gateParam !== null) return []
-    return mockStore.getProjects().filter(p => p.status !== 'archived')
+    // No mock fallback — show honest empty state if no projects exist
+    return []
   }, [liveRows, phaseNamesMap, gateParam])
 
   const filtered = React.useMemo(() => {

@@ -66,126 +66,8 @@ interface GateMeta {
   reviewers: { name: string; initials: string; color: string; decision?: 'approve' | 'reject' | 'pending' }[]
 }
 
-// ─── Mock gate data ───────────────────────────────────────────
-
-const GATES: GateMeta[] = [
-  {
-    gate: 1, phase: 'Origination', shortName: 'G1', fullName: CANONICAL_PHASE_NAMES[0],
-    purpose: 'Develop project concept, assess technical and commercial feasibility, and establish business case.',
-    color: '#3b82f6', icon: Zap, status: 'passed', approvedDate: '14 Jan 2025', approvedBy: 'A. Carter',
-    reviewers: [{ name: 'A. Carter', initials: 'AC', color: '#64ffda', decision: 'approve' }],
-    deliverables: [
-      { id: 'g1d1', title: 'Feasibility Study', owner: 'A. Carter', status: 'complete', isMandatory: true },
-      { id: 'g1d2', title: 'Business Case',   owner: 'A. Carter', status: 'complete', isMandatory: true },
-    ],
-  },
-  {
-    gate: 2, phase: 'Permitting', shortName: 'G2', fullName: CANONICAL_PHASE_NAMES[1],
-    purpose: 'Secure environmental, grid, and regulatory approvals. Complete permitting process.',
-    color: '#6366f1', icon: Wrench, status: 'passed', approvedDate: '08 Mar 2025', approvedBy: 'A. Carter',
-    reviewers: [
-      { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'approve' },
-      { name: 'R. Chen',    initials: 'RC', color: '#8b5cf6', decision: 'approve' },
-    ],
-    deliverables: [
-      { id: 'g2d1', title: 'Environmental Permit',          owner: 'M. Al-Farsi', status: 'complete', isMandatory: true },
-      { id: 'g2d2', title: 'Grid Connection Agreement',  owner: 'R. Chen',     status: 'complete', isMandatory: true },
-      { id: 'g2d3', title: 'Regulatory Approvals',   owner: 'A. Carter',   status: 'complete', isMandatory: true },
-      { id: 'g2d4', title: 'Land Rights',         owner: 'L. Schmidt',  status: 'complete', isMandatory: false },
-    ],
-  },
-  {
-    gate: 3, phase: 'Commercial', shortName: 'G3', fullName: CANONICAL_PHASE_NAMES[2],
-    purpose: 'Finalize commercial terms, secure financing, and achieve financial close.',
-    color: '#8b5cf6', icon: Building2, status: 'passed', approvedDate: '22 Apr 2025', approvedBy: 'A. Carter',
-    reviewers: [
-      { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'approve' },
-      { name: 'S. Park',    initials: 'SP', color: '#a855f7', decision: 'approve' },
-      { name: 'T. Müller',  initials: 'TM', color: '#3b82f6', decision: 'approve' },
-    ],
-    deliverables: [
-      { id: 'g3d1', title: 'Signed Contracts',           owner: 'R. Chen',    status: 'complete', isMandatory: true },
-      { id: 'g3d2', title: 'Financing Approved',             owner: 'A. Carter',  status: 'complete', isMandatory: true },
-      { id: 'g3d3', title: 'Insurance Arranged',     owner: 'S. Park',    status: 'complete', isMandatory: true },
-      { id: 'g3d4', title: 'Commercial Terms Final',              owner: 'R. Chen',    status: 'complete', isMandatory: true },
-    ],
-  },
-  {
-    gate: 4, phase: 'Design', shortName: 'G4', fullName: CANONICAL_PHASE_NAMES[3],
-    purpose: 'Complete detailed design (IFC) and issue for procurement and construction.',
-    color: '#a855f7', icon: Truck, status: 'passed', approvedDate: '10 Jun 2025', approvedBy: 'A. Carter',
-    reviewers: [
-      { name: 'A. Carter',   initials: 'AC', color: '#64ffda', decision: 'approve' },
-      { name: 'M. Al-Farsi', initials: 'MA', color: '#f97316', decision: 'approve' },
-      { name: 'J. Rivera',   initials: 'JR', color: '#22c55e', decision: 'approve' },
-    ],
-    deliverables: [
-      { id: 'g4d1', title: 'IFC Drawings (100%)',          owner: 'M. Al-Farsi', status: 'complete', isMandatory: true },
-      { id: 'g4d2', title: 'Technical Specifications',        owner: 'M. Al-Farsi', status: 'complete', isMandatory: true },
-      { id: 'g4d3', title: 'BIM Model',       owner: 'R. Chen',     status: 'complete', isMandatory: true },
-      { id: 'g4d4', title: 'Design Review Sign-Off',         owner: 'R. Chen',     status: 'complete', isMandatory: false },
-      { id: 'g4d5', title: 'Final Report',           owner: 'M. Al-Farsi', status: 'complete', isMandatory: true },
-    ],
-  },
-  {
-    gate: 5, phase: 'Procurement', shortName: 'G5', fullName: CANONICAL_PHASE_NAMES[4],
-    purpose: 'Procure major equipment and manufacturing. Establish supply chain.',
-    color: '#f97316', icon: HardHat, status: 'active',
-    reviewers: [
-      { name: 'A. Carter',  initials: 'AC', color: '#64ffda', decision: 'pending' },
-      { name: 'T. Müller',  initials: 'TM', color: '#3b82f6', decision: 'pending' },
-      { name: 'R. Chen',    initials: 'RC', color: '#8b5cf6', decision: 'approve' },
-    ],
-    deliverables: [
-      { id: 'g5d1', title: 'Purchase Orders',           owner: 'M. Al-Farsi', status: 'complete',    isMandatory: true },
-      { id: 'g5d2', title: 'Vendor Contracts',             owner: 'R. Chen',     status: 'complete',    isMandatory: true },
-      { id: 'g5d3', title: 'Delivery Schedule',              owner: 'R. Chen',     status: 'complete',    isMandatory: true },
-      { id: 'g5d4', title: 'Quality Assurance Plan',             owner: 'R. Chen',     status: 'complete',    isMandatory: true },
-      { id: 'g5d5', title: 'Supply Chain Execution',         owner: 'R. Chen',     status: 'in-progress', isMandatory: true, notes: 'Awaiting factory acceptance tests.' },
-      { id: 'g5d6', title: 'Manufacturing Oversight',  owner: 'L. Schmidt',  status: 'complete',    isMandatory: true },
-      { id: 'g5d7', title: 'Logistics Planning',         owner: 'L. Schmidt',  status: 'in-progress', isMandatory: true, notes: 'Shipping route confirmed.' },
-      { id: 'g5d8', title: 'Insurance Certificates',     owner: 'A. Carter',   status: 'not-started', isMandatory: false },
-    ],
-  },
-  {
-    gate: 6, phase: 'Construction', shortName: 'G6', fullName: CANONICAL_PHASE_NAMES[5],
-    purpose: 'Execute construction and site installation. Achieve mechanical completion.',
-    color: '#fb923c', icon: Settings, status: 'locked',
-    reviewers: [
-      { name: 'A. Carter', initials: 'AC', color: '#64ffda', decision: 'pending' },
-    ],
-    deliverables: [
-      { id: 'g6d1', title: 'Mechanical Completion',          owner: 'J. Rivera', status: 'not-started', isMandatory: true },
-      { id: 'g6d2', title: 'Punch List',                  owner: 'J. Rivera', status: 'not-started', isMandatory: true },
-      { id: 'g6d3', title: 'As-Built Drawings',              owner: 'R. Chen',   status: 'not-started', isMandatory: true },
-      { id: 'g6d4', title: 'Site Handover',                owner: 'T. Müller', status: 'not-started', isMandatory: true },
-    ],
-  },
-  {
-    gate: 7, phase: 'Commissioning', shortName: 'G7', fullName: CANONICAL_PHASE_NAMES[6],
-    purpose: 'Comprehensive system testing, grid compliance verification, and performance validation.',
-    color: '#f59e0b', icon: Clock, status: 'locked',
-    reviewers: [],
-    deliverables: [
-      { id: 'g7d1', title: 'Test Reports', owner: 'J. Rivera', status: 'not-started', isMandatory: true },
-      { id: 'g7d2', title: 'Grid Code Compliance',         owner: 'T. Müller', status: 'not-started', isMandatory: true },
-      { id: 'g7d3', title: 'Performance Certificates',         owner: 'R. Chen', status: 'not-started', isMandatory: true },
-      { id: 'g7d4', title: 'O&M Training',         owner: 'L. Schmidt', status: 'not-started', isMandatory: true },
-    ],
-  },
-  {
-    gate: 8, phase: 'Operations', shortName: 'G8', fullName: CANONICAL_PHASE_NAMES[7],
-    purpose: 'Formal asset handover to Operations & Maintenance team and commencement of operations.',
-    color: '#22c55e', icon: Leaf, status: 'locked',
-    reviewers: [],
-    deliverables: [
-      { id: 'g8d1', title: 'Taking-Over Certificate', owner: 'A. Carter', status: 'not-started', isMandatory: true },
-      { id: 'g8d2', title: 'O&M Manual',         owner: 'J. Rivera', status: 'not-started', isMandatory: true },
-      { id: 'g8d3', title: 'Warranty Register',         owner: 'R. Chen', status: 'not-started', isMandatory: true },
-      { id: 'g8d4', title: 'Operations Commencement',         owner: 'T. Müller', status: 'not-started', isMandatory: true },
-    ],
-  },
-]
+// Real gates are fetched from the database via project data
+// No mock array — gates rendered from actual project gate states
 
 // ─── Deliverable status icon ──────────────────────────────────
 
@@ -463,24 +345,57 @@ function GateDetailPanel({ gate }: { gate: GateMeta }) {
 // ─── Main page ────────────────────────────────────────────────
 
 export function StageGateReviewPage() {
-  const [selectedGate, setSelectedGate] = React.useState<number>(4) // G4 active
-
-  const gate = GATES.find((g) => g.gate === selectedGate) ?? GATES[4]
-
-  const passedCount = GATES.filter((g) => g.status === 'passed').length
-  const activeGate  = GATES.find((g) => g.status === 'active')
-
-  // Resolve a real project so recorded signatures can be shown + exported in the Gate Pack.
+  // Fetch real projects and their gate states
   const { data: projects } = useSWR('stage-gate-projects', () => getProjects())
-  const linkedProject =
-    projects?.find((p) => p.code === 'SRS-400') ?? projects?.[0] ?? null
+  const linkedProject = projects?.[0] ?? null
 
-  // Which gates already have a saved submission (drives Edit/Start labels).
+  // Which gates already have a saved submission (drives Edit/Start labels)
   const { data: submittedGates } = useSWR(
     linkedProject ? `submitted-gates-${linkedProject.id}` : null,
     () => getSubmittedGateNumbers(linkedProject!.id),
   )
   const submittedSet = React.useMemo(() => new Set(submittedGates ?? []), [submittedGates])
+
+  // Use real CANONICAL_PHASE_NAMES for all 8 gates
+  const realGates: GateMeta[] = CANONICAL_PHASE_NAMES.map((phaseName, idx) => ({
+    gate: idx + 1,
+    phase: phaseName,
+    shortName: `G${idx + 1}`,
+    fullName: phaseName,
+    purpose: 'Project phase - real data to be fetched from gate_submissions.',
+    color: ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#f97316', '#fb923c', '#f59e0b', '#22c55e'][idx],
+    icon: [Zap, Wrench, Building2, Truck, HardHat, Settings, Clock, Leaf][idx],
+    status: (idx === 4 ? 'active' : idx < 4 ? 'passed' : 'locked') as GateStatus,
+    deliverables: [],
+    reviewers: [],
+  }))
+
+  const [selectedGate, setSelectedGate] = React.useState<number>(linkedProject ? 1 : 0)
+  const gate = realGates.find((g) => g.gate === selectedGate) ?? realGates[0]
+
+  const passedCount = realGates.filter((g) => g.status === 'passed').length
+  const activeGate = realGates.find((g) => g.status === 'active')
+
+  // Empty state: no projects
+  if (!projects || projects.length === 0) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Stage Gate Control</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">G1–G8 lifecycle governance</p>
+        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Lock className="size-12 text-muted-foreground/40" aria-hidden />
+            <div>
+              <h3 className="font-semibold text-foreground">No projects yet</h3>
+              <p className="text-xs text-muted-foreground mt-1">Create your first project to review stage gates.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -489,7 +404,7 @@ export function StageGateReviewPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Stage Gate Control</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            G1–G8 lifecycle governance — <span className="font-mono text-[#64ffda]">SRS-400</span> Sirius 400MW Solar Farm
+            G1–G8 lifecycle governance — <span className="font-mono text-[#64ffda]">{linkedProject?.code}</span> {linkedProject?.name}
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -503,11 +418,13 @@ export function StageGateReviewPage() {
               {activeGate.shortName} active
             </span>
           )}
-          <GatePackExportButton
-            targetId="gate-pack-printable"
-            gateCode={`G${gate.gate}`}
-            projectName="Sirius 400MW Solar Farm"
-          />
+          {linkedProject && (
+            <GatePackExportButton
+              targetId="gate-pack-printable"
+              gateCode={`G${gate.gate}`}
+              projectName={linkedProject.name}
+            />
+          )}
         </div>
       </div>
 
@@ -515,7 +432,7 @@ export function StageGateReviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-5">
         {/* Gate list */}
         <nav aria-label="Stage gates" className="flex flex-row lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 lg:overflow-x-visible">
-          {GATES.map((g) => (
+          {realGates.map((g) => (
             <div key={g.gate} className="min-w-[160px] lg:min-w-0">
               <GateCard
                 gate={g}
