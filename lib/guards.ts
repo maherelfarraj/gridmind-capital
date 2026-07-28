@@ -45,20 +45,18 @@ export async function requireInternalRole(allowed: string[]): Promise<{ userId: 
   return { userId: actor.userId, profile: actor }
 }
 
-/**
- * Role whitelist from DB schema — use this to validate role arguments from callers.
- * Never accept system_admin or tenant_admin from untrusted input.
- */
-export const WHITELISTED_EXTERNAL_ROLES = ['subcontractor', 'vendor'] as const
+
 
 /**
  * Verify role argument is in the whitelist for external user invites.
  * Prevents callers from self-assigning admin roles.
+ * Allowed: 'subcontractor', 'vendor'. Never accept system_admin or tenant_admin from callers.
  */
-export const validateExternalRole = async (role: string): Promise<string> => {
-  const valid = WHITELISTED_EXTERNAL_ROLES.includes(role as any)
+export async function validateExternalRole(role: string): Promise<string> {
+  const allowed = ['subcontractor', 'vendor']
+  const valid = allowed.includes(role)
   if (!valid) {
-    throw new Error(`Invalid external role '${role}'. Allowed: ${WHITELISTED_EXTERNAL_ROLES.join(', ')}`)
+    throw new Error(`Invalid external role '${role}'. Allowed: ${allowed.join(', ')}`)
   }
   return role
 }

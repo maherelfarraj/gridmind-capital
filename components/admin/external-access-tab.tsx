@@ -96,7 +96,6 @@ function InviteDialog({
     if (result.error) {
       toast({ title: 'Invite failed', description: result.error, variant: 'danger' }); return
     }
-    if (result.inviteLink) setInviteLink(result.inviteLink)
     globalMutate('external-users')
     toast({
       title: result.isExisting ? 'Access updated' : 'Invite sent',
