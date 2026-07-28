@@ -151,15 +151,20 @@ async function reinviteVendor(args: Args) {
       }, { onConflict: 'id', ignoreDuplicates: false })
     }
 
-    // Step 4: Generate fallback magic link
+    // Step 4: Generate invite link with hashed_token
     console.log(`\n4️⃣  Generating invite link...`)
     const { data: linkData } = await supabase.auth.admin.generateLink({
-      type: 'magiclink',
+      type: 'invite',
       email: args.email,
       options: { redirectTo: `${args.siteUrl}/auth/callback?next=/portal` },
     })
 
-    if (linkData?.properties?.action_link) {
+    let inviteLink = ''
+    if (linkData?.properties?.hashed_token) {
+      // Build the invite link directly against the callback with token_hash
+      inviteLink = `${args.siteUrl}/auth/callback` +
+        `?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}` +
+        `&type=invite&next=/portal`
       console.log(`   ✓ Magic link ready (for copy/share if email fails)`)
     }
 
@@ -192,8 +197,8 @@ async function reinviteVendor(args: Args) {
     console.log(`   New Email:    ${args.email}`)
     console.log(`   Old Email:    ${args.oldEmail || '(not recorded)'}`)
     console.log(`   User ID:      ${userId.slice(0, 8)}...`)
-    if (linkData?.properties?.action_link) {
-      console.log(`   Invite Link:  ${linkData.properties.action_link}`)
+    if (inviteLink) {
+      console.log(`   Invite Link:  ${inviteLink}`)
     }
     console.log()
   } catch (error) {
