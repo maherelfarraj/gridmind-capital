@@ -781,12 +781,13 @@ export function ProjectDetailPage({
   // Create project data with unified gate name from gateNames
   const projectData = React.useMemo(() => {
     const data = toProjectData(project)
-    // Override gateName with the canonical name from gateNames to ensure header shows correct phase
+    // Override gate and gateName with the canonical values from gateNames to ensure header shows correct phase
     if (gateNames) {
       // Active phase = current_phase + 1 (count of approved gates + 1 for next phase)
       const cp = typeof project.gate === 'number' ? project.gate : 0
       const activePhaseNum = Math.min(cp + 1, 8)
       if (gateNames[activePhaseNum]) {
+        data.gate = activePhaseNum
         data.gateName = gateNames[activePhaseNum]
       }
     }

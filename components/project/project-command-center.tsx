@@ -362,9 +362,11 @@ export const ProjectCommandCenter = React.memo(function ProjectCommandCenter({
   const statusMeta: typeof STATUS_META_FALLBACK =
     STATUS_META[rawStatus as ProjectStatus] ??
     { label: rawStatus ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1) : 'Unknown', variant: 'under-review', dot: true }
-  const phaseMeta   = PHASE_META[project.phase]   ?? PHASE_META['g0']
-  const phaseBadgeVariant = PHASE_BADGE_VARIANT[project.phase] ?? PHASE_BADGE_VARIANT['g0']
-  const phaseLabel  = PHASE_LABEL[project.phase]   ?? project.phase ?? 'Unknown Phase'
+  // Derive phase metadata from project.gate (active gate) to ensure PHASE and CURRENT GATE cards are always in sync
+  const gatePhaseKey = (`g${project.gate}` as PhaseKey)
+  const phaseMeta   = PHASE_META[gatePhaseKey]   ?? PHASE_META['g0']
+  const phaseBadgeVariant = PHASE_BADGE_VARIANT[gatePhaseKey] ?? PHASE_BADGE_VARIANT['g0']
+  const phaseLabel  = PHASE_LABEL[gatePhaseKey]   ?? gatePhaseKey ?? 'Unknown Phase'
   const gateColor   = phaseMeta.color
 
   return (
