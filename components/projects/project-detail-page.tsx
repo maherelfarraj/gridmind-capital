@@ -147,7 +147,7 @@ function GateStatusCard({
   onSubmitApproval?: () => void
   onRequestChanges?: () => void
   hideActions?: boolean
-  /** Optional map of phase_number (1–8) → real gate names from phase_gates table. */
+  /** Optional map of phase_number (1���8) → real gate names from phase_gates table. */
   gateNames?: Record<number, string>
 }) {
   // UNIFIED gate display: Derive from gateNames (DB-driven canonical names from phase_gates table)
@@ -798,23 +798,26 @@ export function ProjectDetailPage({
 
   const router = useNextRouter()
 
-  // Gate code → sub-page route (only wired gates navigate; others open the info panel)
+  // Canonical gate → workspace gate mapping (honest correspondence until V2 re-map)
+  // Gates without a route (G2, G3) open the info panel instead
   const GATE_ROUTES: Partial<Record<string, string>> = {
-    G0: `/projects/${project.id}/g0`,
-    // Gate workspace, consistent with G2-G5. The retired `/g1/approval` mock now
-    // redirects to /team/gates, and the workspace links there directly.
-    G1: `/projects/${project.id}/g1`,
-    G2: `/projects/${project.id}/g2`,
-    G3: `/projects/${project.id}/g3`,
-    G4: `/projects/${project.id}/g4`,
-    G5: `/projects/${project.id}/g5`,
-    G6: `/projects/${project.id}/g6/om-transition`,
+    G1: `/stage-gates/${project.id}/gate/1`,    // Development ≈ Origination
+    // G2: info panel (Permitting & Grid Application - no form yet)
+    // G3: info panel (Commercial Close - no form yet)
+    G4: `/stage-gates/${project.id}/gate/2`,    // Engineering ≈ Detailed Design
+    G5: `/stage-gates/${project.id}/gate/3`,    // Procurement
+    G6: `/stage-gates/${project.id}/gate/4`,    // Construction
+    G7: `/stage-gates/${project.id}/gate/6`,    // Commissioning
+    G8: `/stage-gates/${project.id}/gate/7`,    // Handover
   }
 
   const handleGateClick = React.useCallback(
     (gate: import('@/components/project/phase-gate-stepper').GateDef) => {
       const route = GATE_ROUTES[gate.code]
-      if (route) router.push(route)
+      if (route) {
+        router.push(route)
+      }
+      // Gates without a route (G2, G3) silently do nothing — info panel would open here if needed
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [project.id, router],

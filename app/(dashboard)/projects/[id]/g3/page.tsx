@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
 
 /**
- * Old /g3 route → new /gate/5 (Procurement & Manufacturing)
- * Redirect to single source of truth.
+ * Old /g3 route → G3 (Commercial Close) has no workspace form yet.
+ * Redirect to projects list as this gate isn't actionable yet.
  */
 export default async function G3RedirectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  redirect(`/stage-gates/${id}/gate/5`)
+  redirect(`/projects/${id}`)
 }
