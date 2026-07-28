@@ -117,23 +117,21 @@ function DrawingsTab({ drawings, loading }: { drawings: DrawingRecord[]; loading
 
 // ── RFI tab ────────────────────────────────────────────────────────────────
 
-function NewRFIModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+function NewRFIModal({ open, onClose, onCreated, projects }: { open: boolean; onClose: () => void; onCreated: () => void; projects: any[] }) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ title: '', discipline: 'Civil', description: '' })
+  const [form, setForm] = useState({ title: '', discipline: 'Civil', description: '', projectId: '' })
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.title) { toast({ title: 'Title required', variant: 'danger' }); return }
+    if (!form.title || !form.projectId) { toast({ title: 'All fields required', variant: 'danger' }); return }
     setLoading(true)
-    // For now, tenant-wide pages cannot call actions without project context
-    // Project-scoped pages would pass projectId here
-    const { error } = await createRFI({ ...form, projectId: '' })
+    const { error } = await createRFI(form)
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'RFI raised', variant: 'success' })
     onCreated(); onClose()
-    setForm({ title: '', discipline: 'Civil', description: '' })
+    setForm({ title: '', discipline: 'Civil', description: '', projectId: '' })
   }
   if (!open) return null
   return (
@@ -142,6 +140,14 @@ function NewRFIModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-foreground">New RFI</h2>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Project *</label>
+          <select value={form.projectId} onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
+            className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="">Select a project...</option>
+            {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+          </select>
         </div>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">Subject *</label>
@@ -161,14 +167,14 @@ function NewRFIModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
         </div>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button type="submit" size="sm" disabled={loading}>{loading && <Loader2 className="size-3.5 animate-spin" />} Raise RFI</Button>
+          <Button type="submit" size="sm" disabled={loading || !form.projectId}>{loading && <Loader2 className="size-3.5 animate-spin" />} Raise RFI</Button>
         </div>
       </form>
     </div>
   )
 }
 
-function RFITab({ rfis, loading, onChanged }: { rfis: RFIRecord[]; loading: boolean; onChanged: () => void }) {
+function RFITab({ rfis, loading, onChanged, projects }: { rfis: RFIRecord[]; loading: boolean; onChanged: () => void; projects: any[] }) {
   const { toast } = useToast()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(false)
@@ -183,7 +189,7 @@ function RFITab({ rfis, loading, onChanged }: { rfis: RFIRecord[]; loading: bool
 
   return (
     <div className="space-y-4">
-      <NewRFIModal open={modal} onClose={() => setModal(false)} onCreated={onChanged} />
+      <NewRFIModal open={modal} onClose={() => setModal(false)} onCreated={onChanged} projects={projects} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1 min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -280,7 +286,7 @@ export type EngineeringTab = 'drawings' | 'rfis' | 'packages'
 export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: EngineeringTab }) {
   const { toast } = useToast()
   const { data, isLoading, mutate } = useSWR('engineering-dashboard', loadEngineeringDashboard, { revalidateOnFocus: true })
-  const { data: projects } = useSWR('projects-for-transmittals', () => getProjects())
+  const { data: projects = [] } = useSWR('projects-for-cockpit-rfi', () => getProjects())
   const transmittalsHref = projects && projects.length > 0 ? `/projects/${projects[0].id}/transmittals` : null
   const drawings = data?.drawings ?? []
   const rfis = data?.rfis ?? []
@@ -339,7 +345,7 @@ export function EngineeringCockpit({ initialTab = 'drawings' }: { initialTab?: E
           <TabsTrigger value="packages" className="gap-1.5"><Layers size={13} /> IFC Packages</TabsTrigger>
         </TabsList>
         <TabsContent value="drawings" className="mt-4"><DrawingsTab drawings={drawings} loading={isLoading} /></TabsContent>
-        <TabsContent value="rfis" className="mt-4"><RFITab rfis={rfis} loading={isLoading} onChanged={() => mutate()} /></TabsContent>
+        <TabsContent value="rfis" className="mt-4"><RFITab rfis={rfis} loading={isLoading} onChanged={() => mutate()} projects={projects} /></TabsContent>
         <TabsContent value="packages" className="mt-4"><PackagesTab packages={packages} loading={isLoading} /></TabsContent>
       </Tabs>
     </div>
