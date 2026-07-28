@@ -10,7 +10,7 @@
  * on the PO record for audit trail purposes.
  */
 
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '../lib/supabase/admin'
 
 interface Args {
   po: string
