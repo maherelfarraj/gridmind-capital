@@ -21,11 +21,27 @@ export async function GET(request: NextRequest) {
   const token = searchParams.get('token')
   const type = searchParams.get('type') as EmailOtpType | null
 
+  // Extract next from direct param OR from redirect_to URL param (magic links encode it)
+  let nextValue = searchParams.get('next') ?? '/dashboard'
+  
+  if (nextValue === '/dashboard') {
+    // Supabase magic links encode next into the redirect_to parameter
+    const redirectTo = searchParams.get('redirect_to')
+    if (redirectTo) {
+      try {
+        const redirectUrl = new URL(redirectTo)
+        const nextParam = redirectUrl.searchParams.get('next')
+        if (nextParam) nextValue = nextParam
+      } catch {
+        // Not a valid URL, ignore
+      }
+    }
+  }
+  
   // Only allow same-origin relative paths, so `next` can't be used as an
   // open-redirect into an attacker-controlled host.
-  const requestedNext = searchParams.get('next') ?? '/dashboard'
-  const next = requestedNext.startsWith('/') && !requestedNext.startsWith('//')
-    ? requestedNext
+  const next = nextValue.startsWith('/') && !nextValue.startsWith('//')
+    ? nextValue
     : '/dashboard'
 
   const supabase = await createClient()
