@@ -6,6 +6,7 @@ import { sendEscalationEmail } from '@/lib/email/send'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -145,7 +146,7 @@ async function getActor(): Promise<Actor> {
 
 const WRITER_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'finance_manager']
 function canWrite(role: string | null): boolean {
-  return role == null || WRITER_ROLES.includes(role)
+  return role !== null && WRITER_ROLES.includes(role)
 }
 
 // PM + Financial cohorts; Legal cohort added at escalation level 3+

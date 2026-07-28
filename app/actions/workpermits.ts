@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { maybeCreatePermitSafetyInsight } from '@/app/actions/ai-insights'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -100,7 +101,7 @@ function canWrite(role: string | null): boolean {
 /** Roles permitted to formally issue a permit to work. */
 const ISSUER_ROLES = ['hse_manager', 'system_admin', 'tenant_admin', 'project_manager']
 function canIssue(role: string | null): boolean {
-  return role == null || ISSUER_ROLES.includes(role) // null (dev/unauthed) treated as issuer for demo
+  return role !== null && ISSUER_ROLES.includes(role)
 }
 
 /** Types that must never be simultaneously active in the same location. */
