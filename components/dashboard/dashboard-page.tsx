@@ -82,35 +82,7 @@ export interface DashboardPageProps {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Mock data — spec-exact 5 projects
-// ─────────────────────────────────────────────────────────────
-
-const MOCK_STATS: DashboardStats = {
-  totalProjects: 12,
-  activeProjects: 8,
-  pendingApprovals: 5,
-  overdueApprovals: 2,
-  totalProjectsTrend: '+2 this month',
-  activeProjectsTrend: '3 nearing COD',
-  pendingApprovalsTrend: '2 urgent (<24h)',
-  overdueApprovalsTrend: 'Escalated to CEO',
-}
-
-const MOCK_PROJECTS: DashboardProject[] = [
-  { id: '1', code: 'SOL-2026-001', name: 'Al Dhafra Solar PV - Phase 1',        phase: 'engineering',  gate: 2, gateName: 'G2', budgetM: 1200,  budget_amount: 1_200_000_000, currency: 'USD', status: 'active',   client: 'EWEC',    targetCod: 'Jun 2028', target_cod: '2028-06-30' },
-  { id: '2', code: 'WND-2026-002', name: 'Dogger Bank Wind Farm - Phase A',     phase: 'procurement',  gate: 3, gateName: 'G3', budgetM: 850,   budget_amount:   850_000_000, currency: 'USD', status: 'active',   client: 'Equinor', targetCod: 'Dec 2029', target_cod: '2029-12-31' },
-  { id: '3', code: 'HYD-2026-003', name: 'Grand Inga Hydroelectric - Phase 1',  phase: 'intake',       gate: 0, gateName: 'G0', budgetM: 14000, budget_amount: 14_000_000_000, currency: 'USD', status: 'active',   client: 'AfDB',    targetCod: 'Jun 2032', target_cod: '2032-06-30' },
-  { id: '4', code: 'SOL-2026-004', name: 'Noor Ouarzazate IV',                  phase: 'construction', gate: 4, gateName: 'G4', budgetM: 500,   budget_amount:   500_000_000, currency: 'USD', status: 'active',   client: 'MASEN',   targetCod: 'Mar 2027', target_cod: '2027-03-15' },
-  { id: '5', code: 'WND-2026-005', name: 'Hornsea Project Four',                phase: 'commercial',   gate: 1, gateName: 'G1', budgetM: 2100,  budget_amount: 2_100_000_000, currency: 'USD', status: 'on-hold',  client: 'Orsted',  targetCod: 'Sep 2030', target_cod: '2030-09-30' },
-]
-
-const MOCK_APPROVALS: ApprovalItem[] = [
-  { id: 'a1', type: 'gate-review',     title: 'G5 Gate Review Convene',        projectCode: 'SRS-400', projectName: 'Sirius 400MW',   requestedBy: 'J. Rivera',   daysOpen: 8, isOverdue: true,  priority: 'critical' },
-  { id: 'a2', type: 'budget-variance', title: '+$12.4M Cost Variance Request', projectCode: 'NOV-600', projectName: 'Nova Offshore',  requestedBy: 'T. Müller',   daysOpen: 5, isOverdue: true,  priority: 'high'     },
-  { id: 'a3', type: 'change-order',    title: 'CO-041 Inverter Substitution',  projectCode: 'ATL-300', projectName: 'Atlas Solar',    requestedBy: 'M. Al-Farsi', daysOpen: 3, isOverdue: false, priority: 'high'     },
-  { id: 'a4', type: 'contract',        title: 'EPC Sub-contract Award',        projectCode: 'SOL-500', projectName: 'Sol Atacama',    requestedBy: 'R. Chen',     daysOpen: 2, isOverdue: false, priority: 'medium'   },
-  { id: 'a5', type: 'hse-incident',    title: 'Near-Miss Report #NM-22',       projectCode: 'CRS-150', projectName: 'Ceres Wind',     requestedBy: 'L. Schmidt',  daysOpen: 1, isOverdue: false, priority: 'medium'   },
-]
+// Real data sourced from props or SWR — no mock fallbacks in production render paths
 
 // ─────────────────────────────────────────────────────────────
 // Phase / status maps
@@ -483,15 +455,15 @@ function toApprovalRecord(item: ApprovalItem): ApprovalRecord {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────��──────────────────────────
 // Main DashboardPage
 // ──────────────────────────────────────────────────────────��──
 
 export function DashboardPage({
-  userName = 'Alex Carter',
-  stats = MOCK_STATS,
-  projects = MOCK_PROJECTS,
-  approvals = MOCK_APPROVALS,
+  userName = 'User',
+  stats,
+  projects = [],
+  approvals = [],
   loading = false,
   error = null,
   onRetry,
@@ -501,6 +473,8 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const pendingApprovals = React.useMemo(() => approvals.map(toApprovalRecord), [approvals])
   const firstName = userName.split(' ')[0]
+  const hasProjects = projects && projects.length > 0
+  const safeStats: DashboardStats = stats || { totalProjects: 0, activeProjects: 0, pendingApprovals: 0, overdueApprovals: 0 }
   // Defer date to client-only to avoid SSR/client hydration mismatch
   const [today, setToday] = React.useState<string>('')
   React.useEffect(() => { setToday(formatDate(new Date())) }, [])
@@ -550,52 +524,63 @@ export function DashboardPage({
       >
         <StatCard
           label="Total Projects"
-          value={loading ? '—' : stats.totalProjects}
+          value={loading ? '—' : safeStats.totalProjects}
           icon={FolderKanban}
           iconBg="rgba(10,25,47,0.08)"
           iconColor="#0a192f"
-          trendText={stats.totalProjectsTrend ?? '+2 this month'}
+          trendText={safeStats.totalProjectsTrend ?? '+2 this month'}
           TrendIcon={TrendingUp}
           trendColor="text-green-600 dark:text-green-400"
           loading={loading}
         />
         <StatCard
           label="Active Projects"
-          value={loading ? '—' : stats.activeProjects}
+          value={loading ? '—' : safeStats.activeProjects}
           icon={Zap}
           iconBg="rgba(16,185,129,0.10)"
           iconColor="#10b981"
-          trendText={stats.activeProjectsTrend ?? '3 nearing COD'}
+          trendText={safeStats.activeProjectsTrend ?? '3 nearing COD'}
           TrendIcon={AlertCircle}
           trendColor="text-amber-600 dark:text-amber-400"
           loading={loading}
         />
         <StatCard
           label="Pending Approvals"
-          value={loading ? '—' : stats.pendingApprovals}
+          value={loading ? '—' : safeStats.pendingApprovals}
           icon={ClipboardCheck}
           iconBg="rgba(245,158,11,0.10)"
           iconColor="#f59e0b"
-          trendText={stats.pendingApprovalsTrend ?? '2 urgent (<24h)'}
+          trendText={safeStats.pendingApprovalsTrend ?? '2 urgent (<24h)'}
           TrendIcon={Flame}
-          trendColor="text-red-600 dark:text-red-400"
-          trendPulse
+          trendColor="text-orange-600 dark:text-orange-400"
           loading={loading}
-          alert={stats.pendingApprovals > 0 && stats.overdueApprovals > 0}
         />
         <StatCard
           label="Overdue Approvals"
-          value={loading ? '—' : stats.overdueApprovals}
+          value={loading ? '—' : safeStats.overdueApprovals}
           icon={AlertTriangle}
           iconBg="rgba(239,68,68,0.10)"
           iconColor="#ef4444"
-          trendText={stats.overdueApprovalsTrend ?? 'Escalated to CEO'}
+          trendText={safeStats.overdueApprovalsTrend ?? 'Escalated to CEO'}
           TrendIcon={ArrowUpCircle}
           trendColor="text-pink-600 dark:text-pink-400"
           loading={loading}
-          alert={stats.overdueApprovals > 0}
+          alert={safeStats.overdueApprovals > 0}
         />
       </section>
+
+      {/* ── Empty state: no projects ── */}
+      {!loading && !hasProjects && !error && (
+        <section className="rounded-xl border border-slate-200 dark:border-border bg-white dark:bg-card p-12 text-center">
+          <Briefcase className="size-16 text-muted-foreground/30 mx-auto mb-4" aria-hidden />
+          <h2 className="text-lg font-semibold text-foreground mb-2">No projects yet</h2>
+          <p className="text-sm text-muted-foreground mb-4">Create your first project to get started</p>
+          <Button onClick={onNewProject} className="bg-[#0a192f] hover:bg-slate-800 text-white">
+            <Plus className="size-4 mr-2" aria-hidden />
+            Create Project
+          </Button>
+        </section>
+      )}
 
       {/* ── 2/3 + 1/3 grid ── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -616,7 +601,7 @@ export function DashboardPage({
             <Clock className="size-5 text-slate-500 dark:text-muted-foreground shrink-0" aria-hidden="true" />
             <h2 className="flex-1 text-lg font-semibold text-slate-900 dark:text-foreground">Pending Approvals</h2>
             <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
-              {loading ? '—' : stats.pendingApprovals}
+              {loading ? '—' : safeStats.pendingApprovals}
             </span>
           </div>
           {/* Inbox (filter hidden in compact mode) */}

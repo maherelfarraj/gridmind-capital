@@ -65,73 +65,7 @@ const now = new Date()
 const h = (hours: number) => new Date(now.getTime() + hours * 3_600_000).toISOString()
 const ago = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString()
 
-export const MOCK_APPROVAL_INBOX: ApprovalRecord[] = [
-  {
-    id: 'ai-1',
-    object_type: 'Purchase Order',
-    object_code: 'PO-2026-001',
-    status: 'pending',
-    level: 1,
-    approver_role: 'Project Manager',
-    requested_by_name: 'Sarah Chen',
-    due_date: h(2),                // due in 2h — URGENT
-    created_at: ago(4),
-    decided_at: null,
-    decision_reason: null,
-  },
-  {
-    id: 'ai-2',
-    object_type: 'Project',
-    object_code: 'PRJ-2026-002',
-    status: 'under_review',
-    level: 2,
-    approver_role: 'Executive Sponsor',
-    requested_by_name: 'Mike Ross',
-    due_date: h(28),               // due tomorrow
-    created_at: ago(20),
-    decided_at: null,
-    decision_reason: null,
-  },
-  {
-    id: 'ai-3',
-    object_type: 'Engineering Package',
-    object_code: 'ENG-2026-003',
-    status: 'approved',
-    level: 1,
-    approver_role: 'Engineering Manager',
-    requested_by_name: 'Lisa Wang',
-    due_date: null,
-    created_at: ago(72),
-    decided_at: ago(48),
-    decision_reason: 'All deliverables met. Signed off.',
-  },
-  {
-    id: 'ai-4',
-    object_type: 'Purchase Order',
-    object_code: 'PO-2026-004',
-    status: 'escalated',
-    level: 2,
-    approver_role: 'PMO Director',
-    requested_by_name: 'Tom Baker',
-    due_date: h(6),
-    created_at: ago(2),
-    decided_at: null,
-    decision_reason: null,
-  },
-  {
-    id: 'ai-5',
-    object_type: 'Project',
-    object_code: 'PRJ-2026-005',
-    status: 'changes_requested',
-    level: 1,
-    approver_role: 'Project Manager',
-    requested_by_name: 'Sarah Chen',
-    due_date: h(72),               // due in 3 days
-    created_at: ago(24),
-    decided_at: ago(6),
-    decision_reason: 'Budget justification required.',
-  },
-]
+// Real approval records sourced from database — no mock fixtures in render paths
 
 // ─────────────────────────────────────────────────────────────
 // Status meta
@@ -415,7 +349,7 @@ const ApprovalItemCard = React.memo(function ApprovalItemCard({
 
 // ─────────────────────────────────────────────────────────────
 // Filter tab
-// ─────────────────────────────���───────────────────────────────
+// ─────────────────────────────�����───────────────────────────────
 
 interface FilterTabProps {
   label: string
