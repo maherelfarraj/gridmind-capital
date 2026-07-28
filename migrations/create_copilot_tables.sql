@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS copilot_conversations (
   CONSTRAINT check_user_id CHECK (user_id IS NOT NULL)
 );
 
-CREATE INDEX idx_copilot_conversations_tenant_id ON copilot_conversations(tenant_id);
-CREATE INDEX idx_copilot_conversations_user_id ON copilot_conversations(user_id);
-CREATE INDEX idx_copilot_conversations_created_at ON copilot_conversations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_copilot_conversations_tenant_id ON copilot_conversations(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_conversations_user_id ON copilot_conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_conversations_created_at ON copilot_conversations(created_at DESC);
 
 -- copilot_messages table
 CREATE TABLE IF NOT EXISTS copilot_messages (
@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS copilot_messages (
   CONSTRAINT check_content CHECK (content IS NOT NULL)
 );
 
-CREATE INDEX idx_copilot_messages_conversation_id ON copilot_messages(conversation_id);
-CREATE INDEX idx_copilot_messages_created_at ON copilot_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_copilot_messages_conversation_id ON copilot_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_messages_created_at ON copilot_messages(created_at DESC);
 
 -- Enable RLS
 ALTER TABLE copilot_conversations ENABLE ROW LEVEL SECURITY;
@@ -43,16 +43,19 @@ ALTER TABLE copilot_messages ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies for copilot_conversations
 -- Users can only access their own conversations within their tenant
+DROP POLICY IF EXISTS copilot_conversations_tenant_isolation ON copilot_conversations;
 CREATE POLICY copilot_conversations_tenant_isolation ON copilot_conversations
   USING (tenant_id = auth.uid()::text::uuid)
   WITH CHECK (tenant_id = auth.uid()::text::uuid);
 
+DROP POLICY IF EXISTS copilot_conversations_user_access ON copilot_conversations;
 CREATE POLICY copilot_conversations_user_access ON copilot_conversations
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
 -- RLS policies for copilot_messages
 -- Users can access messages in their own conversations
+DROP POLICY IF EXISTS copilot_messages_access ON copilot_messages;
 CREATE POLICY copilot_messages_access ON copilot_messages
   USING (
     conversation_id IN (
@@ -69,10 +72,12 @@ CREATE POLICY copilot_messages_access ON copilot_messages
 
 -- Admin role policies (access all tenant conversations/messages)
 -- Note: Admins bypassed via auth.jwt()->>'role' = 'admin' or context override
+DROP POLICY IF EXISTS copilot_conversations_admin ON copilot_conversations;
 CREATE POLICY copilot_conversations_admin ON copilot_conversations
   USING (tenant_id = current_setting('app.tenant_id')::uuid)
   WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
 
+DROP POLICY IF EXISTS copilot_messages_admin ON copilot_messages;
 CREATE POLICY copilot_messages_admin ON copilot_messages
   USING (
     conversation_id IN (
@@ -108,9 +113,9 @@ CREATE TABLE IF NOT EXISTS copilot_audit_trail (
   CONSTRAINT check_audit_feedback CHECK (feedback_value IN (-1, 0, 1, NULL))
 );
 
-CREATE INDEX idx_copilot_audit_tenant ON copilot_audit_trail(tenant_id);
-CREATE INDEX idx_copilot_audit_user ON copilot_audit_trail(user_id);
-CREATE INDEX idx_copilot_audit_created ON copilot_audit_trail(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_copilot_audit_tenant ON copilot_audit_trail(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_audit_user ON copilot_audit_trail(user_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_audit_created ON copilot_audit_trail(created_at DESC);
 
 -- copilot_tenant_budget: Track tenant-level token quotas
 CREATE TABLE IF NOT EXISTS copilot_tenant_budget (
@@ -126,22 +131,25 @@ CREATE TABLE IF NOT EXISTS copilot_tenant_budget (
   CONSTRAINT check_current_positive CHECK (current_month_tokens >= 0)
 );
 
-CREATE INDEX idx_copilot_budget_tenant ON copilot_tenant_budget(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_budget_tenant ON copilot_tenant_budget(tenant_id);
 
 -- Enable RLS on audit tables
 ALTER TABLE copilot_audit_trail ENABLE ROW LEVEL SECURITY;
 ALTER TABLE copilot_tenant_budget ENABLE ROW LEVEL SECURITY;
 
 -- RLS for audit trail (viewers can see their own, admins see all)
+DROP POLICY IF EXISTS copilot_audit_viewer ON copilot_audit_trail;
 CREATE POLICY copilot_audit_viewer ON copilot_audit_trail
   USING (user_id = auth.uid())
   WITH CHECK (false); -- Read-only
 
+DROP POLICY IF EXISTS copilot_audit_admin ON copilot_audit_trail;
 CREATE POLICY copilot_audit_admin ON copilot_audit_trail
   USING (tenant_id = current_setting('app.tenant_id')::uuid)
   WITH CHECK (false); -- Admin read-only
 
 -- RLS for budget (admin only, read-only via application layer)
+DROP POLICY IF EXISTS copilot_budget_admin ON copilot_tenant_budget;
 CREATE POLICY copilot_budget_admin ON copilot_tenant_budget
   USING (tenant_id = current_setting('app.tenant_id')::uuid)
   WITH CHECK (false); -- Read-only via application

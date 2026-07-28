@@ -15,19 +15,21 @@ CREATE TABLE IF NOT EXISTS copilot_intent_log (
   CONSTRAINT check_intent_log_question CHECK (length(question) > 0)
 );
 
-CREATE INDEX idx_copilot_intent_tenant ON copilot_intent_log(tenant_id);
-CREATE INDEX idx_copilot_intent_user ON copilot_intent_log(user_id);
-CREATE INDEX idx_copilot_intent_created ON copilot_intent_log(created_at DESC);
-CREATE INDEX idx_copilot_intent_hit ON copilot_intent_log(was_catalog_hit);
+CREATE INDEX IF NOT EXISTS idx_copilot_intent_tenant ON copilot_intent_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_intent_user ON copilot_intent_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_copilot_intent_created ON copilot_intent_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_copilot_intent_hit ON copilot_intent_log(was_catalog_hit);
 
 -- Enable RLS
 ALTER TABLE copilot_intent_log ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies
+DROP POLICY IF EXISTS copilot_intent_log_viewer ON copilot_intent_log;
 CREATE POLICY copilot_intent_log_viewer ON copilot_intent_log
   USING (user_id = auth.uid())
   WITH CHECK (false); -- Read-only
 
+DROP POLICY IF EXISTS copilot_intent_log_admin ON copilot_intent_log;
 CREATE POLICY copilot_intent_log_admin ON copilot_intent_log
   USING (tenant_id = current_setting('app.tenant_id')::uuid)
   WITH CHECK (false); -- Admin read-only

@@ -239,17 +239,19 @@ export async function askCopilot(
           rows,
         }
 
-        // Log successful catalog hit
-        await supabase.from('copilot_intent_log').insert({
-          tenant_id: tenantId,
-          user_id: actor.userId,
-          conversation_id: conversationId,
-          question,
-          classified_intent: queryId,
-          matched_query_id: queryId,
-          was_catalog_hit: true,
-          fallback_prose_used: false,
-        }).catch(() => {}) // Ignore logging errors
+        // Log successful catalog hit (fire and forget)
+        void supabase
+          .from('copilot_intent_log')
+          .insert({
+            tenant_id: tenantId,
+            user_id: actor.userId,
+            conversation_id: conversationId,
+            question,
+            classified_intent: queryId,
+            matched_query_id: queryId,
+            was_catalog_hit: true,
+            fallback_prose_used: false,
+          })
 
         // Return table card response
         const assistantMsg = await supabase
@@ -370,12 +372,12 @@ ${contextStr || 'No relevant data found.'}
     console.error('[copilot] Failed to save assistant message:', assistantErr)
   }
 
-  // 7. Log the intent miss to improve catalog
+  // 7. Log the intent miss to improve catalog (fire and forget)
   if (!queryId) {
     const nearestQueries = getNearestQueries(question, 3)
     const suggestedQueryIds = nearestQueries.map((q) => q.id)
     
-    await supabase
+    void supabase
       .from('copilot_intent_log')
       .insert({
         tenant_id: tenantId,
@@ -388,7 +390,6 @@ ${contextStr || 'No relevant data found.'}
         fallback_prose_used: true,
         suggested_queries: suggestedQueryIds,
       })
-      .catch(() => {}) // Ignore logging errors
 
     // Enhance response with suggestions if we couldn't match
     if (nearestQueries.length > 0) {
