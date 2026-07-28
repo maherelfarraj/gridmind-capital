@@ -106,6 +106,7 @@ async function reinviteVendor(args: Args) {
       .maybeSingle()
 
     let userId: string
+    let userExists = false
     if (existingUser) {
       console.log(`   ✓ User already exists: ${existingUser.email}`)
       if (existingUser.role !== 'subcontractor') {
@@ -116,6 +117,7 @@ async function reinviteVendor(args: Args) {
           .eq('id', existingUser.id)
       }
       userId = existingUser.id
+      userExists = true
     } else {
       console.log(`   ℹ️  Creating new user invite...`)
       const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(
@@ -153,19 +155,27 @@ async function reinviteVendor(args: Args) {
 
     // Step 4: Generate invite link with hashed_token
     console.log(`\n4️⃣  Generating invite link...`)
-    const { data: linkData } = await supabase.auth.admin.generateLink({
-      type: 'invite',
+    // Use type='magiclink' for existing users, type='invite' for new users
+    const linkType = userExists ? 'magiclink' : 'invite'
+    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+      type: linkType,
       email: args.email,
       options: { redirectTo: `${args.siteUrl}/auth/callback?next=/portal` },
     })
+
+    if (linkError) {
+      console.log(`   ⚠️  Could not generate link: ${linkError.message}`)
+    }
 
     let inviteLink = ''
     if (linkData?.properties?.hashed_token) {
       // Build the invite link directly against the callback with token_hash
       inviteLink = `${args.siteUrl}/auth/callback` +
         `?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}` +
-        `&type=invite&next=/portal`
+        `&type=${linkType}&next=/portal`
       console.log(`   ✓ Magic link ready (for copy/share if email fails)`)
+    } else {
+      console.log(`   ⚠️  No hashed_token in response`)
     }
 
     // Step 5: Grant project access
