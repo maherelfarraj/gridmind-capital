@@ -3,7 +3,7 @@ import * as React from 'react'
 import { CheckCircle2, Circle, Clock, ChevronDown, ChevronUp, Plus, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { MOCK_DELIVERABLES, DELIVERABLE_STATUS_META } from './data'
+import { DELIVERABLE_STATUS_META } from './data'
 import type { DeliverableStatus, CharterDeliverable } from './types'
 
 const STATUS_ORDER: DeliverableStatus[] = ['not_started', 'in_progress', 'complete', 'approved']
@@ -12,7 +12,7 @@ export function DeliverablesTab({ liveData }: { liveData?: CharterDeliverable[] 
   const [filter, setFilter] = React.useState<DeliverableStatus | 'all'>('all')
   const [expanded, setExpanded] = React.useState<string | null>(null)
 
-  const deliverables = liveData ?? MOCK_DELIVERABLES
+  const deliverables = liveData ?? []
 
   const filtered = deliverables.filter((d) => filter === 'all' || d.status === filter)
   const total     = deliverables.length

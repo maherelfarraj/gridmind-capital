@@ -2,7 +2,7 @@
 import * as React from 'react'
 import { CheckCircle2, Circle, Clock, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_MILESTONES, MILESTONE_META } from './data'
+import { MILESTONE_META } from './data'
 import type { G0LiveMilestone } from '@/app/actions/gate-submissions'
 import type { InitiationMilestone } from './types'
 
@@ -31,9 +31,9 @@ function milestoneMeta(status: string | null | undefined) {
 }
 
 export function MilestonesTab({ liveData }: { liveData?: G0LiveMilestone[] }) {
-  const milestones: InitiationMilestone[] = liveData === undefined
-    ? MOCK_MILESTONES
-    : liveData.map((m) => ({ ...m } as InitiationMilestone))
+  const milestones: InitiationMilestone[] = liveData
+    ? liveData.map((m) => ({ ...m } as InitiationMilestone))
+    : []
 
   if (liveData !== undefined && liveData.length === 0) {
     return (

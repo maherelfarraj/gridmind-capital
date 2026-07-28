@@ -2,7 +2,7 @@
 import * as React from 'react'
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts'
 import { cn } from '@/lib/utils'
-import { MOCK_RISKS, RISK_META } from './data'
+import { RISK_META } from './data'
 import type { RiskLevel, InitiationRisk } from './types'
 import type { G0LiveRisk } from '@/app/actions/gate-submissions'
 
@@ -23,8 +23,7 @@ function riskMeta(level: string | null | undefined) {
 export function RisksTab({ liveData }: { liveData?: G0LiveRisk[] }) {
   const [selectedLevel, setSelectedLevel] = React.useState<RiskLevel | 'all'>('all')
 
-  const risks: InitiationRisk[] = liveData === undefined
-    ? MOCK_RISKS
+  const risks: InitiationRisk[] = liveData
     // Index-based fallback id, not Math.random(): a random id is regenerated on
     // every render, so React would treat each row as new and remount it (losing
     // focus and selection), and SSR/client would disagree during hydration.
