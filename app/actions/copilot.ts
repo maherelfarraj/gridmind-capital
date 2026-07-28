@@ -7,10 +7,7 @@ import { getCurrentTenantId } from '@/lib/tenant'
 import { getDashboardStats, getActiveGates } from '@/app/actions/dashboard'
 import { loadRisksDashboard } from '@/app/actions/risks'
 import { getProjectGateState } from '@/app/actions/phase-gates'
-import { type CatalogRow } from '@/lib/copilot/query-catalog'
 import {
-  matchQueryIntent,
-  getCatalogQueryById,
   getNearestQueries,
 } from '@/lib/copilot/query-catalog-helpers'
 
@@ -28,7 +25,7 @@ export interface CopilotMessage {
     title: string
     summary: string
     columns: any[]
-    rows: CatalogRow[]
+    rows: Record<string, any>[]
   }
   createdAt: string
 }
@@ -143,7 +140,7 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; messa
 
   if (error) {
     console.warn('[copilot] Rate limit check error:', error)
-    return { allowed: true } // Fail open on DB error
+    return { allowed: false, message: 'Rate limit check failed. Please try again.' } // Fail closed on DB error
   }
 
   const currentCount = count ?? 0
@@ -194,6 +191,21 @@ export async function getCopilotHistory(
     }
 
     finalConversationId = conversation.id
+  } else {
+    // IDOR fix: Verify conversation ownership before reading
+    const { data: conversation, error: convoErr } = await supabase
+      .from('copilot_conversations')
+      .select('user_id')
+      .eq('id', finalConversationId)
+      .single()
+
+    if (convoErr || !conversation) {
+      return { messages: [], error: 'Conversation not found' }
+    }
+
+    if (conversation.user_id !== actor.userId) {
+      return { messages: [], error: 'Access denied: this conversation does not belong to you' }
+    }
   }
 
   // 3. Fetch messages for this conversation
@@ -257,9 +269,40 @@ export async function askCopilot(
     }
   }
 
-  // 2.5. Create conversation server-side if not provided
+  // 2.5. IDOR check: If conversationId provided, verify ownership before writing
   let finalConversationId = conversationId
-  if (!finalConversationId) {
+  if (finalConversationId) {
+    const { data: conversation, error: convoCheckErr } = await adminClient
+      .from('copilot_conversations')
+      .select('user_id')
+      .eq('id', finalConversationId)
+      .single()
+
+    if (convoCheckErr || !conversation) {
+      return {
+        message: {
+          id: '',
+          role: 'assistant',
+          content: 'Conversation not found.',
+          createdAt: new Date().toISOString(),
+        },
+        error: 'CONVERSATION_NOT_FOUND',
+      }
+    }
+
+    if (conversation.user_id !== actor.userId) {
+      return {
+        message: {
+          id: '',
+          role: 'assistant',
+          content: 'Access denied.',
+          createdAt: new Date().toISOString(),
+        },
+        error: 'ACCESS_DENIED',
+      }
+    }
+  } else {
+    // Create conversation server-side if not provided
     const { data: newConvo, error: convoErr } = await adminClient
       .from('copilot_conversations')
       .insert({
@@ -285,7 +328,52 @@ export async function askCopilot(
     finalConversationId = newConvo.id
   }
 
-  // 3. Persist user message
+  // 2.6. Budget enforcement: Check monthly token limit BEFORE processing
+  const { data: budget, error: budgetErr } = await adminClient
+    .from('copilot_tenant_budget')
+    .select('current_month_tokens, monthly_token_limit')
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (budgetErr) {
+    // Fail closed on budget check error
+    return {
+      message: {
+        id: '',
+        role: 'assistant',
+        content: 'Budget check failed. Please try again.',
+        createdAt: new Date().toISOString(),
+      },
+      error: 'BUDGET_CHECK_FAILED',
+    }
+  }
+
+  if (budget && budget.monthly_token_limit && budget.current_month_tokens >= budget.monthly_token_limit) {
+    return {
+      message: {
+        id: '',
+        role: 'assistant',
+        content: 'Monthly token limit reached. Please try again next month.',
+        createdAt: new Date().toISOString(),
+      },
+      error: 'BUDGET_EXCEEDED',
+    }
+  }
+
+  // 3. Question length validation before LLM call
+  if (question.length > 2000) {
+    return {
+      message: {
+        id: '',
+        role: 'assistant',
+        content: 'Question too long. Please keep your question under 2000 characters.',
+        createdAt: new Date().toISOString(),
+      },
+      error: 'QUESTION_TOO_LONG',
+    }
+  }
+
+  // 4. Persist user message
   const { data: userMsg, error: msgErr } = await adminClient
     .from('copilot_messages')
     .insert({
@@ -309,75 +397,13 @@ export async function askCopilot(
     }
   }
 
-  // 4. First pass: Try to match against whitelisted catalog queries
-  const queryId = matchQueryIntent(question)
-  let tableCard: CopilotMessage['tableCard'] | undefined
+  // 4. CATALOG DISABLED: Route all questions to prose/LLM-with-context path
+  // The catalog query stubs (run: async () => []) return no data.
+  // All questions now use the prose/LLM-with-context path which demonstrably works.
+  // The queryId matching is kept for intent logging only (not for rendering table cards).
+  const queryId = undefined // catalog disabled; queries not matched
 
-  if (queryId) {
-    const catalogQuery = getCatalogQueryById(queryId)
-    if (catalogQuery) {
-      try {
-        const rows = await catalogQuery.run()
-        const summary = `${rows.length} result${rows.length !== 1 ? 's' : ''} found`
-        tableCard = {
-          title: catalogQuery.label,
-          summary,
-          columns: catalogQuery.columns,
-          rows,
-        }
-
-        // Log successful catalog hit (fire and forget)
-        void adminClient
-          .from('copilot_intent_log')
-          .insert({
-            tenant_id: tenantId,
-            user_id: actor.userId,
-            conversation_id: finalConversationId,
-            question,
-            classified_intent: queryId,
-            matched_query_id: queryId,
-            was_catalog_hit: true,
-            fallback_prose_used: false,
-          })
-
-        // Return table card response
-        const assistantMsg = await adminClient
-          .from('copilot_messages')
-          .insert({
-            conversation_id: finalConversationId,
-            role: 'assistant',
-            content: `Here are the ${catalogQuery.label.toLowerCase()} for you.`,
-            citations: [],
-            tableCard: {
-              title: catalogQuery.label,
-              summary,
-              columns: catalogQuery.columns,
-              rows,
-            },
-          })
-          .select()
-          .single()
-
-        if (assistantMsg.data) {
-          return {
-            message: {
-              id: assistantMsg.data.id,
-              role: 'assistant',
-              content: assistantMsg.data.content,
-              tableCard,
-              createdAt: new Date().toISOString(),
-            },
-            conversationId: finalConversationId,
-          }
-        }
-      } catch (error) {
-        console.error('[copilot] Catalog query error:', error)
-        // Fall through to prose response
-      }
-    }
-  }
-
-  // 5. Fallback: Assemble lightweight context from existing read actions for prose response
+  // 5. Assemble lightweight context from existing read actions for prose response
   const { items, tokenCount } = await assembleContext(question)
 
   // Cap context at 3,000 tokens
@@ -581,30 +607,45 @@ ${contextStr || 'No relevant data found.'}
     // Don't fail the response due to audit logging failure
   }
 
-  // 9. Update tenant budget
-  const { data: budget } = await adminClient
-    .from('copilot_tenant_budget')
-    .select('current_month_tokens, month_start_date')
-    .eq('tenant_id', tenantId)
-    .single()
+  // 9. Update tenant budget (atomic increment with month-based reset)
+  const now = new Date()
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const firstDayOfMonth = `${currentYearMonth}-01`
 
-  if (budget) {
-    const today = new Date().toISOString().split('T')[0]
-    if (budget.month_start_date !== today) {
-      // Reset monthly counter if it's a new month
-      await adminClient
-        .from('copilot_tenant_budget')
-        .update({
-          current_month_tokens: totalTokens,
-          month_start_date: today,
-        })
-        .eq('tenant_id', tenantId)
-    } else {
-      // Increment current month usage
-      await adminClient
-        .from('copilot_tenant_budget')
-        .update({ current_month_tokens: budget.current_month_tokens + totalTokens })
-        .eq('tenant_id', tenantId)
+  // Atomic update: reset if month changed, otherwise increment
+  const { error: budgetUpdateErr } = await adminClient
+    .rpc('increment_copilot_usage', {
+      p_tenant_id: tenantId,
+      p_tokens: totalTokens,
+      p_current_month: firstDayOfMonth,
+    })
+
+  if (budgetUpdateErr) {
+    // If RPC not available, fall back to conditional logic (still atomic within a transaction)
+    const { data: budgetNow } = await adminClient
+      .from('copilot_tenant_budget')
+      .select('current_month_tokens, month_start_date')
+      .eq('tenant_id', tenantId)
+      .single()
+
+    if (budgetNow) {
+      const budgetYearMonth = budgetNow.month_start_date?.substring(0, 7) || ''
+      if (budgetYearMonth !== currentYearMonth) {
+        // New month: reset to current usage
+        await adminClient
+          .from('copilot_tenant_budget')
+          .update({
+            current_month_tokens: totalTokens,
+            month_start_date: firstDayOfMonth,
+          })
+          .eq('tenant_id', tenantId)
+      } else {
+        // Same month: increment
+        await adminClient
+          .from('copilot_tenant_budget')
+          .update({ current_month_tokens: budgetNow.current_month_tokens + totalTokens })
+          .eq('tenant_id', tenantId)
+      }
     }
   }
 
