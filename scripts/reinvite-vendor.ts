@@ -137,9 +137,13 @@ async function reinviteVendor(args: Args) {
       userId = inviteData.user.id
       console.log(`   ✓ User created: ${userId.slice(0, 8)}...`)
 
-      // Ensure profile row exists
+      // Ensure profile row exists with tenant context
+      const { data: tenants } = await supabase.from('tenants').select('id').limit(1)
+      const tenantId = tenants?.[0]?.id
+
       await supabase.from('profiles').upsert({
         id: userId,
+        tenant_id: tenantId,
         email: args.email,
         full_name: args.vendor,
         role: 'subcontractor',
@@ -168,7 +172,11 @@ async function reinviteVendor(args: Args) {
       .maybeSingle()
 
     if (poWithProject?.project_id) {
+      const { data: tenants } = await supabase.from('tenants').select('id').limit(1)
+      const tenantId = tenants?.[0]?.id
+
       await supabase.from('external_access').upsert({
+        tenant_id: tenantId,
         user_id: userId,
         project_id: poWithProject.project_id,
         organization_name: args.vendor,
