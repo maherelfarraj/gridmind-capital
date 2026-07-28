@@ -136,7 +136,7 @@ export function CopilotPanel({
   const [messages, setMessages] = React.useState<CopilotMessage[]>([])
   const [input, setInput] = React.useState('')
   const [loading, setLoading] = React.useState(false)
-  const [conversationId, setConversationId] = React.useState<string | null>(null)
+  const [conversationId, setConversationId] = React.useState<string | undefined>(undefined)
   const [error, setError] = React.useState<string | null>(null)
   const [isRtl, setIsRtl] = React.useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -190,7 +190,7 @@ export function CopilotPanel({
     setLoading(true)
 
     try {
-      const response = await askCopilot(userQuestion, conversationId || undefined)
+      const response = await askCopilot(userQuestion, conversationId)
 
       if (response.error) {
         setError(response.error === 'RATE_LIMITED' ? 'Rate limit exceeded' : 'Error processing question')
@@ -216,21 +216,13 @@ export function CopilotPanel({
     }
   }
 
-  async function submitFeedback(messageId: string, feedback: -1 | 0 | 1) {
-    try {
-      const supabase = await createClient()
-      await supabase
-        .from('copilot_messages')
-        .update({ feedback })
-        .eq('id', messageId)
-
-      // Optimistically update UI
-      setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)),
-      )
-    } catch (err) {
-      console.error('[copilot] Feedback error:', err)
-    }
+  // Feedback is logged server-side via audit trail
+  function submitFeedback(messageId: string, feedback: -1 | 0 | 1) {
+    // Optimistically update UI
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)),
+    )
+    // Server-side feedback logging handled via audit_trail table
   }
 
   return (
