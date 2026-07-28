@@ -2,7 +2,15 @@
 
 import * as React from 'react'
 import { ChevronDown, Download, ExternalLink } from 'lucide-react'
-import type { CatalogColumn, CatalogRow } from '@/lib/copilot/query-catalog'
+import type { CatalogRow } from '@/lib/copilot/query-catalog'
+
+type CatalogColumn = {
+  header: string
+  key: string | ((row: CatalogRow) => unknown)
+  type?: 'text' | 'number' | 'date' | 'currency' | 'boolean'
+  sortable?: boolean
+  align?: 'left' | 'center' | 'right'
+}
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
