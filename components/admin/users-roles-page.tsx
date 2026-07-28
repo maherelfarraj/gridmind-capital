@@ -66,22 +66,7 @@ const ROLE_META = DB_ROLE_META
 
 const roleMeta = dbRoleMeta
 
-/* ─────────────────────────────────────────────
-   MOCK DATA — spec-exact 10 rows
-───────────────────────────────────────────── */
-
-const MOCK_USERS: UserProfile[] = [
-  { id: 'u01', name: 'John Doe',      email: 'admin@gridmind.capital',   role: 'system_admin',          department: 'Engineering',   status: 'active',   lastActive: 'Just now',     joinedAt: '2023-01-10' },
-  { id: 'u02', name: 'Sarah Chen',    email: 'sarah@gridmind.capital',   role: 'project_manager',       department: 'Operations',    status: 'active',   lastActive: '2 hours ago',  joinedAt: '2023-03-15' },
-  { id: 'u03', name: 'Mike Ross',     email: 'mike@gridmind.capital',    role: 'engineer',              department: 'Engineering',   status: 'active',   lastActive: 'Yesterday',    joinedAt: '2023-04-20' },
-  { id: 'u04', name: 'Lisa Wang',     email: 'lisa@gridmind.capital',    role: 'project_director',      department: 'Management',    status: 'active',   lastActive: '3 days ago',   joinedAt: '2023-02-08' },
-  { id: 'u05', name: 'Tom Baker',     email: 'tom@gridmind.capital',     role: 'tenant_admin',          department: 'Field Ops',     status: 'active',   lastActive: '1 week ago',   joinedAt: '2023-05-11' },
-  { id: 'u06', name: 'Emma Davis',    email: 'emma@gridmind.capital',    role: 'finance_manager',       department: 'Finance',       status: 'active',   lastActive: '2 weeks ago',  joinedAt: '2023-06-01' },
-  { id: 'u07', name: 'Alex Kim',      email: 'alex@gridmind.capital',    role: 'commercial_manager',    department: 'Supply Chain',  status: 'inactive', lastActive: '1 month ago',  joinedAt: '2023-07-22' },
-  { id: 'u08', name: 'Rachel Green',  email: 'rachel@gridmind.capital',  role: 'hse_manager',           department: 'Safety',        status: 'active',   lastActive: '5 hours ago',  joinedAt: '2023-08-14' },
-  { id: 'u09', name: 'David Lee',     email: 'david@gridmind.capital',   role: 'commissioning_manager', department: 'Operations',    status: 'active',   lastActive: '1 day ago',    joinedAt: '2023-09-03' },
-  { id: 'u10', name: 'Guest User',    email: 'guest@gridmind.capital',   role: 'viewer',                department: '—',             status: 'inactive', lastActive: '3 months ago', joinedAt: '2023-10-30' },
-]
+/* Real user data sourced from SWR fetch or external props — no mock fallback */
 
 /* ─────────────────────────────────────────────
    HELPERS
@@ -914,8 +899,7 @@ export function UsersRolesPage({
   onDelete,
   isLoading: externalLoading = false,
 }: UsersRolesProps = {}) {
-  const [users, setUsers]           = React.useState<UserProfile[]>(externalUsers ?? MOCK_USERS)
-  const [loading, setLoading]       = React.useState(true)
+  const [users, setUsers]           = React.useState<UserProfile[]>([])
   const [modalOpen, setModalOpen]   = React.useState(false)
   const [search, setSearch]         = React.useState('')
   const [roleFilter, setRoleFilter] = React.useState('all')
@@ -928,14 +912,14 @@ export function UsersRolesPage({
 
   const { toast } = useToast()
 
-  /* Simulate load */
+  /* Sync external users data from SWR into local state */
   React.useEffect(() => {
-    setLoading(true)
-    const t = setTimeout(() => setLoading(false), 700)
-    return () => clearTimeout(t)
-  }, [])
+    if (externalUsers) {
+      setUsers(externalUsers)
+    }
+  }, [externalUsers])
 
-  const isBusy = loading || externalLoading
+  const isBusy = externalLoading
 
   /* ── Filter + sort ── */
   const filtered = React.useMemo(() => {

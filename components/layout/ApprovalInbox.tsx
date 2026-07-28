@@ -9,7 +9,6 @@
  */
 export {
   ApprovalInbox,
-  MOCK_APPROVAL_INBOX,
 } from '@/components/approvals/approval-inbox'
 
 export type {
