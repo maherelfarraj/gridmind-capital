@@ -21,6 +21,14 @@ export async function GET(request: NextRequest) {
   const token = searchParams.get('token')
   const type = searchParams.get('type') as EmailOtpType | null
 
+  // Debug logging
+  console.log('[v0] Auth callback params:', {
+    url: request.nextUrl.toString(),
+    next_param: searchParams.get('next'),
+    type,
+    tokenHash: tokenHash ? `${tokenHash.slice(0, 10)}...` : null,
+  })
+
   // Extract next from direct param OR from redirect_to URL param (magic links encode it)
   let nextValue = searchParams.get('next') ?? '/dashboard'
   
@@ -52,6 +60,7 @@ export async function GET(request: NextRequest) {
   if (session) {
     // Supabase already authenticated the user via /auth/v1/verify
     // Just redirect to next page
+    console.log('[v0] Session found, redirecting to:', next)
     return NextResponse.redirect(`${origin}${next}`)
   }
 

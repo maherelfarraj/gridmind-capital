@@ -152,7 +152,14 @@ export async function getPortalActor(): Promise<PortalActor | null> {
       .eq('id', user.id)
       .single()
 
-    if (!profile || profile.role !== 'subcontractor') return null
+    if (!profile || profile.role !== 'subcontractor') {
+      console.log('[v0] Portal access denied:', {
+        hasProfile: !!profile,
+        role: profile?.role,
+        userId: user.id,
+      })
+      return null
+    }
 
     const { data: grants } = await admin
       .from('external_access')
@@ -468,7 +475,7 @@ export async function getPortalFileUrl(storagePath: string): Promise<{ url: stri
 
 // ─────────────────────────────────────────────────────────────
 // Invoices
-// ─────────────────────────────────���──────────────────────────��
+// ─────────────────────────────────�����──────────────────────────��
 
 export async function getPortalInvoices(): Promise<PortalInvoice[]> {
   const actor = await getPortalActor()
