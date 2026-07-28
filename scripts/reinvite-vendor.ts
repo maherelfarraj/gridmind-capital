@@ -48,7 +48,7 @@ async function parseArgs(): Promise<Args> {
     vendor: args.vendor,
     email: args.email,
     oldEmail: args['old-email'],
-    siteUrl: args['site-url'] || 'https://gridmind.local',
+    siteUrl: args['site-url'] || 'https://www.gridmindepc.com',
   }
 }
 
