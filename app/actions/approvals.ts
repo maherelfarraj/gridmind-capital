@@ -716,6 +716,7 @@ export async function createApproval(opts: {
   const { data, error } = await supabase
     .from('approvals')
     .insert({
+      tenant_id:   tenantId,
       title:       opts.title,
       description: opts.description ?? null,
       object_type: opts.objectType ?? 'General',
