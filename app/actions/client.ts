@@ -22,6 +22,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 const DOC_BUCKET = 'documents'
 const REPORT_BUCKET = 'reports'
 
@@ -618,7 +619,7 @@ async function getInternalActor(): Promise<InternalActor> {
   }
 }
 const WRITE_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']
-const canManageAnnouncements = (role: string | null) => role == null || WRITE_ROLES.includes(role)
+const canManageAnnouncements = (role: string | null) => role !== null && WRITE_ROLES.includes(role)
 
 export async function listProjectAnnouncements(projectId: string): Promise<ClientAnnouncement[]> {
   const admin = createAdminClient()

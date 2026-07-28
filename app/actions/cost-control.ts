@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -91,7 +92,7 @@ async function getActor(): Promise<Actor> {
 
 const WRITER_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'finance_manager']
 function canWrite(role: string | null): boolean {
-  return role == null || WRITER_ROLES.includes(role) // null (dev/unauthed) treated as writer for demo
+  return role !== null && WRITER_ROLES.includes(role)
 }
 
 async function logEvent(admin: ReturnType<typeof createAdminClient>, args: {

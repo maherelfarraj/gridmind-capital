@@ -10,6 +10,7 @@ function svc() {
 }
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 export interface PortfolioProject {
   id: string
@@ -37,6 +38,12 @@ export interface PortfolioStats {
 }
 
 export async function getPortfolioStats(): Promise<PortfolioStats> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { totalActive: 0, atRisk: 0, pendingApprovals: 0, byGate: {}, projects: [] }
+  }
+
   const tenantId = await getCurrentTenantId()
   const supabase = svc()
 

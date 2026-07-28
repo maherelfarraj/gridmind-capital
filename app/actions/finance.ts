@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 const M = 1_000_000
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -58,6 +59,12 @@ function fmtDate(isoStr: string | null): string {
 // ─── Main loader ──────────────────────────────────────────────────────────────
 
 export async function getFinanceDashboard(projectId?: string): Promise<FinanceDashboard> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { wbs: [], commitments: [], seeded: false }
+  }
+
   const tenantId = await getCurrentTenantId()
   const sb = createAdminClient()
 

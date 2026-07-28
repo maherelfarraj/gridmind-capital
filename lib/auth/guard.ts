@@ -80,7 +80,14 @@ export async function requireRole(allowed: readonly string[]): Promise<GuardResu
 export async function requireWriter(): Promise<GuardResult> {
   const res = await getAuthActor()
   if ('error' in res) return res
-  if (res.actor.role === 'viewer') return { error: 'Not authorized' }
+  
+  // Only accept internal roles: system_admin, tenant_admin, staff, approver, project_director, project_manager
+  const INTERNAL_ROLES = ['system_admin', 'tenant_admin', 'staff', 'approver', 'project_director', 'project_manager']
+  
+  if (!res.actor.role || !INTERNAL_ROLES.includes(res.actor.role)) {
+    return { error: 'Not authorized: external roles cannot write' }
+  }
+  
   return res
 }
 

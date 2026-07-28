@@ -44,8 +44,7 @@ async function getActor(): Promise<Actor> {
     return { userId: null, role: null, fullName: null }
   }
 }
-// null role = dev/unauthed, treated as writer for the demo.
-const canWrite = (role: string | null) => role == null || WRITE_ROLES.includes(role)
+const canWrite = (role: string | null) => role !== null && WRITE_ROLES.includes(role)
 
 // ─── Client-safe snapshot ─────────────────────────────────────
 
