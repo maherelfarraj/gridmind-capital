@@ -127,7 +127,6 @@ export async function createOpportunity(data: {
     proj.id,
     data.code,
     data.budget_usd ?? null,
-    gate.actor.userId,
   )
 
   if (workflowResult.error) {

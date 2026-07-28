@@ -244,7 +244,6 @@ export async function createProject(payload: {
     data.id,
     payload.code,
     null, // Amount not available at wizard creation time
-    gate.actor.userId,
   )
   if (workflowResult.error) return { id: data.id, error: `Approval workflow failed: ${workflowResult.error}` }
 
@@ -413,7 +412,6 @@ export async function createProjectFull(
     // `!= null`, not truthiness: a real 0 budget is a stated amount and should
     // be threshold-matched, not treated as "no amount given".
     input.budget_usd != null ? Number(input.budget_usd) : null,
-    actor.userId,
   )
   if (workflowResult.error) return rollback(`G0 approval workflow failed: ${workflowResult.error}`)
 
@@ -1184,7 +1182,8 @@ export async function resetProjectToPhase(projectId: string, targetPhase: number
   const supabase = createAdminClient()
   
   // Verify admin access
-  await requireWriter()
+  const gate = await requireWriter()
+  if ('error' in gate) return { error: gate.error }
 
   // Update project to target phase
   const { error: updateError } = await supabase
