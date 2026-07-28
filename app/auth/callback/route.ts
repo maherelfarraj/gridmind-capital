@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl
   const code = searchParams.get('code')
   const tokenHash = searchParams.get('token_hash')
+  const token = searchParams.get('token')
   const type = searchParams.get('type') as EmailOtpType | null
 
   // Only allow same-origin relative paths, so `next` can't be used as an
@@ -29,8 +30,13 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient()
 
-  if (tokenHash && type) {
-    const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
+  // Handle email links: both token_hash (old format) and token (new Supabase format)
+  const tokenValue = tokenHash || token
+  if (tokenValue && type) {
+    const { error } = await supabase.auth.verifyOtp({ 
+      type, 
+      token_hash: tokenValue
+    })
     if (!error) return NextResponse.redirect(`${origin}${next}`)
     return NextResponse.redirect(
       `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
