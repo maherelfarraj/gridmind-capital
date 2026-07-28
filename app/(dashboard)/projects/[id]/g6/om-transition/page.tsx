@@ -16,14 +16,7 @@ import { HandoverChecklist } from '@/components/g7/handover-checklist'
 import { AssetRegistry }     from '@/components/g7/asset-registry'
 import { OmTransition }      from '@/components/g7/om-transition'
 import { NOT_SET_LABEL }     from '@/lib/format-nullable'
-import {
-  MOCK_MILESTONES,
-  MOCK_ASSETS,
-  MOCK_OM_PERSONNEL,
-  MOCK_MAINTENANCE,
-  MOCK_WARRANTIES,
-  MOCK_SLA,
-} from '@/components/g7/data'
+// Mock fixtures removed — handover/O&M transition data sourced from real records
 
 // ─── Closeout checklist types ─────────────────────────────────
 type CheckStatus = 'complete' | 'in-progress' | 'pending'
@@ -261,9 +254,9 @@ export default function G6OmTransitionPage() {
   const currentGate    = `G${project?.gate ?? 6}`
   const completedGates = Array.from({ length: Math.max(0, project?.gate ?? 6) }, (_, i) => `G${i}`)
 
-  const complete = MOCK_MILESTONES.filter(m => m.status === 'complete').length
-  const allDone  = complete === MOCK_MILESTONES.length
-  const pct      = Math.round((complete / MOCK_MILESTONES.length) * 100)
+  let complete = 0  // No handover milestones yet
+  let allDone = false
+  let pct = 0  // Will be 0–100 when data loads
 
   return (
     <div className="bg-slate-50 dark:bg-background min-h-screen">
@@ -349,20 +342,20 @@ export default function G6OmTransitionPage() {
 
         {/* Section 2: O&M Handover Checklist (full width) */}
         <div className="mb-6">
-          <HandoverChecklist milestones={MOCK_MILESTONES} />
+          <HandoverChecklist milestones={[]} />
         </div>
 
         {/* Sections 3 + 4: Asset Registry | O&M Transition details */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <div className="lg:col-span-3">
-            <AssetRegistry assets={MOCK_ASSETS} />
+            <AssetRegistry assets={[]} />
           </div>
           <div className="lg:col-span-2">
             <OmTransition
-              personnel={MOCK_OM_PERSONNEL}
-              maintenance={MOCK_MAINTENANCE}
-              warranties={MOCK_WARRANTIES}
-              sla={MOCK_SLA}
+              personnel={[]}
+              maintenance={[]}
+              warranties={[]}
+              sla={[]}
             />
           </div>
         </div>
