@@ -2,7 +2,7 @@
 import * as React from 'react'
 import { FileText, CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_CHARTER, getStatusMeta } from './data'
+import { getStatusMeta } from './data'
 import type { ProjectCharter } from './types'
 import type { G0FormData } from '@/app/actions/gate-submissions'
 
@@ -16,22 +16,21 @@ export function CharterTab({
    *  showing fabricated IRR/DSCR/PPA figures under the correct header. */
   charter?: Partial<ProjectCharter> | null
 }) {
-  // Merge real form data over the real charter, falling back to mock only when
-  // the page supplied nothing at all.
-  const base = { ...MOCK_CHARTER, ...(charter ?? {}) }
+  // Merge real form data over the real charter; no mock fallback
+  const base = charter ?? {}
   const c = formData ? {
     ...base,
-    project_code:        formData.opportunityCode  || base.project_code,
-    project_name:        formData.opportunityName  || base.project_name,
-    technology:          formData.technologyType   || formData.technology  || base.technology,
-    capacity_mw:         parseFloat(formData.estimatedCapacityMw || formData.capacityMwp || '') || base.capacity_mw,
-    location:            formData.siteLocation     || base.location,
-    country:             formData.hostCountry      || base.country,
-    client:              formData.clientName       || base.client,
-    sponsor:             formData.projectSponsor   || base.sponsor,
-    description:         formData.description      || base.description,
-    capex_estimate_usd:  parseFloat(formData.capexEstimateUsd || formData.budgetMax || '') || base.capex_estimate_usd,
-    target_irr_pct:      parseFloat(formData.targetIrrPct || formData.expectedIrr || '') || base.target_irr_pct,
+    project_code:        formData.opportunityCode  || base.project_code || '—',
+    project_name:        formData.opportunityName  || base.project_name || '—',
+    technology:          formData.technologyType   || formData.technology  || base.technology || '—',
+    capacity_mw:         parseFloat(formData.estimatedCapacityMw || formData.capacityMwp || '') || base.capacity_mw || 0,
+    location:            formData.siteLocation     || base.location || '—',
+    country:             formData.hostCountry      || base.country || '—',
+    client:              formData.clientName       || base.client || '—',
+    sponsor:             formData.projectSponsor   || base.sponsor || '—',
+    description:         formData.description      || base.description || '',
+    capex_estimate_usd:  parseFloat(formData.capexEstimateUsd || formData.budgetMax || '') || base.capex_estimate_usd || 0,
+    target_irr_pct:      parseFloat(formData.targetIrrPct || formData.expectedIrr || '') || base.target_irr_pct || 0,
   } : base
   const meta = getStatusMeta(c.status)
   const [showScope, setShowScope] = React.useState(true)
