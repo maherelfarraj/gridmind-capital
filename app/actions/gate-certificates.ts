@@ -6,6 +6,8 @@ import { revalidatePath } from 'next/cache'
 
 const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
+import { requireWriter } from '@/lib/auth/guard'
 
 export interface CertificateDeliverable {
   label: string
@@ -112,6 +114,15 @@ export async function attachCertificatePdf(opts: {
   projectId: string
   dataUrl: string
 }): Promise<{ url: string } | { error: string }> {
+  // Verify authenticated user with writer role
+  try {
+    await requireUser()
+    const writer = await requireWriter()
+    if ('error' in writer) return writer
+  } catch (e: any) {
+    return { error: e.message }
+  }
+
   const supabase = createAdminClient()
   const tenantId = await getCurrentTenantId()
 
@@ -145,6 +156,12 @@ export async function attachCertificatePdf(opts: {
 
 /** List issued certificates for a project (register), newest first. */
 export async function listGateCertificates(projectId: string): Promise<GateCertificate[]> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return []
+  }
+
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('gate_certificates')

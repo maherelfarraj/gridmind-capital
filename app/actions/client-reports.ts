@@ -23,6 +23,7 @@ import { logExport } from '@/app/actions/exports'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 import { numOrNull } from '@/lib/format-nullable'
+import { requireUser } from '@/lib/guards'
 const BUCKET = 'reports'
 const WRITE_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']
 
@@ -275,7 +276,25 @@ export async function issueClientReport(opts: {
 
 /** Short-lived signed URL to download an issued report's frozen PDF. */
 export async function getClientReportUrl(storagePath: string): Promise<{ url: string } | { error: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: 'Unauthorized' }
+  }
+
+  // Verify report belongs to caller's tenant
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
+  
+  const { data: report, error: reportErr } = await admin
+    .from('client_reports')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .ilike('storage_path', `%${storagePath}%`)
+    .single()
+  
+  if (reportErr || !report) return { error: 'Report not found or access denied' }
+
   const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(storagePath, 300)
   if (error || !data) return { error: error?.message ?? 'Could not create download link' }
   return { url: data.signedUrl }

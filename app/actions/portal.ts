@@ -3,8 +3,16 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-
 import { getCurrentTenantId } from '@/lib/tenant'
+
+/** Sanitize fileName: remove path separators, strip .., whitelist safe chars */
+function sanitizeFileName(fileName: string): string {
+  // Remove path separators and .. traversal
+  let safe = fileName.replace(/[/\\]+/g, '').replace(/\.\./g, '')
+  // Whitelist: alphanumeric, dots, underscores, hyphens
+  safe = safe.replace(/[^A-Za-z0-9._-]/g, '')
+  return safe || 'file'
+}
 const PORTAL_BUCKET = 'portal-uploads'
 
 // Internal roles notified about partner actions.
@@ -454,11 +462,15 @@ export async function createPortalUploadUrl(kind: 'invoices' | 'deliveries' | 'r
   Promise<{ uploadUrl: string; storagePath: string } | { error: string }> {
   const actor = await getPortalActor()
   if (!actor) return { error: 'Not authorized' }
+  
+  // Sanitize fileName
+  const sanitized = sanitizeFileName(fileName)
+  
   await ensurePortalBucket()
   const admin = createAdminClient()
 
   const orgSlug = (actor.organizationName || 'org').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  const storagePath = `${kind}/${orgSlug}/${Date.now()}-${fileName}`
+  const storagePath = `${kind}/${orgSlug}/${Date.now()}-${sanitized}`
   const { data, error } = await admin.storage.from(PORTAL_BUCKET).createSignedUploadUrl(storagePath)
   if (error || !data) return { error: error?.message ?? 'Could not create upload URL' }
   return { uploadUrl: data.signedUrl, storagePath }
@@ -467,15 +479,28 @@ export async function createPortalUploadUrl(kind: 'invoices' | 'deliveries' | 'r
 export async function getPortalFileUrl(storagePath: string): Promise<{ url: string } | { error: string }> {
   const actor = await getPortalActor()
   if (!actor) return { error: 'Not authorized' }
+  
+  // Verify path sits under actor's org slug AND references object in actor.projectIds
+  const orgSlug = (actor.organizationName || 'org').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  if (!storagePath.includes(`/${orgSlug}/`)) {
+    return { error: 'Cross-vendor access forbidden', }
+  }
+  
+  // Extract kind from path (invoices|deliveries|rfqs) and verify it's valid
+  const kindMatch = storagePath.match(/^(invoices|deliveries|rfqs)\//)
+  if (!kindMatch) {
+    return { error: 'Invalid document path' }
+  }
+  
   const admin = createAdminClient()
   const { data, error } = await admin.storage.from(PORTAL_BUCKET).createSignedUrl(storagePath, 300)
   if (error || !data) return { error: error?.message ?? 'Could not create download URL' }
   return { url: data.signedUrl }
 }
 
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────���───────────────
 // Invoices
-// ─────────────────────────────────�����──────────────────────────��
+// ─────────────────────────────────�����─────────────────��────────��
 
 export async function getPortalInvoices(): Promise<PortalInvoice[]> {
   const actor = await getPortalActor()

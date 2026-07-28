@@ -7,6 +7,29 @@ import { sendDocumentUploadEmail } from '@/lib/email/send'
 
 const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
+
+/** Sanitize fileName: remove path separators, strip .., whitelist safe chars */
+function sanitizeFileName(fileName: string): string {
+  // Remove path separators and .. traversal
+  let safe = fileName.replace(/[/\\]+/g, '').replace(/\.\./g, '')
+  // Whitelist: alphanumeric, dots, underscores, hyphens
+  safe = safe.replace(/[^A-Za-z0-9._-]/g, '')
+  return safe || 'file'
+}
+
+/** Validate file extension against allowlist */
+const ALLOWED_EXTENSIONS = new Set([
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'dwg', 'dgn', 'rvt', 'nwd', 'ipt', 'iam',
+  'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff',
+  'csv', 'txt', 'zip', 'rar', '7z',
+])
+
+function validateExtension(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
+  return ALLOWED_EXTENSIONS.has(ext)
+}
 
 export interface StoredDocument {
   id: string
@@ -58,14 +81,19 @@ export async function createUploadUrl(opts: {
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
+  // Sanitize and validate fileName
+  const sanitized = sanitizeFileName(opts.fileName)
+  if (!validateExtension(sanitized)) {
+    return { error: `File extension not allowed for: ${opts.fileName}` }
+  }
+
   await ensureStorageBucket()
   const supabase = createAdminClient()
 
-  const ext = opts.fileName.split('.').pop()?.toLowerCase() ?? 'bin'
   const stamp = Date.now()
   const storagePath = opts.projectCode
-    ? `${tenantId}/${opts.projectCode}/${stamp}-${opts.fileName}`
-    : `${tenantId}/general/${stamp}-${opts.fileName}`
+    ? `${tenantId}/${opts.projectCode}/${stamp}-${sanitized}`
+    : `${tenantId}/general/${stamp}-${sanitized}`
 
   const { data, error } = await supabase.storage
     .from(BUCKET)
@@ -134,7 +162,26 @@ export async function registerDocument(opts: {
 
 /** Get a short-lived signed download URL. */
 export async function getDownloadUrl(storagePath: string): Promise<{ url: string } | { error: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: 'Unauthorized' }
+  }
+
+  // Verify storagePath belongs to the caller's tenant
+  const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
+  
+  // Look up document_files to ensure it exists and belongs to this tenant
+  const { data: docFile, error: docErr } = await supabase
+    .from('document_files')
+    .select('id')
+    .eq('storage_path', storagePath)
+    .eq('tenant_id', tenantId)
+    .single()
+  
+  if (docErr || !docFile) return { error: 'Document not found or access denied' }
+
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(storagePath, 300) // 5-min TTL
@@ -145,6 +192,12 @@ export async function getDownloadUrl(storagePath: string): Promise<{ url: string
 
 /** List all documents for a tenant, optionally filtered by project. */
 export async function listDocuments(projectCode?: string): Promise<StoredDocument[]> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return []
+  }
+
   const tenantId = await getCurrentTenantId()
   const supabase = createAdminClient()
 
