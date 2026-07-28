@@ -16,24 +16,21 @@ export function CharterTab({
    *  showing fabricated IRR/DSCR/PPA figures under the correct header. */
   charter?: Partial<ProjectCharter> | null
 }) {
-  // Merge real form data over the real charter; no mock fallback
-  const base = charter ?? {}
-  const c = formData ? {
-    ...base,
-    project_code:        formData.opportunityCode  || base.project_code || '—',
-    project_name:        formData.opportunityName  || base.project_name || '—',
-    technology:          formData.technologyType   || formData.technology  || base.technology || '—',
-    capacity_mw:         parseFloat(formData.estimatedCapacityMw || formData.capacityMwp || '') || base.capacity_mw || 0,
-    location:            formData.siteLocation     || base.location || '—',
-    country:             formData.hostCountry      || base.country || '—',
-    client:              formData.clientName       || base.client || '—',
-    sponsor:             formData.projectSponsor   || base.sponsor || '—',
-    description:         formData.description      || base.description || '',
-    capex_estimate_usd:  parseFloat(formData.capexEstimateUsd || formData.budgetMax || '') || base.capex_estimate_usd || 0,
-    target_irr_pct:      parseFloat(formData.targetIrrPct || formData.expectedIrr || '') || base.target_irr_pct || 0,
-  } : base
-  const meta = getStatusMeta(c.status)
+  // Use real charter if available; show empty state
   const [showScope, setShowScope] = React.useState(true)
+
+  if (!charter) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <FileText className="size-16 text-muted-foreground/30 mb-4" aria-hidden />
+        <h2 className="text-lg font-semibold text-foreground mb-2">No charter data</h2>
+        <p className="text-sm text-muted-foreground max-w-md">Project charter not yet initiated. Start G0 initiation to define project goals, scope, and key parameters.</p>
+      </div>
+    )
+  }
+
+  const c = charter
+  const meta = getStatusMeta(c.status || 'draft')
 
   return (
     <div className="space-y-6">
