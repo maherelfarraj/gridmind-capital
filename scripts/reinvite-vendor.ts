@@ -188,5 +188,12 @@ async function reinviteVendor(args: Args) {
 }
 
 // Main
-const args = await parseArgs()
-await reinviteVendor(args)
+async function main() {
+  const args = await parseArgs()
+  await reinviteVendor(args)
+}
+
+main().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})
