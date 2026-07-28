@@ -287,6 +287,154 @@ export async function advancePOStatus(id: string): Promise<{ error?: string }> {
   return { error: error?.message }
 }
 
+export async function updateVendorContactEmail(args: {
+  poNumber: string
+  newEmail: string
+  oldEmail?: string
+}): Promise<{ error?: string }> {
+  const tenantId = await getCurrentTenantId()
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+  
+  // Find the PO and update vendor contact info
+  const { data: po } = await supabase
+    .from('purchase_orders')
+    .select('id, vendor_name, vendor_contact_email')
+    .eq('po_number', args.poNumber)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  if (!po) {
+    return { error: `Purchase Order ${args.poNumber} not found` }
+  }
+
+  // Update the vendor contact email on the PO record
+  const { error } = await supabase
+    .from('purchase_orders')
+    .update({
+      vendor_contact_email: args.newEmail,
+      vendor_contact_email_updated_at: new Date().toISOString(),
+      vendor_contact_email_updated_by: tenantId, // Track who made the change
+    })
+    .eq('id', po.id)
+    .eq('tenant_id', tenantId)
+
+  if (error) {
+    return { error: `Failed to update vendor contact email: ${error.message}` }
+  }
+
+  return {}
+}
+
+export async function reissueVendorInvite(args: {
+  poNumber: string
+  vendorName: string
+  newEmail: string
+  oldEmail?: string
+  siteUrl: string
+}): Promise<{ error?: string; inviteLink?: string }> {
+  const tenantId = await getCurrentTenantId()
+  const gate = await requireWriter()
+  if ('error' in gate) return gate
+
+  const supabase = createAdminClient()
+
+  // First, update the vendor contact email on the PO record
+  const updateResult = await updateVendorContactEmail({
+    poNumber: args.poNumber,
+    newEmail: args.newEmail,
+    oldEmail: args.oldEmail,
+  })
+
+  if (updateResult.error) {
+    return updateResult
+  }
+
+  // Then, find or create the external user and send invite
+  // Check if a profile exists for the new email
+  const { data: existing } = await supabase
+    .from('profiles')
+    .select('id, email, role')
+    .eq('email', args.newEmail)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  let userId: string
+
+  if (existing) {
+    // User already exists — update their role to subcontractor if needed
+    if (existing.role !== 'subcontractor') {
+      await supabase
+        .from('profiles')
+        .update({ role: 'subcontractor' })
+        .eq('id', existing.id)
+    }
+    userId = existing.id
+  } else {
+    // Invite via Supabase Auth (sends magic link if SMTP configured)
+    const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(
+      args.newEmail,
+      {
+        data: {
+          role: 'subcontractor',
+          tenant_id: tenantId,
+          organization_name: args.vendorName,
+          full_name: args.vendorName,
+        },
+        redirectTo: `${args.siteUrl}/auth/callback?next=/portal`,
+      },
+    )
+
+    if (inviteErr || !inviteData?.user) {
+      return { error: inviteErr?.message ?? 'Failed to invite vendor user' }
+    }
+    userId = inviteData.user.id
+
+    // Ensure the profile row exists
+    await supabase.from('profiles').upsert({
+      id: userId,
+      tenant_id: tenantId,
+      email: args.newEmail,
+      full_name: args.vendorName,
+      role: 'subcontractor',
+      is_active: true,
+    }, { onConflict: 'id', ignoreDuplicates: false })
+  }
+
+  // Generate a fallback action link for copy/share if email not sent
+  let inviteLink: string | undefined
+  const { data: linkData } = await supabase.auth.admin.generateLink({
+    type: 'magiclink',
+    email: args.newEmail,
+    options: { redirectTo: `${args.siteUrl}/auth/callback?next=/portal` },
+  })
+  if (linkData?.properties?.action_link) {
+    inviteLink = linkData.properties.action_link
+  }
+
+  // Grant project access (find projects associated with this PO)
+  const { data: po } = await supabase
+    .from('purchase_orders')
+    .select('project_id')
+    .eq('po_number', args.poNumber)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  if (po?.project_id) {
+    await supabase.from('external_access').upsert({
+      tenant_id: tenantId,
+      user_id: userId,
+      project_id: po.project_id,
+      organization_name: args.vendorName,
+      revoked_at: null,
+    }, { onConflict: 'user_id,project_id', ignoreDuplicates: false })
+  }
+
+  return { inviteLink }
+}
+
 export async function seedProcurementDemoData(): Promise<{ error?: string }> {
   const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
@@ -312,7 +460,7 @@ export async function seedProcurementDemoData(): Promise<{ error?: string }> {
 
   const poData = [
     { po_number: 'PO-2026-001', vendor: 'Jinko Solar',           description: 'Solar PV modules — 400MW',        amount_usd: 45_000_000, status: 'acknowledged', issued_date: '2026-05-01', expected_delivery: '2026-09-30' },
-    { po_number: 'PO-2026-002', vendor: 'Huawei FusionSolar',    description: '1500V string inverters',           amount_usd: 12_000_000, status: 'issued',       issued_date: '2026-05-15', expected_delivery: '2026-08-31' },
+    { po_number: 'PO-2026-002', vendor: 'Huawei FusionSolar',    description: '1500V string inverters',           amount_usd: 12_000_000, status: 'issued',       issued_date: '2026-05-15', expected_delivery: '2026-08-31', vendor_contact_email: 'procurement@petrasolar.jo' },
     { po_number: 'PO-2026-003', vendor: 'Prysmian Group',        description: '1500V DC cables, 120mm²',         amount_usd: 6_200_000,  status: 'delivered',    issued_date: '2026-04-20', expected_delivery: '2026-07-15' },
     { po_number: 'PO-2026-004', vendor: 'Al Futtaim Carillion',  description: 'Foundation civil works Zone A–C',  amount_usd: 15_000_000, status: 'draft',        issued_date: null,         expected_delivery: null         },
   ]
