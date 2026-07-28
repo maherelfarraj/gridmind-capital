@@ -40,32 +40,36 @@ test.describe('Copilot - Golden Tests', () => {
     await expect(mzLink).toHaveAttribute('href', /\/projects\//)
   })
 
-  test('Test 2: Honest no-data answer with NO fabricated citations', async ({ page }) => {
+  test('Test 2: General-knowledge answer with NO brackets and disclaimer', async ({ page }) => {
     // Open Copilot panel
     await page.click('button[aria-label="Open GridMind Copilot"]')
     await expect(page.locator('[role="dialog"]')).toBeVisible()
     
-    // Ask about unavailable data (general knowledge question)
+    // Ask general-knowledge question (not about user data)
     await page.fill('input[placeholder="Ask me anything..."]', 'What is the capacity factor?')
     await page.press('input[placeholder="Ask me anything..."]', 'Enter')
     
     // Wait for response
     await page.waitForTimeout(3000)
     
-    // Verify response text (either "I don't have that data" or "General knowledge")
+    // Fetch response text
     const response = page.locator('[role="region"]')
     const responseText = await response.textContent()
     
-    // CRITICAL: Verify NO fabricated citations [module:recordId] appear in response
-    // Patterns to check: [anything:anything], [glossary:...], [module:xyz]
-    const citationPattern = /\[[a-z_]+:[a-z0-9_\-]+\]/i
-    if (citationPattern.test(responseText || '')) {
-      throw new Error(`Response contains citation markers (should be stripped): "${responseText}"`)
+    // CRITICAL CHECK 1: Verify NO bracket markers appear anywhere in response
+    // This catches malformed junk like "[module: I don't have that data]"
+    if ((responseText || '').includes('[')) {
+      throw new Error(`Response contains bracket markers (should be stripped): "${responseText}"`)
     }
     
-    // Verify either "I don't have" or "General knowledge" label
-    const hasHonestAnswer = responseText?.includes("I don't have") || responseText?.includes('General knowledge')
-    expect(hasHonestAnswer).toBe(true)
+    // CRITICAL CHECK 2: Verify disclaimer line is present
+    // General-knowledge answers MUST end with this exact disclaimer
+    const hasDisclaimer = responseText?.includes('— General knowledge, not from your GridMind data')
+    expect(hasDisclaimer).toBe(true)
+    
+    // Additional check: Verify response doesn't contain fabricated citations
+    const citationPattern = /\[[a-z_]+:[a-z0-9_\-]+\]/i
+    expect(citationPattern.test(responseText || '')).toBe(false)
   })
 
   test('Test 3: RTL support for Arabic', async ({ page }) => {

@@ -396,8 +396,9 @@ CITATION RULES (CRITICAL):
 
 2. GENERAL DEFINITIONS: General-knowledge questions (e.g., "What is capacity factor?") are allowed.
    - Do NOT cite any module for general definitions.
-   - Explicitly label: "General knowledge — not from your GridMind data:"
-   - Keep it under 50 words. Do not include [module:recordId] markers.
+   - ABSOLUTELY NO BRACKETS [] in general-knowledge answers.
+   - End with this EXACT plain-text line: "— General knowledge, not from your GridMind data."
+   - Keep it under 50 words. Never wrap the disclaimer in brackets or any other marker.
 
 3. If unsure whether context has relevant data, err on the side of "I don't have that data" + module hint.
 
@@ -432,17 +433,21 @@ ${contextStr || 'No relevant data found.'}
     }
   }
 
-  // 6. Parse citations from response with GUARD against fabricated citations
+  // 6. Parse citations from response with GUARD against fabricated + malformed citations
   // Supports: [dashboard:stats], [phase_gates:uuid], [projects:slug], etc.
   const citationRegex = /\[([a-z_]+):([a-z0-9_\-]+(?:-[a-z0-9_\-]*)*)\]/gi
+  const malformedBracketRegex = /\[[^\[\]]*\]/g // Any bracket span (including malformed)
+  
   const citations: CitationChip[] = []
   const citedModules = new Set<string>()
   let strippedResponse = response
   let hasFabricatedCitation = false
+  let strippedMalformedCount = 0
 
   // Build set of available modules from context
   const availableModules = new Set(items.map((i) => i.module))
 
+  // Step 1: Process valid [module:recordId] citations
   let match
   while ((match = citationRegex.exec(response)) !== null) {
     const [fullMatch, module, recordId] = match
@@ -478,8 +483,29 @@ ${contextStr || 'No relevant data found.'}
     }
   }
 
+  // Step 2: Strip ANY remaining malformed bracket markers (e.g., "[module: I don't have that data]")
+  // These are brackets containing spaces, prose, or invalid format
+  let malformedMatch
+  while ((malformedMatch = malformedBracketRegex.exec(strippedResponse)) !== null) {
+    const bracketSpan = malformedMatch[0]
+    // Check if this is a valid [module:recordId] format that we already processed
+    const isValidCitation = /^\[[a-z_]+:[a-z0-9_\-]+(?:-[a-z0-9_\-]*)*\]$/i.test(bracketSpan)
+    
+    if (!isValidCitation) {
+      // Malformed bracket — strip it
+      console.warn(`[copilot] Malformed bracket marker stripped: "${bracketSpan}"`)
+      strippedResponse = strippedResponse.replace(bracketSpan, '')
+      strippedMalformedCount++
+      hasFabricatedCitation = true // Flag for quality review
+    }
+  }
+
   // Clean up any double spaces created by stripping
   strippedResponse = strippedResponse.replace(/\s+/g, ' ').trim()
+
+  if (strippedMalformedCount > 0) {
+    console.warn(`[copilot] Stripped ${strippedMalformedCount} malformed bracket markers`)
+  }
 
   // 7. Persist assistant message with stripped citations and fabrication flag
   const { data: assistantMsg, error: assistantErr } = await adminClient
