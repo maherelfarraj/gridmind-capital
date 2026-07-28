@@ -388,12 +388,23 @@ export async function askCopilot(
 
   const systemPrompt = `You are GridMind Copilot, an AI assistant for enterprise renewable energy project management.
 
-RULES:
-1. Answer only from the provided context. If data is missing, say "I don't have that data" and name the module to check.
-2. Cite every factual claim with [module:recordId] markers.
-3. Keep answers under 150 words.
-4. Support both English and Arabic. Match the question language.
-5. Be concise and professional.
+CITATION RULES (CRITICAL):
+1. DATA ANSWERS: If the question asks about user data (e.g., "What approvals are waiting?"), answer ONLY from the provided context.
+   - Every factual claim MUST cite a [module:recordId] that appears in the context.
+   - If the module is missing, respond: "I don't have that data. The [module_name] module might have this information."
+   - Never invent citations. NEVER cite a module that's not in the provided context.
+
+2. GENERAL DEFINITIONS: General-knowledge questions (e.g., "What is capacity factor?") are allowed.
+   - Do NOT cite any module for general definitions.
+   - Explicitly label: "General knowledge — not from your GridMind data:"
+   - Keep it under 50 words. Do not include [module:recordId] markers.
+
+3. If unsure whether context has relevant data, err on the side of "I don't have that data" + module hint.
+
+OTHER RULES:
+4. Keep answers under 150 words.
+5. Support both English and Arabic. Match the question language.
+6. Be concise and professional.
 
 Context (${tokenCount} tokens):
 ${contextStr || 'No relevant data found.'}
@@ -421,29 +432,48 @@ ${contextStr || 'No relevant data found.'}
     }
   }
 
-  // 6. Parse citations from response (format: [module:recordId] where recordId can be UUID or slug)
+  // 6. Parse citations from response with GUARD against fabricated citations
   // Supports: [dashboard:stats], [phase_gates:uuid], [projects:slug], etc.
   const citationRegex = /\[([a-z_]+):([a-z0-9_\-]+(?:-[a-z0-9_\-]*)*)\]/gi
   const citations: CitationChip[] = []
   const citedModules = new Set<string>()
   let strippedResponse = response
+  let hasFabricatedCitation = false
+
+  // Build set of available modules from context
+  const availableModules = new Set(items.map((i) => i.module))
 
   let match
   while ((match = citationRegex.exec(response)) !== null) {
     const [fullMatch, module, recordId] = match
     const key = `${module}:${recordId}`
+    
     if (!citedModules.has(key)) {
-      const contextItem = items.find((i) => i.module === module && i.recordId === recordId)
-      if (contextItem) {
-        citations.push({
-          module: contextItem.module,
-          recordId: contextItem.recordId,
-          label: contextItem.label,
-          link: createDeepLink(module, recordId),
-        })
-        citedModules.add(key)
-        // Strip the citation marker from displayed text
+      // GUARD: Check if module exists in assembled context
+      if (!availableModules.has(module)) {
+        // Fabricated citation detected — strip it and flag for quality tracking
+        console.warn(`[copilot] Fabricated citation detected: [${module}:${recordId}] not in context modules: ${Array.from(availableModules).join(', ')}`)
         strippedResponse = strippedResponse.replace(fullMatch, '')
+        hasFabricatedCitation = true
+      } else {
+        // Valid citation — find and add it
+        const contextItem = items.find((i) => i.module === module && i.recordId === recordId)
+        if (contextItem) {
+          citations.push({
+            module: contextItem.module,
+            recordId: contextItem.recordId,
+            label: contextItem.label,
+            link: createDeepLink(module, recordId),
+          })
+          citedModules.add(key)
+          // Strip the citation marker from displayed text
+          strippedResponse = strippedResponse.replace(fullMatch, '')
+        } else {
+          // Module exists but recordId not found — strip and flag
+          console.warn(`[copilot] Citation recordId not found: [${module}:${recordId}]`)
+          strippedResponse = strippedResponse.replace(fullMatch, '')
+          hasFabricatedCitation = true
+        }
       }
     }
   }
@@ -451,7 +481,7 @@ ${contextStr || 'No relevant data found.'}
   // Clean up any double spaces created by stripping
   strippedResponse = strippedResponse.replace(/\s+/g, ' ').trim()
 
-  // 7. Persist assistant message with stripped citations
+  // 7. Persist assistant message with stripped citations and fabrication flag
   const { data: assistantMsg, error: assistantErr } = await adminClient
     .from('copilot_messages')
     .insert({
@@ -459,12 +489,17 @@ ${contextStr || 'No relevant data found.'}
       role: 'assistant',
       content: strippedResponse,
       citations: citations,
+      flagged: hasFabricatedCitation, // Quality loop: track LLM fabrications
     })
     .select()
     .single()
 
   if (assistantErr || !assistantMsg) {
     console.error('[copilot] Failed to save assistant message:', assistantErr)
+  }
+
+  if (hasFabricatedCitation) {
+    console.warn('[copilot] Message flagged for quality review due to fabricated citations')
   }
 
   // 7. Log the intent miss to improve catalog (fire and forget)

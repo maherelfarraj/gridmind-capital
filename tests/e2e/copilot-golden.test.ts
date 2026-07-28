@@ -40,21 +40,32 @@ test.describe('Copilot - Golden Tests', () => {
     await expect(mzLink).toHaveAttribute('href', /\/projects\//)
   })
 
-  test('Test 2: Honest no-data answer (capacity factor)', async ({ page }) => {
+  test('Test 2: Honest no-data answer with NO fabricated citations', async ({ page }) => {
     // Open Copilot panel
     await page.click('button[aria-label="Open GridMind Copilot"]')
     await expect(page.locator('[role="dialog"]')).toBeVisible()
     
-    // Ask about unavailable data
+    // Ask about unavailable data (general knowledge question)
     await page.fill('input[placeholder="Ask me anything..."]', 'What is the capacity factor?')
     await page.press('input[placeholder="Ask me anything..."]', 'Enter')
     
     // Wait for response
     await page.waitForTimeout(3000)
     
-    // Verify honest no-data answer (NOT a table card)
-    const response = page.locator('[role="region"] >> text=/I don\'t have|missing data|not available/i')
-    await expect(response).toBeVisible()
+    // Verify response text (either "I don't have that data" or "General knowledge")
+    const response = page.locator('[role="region"]')
+    const responseText = await response.textContent()
+    
+    // CRITICAL: Verify NO fabricated citations [module:recordId] appear in response
+    // Patterns to check: [anything:anything], [glossary:...], [module:xyz]
+    const citationPattern = /\[[a-z_]+:[a-z0-9_\-]+\]/i
+    if (citationPattern.test(responseText || '')) {
+      throw new Error(`Response contains citation markers (should be stripped): "${responseText}"`)
+    }
+    
+    // Verify either "I don't have" or "General knowledge" label
+    const hasHonestAnswer = responseText?.includes("I don't have") || responseText?.includes('General knowledge')
+    expect(hasHonestAnswer).toBe(true)
   })
 
   test('Test 3: RTL support for Arabic', async ({ page }) => {
