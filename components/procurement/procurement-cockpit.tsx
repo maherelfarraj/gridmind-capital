@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import {
   loadProcurementDashboard, issueRFQ, advancePOStatus,
 } from '@/app/actions/procurement'
+import { getProjects } from '@/app/actions/projects'
 import type { RFQRecord, PORecord } from '@/lib/types/action-types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -48,27 +49,25 @@ function KpiCard({ label, value, sub, color }: { label: string; value: string | 
 
 // ── RFQ tab ──────────────────────────────────────────────────────────────────
 
-function NewRFQModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+function NewRFQModal({ open, onClose, onCreated, projects }: { open: boolean; onClose: () => void; onCreated: () => void; projects: any[] }) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ title: '', vendor: '', amount_usd: '', close_date: '' })
+  const [form, setForm] = useState({ title: '', vendor: '', amount_usd: '', close_date: '', projectId: '' })
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.title || !form.vendor) { toast({ title: 'Title and vendor required', variant: 'danger' }); return }
+    if (!form.title || !form.vendor || !form.projectId) { toast({ title: 'All fields required', variant: 'danger' }); return }
     setLoading(true)
-    // For now, tenant-wide pages cannot call actions without project context
-    // Project-scoped pages would pass projectId here
     const { error } = await issueRFQ({
       title: form.title, vendor: form.vendor,
       amount_usd: Number(form.amount_usd) || 0, close_date: form.close_date,
-      projectId: '',
+      projectId: form.projectId,
     })
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'RFQ issued', variant: 'success' })
     onCreated(); onClose()
-    setForm({ title: '', vendor: '', amount_usd: '', close_date: '' })
+    setForm({ title: '', vendor: '', amount_usd: '', close_date: '', projectId: '' })
   }
   if (!open) return null
   return (
@@ -77,6 +76,14 @@ function NewRFQModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-foreground">Issue RFQ</h2>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Project *</label>
+          <select value={form.projectId} onChange={(e) => setForm(f => ({ ...f, projectId: e.target.value }))}
+            className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="">Select a project...</option>
+            {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+          </select>
         </div>
         {[
           { label: 'Title *', key: 'title', type: 'text' },
@@ -92,14 +99,14 @@ function NewRFQModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
         ))}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button type="submit" size="sm" disabled={loading}>{loading && <Loader2 className="size-3.5 animate-spin" />} Issue RFQ</Button>
+          <Button type="submit" size="sm" disabled={loading || !form.projectId}>{loading && <Loader2 className="size-3.5 animate-spin" />} Issue RFQ</Button>
         </div>
       </form>
     </div>
   )
 }
 
-function RFQTab({ rfqs, loading, onChanged }: { rfqs: RFQRecord[]; loading: boolean; onChanged: () => void }) {
+function RFQTab({ rfqs, loading, onChanged, projects }: { rfqs: RFQRecord[]; loading: boolean; onChanged: () => void; projects: any[] }) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [modal, setModal] = useState(false)
@@ -113,7 +120,7 @@ function RFQTab({ rfqs, loading, onChanged }: { rfqs: RFQRecord[]; loading: bool
 
   return (
     <div className="space-y-4">
-      <NewRFQModal open={modal} onClose={() => setModal(false)} onCreated={onChanged} />
+      <NewRFQModal open={modal} onClose={() => setModal(false)} onCreated={onChanged} projects={projects} />
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -291,13 +298,14 @@ function VendorTab({ pos, rfqs, loading }: { pos: PORecord[]; rfqs: RFQRecord[];
   )
 }
 
-// ── Main export ──────────────────────────────────────────��──────────���──────
+// ── Main export ──���───────────────────────────────────────��──────────���──────
 
 export type ProcurementTab = 'rfqs' | 'pos' | 'vendors'
 
 export function ProcurementCockpit({ initialTab = 'rfqs' }: { initialTab?: ProcurementTab }) {
   const { toast } = useToast()
   const { data, isLoading, mutate } = useSWR('procurement-dashboard', loadProcurementDashboard, { revalidateOnFocus: true })
+  const { data: projects = [] } = useSWR('projects-for-cockpit-rfq', () => getProjects())
   const rfqs = data?.rfqs ?? []
   const pos = data?.pos ?? []
   const totalPOs = data?.totalPOs ?? 0
@@ -336,7 +344,7 @@ export function ProcurementCockpit({ initialTab = 'rfqs' }: { initialTab?: Procu
           <TabsTrigger value="pos" className="gap-1.5"><Package size={13} /> Purchase Orders</TabsTrigger>
           <TabsTrigger value="vendors" className="gap-1.5"><Truck size={13} /> Vendors</TabsTrigger>
         </TabsList>
-        <TabsContent value="rfqs" className="mt-4"><RFQTab rfqs={rfqs} loading={isLoading} onChanged={() => mutate()} /></TabsContent>
+        <TabsContent value="rfqs" className="mt-4"><RFQTab rfqs={rfqs} loading={isLoading} onChanged={() => mutate()} projects={projects} /></TabsContent>
         <TabsContent value="pos" className="mt-4"><POTab pos={pos} loading={isLoading} onChanged={() => mutate()} /></TabsContent>
         <TabsContent value="vendors" className="mt-4"><VendorTab pos={pos} rfqs={rfqs} loading={isLoading} /></TabsContent>
       </Tabs>

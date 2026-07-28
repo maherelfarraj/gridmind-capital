@@ -41,12 +41,9 @@ function NewRFIModal({ open, onClose, onCreated, projects }: {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.title) { toast({ title: 'Title required', variant: 'danger' }); return }
-    if (!form.projectId) { toast({ title: 'Project required', variant: 'danger' }); return }
+    if (!form.title || !form.projectId) { toast({ title: 'All fields required', variant: 'danger' }); return }
     setLoading(true)
-    // For now, tenant-wide pages cannot call actions without project context
-    // Project-scoped pages would pass projectId here
-    const { error } = await createRFI({ ...form, projectId: '' })
+    const { error } = await createRFI(form)
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'RFI submitted', variant: 'success' })
@@ -89,7 +86,7 @@ function NewRFIModal({ open, onClose, onCreated, projects }: {
         </div>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button type="submit" size="sm" disabled={loading}>{loading && <Loader2 className="size-3.5 animate-spin" />} Submit RFI</Button>
+          <Button type="submit" size="sm" disabled={loading || !form.projectId}>{loading && <Loader2 className="size-3.5 animate-spin" />} Submit RFI</Button>
         </div>
       </form>
     </div>

@@ -13,8 +13,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import {
-  loadConstructionDashboard, closePunchItem, recordInspection,
+  loadConstructionDashboard, recordInspection, closePunchItem,
 } from '@/app/actions/construction'
+import { getProjects } from '@/app/actions/projects'
 import type { WorkPackage, InspectionRecord, PunchItem } from '@/lib/types/action-types'
 import { DailyReportsSection } from './daily-reports-section'
 
@@ -35,20 +36,18 @@ const DISC_COLORS = ['#64ffda', '#3b82f6', '#f97316', '#a855f7', '#22c55e', '#f5
 
 // ─── New inspection modal ──────────────────────────────────────
 
-function NewInspectionModal({ open, onClose, onCreated }: {
-  open: boolean; onClose: () => void; onCreated: () => void
+function NewInspectionModal({ open, onClose, onCreated, projects }: {
+  open: boolean; onClose: () => void; onCreated: () => void; projects: any[]
 }) {
   const { toast } = useToast()
   const [loading, setLoading] = React.useState(false)
-  const [form, setForm] = React.useState({ title: '', type: 'safety', result: 'pass', location: '' })
+  const [form, setForm] = React.useState({ title: '', type: 'safety', result: 'pass', location: '', projectId: '' })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.title) { toast({ title: 'Title required', variant: 'danger' }); return }
+    if (!form.title || !form.projectId) { toast({ title: 'All fields required', variant: 'danger' }); return }
     setLoading(true)
-    // For now, tenant-wide pages cannot call actions without project context
-    // Project-scoped pages would pass { ...form, projectId } here
-    const { error } = await recordInspection({ ...form, projectId: '' })
+    const { error } = await recordInspection(form)
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'Inspection recorded', variant: 'success' })
@@ -61,6 +60,14 @@ function NewInspectionModal({ open, onClose, onCreated }: {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-foreground">Record Inspection</h2>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Project *</label>
+          <select value={form.projectId} onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))}
+            className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-orange-400">
+            <option value="">Select a project...</option>
+            {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+          </select>
         </div>
         {[
           { label: 'Title *', key: 'title', type: 'text' },
@@ -88,7 +95,7 @@ function NewInspectionModal({ open, onClose, onCreated }: {
         ))}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button type="submit" size="sm" disabled={loading}>{loading && <Loader2 className="size-3.5 animate-spin" />} Record</Button>
+          <Button type="submit" size="sm" disabled={loading || !form.projectId}>{loading && <Loader2 className="size-3.5 animate-spin" />} Record</Button>
         </div>
       </form>
     </div>
@@ -165,9 +172,10 @@ function PunchRow({ item, onClose }: { item: PunchItem; onClose: (id: string) =>
 
 export function ConstructionPage() {
   const { toast } = useToast()
-  const [tab, setTab]       = React.useState<'wp' | 'inspections' | 'punch'>('wp')
   const [inspModal, setInspModal] = React.useState(false)
+  const [tab, setTab] = React.useState<'wp' | 'inspections' | 'punch'>('wp')
   const { data, isLoading, mutate } = useSWR('construction-dashboard', loadConstructionDashboard, { revalidateOnFocus: true })
+  const { data: projects = [] } = useSWR('projects-for-inspection', () => getProjects())
 
   async function handleClosePunch(id: string) {
     const { error } = await closePunchItem(id)
@@ -191,7 +199,7 @@ export function ConstructionPage() {
 
   return (
     <>
-      <NewInspectionModal open={inspModal} onClose={() => setInspModal(false)} onCreated={() => mutate()} />
+      <NewInspectionModal open={inspModal} onClose={() => setInspModal(false)} onCreated={() => mutate()} projects={projects} />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
