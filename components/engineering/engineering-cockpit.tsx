@@ -126,7 +126,9 @@ function NewRFIModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
     e.preventDefault()
     if (!form.title) { toast({ title: 'Title required', variant: 'danger' }); return }
     setLoading(true)
-    const { error } = await createRFI(form)
+    // For now, tenant-wide pages cannot call actions without project context
+    // Project-scoped pages would pass projectId here
+    const { error } = await createRFI({ ...form, projectId: '' })
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'RFI raised', variant: 'success' })

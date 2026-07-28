@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
+import { requireUser } from '@/lib/guards'
 import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
@@ -248,17 +249,33 @@ export async function loadProcurementDashboard(): Promise<ProcurementDashboard> 
 }
 
 export async function issueRFQ(data: {
-  title: string; vendor: string; amount_usd: number; close_date: string
+  title: string; vendor: string; amount_usd: number; close_date: string; projectId: string
 }): Promise<{ error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: 'Unauthorized' }
+  }
+
   const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
+  // Verify projectId exists and belongs to caller's tenant
   const supabase = createAdminClient()
+  const { data: project, error: projectErr } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', data.projectId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (projectErr || !project) return { error: 'Project not found or access denied' }
+
   const rfq_number = `RFQ-${Date.now().toString(36).toUpperCase().slice(-6)}`
   const { error } = await supabase.from('rfqs').insert({
     tenant_id:  tenantId,
-    project_id: DEMO_PROJECT,
+    project_id: data.projectId,
     rfq_number,
     title:      data.title,
     vendor:     data.vendor,

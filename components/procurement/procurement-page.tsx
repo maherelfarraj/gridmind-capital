@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/toast'
 import {
   loadProcurementDashboard, issueRFQ, advancePOStatus,
 } from '@/app/actions/procurement'
+import { getProjects } from '@/app/actions/projects'
 import type { RFQRecord, PORecord } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
@@ -39,18 +40,21 @@ const BAR_COLORS = ['#64ffda', '#3b82f6', '#f97316', '#a855f7', '#22c55e', '#f59
 
 // ─── Issue RFQ modal ───────────────────────────────────────────
 
-function IssueRFQModal({ open, onClose, onCreated }: {
-  open: boolean; onClose: () => void; onCreated: () => void
+function IssueRFQModal({ open, onClose, onCreated, projects }: {
+  open: boolean; onClose: () => void; onCreated: () => void; projects: any[]
 }) {
   const { toast } = useToast()
   const [loading, setLoading] = React.useState(false)
-  const [form, setForm] = React.useState({ title: '', vendor: '', amount_usd: '', close_date: '' })
+  const [form, setForm] = React.useState({ title: '', vendor: '', amount_usd: '', close_date: '', projectId: '' })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.title || !form.vendor) { toast({ title: 'Required fields missing', variant: 'danger' }); return }
+    if (!form.projectId) { toast({ title: 'Project required', variant: 'danger' }); return }
     setLoading(true)
-    const { error } = await issueRFQ({ ...form, amount_usd: Number(form.amount_usd) || 0 })
+    // For now, tenant-wide pages cannot call actions without project context
+    // Project-scoped pages would pass projectId here
+    const { error } = await issueRFQ({ ...form, amount_usd: Number(form.amount_usd) || 0, projectId: '' })
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'RFQ issued', variant: 'success' })
@@ -63,6 +67,14 @@ function IssueRFQModal({ open, onClose, onCreated }: {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-foreground">Issue RFQ</h2>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Project *</label>
+          <select value={form.projectId} onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))}
+            className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#64ffda]/40">
+            <option value="">Select a project...</option>
+            {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+          </select>
         </div>
         {[
           { label: 'Title *', key: 'title', type: 'text' },
@@ -111,6 +123,7 @@ export function ProcurementPage() {
   const [tab, setTab]         = React.useState<'rfqs' | 'pos'>('rfqs')
   const [rfqModal, setRfqModal] = React.useState(false)
   const { data, isLoading, mutate } = useSWR('procurement-dashboard', loadProcurementDashboard, { revalidateOnFocus: true })
+  const { data: projects = [] } = useSWR('projects-for-rfq', () => getProjects())
 
   async function handleAdvancePO(id: string) {
     const { error } = await advancePOStatus(id)
@@ -129,7 +142,7 @@ export function ProcurementPage() {
 
   return (
     <>
-      <IssueRFQModal open={rfqModal} onClose={() => setRfqModal(false)} onCreated={() => mutate()} />
+      <IssueRFQModal open={rfqModal} onClose={() => setRfqModal(false)} onCreated={() => mutate()} projects={projects} />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">

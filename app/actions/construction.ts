@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
+import { requireUser } from '@/lib/guards'
 import type { WorkPackage, InspectionRecord, PunchItem, ConstructionDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
@@ -123,16 +124,32 @@ export async function closePunchItem(id: string): Promise<{ error?: string }> {
 }
 
 export async function recordInspection(data: {
-  title: string; type: string; result: string; location: string
+  title: string; type: string; result: string; location: string; projectId: string
 }): Promise<{ error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: 'Unauthorized' }
+  }
+
   const gate = await requireWriter()
   if ('error' in gate) return gate
   const tenantId = await getCurrentTenantId()
 
+  // Verify projectId exists and belongs to caller's tenant
   const supabase = createAdminClient()
+  const { data: project, error: projectErr } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', data.projectId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (projectErr || !project) return { error: 'Project not found or access denied' }
+
   const { error } = await supabase.from('inspections').insert({
     tenant_id:  tenantId,
-    project_id: DEMO_PROJECT,
+    project_id: data.projectId,
     title:      data.title,
     type:       data.type,
     result:     data.result,

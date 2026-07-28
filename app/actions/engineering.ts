@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
+import { requireUser } from '@/lib/guards'
 import type { IFCPackage, DrawingRecord, RFIRecord, EngineeringDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
@@ -255,25 +256,38 @@ export async function getG2Data(projectId: string): Promise<G2DataResult> {
 }
 
 export async function createRFI(data: {
-  title: string; discipline: string; description: string
+  title: string; discipline: string; description: string; projectId: string
 }): Promise<{ error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: 'Unauthorized' }
+  }
+
   const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
+  // Verify projectId exists and belongs to caller's tenant
   const supabase = createAdminClient()
+  const { data: project, error: projectErr } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', data.projectId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (projectErr || !project) return { error: 'Project not found or access denied' }
+
   const { error } = await supabase.from('tickets').insert({
     tenant_id:  tenantId,
-    project_id: DEMO_PROJECT,
+    project_id: data.projectId,
     title:      data.title,
     description:data.description,
     category:   'rfi',
     status:     'open',
     priority:   'normal',
     metadata:   { discipline: data.discipline },
-    // `requireWriter()` above already resolved the real authenticated user;
-    // stamping the hardcoded DEMO_USER here discarded it and attributed every
-    // RFI to the generic admin@gridmind.capital account.
     created_by: gate.actor.userId,
   })
   return { error: error?.message }
