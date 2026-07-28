@@ -104,7 +104,7 @@ export function TableCard({ title, summary, columns, rows, rowLink, onExportCSV 
                       col.align === 'right' && 'text-right',
                       col.sortable && 'cursor-pointer hover:text-foreground',
                     )}
-                    onClick={() => col.sortable && handleColumnClick(col.key)}
+                    onClick={() => col.sortable && handleColumnClick(String(col.key))}
                   >
                     <div className="flex items-center gap-1">
                       {col.header}
