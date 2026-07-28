@@ -16,8 +16,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { askCopilot, type CopilotMessage, type CitationChip } from '@/app/actions/copilot'
-import { createClient } from '@/lib/supabase/client'
+import { askCopilot, getCopilotHistory, type CopilotMessage, type CitationChip } from '@/app/actions/copilot'
 
 // ─────────────────────────────────────────────────────────────
 // Suggested Questions
@@ -137,17 +136,17 @@ export function CopilotPanel({
   const [messages, setMessages] = React.useState<CopilotMessage[]>([])
   const [input, setInput] = React.useState('')
   const [loading, setLoading] = React.useState(false)
-  const [conversationId, setConversationId] = React.useState<string>('')
+  const [conversationId, setConversationId] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [isRtl, setIsRtl] = React.useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
-  // Initialize conversation on mount
+  // Load conversation history on panel open
   React.useEffect(() => {
-    if (open && !conversationId) {
-      initializeConversation()
+    if (open && messages.length === 0) {
+      loadHistory()
     }
-  }, [open, conversationId])
+  }, [open])
 
   // Auto-scroll to bottom
   React.useEffect(() => {
@@ -161,68 +160,19 @@ export function CopilotPanel({
     }
   }, [messages])
 
-  async function initializeConversation() {
+  async function loadHistory() {
     try {
-      const supabase = await createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) return
-
-      // Create or get existing conversation
-      const { data: existing } = await supabase
-        .from('copilot_conversations')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      let convoId = existing?.id
-
-      if (!convoId) {
-        const { data: newConvo } = await supabase
-          .from('copilot_conversations')
-          .insert({
-            title: 'New Conversation',
-            user_id: user.id,
-          })
-          .select('id')
-          .single()
-
-        convoId = newConvo?.id
-      }
-
-      if (convoId) {
-        setConversationId(convoId)
-
-        // Load conversation history
-        const { data: history } = await supabase
-          .from('copilot_messages')
-          .select('*')
-          .eq('conversation_id', convoId)
-          .order('created_at', { ascending: true })
-
-        if (history) {
-          setMessages(
-            history.map((m) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              citations: m.citations || [],
-              feedback: m.feedback,
-              createdAt: m.created_at,
-            })),
-          )
-        }
+      const { messages: historyMessages } = await getCopilotHistory(conversationId)
+      if (historyMessages.length > 0) {
+        setMessages(historyMessages)
       }
     } catch (err) {
-      console.error('[copilot] Init error:', err)
+      console.error('[copilot] Load history error:', err)
     }
   }
 
   async function sendMessage() {
-    if (!input.trim() || !conversationId || loading) return
+    if (!input.trim() || loading) return
 
     setError(null)
     const userQuestion = input
@@ -240,10 +190,15 @@ export function CopilotPanel({
     setLoading(true)
 
     try {
-      const response = await askCopilot(userQuestion, conversationId)
+      const response = await askCopilot(userQuestion, conversationId || undefined)
 
       if (response.error) {
         setError(response.error === 'RATE_LIMITED' ? 'Rate limit exceeded' : 'Error processing question')
+      }
+
+      // Store conversationId from response if this was first message
+      if (response.conversationId && !conversationId) {
+        setConversationId(response.conversationId)
       }
 
       setMessages((prev) => [...prev, response.message])
@@ -354,12 +309,12 @@ export function CopilotPanel({
                   sendMessage()
                 }
               }}
-              disabled={loading || !conversationId}
+              disabled={loading}
               className="flex-1"
             />
             <Button
               onClick={sendMessage}
-              disabled={loading || !input.trim() || !conversationId}
+              disabled={loading || !input.trim()}
               size="sm"
               className="shrink-0"
             >

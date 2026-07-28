@@ -42,6 +42,7 @@ export interface CitationChip {
 
 export interface CopilotResponse {
   message: CopilotMessage
+  conversationId?: string
   error?: string
 }
 
@@ -159,13 +160,72 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; messa
 }
 
 // ─────────────────────────────────────────────────────────────
+// Get Conversation History
+// ─────────────────────────────────────────────────────────────
+
+export async function getCopilotHistory(
+  conversationId?: string,
+): Promise<{ messages: CopilotMessage[]; error?: string }> {
+  // 1. Authenticate actor
+  const actorResult = await getAuthActor()
+  if ('error' in actorResult) {
+    return {
+      messages: [],
+      error: actorResult.error,
+    }
+  }
+
+  const { actor } = actorResult
+  const supabase = createAdminClient()
+
+  // 2. If conversationId not provided, get the latest conversation
+  let finalConversationId = conversationId
+  if (!finalConversationId) {
+    const { data: conversation } = await supabase
+      .from('copilot_conversations')
+      .select('id')
+      .eq('user_id', actor.userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (!conversation?.id) {
+      return { messages: [] } // No conversations yet
+    }
+
+    finalConversationId = conversation.id
+  }
+
+  // 3. Fetch messages for this conversation
+  const { data: messages, error } = await supabase
+    .from('copilot_messages')
+    .select('*')
+    .eq('conversation_id', finalConversationId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    return {
+      messages: [],
+      error: error.message,
+    }
+  }
+
+  return {
+    messages: (messages || []) as CopilotMessage[],
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Main Copilot Action
 // ─────────────────────────────────────────────────────────────
 
 export async function askCopilot(
   question: string,
-  conversationId: string,
+  conversationId?: string,
 ): Promise<CopilotResponse> {
+  // Initialize admin client for server-side operations
+  const adminClient = createAdminClient()
+
   // 1. Authenticate actor (reuse existing pattern)
   const actorResult = await getAuthActor()
   if ('error' in actorResult) {
@@ -197,12 +257,39 @@ export async function askCopilot(
     }
   }
 
+  // 2.5. Create conversation server-side if not provided
+  let finalConversationId = conversationId
+  if (!finalConversationId) {
+    const { data: newConvo, error: convoErr } = await adminClient
+      .from('copilot_conversations')
+      .insert({
+        tenant_id: tenantId,
+        user_id: actor.userId,
+        title: 'New Conversation',
+      })
+      .select('id')
+      .single()
+
+    if (convoErr || !newConvo?.id) {
+      return {
+        message: {
+          id: '',
+          role: 'assistant',
+          content: 'Failed to create conversation.',
+          createdAt: new Date().toISOString(),
+        },
+        error: convoErr?.message || 'Unknown error',
+      }
+    }
+
+    finalConversationId = newConvo.id
+  }
+
   // 3. Persist user message
-  const supabase = createAdminClient()
-  const { data: userMsg, error: msgErr } = await supabase
+  const { data: userMsg, error: msgErr } = await adminClient
     .from('copilot_messages')
     .insert({
-      conversation_id: conversationId,
+      conversation_id: finalConversationId,
       role: 'user',
       content: question,
       citations: [],
@@ -240,12 +327,12 @@ export async function askCopilot(
         }
 
         // Log successful catalog hit (fire and forget)
-        void supabase
+        void adminClient
           .from('copilot_intent_log')
           .insert({
             tenant_id: tenantId,
             user_id: actor.userId,
-            conversation_id: conversationId,
+            conversation_id: finalConversationId,
             question,
             classified_intent: queryId,
             matched_query_id: queryId,
@@ -254,10 +341,10 @@ export async function askCopilot(
           })
 
         // Return table card response
-        const assistantMsg = await supabase
+        const assistantMsg = await adminClient
           .from('copilot_messages')
           .insert({
-            conversation_id: conversationId,
+            conversation_id: finalConversationId,
             role: 'assistant',
             content: `Here are the ${catalogQuery.label.toLowerCase()} for you.`,
             citations: [],
@@ -280,6 +367,7 @@ export async function askCopilot(
               tableCard,
               createdAt: new Date().toISOString(),
             },
+            conversationId: finalConversationId,
           }
         }
       } catch (error) {
@@ -357,10 +445,10 @@ ${contextStr || 'No relevant data found.'}
   }
 
   // 7. Persist assistant message with citations
-  const { data: assistantMsg, error: assistantErr } = await supabase
+  const { data: assistantMsg, error: assistantErr } = await adminClient
     .from('copilot_messages')
     .insert({
-      conversation_id: conversationId,
+      conversation_id: finalConversationId,
       role: 'assistant',
       content: response,
       citations: citations,
@@ -377,12 +465,12 @@ ${contextStr || 'No relevant data found.'}
     const nearestQueries = getNearestQueries(question, 3)
     const suggestedQueryIds = nearestQueries.map((q) => q.id)
     
-    void supabase
+    void adminClient
       .from('copilot_intent_log')
       .insert({
         tenant_id: tenantId,
         user_id: actor.userId,
-        conversation_id: conversationId,
+        conversation_id: finalConversationId,
         question,
         classified_intent: null,
         matched_query_id: null,
@@ -406,12 +494,12 @@ ${contextStr || 'No relevant data found.'}
   const outputTokens = Math.ceil(response.length / 4)
   const totalTokens = inputTokens + outputTokens
   
-  const { error: auditErr } = await supabase
+  const { error: auditErr } = await adminClient
     .from('copilot_audit_trail')
     .insert({
       tenant_id: tenantId,
       user_id: actor.userId,
-      conversation_id: conversationId,
+      conversation_id: finalConversationId,
       message_id: assistantMsg?.id || '',
       input_tokens: inputTokens,
       output_tokens: outputTokens,
@@ -426,7 +514,7 @@ ${contextStr || 'No relevant data found.'}
   }
 
   // 9. Update tenant budget
-  const { data: budget } = await supabase
+  const { data: budget } = await adminClient
     .from('copilot_tenant_budget')
     .select('current_month_tokens, month_start_date')
     .eq('tenant_id', tenantId)
@@ -434,11 +522,9 @@ ${contextStr || 'No relevant data found.'}
 
   if (budget) {
     const today = new Date().toISOString().split('T')[0]
-    const isNewMonth = budget.month_start_date !== today
-    
-    if (isNewMonth) {
-      // Reset budget at month boundary
-      await supabase
+    if (budget.month_start_date !== today) {
+      // Reset monthly counter if it's a new month
+      await adminClient
         .from('copilot_tenant_budget')
         .update({
           current_month_tokens: totalTokens,
@@ -447,7 +533,7 @@ ${contextStr || 'No relevant data found.'}
         .eq('tenant_id', tenantId)
     } else {
       // Increment current month usage
-      await supabase
+      await adminClient
         .from('copilot_tenant_budget')
         .update({ current_month_tokens: budget.current_month_tokens + totalTokens })
         .eq('tenant_id', tenantId)
@@ -462,6 +548,7 @@ ${contextStr || 'No relevant data found.'}
       citations,
       createdAt: new Date().toISOString(),
     },
+    conversationId: finalConversationId,
   }
 }
 

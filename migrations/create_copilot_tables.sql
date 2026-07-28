@@ -42,12 +42,7 @@ ALTER TABLE copilot_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE copilot_messages ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies for copilot_conversations
--- Users can only access their own conversations within their tenant
-DROP POLICY IF EXISTS copilot_conversations_tenant_isolation ON copilot_conversations;
-CREATE POLICY copilot_conversations_tenant_isolation ON copilot_conversations
-  USING (tenant_id = auth.uid()::text::uuid)
-  WITH CHECK (tenant_id = auth.uid()::text::uuid);
-
+-- Users can only access their own conversations (server-side uses service role and bypasses RLS)
 DROP POLICY IF EXISTS copilot_conversations_user_access ON copilot_conversations;
 CREATE POLICY copilot_conversations_user_access ON copilot_conversations
   USING (user_id = auth.uid())
@@ -60,35 +55,13 @@ CREATE POLICY copilot_messages_access ON copilot_messages
   USING (
     conversation_id IN (
       SELECT id FROM copilot_conversations
-      WHERE user_id = auth.uid() AND tenant_id = current_setting('app.tenant_id')::uuid
+      WHERE user_id = auth.uid()
     )
   )
   WITH CHECK (
     conversation_id IN (
       SELECT id FROM copilot_conversations
-      WHERE user_id = auth.uid() AND tenant_id = current_setting('app.tenant_id')::uuid
-    )
-  );
-
--- Admin role policies (access all tenant conversations/messages)
--- Note: Admins bypassed via auth.jwt()->>'role' = 'admin' or context override
-DROP POLICY IF EXISTS copilot_conversations_admin ON copilot_conversations;
-CREATE POLICY copilot_conversations_admin ON copilot_conversations
-  USING (tenant_id = current_setting('app.tenant_id')::uuid)
-  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
-
-DROP POLICY IF EXISTS copilot_messages_admin ON copilot_messages;
-CREATE POLICY copilot_messages_admin ON copilot_messages
-  USING (
-    conversation_id IN (
-      SELECT id FROM copilot_conversations
-      WHERE tenant_id = current_setting('app.tenant_id')::uuid
-    )
-  )
-  WITH CHECK (
-    conversation_id IN (
-      SELECT id FROM copilot_conversations
-      WHERE tenant_id = current_setting('app.tenant_id')::uuid
+      WHERE user_id = auth.uid()
     )
   );
 
@@ -137,19 +110,14 @@ CREATE INDEX IF NOT EXISTS idx_copilot_budget_tenant ON copilot_tenant_budget(te
 ALTER TABLE copilot_audit_trail ENABLE ROW LEVEL SECURITY;
 ALTER TABLE copilot_tenant_budget ENABLE ROW LEVEL SECURITY;
 
--- RLS for audit trail (viewers can see their own, admins see all)
+-- RLS for audit trail (users see their own via application, server-side uses service role)
 DROP POLICY IF EXISTS copilot_audit_viewer ON copilot_audit_trail;
 CREATE POLICY copilot_audit_viewer ON copilot_audit_trail
   USING (user_id = auth.uid())
   WITH CHECK (false); -- Read-only
 
-DROP POLICY IF EXISTS copilot_audit_admin ON copilot_audit_trail;
-CREATE POLICY copilot_audit_admin ON copilot_audit_trail
-  USING (tenant_id = current_setting('app.tenant_id')::uuid)
-  WITH CHECK (false); -- Admin read-only
-
--- RLS for budget (admin only, read-only via application layer)
+-- RLS for budget (server-side only via service role, no client access needed)
 DROP POLICY IF EXISTS copilot_budget_admin ON copilot_tenant_budget;
 CREATE POLICY copilot_budget_admin ON copilot_tenant_budget
-  USING (tenant_id = current_setting('app.tenant_id')::uuid)
-  WITH CHECK (false); -- Read-only via application
+  USING (false)
+  WITH CHECK (false); -- Read-only via application layer (service role)
