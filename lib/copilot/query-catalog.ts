@@ -1,6 +1,8 @@
-// GridMind Copilot Query Catalog — Whitelisted operational queries
-// These queries are dispatched based on user intent keywords
-// Each query binds to existing read actions, ensuring no new raw DB access
+// GridMind Copilot Query Catalog — DEPRECATED
+// The 6 catalog query functions (run: async () => []) are stubs that return no data.
+// This module has been disabled — all questions route to the prose/LLM-with-context path
+// which demonstrably works. The catalog remains for reference only; do NOT render
+// "0 results" cards from this module.
 
 export type CatalogRow = Record<string, any>
 

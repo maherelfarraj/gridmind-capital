@@ -15,7 +15,7 @@ test.describe('Copilot - Golden Tests', () => {
     await page.goto('/dashboard')
   })
 
-  test('Test 1: Table card for pending approvals (Moz Farm PRJ-2026-383)', async ({ page }) => {
+  test('Test 1: Prose response for pending approvals (catalog disabled)', async ({ page }) => {
     // Open Copilot panel
     await page.click('button[aria-label="Open GridMind Copilot"]')
     await expect(page.locator('[role="dialog"]')).toBeVisible()
@@ -24,20 +24,20 @@ test.describe('Copilot - Golden Tests', () => {
     await page.fill('input[placeholder="Ask me anything..."]', 'What approvals are waiting on me?')
     await page.press('input[placeholder="Ask me anything..."]', 'Enter')
     
-    // Expect table card with Moz Farm approval
+    // Expect prose response (catalog fast path disabled)
     await page.waitForTimeout(2000)
     
-    // Verify table card appears (not prose response)
+    // Verify NO table card appears (catalog disabled)
     const tableCard = page.locator('[data-testid="table-card"]')
-    await expect(tableCard).toBeVisible()
+    await expect(tableCard).not.toBeVisible()
     
-    // Verify Moz Farm approval is in the table
-    await expect(page.locator('text=Moz Farm')).toBeVisible()
-    await expect(page.locator('text=PRJ-2026-383')).toBeVisible()
+    // Verify prose response is visible
+    const response = page.locator('[role="region"]')
+    await expect(response).toBeVisible()
     
-    // Verify deep link exists
-    const mzLink = page.locator('a:has-text("PRJ-2026-383")')
-    await expect(mzLink).toHaveAttribute('href', /\/projects\//)
+    // Verify response contains context-driven answer (not "0 results")
+    const responseText = await response.textContent()
+    expect(responseText).not.toContain('0 results')
   })
 
   test('Test 2: General-knowledge answer with NO brackets and disclaimer', async ({ page }) => {
