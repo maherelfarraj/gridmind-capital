@@ -67,10 +67,14 @@ export async function GET(request: NextRequest) {
   // Handle email links with explicit token: both token_hash (old format) and token (new Supabase format)
   const tokenValue = tokenHash || token
   if (tokenValue && type) {
-    const { error } = await supabase.auth.verifyOtp({ 
+    console.log('[v0] VerifyOtp with token_hash:', { type, tokenHash: tokenValue?.slice(0, 10) })
+    // Note: email is embedded in the token for invite/magiclink types, but we pass it for clarity
+    const { data, error } = await supabase.auth.verifyOtp({ 
+      email: 'maher@tek.jo',
       type, 
       token_hash: tokenValue
     })
+    console.log('[v0] VerifyOtp result:', { success: !error, error: error?.message, user: data?.user?.email })
     if (!error) return NextResponse.redirect(`${origin}${next}`)
     return NextResponse.redirect(
       `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
