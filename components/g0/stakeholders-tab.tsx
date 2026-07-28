@@ -3,7 +3,7 @@ import * as React from 'react'
 import { CheckCircle2, Circle, Mail, Phone, Users } from 'lucide-react'
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { cn } from '@/lib/utils'
-import { MOCK_STAKEHOLDERS } from './data'
+// Real stakeholder data shown when available; MOCK_STAKEHOLDERS removed
 import type { G0LiveStakeholder } from '@/app/actions/gate-submissions'
 import type { Stakeholder } from './types'
 
@@ -23,12 +23,11 @@ const INFLUENCE_NUM = { high: 3, medium: 2, low: 1 }
 const INTEREST_NUM  = { high: 3, medium: 2, low: 1 }
 
 export function StakeholdersTab({ liveData }: { liveData?: G0LiveStakeholder[] }) {
-  // liveData=undefined → still loading, use mock; liveData=[] → empty state
-  const stakeholders: Stakeholder[] = liveData === undefined
-    ? MOCK_STAKEHOLDERS
-    : liveData.map((m) => ({ ...m } as unknown as Stakeholder))
+  const stakeholders: Stakeholder[] = liveData
+    ? liveData.map((m) => ({ ...m } as unknown as Stakeholder))
+    : []
 
-  if (liveData !== undefined && liveData.length === 0) {
+  if (!stakeholders || stakeholders.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-10 text-center">
         <Users className="size-8 text-muted-foreground mx-auto mb-3" />
