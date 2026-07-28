@@ -23,13 +23,8 @@ CREATE INDEX IF NOT EXISTS idx_copilot_intent_hit ON copilot_intent_log(was_cata
 -- Enable RLS
 ALTER TABLE copilot_intent_log ENABLE ROW LEVEL SECURITY;
 
--- RLS policies
+-- RLS policies (server-side only via service role, no client access needed)
 DROP POLICY IF EXISTS copilot_intent_log_viewer ON copilot_intent_log;
 CREATE POLICY copilot_intent_log_viewer ON copilot_intent_log
   USING (user_id = auth.uid())
-  WITH CHECK (false); -- Read-only
-
-DROP POLICY IF EXISTS copilot_intent_log_admin ON copilot_intent_log;
-CREATE POLICY copilot_intent_log_admin ON copilot_intent_log
-  USING (tenant_id = current_setting('app.tenant_id')::uuid)
-  WITH CHECK (false); -- Admin read-only
+  WITH CHECK (false); -- Read-only for user's own logs
