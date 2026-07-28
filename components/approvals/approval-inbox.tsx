@@ -415,7 +415,7 @@ const ApprovalItemCard = React.memo(function ApprovalItemCard({
 
 // ─────────────────────────────────────────────────────────────
 // Filter tab
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────���───────────────────────────────
 
 interface FilterTabProps {
   label: string
@@ -481,7 +481,7 @@ const SORT_LABELS: Record<SortOption, string> = {
 }
 
 export const ApprovalInbox = React.memo(function ApprovalInbox({
-  approvals = MOCK_APPROVAL_INBOX,
+  approvals = [],
   filter = 'all',
   onFilterChange,
   onApprovalClick,
