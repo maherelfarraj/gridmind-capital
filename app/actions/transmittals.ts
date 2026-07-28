@@ -93,9 +93,9 @@ async function getActor(): Promise<Actor> {
   }
 }
 
-/** viewer is read-only; null role (dev/unauthed) is treated as a writer for demo. */
+const WRITER_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'engineer']
 function canWrite(role: string | null): boolean {
-  return role !== 'viewer'
+  return role !== null && WRITER_ROLES.includes(role)
 }
 
 /** Append an immutable entry to the shared workflow_events audit spine. */
