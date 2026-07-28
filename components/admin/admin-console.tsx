@@ -73,32 +73,8 @@ const ALL_PERMS: Record<PermKey, boolean> = {
   reports_generate: true, reports_export: true, reports_view: true,
 }
 
-const MOCK_ROLES: RoleDef[] = [
-  {
-    id: 'r1', name: 'Super Admin', description: 'Full platform access with all administrative privileges.', userCount: 1, color: '#7c3aed',
-    permissions: { ...ALL_PERMS },
-  },
-  {
-    id: 'r2', name: 'Admin', description: 'Organisation-level admin managing users and project settings.', userCount: 2, color: '#2563eb',
-    permissions: { ...ALL_PERMS, projects_delete: false, users_manage: false },
-  },
-  {
-    id: 'r3', name: 'Project Manager', description: 'Manages individual projects end-to-end across all phases.', userCount: 4, color: '#0891b2',
-    permissions: { ...ALL_PERMS, projects_delete: false, users_manage: false, users_invite: false, budget_approve: false, gates_approve: false },
-  },
-  {
-    id: 'r4', name: 'Engineer', description: 'Technical contributor with access to engineering deliverables.', userCount: 12, color: '#d97706',
-    permissions: { ...ALL_PERMS, projects_create: false, projects_delete: false, gates_approve: false, budget_edit: false, budget_approve: false, users_manage: false, users_invite: false, reports_generate: false, reports_export: false },
-  },
-  {
-    id: 'r5', name: 'Contractor', description: 'External contractor with limited view access to assigned projects.', userCount: 8, color: '#059669',
-    permissions: { projects_create: false, projects_edit: false, projects_delete: false, projects_view: true, gates_approve: false, gates_edit: false, gates_view: true, budget_edit: false, budget_view: false, budget_approve: false, documents_upload: true, documents_delete: false, documents_view: true, users_manage: false, users_invite: false, users_view: false, reports_generate: false, reports_export: false, reports_view: false },
-  },
-  {
-    id: 'r6', name: 'Viewer', description: 'Read-only access to assigned projects and reports.', userCount: 5, color: '#64748b',
-    permissions: { projects_create: false, projects_edit: false, projects_delete: false, projects_view: true, gates_approve: false, gates_edit: false, gates_view: true, budget_edit: false, budget_view: true, budget_approve: false, documents_upload: false, documents_delete: false, documents_view: true, users_manage: false, users_invite: false, users_view: false, reports_generate: false, reports_export: false, reports_view: true },
-  },
-]
+// Real roles are managed via Users & Roles page (UsersRolesPage component)
+// No mock roles — role configuration routes to dedicated admin page
 
 function PermissionToggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -120,146 +96,12 @@ function PermissionToggle({ checked, onChange, label }: { checked: boolean; onCh
 }
 
 function RolesTab() {
-  const [roles, setRoles] = React.useState<RoleDef[]>(MOCK_ROLES)
-  const [expanded, setExpanded] = React.useState<string | null>(null)
-  const [showCreate, setShowCreate] = React.useState(false)
-  const [newRoleName, setNewRoleName] = React.useState('')
-  const [newRoleDesc, setNewRoleDesc] = React.useState('')
-
-  function togglePerm(roleId: string, key: PermKey, val: boolean) {
-    setRoles(prev => prev.map(r => r.id === roleId ? { ...r, permissions: { ...r.permissions, [key]: val } } : r))
-  }
-
-  function createRole() {
-    if (!newRoleName.trim()) return
-    const perms: Record<PermKey, boolean> = Object.fromEntries(Object.keys(ALL_PERMS).map(k => [k, false])) as Record<PermKey, boolean>
-    setRoles(prev => [...prev, { id: `r${Date.now()}`, name: newRoleName.trim(), description: newRoleDesc.trim(), userCount: 0, color: '#64748b', permissions: perms }])
-    setNewRoleName(''); setNewRoleDesc(''); setShowCreate(false)
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Roles &amp; Permissions</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Configure what each role can do across the platform.</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(s => !s)}
-          className="flex items-center gap-2 rounded-lg bg-[#0a192f] px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
-        >
-          <Plus className="size-4" />
-          Create Custom Role
-        </button>
-      </div>
-
-      {/* Create form */}
-      {showCreate && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 flex flex-col gap-3">
-          <p className="text-sm font-semibold text-indigo-900">New Custom Role</p>
-          <div className="flex flex-wrap gap-3">
-            <input
-              type="text"
-              placeholder="Role name"
-              value={newRoleName}
-              onChange={e => setNewRoleName(e.target.value)}
-              className="flex-1 min-w-[200px] rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-            <input
-              type="text"
-              placeholder="Description (optional)"
-              value={newRoleDesc}
-              onChange={e => setNewRoleDesc(e.target.value)}
-              className="flex-[2] min-w-[280px] rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-            <button
-              type="button"
-              onClick={createRole}
-              disabled={!newRoleName.trim()}
-              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
-            >
-              <Check className="size-4" />
-              Create
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCreate(false)}
-              className="p-2 rounded-lg text-slate-400 hover:bg-indigo-100 transition-colors"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Role cards */}
-      <div className="flex flex-col gap-3">
-        {roles.map(role => {
-          const isOpen = expanded === role.id
-          const grantedCount = Object.values(role.permissions).filter(Boolean).length
-          const totalCount   = Object.keys(role.permissions).length
-
-          return (
-            <div key={role.id} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              {/* Card header */}
-              <button
-                type="button"
-                onClick={() => setExpanded(isOpen ? null : role.id)}
-                className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-slate-50 transition-colors"
-              >
-                <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-white text-sm font-bold" style={{ background: role.color }}>
-                  {role.name.charAt(0)}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-slate-900">{role.name}</span>
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{role.userCount} user{role.userCount !== 1 ? 's' : ''}</span>
-                    <span className="text-xs text-slate-400">{grantedCount}/{totalCount} permissions</span>
-                  </div>
-                  <p className="text-sm text-slate-500 truncate mt-0.5">{role.description}</p>
-                </div>
-                {/* Mini progress bar */}
-                <div className="hidden sm:flex flex-col items-end gap-1 shrink-0 w-24">
-                  <span className="text-[10px] text-slate-400">{Math.round((grantedCount / totalCount) * 100)}% access</span>
-                  <div className="w-full h-1.5 rounded-full bg-slate-100">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${(grantedCount / totalCount) * 100}%`, background: role.color }} />
-                  </div>
-                </div>
-                {isOpen
-                  ? <ChevronDown className="size-4 text-slate-400 shrink-0" />
-                  : <ChevronRight className="size-4 text-slate-400 shrink-0" />
-                }
-              </button>
-
-              {/* Expanded permission matrix */}
-              {isOpen && (
-                <div className="border-t border-slate-100 px-5 py-4 bg-slate-50/50">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
-                    {PERMISSION_GROUPS.map(group => (
-                      <div key={group.label}>
-                        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">{group.label}</p>
-                        <div className="flex flex-col gap-2">
-                          {group.keys.map(([key, label]) => (
-                            <div key={key} className="flex items-center justify-between gap-3">
-                              <span className="text-sm text-slate-700">{label}</span>
-                              <PermissionToggle
-                                checked={role.permissions[key]}
-                                onChange={v => togglePerm(role.id, key, v)}
-                                label={`${label} permission for ${role.name}`}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+    <div className="flex flex-col gap-4 items-center justify-center py-16">
+      <Shield className="size-12 text-muted-foreground/40" aria-hidden />
+      <div className="text-center">
+        <h3 className="font-semibold text-foreground">Roles are managed in the Users page</h3>
+        <p className="text-sm text-muted-foreground mt-1">Go to the "Users" tab to configure roles and permissions.</p>
       </div>
     </div>
   )
@@ -272,174 +114,16 @@ function RolesTab() {
 interface TeamMember { id: string; name: string; role: string; initials: string; color: string }
 interface Team { id: string; name: string; department: string; lead: string; memberCount: number; color: string; members: TeamMember[] }
 
-const MOCK_TEAMS: Team[] = [
-  { id: 't1', name: 'Engineering Core',  department: 'Engineering',   lead: 'Mike Ross',     memberCount: 6, color: '#2563eb', members: [
-    { id: 'm1', name: 'Mike Ross',      role: 'Engineering Manager', initials: 'MR', color: '#dbeafe' },
-    { id: 'm2', name: 'Yuki Tanaka',    role: 'Sr. Electrical Eng',  initials: 'YT', color: '#dbeafe' },
-    { id: 'm3', name: 'Omar Al-Zaid',   role: 'Lead Civil Eng',      initials: 'OA', color: '#dbeafe' },
-    { id: 'm4', name: 'Lin Wei',        role: 'Structural Eng',      initials: 'LW', color: '#dbeafe' },
-    { id: 'm5', name: 'Priya Sharma',   role: 'Mechanical Eng',      initials: 'PS', color: '#dbeafe' },
-    { id: 'm6', name: 'James Morgan',   role: 'PMO Director',        initials: 'JM', color: '#dbeafe' },
-  ]},
-  { id: 't2', name: 'PMO & Commercial', department: 'Management',    lead: 'Sarah Chen',    memberCount: 4, color: '#7c3aed', members: [
-    { id: 'm7',  name: 'Sarah Chen',    role: 'Project Manager',     initials: 'SC', color: '#ede9fe' },
-    { id: 'm8',  name: 'Lisa Wang',     role: 'PMO Director',        initials: 'LW', color: '#ede9fe' },
-    { id: 'm9',  name: 'Emma Davis',    role: 'Finance Controller',  initials: 'ED', color: '#ede9fe' },
-    { id: 'm10', name: 'Aisha Al-R',    role: 'Finance Controller',  initials: 'AA', color: '#ede9fe' },
-  ]},
-  { id: 't3', name: 'HSE & Quality',    department: 'Safety',        lead: 'Rachel Green',  memberCount: 3, color: '#dc2626', members: [
-    { id: 'm11', name: 'Rachel Green',  role: 'HSE Manager',         initials: 'RG', color: '#fee2e2' },
-    { id: 'm12', name: 'Mohammed H.',   role: 'HSE Inspector',       initials: 'MH', color: '#fee2e2' },
-    { id: 'm13', name: 'Ali Hassan',    role: 'QA/QC Manager',       initials: 'AH', color: '#fee2e2' },
-  ]},
-  { id: 't4', name: 'Commissioning',    department: 'Operations',    lead: 'David Lee',     memberCount: 3, color: '#059669', members: [
-    { id: 'm14', name: 'David Lee',     role: 'Commissioning Mgr',   initials: 'DL', color: '#d1fae5' },
-    { id: 'm15', name: 'Rami Farouq',   role: 'Commissioning Eng',   initials: 'RF', color: '#d1fae5' },
-    { id: 'm16', name: 'Sung Park',     role: 'Systems Integrator',  initials: 'SP', color: '#d1fae5' },
-  ]},
-  { id: 't5', name: 'Procurement',      department: 'Supply Chain',  lead: 'Alex Kim',      memberCount: 2, color: '#d97706', members: [
-    { id: 'm17', name: 'Alex Kim',      role: 'Procurement Mgr',     initials: 'AK', color: '#fef3c7' },
-    { id: 'm18', name: 'Nina Patel',    role: 'Contracts Specialist',initials: 'NP', color: '#fef3c7' },
-  ]},
-]
+// Real teams are managed via Users & Roles page
+// No mock teams — team configuration routes to dedicated admin page
 
 function TeamsTab() {
-  const [teams, setTeams]           = React.useState<Team[]>(MOCK_TEAMS)
-  const [selected, setSelected]     = React.useState<string | null>(null)
-  const [showCreate, setShowCreate] = React.useState(false)
-  const [newName, setNewName]       = React.useState('')
-  const [newDept, setNewDept]       = React.useState('')
-
-  const activeTeam = teams.find(t => t.id === selected)
-
-  function createTeam() {
-    if (!newName.trim()) return
-    const colors = ['#2563eb','#7c3aed','#059669','#d97706','#dc2626','#0891b2']
-    const color = colors[teams.length % colors.length]
-    setTeams(prev => [...prev, { id: `t${Date.now()}`, name: newName.trim(), department: newDept.trim() || 'General', lead: '—', memberCount: 0, color, members: [] }])
-    setNewName(''); setNewDept(''); setShowCreate(false)
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Teams &amp; Departments</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Organise users into teams and assign team leads.</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(s => !s)}
-          className="flex items-center gap-2 rounded-lg bg-[#0a192f] px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
-        >
-          <Plus className="size-4" />
-          Create Team
-        </button>
-      </div>
-
-      {/* Create form */}
-      {showCreate && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 flex flex-col gap-3">
-          <p className="text-sm font-semibold text-blue-900">New Team</p>
-          <div className="flex flex-wrap gap-3">
-            <input
-              type="text"
-              placeholder="Team name"
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              className="flex-1 min-w-[200px] rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-            <input
-              type="text"
-              placeholder="Department"
-              value={newDept}
-              onChange={e => setNewDept(e.target.value)}
-              className="flex-1 min-w-[200px] rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-            <button type="button" onClick={createTeam} disabled={!newName.trim()}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
-              <Check className="size-4" /> Create
-            </button>
-            <button type="button" onClick={() => setShowCreate(false)} className="p-2 rounded-lg text-slate-400 hover:bg-blue-100 transition-colors">
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Team list */}
-        <div className="lg:col-span-1 flex flex-col gap-2">
-          {teams.map(team => (
-            <button
-              key={team.id}
-              type="button"
-              onClick={() => setSelected(team.id === selected ? null : team.id)}
-              className={cn(
-                'w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all',
-                team.id === selected
-                  ? 'border-[#0a192f] bg-[#0a192f]/5 ring-1 ring-[#0a192f]/20'
-                  : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm',
-              )}
-            >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full text-white text-xs font-bold" style={{ background: team.color }}>
-                {team.name.charAt(0)}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900 truncate">{team.name}</p>
-                <p className="text-xs text-slate-500">{team.department} · {team.memberCount} member{team.memberCount !== 1 ? 's' : ''}</p>
-              </div>
-              <ChevronRight className="size-4 text-slate-400 shrink-0" />
-            </button>
-          ))}
-        </div>
-
-        {/* Team detail */}
-        <div className="lg:col-span-2">
-          {activeTeam ? (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm h-full">
-              {/* Header */}
-              <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-full text-white font-bold" style={{ background: activeTeam.color }}>
-                  {activeTeam.name.charAt(0)}
-                </span>
-                <div className="flex-1">
-                  <p className="font-semibold text-slate-900">{activeTeam.name}</p>
-                  <p className="text-xs text-slate-500">{activeTeam.department} · Lead: <span className="font-medium">{activeTeam.lead}</span></p>
-                </div>
-                <button type="button" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
-                  <UserPlus className="size-3.5" /> Add Member
-                </button>
-              </div>
-
-              {/* Members */}
-              <div className="divide-y divide-slate-100">
-                {activeTeam.members.map(m => (
-                  <div key={m.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
-                    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-slate-700" style={{ background: m.color }}>
-                      {m.initials}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900">{m.name}</p>
-                      <p className="text-xs text-slate-500">{m.role}</p>
-                    </div>
-                    {m.name === activeTeam.lead && (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Lead</span>
-                    )}
-                    <button type="button" className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label={`Remove ${m.name}`}>
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-white flex flex-col items-center justify-center h-full min-h-[240px] gap-2 text-slate-400">
-              <UsersRound className="size-10" />
-              <p className="text-sm">Select a team to view members</p>
-            </div>
-          )}
-        </div>
+    <div className="flex flex-col gap-4 items-center justify-center py-16">
+      <UsersRound className="size-12 text-muted-foreground/40" aria-hidden />
+      <div className="text-center">
+        <h3 className="font-semibold text-foreground">Teams are managed in the Users page</h3>
+        <p className="text-sm text-muted-foreground mt-1">Go to the "Users" tab to organize team members and assign roles.</p>
       </div>
     </div>
   )
