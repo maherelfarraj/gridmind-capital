@@ -21,13 +21,18 @@ export async function GET(req: Request) {
 
 async function handle(req: Request) {
   const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') ?? ''
-    const url = new URL(req.url)
-    const provided = auth.replace(/^Bearer\s+/i, '') || url.searchParams.get('secret') || ''
-    if (provided !== secret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  
+  // Fail CLOSED: cron must be configured (secret set) and validation must pass
+  if (!secret) {
+    return NextResponse.json({ error: 'Cron not configured' }, { status: 500 })
+  }
+  
+  // Accept secret from Authorization header ONLY (not URL params)
+  const auth = req.headers.get('authorization') ?? ''
+  const provided = auth.replace(/^Bearer\s+/i, '')
+  
+  if (!provided || provided !== secret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
   try {

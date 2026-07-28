@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -441,13 +442,23 @@ export async function listLinkableDocuments(projectId: string): Promise<Linkable
 export async function getLinkedDocumentUrl(
   documentId: string,
 ): Promise<{ url?: string; error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: 'Unauthorized' }
+  }
+
+  const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
+  
+  // Fetch document by id WITH tenant predicate
   const { data, error } = await admin
     .from('document_files')
     .select('storage_path')
     .eq('id', documentId)
+    .eq('tenant_id', tenantId)
     .single()
-  if (error || !data?.storage_path) return { error: 'Document not found.' }
+  if (error || !data?.storage_path) return { error: 'Document not found or access denied.' }
   const { data: signed, error: signErr } = await admin.storage
     .from('documents')
     .createSignedUrl(data.storage_path as string, 300)
