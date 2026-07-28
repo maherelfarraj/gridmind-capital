@@ -3,7 +3,13 @@ import type {
   CharterDeliverable, InitiationMilestone, OpportunityScreen,
 } from './types'
 
-export const MOCK_CHARTER: ProjectCharter = {
+/**
+ * @deprecated — No longer used in CharterTab (now renders empty state for real charters).
+ * Mock constants below are kept as reference only for development/testing.
+ */
+
+// Old mock fixture — do not export or use in render paths
+const MOCK_CHARTER: ProjectCharter = {
   id: 'chr-001',
   project_code: 'SOL-2026-001',
   project_name: 'Sirius 400MW Solar PV — NEOM Region',
@@ -57,7 +63,8 @@ export const MOCK_CHARTER: ProjectCharter = {
   ],
 }
 
-export const MOCK_STAKEHOLDERS: Stakeholder[] = [
+// Old mock fixtures — reference only
+const MOCK_STAKEHOLDERS: Stakeholder[] = [
   { id: 'sh1', name: 'H.E. Abdullah Al-Rashidi', role: 'sponsor',   title: 'VP — Renewable Energy',   organisation: 'NEOM Company',          email: 'a.alrashidi@neom.com',       phone: '+966 50 111 0001', influence: 'high', interest: 'high', charter_signatory: true,  signed: true,  signed_date: '2026-02-10' },
   { id: 'sh2', name: 'James Morgan',             role: 'pmo',       title: 'PMO Director',             organisation: 'GridMind Capital',      email: 'j.morgan@gridmind.com',      phone: '+971 50 222 0002', influence: 'high', interest: 'high', charter_signatory: true,  signed: false, signed_date: null         },
   { id: 'sh3', name: 'Aisha Al-Rashidi',         role: 'finance',   title: 'Head of Project Finance',  organisation: 'GridMind Capital',      email: 'a.alrashidi@gridmind.com',   phone: '+971 50 333 0003', influence: 'high', interest: 'high', charter_signatory: true,  signed: false, signed_date: null         },
@@ -68,7 +75,7 @@ export const MOCK_STAKEHOLDERS: Stakeholder[] = [
   { id: 'sh8', name: 'Yuki Tanaka',              role: 'technical', title: 'Lead Transmission Engineer','organisation': 'ENGIE Engineering',  email: 'y.tanaka@engie.com',         phone: '+33 6 888 0008',   influence: 'low',  interest: 'high', charter_signatory: false, signed: false, signed_date: null },
 ]
 
-export const MOCK_RISKS: InitiationRisk[] = [
+const MOCK_RISKS: InitiationRisk[] = [
   { id: 'r1', category: 'Regulatory',  description: 'Delay in obtaining MOMRA environmental clearance extending beyond Q2 2027', level: 'high',     probability: 35, impact: 85, mitigation: 'Pre-engage MOMRA EIA team Q1 2026; appoint local environmental consultant',            owner: 'Omar Al-Zaid' },
   { id: 'r2', category: 'Financial',   description: 'USD/SAR exchange rate movement eroding equity IRR by >1%',                   level: 'medium',   probability: 40, impact: 60, mitigation: 'FX hedging strategy to be agreed at financial close; SAR-denominated PPA',          owner: 'Aisha Al-Rashidi' },
   { id: 'r3', category: 'Technical',   description: 'GHI resource lower than P50 estimate resulting in energy yield shortfall',   level: 'medium',   probability: 25, impact: 65, mitigation: 'Additional 6-month met-mast campaign; bankable energy report from independent engineer', owner: 'Yuki Tanaka' },
@@ -77,7 +84,7 @@ export const MOCK_RISKS: InitiationRisk[] = [
   { id: 'r6', category: 'Technical',   description: 'Tracker pile foundation challenges from NEOM dune terrain geotechnical surprises', level: 'medium', probability: 45, impact: 50, mitigation: 'Early geotechnical investigation programme (300+ boreholes) before EPC award', owner: 'Omar Al-Zaid' },
 ]
 
-export const MOCK_DELIVERABLES: CharterDeliverable[] = [
+const MOCK_DELIVERABLES: CharterDeliverable[] = [
   { id: 'd1', name: 'Project Charter Document v1.0',       category: 'Charter',         status: 'in_progress', owner: 'James Morgan',     due_date: '2026-03-01', completed_date: null,         notes: 'Version 0.4 in stakeholder review',     mandatory: true  },
   { id: 'd2', name: 'Opportunity Screening Report',         category: 'Development',     status: 'approved',    owner: 'Omar Al-Zaid',     due_date: '2026-01-31', completed_date: '2026-01-28', notes: 'Passed 9/10 criteria — PPA risk noted',  mandatory: true  },
   { id: 'd3', name: 'Preliminary Financial Model (v0.1)',   category: 'Finance',         status: 'complete',    owner: 'Aisha Al-Rashidi', due_date: '2026-02-15', completed_date: '2026-02-12', notes: 'Base case IRR 12.4%. Sensitivity done',  mandatory: true  },
@@ -89,7 +96,7 @@ export const MOCK_DELIVERABLES: CharterDeliverable[] = [
   { id: 'd9', name: 'ESG & Social Screening Note',          category: 'ESG',             status: 'complete',    owner: 'Sarah Chen',       due_date: '2026-02-22', completed_date: '2026-02-21', notes: 'No Category A flags identified',         mandatory: false },
 ]
 
-export const MOCK_MILESTONES: InitiationMilestone[] = [
+const MOCK_MILESTONES: InitiationMilestone[] = [
   { id: 'm1', name: 'Opportunity Identified',      target_date: '2026-01-10', actual_date: '2026-01-08', status: 'complete',     gate: 'Pre-G0', owner: 'James Morgan' },
   { id: 'm2', name: 'Screening Criteria Passed',   target_date: '2026-01-31', actual_date: '2026-01-28', status: 'complete',     gate: 'G0',     owner: 'Omar Al-Zaid' },
   { id: 'm3', name: 'Charter Draft Circulated',    target_date: '2026-02-15', actual_date: '2026-02-16', status: 'complete',     gate: 'G0',     owner: 'James Morgan' },
@@ -98,7 +105,7 @@ export const MOCK_MILESTONES: InitiationMilestone[] = [
   { id: 'm6', name: 'G0 Gate Closed — Enter G1',   target_date: '2026-04-01', actual_date: null,         status: 'pending',      gate: 'G0→G1',  owner: 'James Morgan' },
 ]
 
-export const MOCK_SCREENING: OpportunityScreen[] = [
+const MOCK_SCREENING: OpportunityScreen[] = [
   { id: 's1', criterion: 'Minimum project size ≥ 100MW',           category: 'Strategic',   result: 'pass',        score: 10, max_score: 10, notes: '400MWp — well above threshold' },
   { id: 's2', criterion: 'GridMind target market (MENA, SE Asia)',  category: 'Strategic',   result: 'pass',        score: 10, max_score: 10, notes: 'KSA core market — NEOM anchor client' },
   { id: 's3', criterion: 'Minimum equity IRR target ≥ 10%',        category: 'Financial',   result: 'pass',        score: 10, max_score: 10, notes: 'Base case 12.4% — above 10% hurdle' },

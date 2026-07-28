@@ -165,20 +165,7 @@ const ACTION_META: Record<AuditAction, { label: string; color: string }> = {
   settings_changed:   { label: 'Settings Changed',      color: '#64748b' },
 }
 
-const MOCK_AUDIT: AuditEntry[] = [
-  { id: 'a1',  timestamp: '2026-07-21 17:42:11', actor: 'John Doe',     actorInitials: 'JD', action: 'user_invited',         target: 'omar.aziz@gridmind.capital', ip: '192.168.1.10',  details: 'Invited with role: Project Manager, Dept: Engineering',  severity: 'info'    },
-  { id: 'a2',  timestamp: '2026-07-21 16:55:03', actor: 'Sarah Chen',   actorInitials: 'SC', action: 'role_changed',          target: 'alex@gridmind.capital',      ip: '10.0.0.42',     details: 'Changed role from Viewer → Procurement Manager',          severity: 'warning' },
-  { id: 'a3',  timestamp: '2026-07-21 15:30:47', actor: 'John Doe',     actorInitials: 'JD', action: 'permission_modified',   target: 'Role: Engineer',             ip: '192.168.1.10',  details: 'Revoked reports_export permission from Engineer role',     severity: 'warning' },
-  { id: 'a4',  timestamp: '2026-07-21 14:12:33', actor: 'Lisa Wang',    actorInitials: 'LW', action: 'project_created',       target: 'Helios Solar II',            ip: '10.0.0.88',     details: 'New 500MW project created under NEOM portfolio',          severity: 'info'    },
-  { id: 'a5',  timestamp: '2026-07-21 13:05:21', actor: 'John Doe',     actorInitials: 'JD', action: 'user_suspended',        target: 'guest@gridmind.capital',     ip: '192.168.1.10',  details: 'Suspended for 30 days. Reason: Repeated policy violations',severity: 'danger'  },
-  { id: 'a6',  timestamp: '2026-07-21 11:58:10', actor: 'Unknown',      actorInitials: '??', action: 'login_failed',          target: 'admin@gridmind.capital',     ip: '203.0.113.55',  details: '3 consecutive failed attempts — account temporarily locked',severity: 'danger'  },
-  { id: 'a7',  timestamp: '2026-07-21 10:44:02', actor: 'Sarah Chen',   actorInitials: 'SC', action: 'login_success',         target: 'sarah@gridmind.capital',     ip: '10.0.0.42',     details: 'Logged in via email/password. Session created.',           severity: 'info'    },
-  { id: 'a8',  timestamp: '2026-07-20 17:20:55', actor: 'John Doe',     actorInitials: 'JD', action: 'settings_changed',      target: 'Tenant Settings',            ip: '192.168.1.10',  details: 'Updated MFA policy: enforced for Admin roles',             severity: 'warning' },
-  { id: 'a9',  timestamp: '2026-07-20 14:09:38', actor: 'Lisa Wang',    actorInitials: 'LW', action: 'user_deleted',          target: 'temp.user@gridmind.capital', ip: '10.0.0.88',     details: 'Soft deleted — recoverable for 30 days',                  severity: 'danger'  },
-  { id: 'a10', timestamp: '2026-07-20 09:31:17', actor: 'Rachel Green', actorInitials: 'RG', action: 'project_created',       target: 'Vega BESS Phase 2',          ip: '10.0.0.15',     details: 'Created under NEOM portfolio, 200MWh battery storage',    severity: 'info'    },
-  { id: 'a11', timestamp: '2026-07-19 16:47:50', actor: 'John Doe',     actorInitials: 'JD', action: 'role_changed',          target: 'rachel@gridmind.capital',    ip: '192.168.1.10',  details: 'Changed role from QA/QC Manager → HSE Manager',           severity: 'warning' },
-  { id: 'a12', timestamp: '2026-07-19 11:22:04', actor: 'Sarah Chen',   actorInitials: 'SC', action: 'user_invited',          target: 'contractor1@external.com',   ip: '10.0.0.42',     details: 'Invited with role: Contractor, linked to Sirius 400MW',   severity: 'info'    },
-]
+// Real audit log records fetched from database via AuditTrail component — no mock fixtures
 
 const SEVERITY_META = {
   info:    { dot: 'bg-blue-500',  row: '' },

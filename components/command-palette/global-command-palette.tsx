@@ -43,36 +43,7 @@ interface CommandItem {
   icon: React.ComponentType<{ className?: string; size?: number }>
 }
 
-// ─── Mock index data ─────────────────────────────────────────
-
-const MOCK_RESULTS: ResultItem[] = [
-  // Projects
-  { id: 'p1', type: 'projects', title: 'Sirius 400MW Solar', subtitle: 'NEOM, Saudi Arabia', meta: 'G4 — Construction', href: '/projects/sirius', badge: { label: 'Active', color: '#22c55e' }, status: { color: '#22c55e' } },
-  { id: 'p2', type: 'projects', title: 'Vega BESS 2GWh', subtitle: 'Riyadh, Saudi Arabia', meta: 'G3 — Procurement', href: '/projects/vega', badge: { label: 'Active', color: '#22c55e' }, status: { color: '#22c55e' } },
-  { id: 'p3', type: 'projects', title: 'Lyra Grid Upgrade', subtitle: 'Jeddah, Saudi Arabia', meta: 'G5 — QA/Inspection', href: '/projects/lyra', badge: { label: 'On Hold', color: '#f59e0b' }, status: { color: '#f59e0b' } },
-  { id: 'p4', type: 'projects', title: 'Orion Wind Farm', subtitle: 'Tabuk, Saudi Arabia', meta: 'G2 — Engineering', href: '/projects/orion', badge: { label: 'Active', color: '#22c55e' }, status: { color: '#22c55e' } },
-  { id: 'p5', type: 'projects', title: 'Helios Substation', subtitle: 'Dammam, Saudi Arabia', meta: 'G6 — Commissioning', href: '/projects/helios', badge: { label: 'Active', color: '#22c55e' }, status: { color: '#22c55e' } },
-  // Gates
-  { id: 'g1', type: 'gates', title: 'G4 — Construction Readiness', subtitle: 'Sirius 400MW', meta: 'In Progress', href: '/projects/sirius/g4', badge: { label: 'G4', color: '#6366f1' }, status: { color: '#6366f1' } },
-  { id: 'g2', type: 'gates', title: 'G5 — QA Gate Review', subtitle: 'Lyra Grid Upgrade', meta: 'Pending Approval', href: '/projects/lyra/g5', badge: { label: 'G5', color: '#f59e0b' }, status: { color: '#f59e0b' } },
-  { id: 'g3', type: 'gates', title: 'G6 — Commissioning Gate', subtitle: 'Helios Substation', meta: 'Complete', href: '/projects/helios/g6', badge: { label: 'G6', color: '#22c55e' }, status: { color: '#22c55e' } },
-  { id: 'g4', type: 'gates', title: 'G3 — Contract Award', subtitle: 'Vega BESS', meta: 'Awaiting Chair', href: '/projects/vega/g3', badge: { label: 'G3', color: '#3b82f6' }, status: { color: '#3b82f6' } },
-  // Tasks
-  { id: 't1', type: 'tasks', title: 'Review pile foundation calculations', subtitle: 'Omar Al-Zaid', meta: 'Due 25 Jul', href: '/approvals', badge: { label: 'Critical', color: '#ef4444' } },
-  { id: 't2', type: 'tasks', title: 'Approve HV cable routing Rev C', subtitle: 'Yuki Tanaka', meta: 'Due 28 Jul', href: '/approvals', badge: { label: 'High', color: '#f59e0b' } },
-  { id: 't3', type: 'tasks', title: 'Submit monthly progress report IPA-03', subtitle: 'Aisha Al-Rashidi', meta: 'Due 31 Jul', href: '/approvals', badge: { label: 'Medium', color: '#6b7280' } },
-  { id: 't4', type: 'tasks', title: 'Close NCR-042 — waterproofing defect', subtitle: 'James Morgan', meta: 'Overdue', href: '/approvals', badge: { label: 'Overdue', color: '#ef4444' } },
-  // Documents
-  { id: 'd1', type: 'documents', title: 'EPC Contract — Sirius 400MW', subtitle: 'Last modified 3 days ago', meta: 'Sirius 400MW', href: '/documents', badge: { label: 'Contract', color: '#6366f1' } },
-  { id: 'd2', type: 'documents', title: 'G4 Gate Pack — Construction', subtitle: 'Last modified 1 day ago', meta: 'Vega BESS', href: '/documents', badge: { label: 'Gate Pack', color: '#3b82f6' } },
-  { id: 'd3', type: 'documents', title: 'Risk Register Rev 4', subtitle: 'Last modified 5 days ago', meta: 'Orion Wind', href: '/documents', badge: { label: 'Risk', color: '#f59e0b' } },
-  { id: 'd4', type: 'documents', title: 'Environmental Impact Assessment', subtitle: 'Last modified 12 days ago', meta: 'Lyra Grid', href: '/documents', badge: { label: 'Compliance', color: '#22c55e' } },
-  // People
-  { id: 'u1', type: 'people', title: 'James Morgan', subtitle: 'PMO Director', meta: 'Project Management', href: '/admin/users', initials: 'JM', avatarColor: '#6366f1' },
-  { id: 'u2', type: 'people', title: 'Omar Al-Zaid', subtitle: 'Lead Civil Engineer', meta: 'Engineering', href: '/admin/users', initials: 'OA', avatarColor: '#3b82f6' },
-  { id: 'u3', type: 'people', title: 'Aisha Al-Rashidi', subtitle: 'Finance Controller', meta: 'Finance', href: '/admin/users', initials: 'AA', avatarColor: '#f59e0b' },
-  { id: 'u4', type: 'people', title: 'Yuki Tanaka', subtitle: 'Sr. Electrical Engineer', meta: 'Engineering', href: '/admin/users', initials: 'YT', avatarColor: '#22c55e' },
-]
+// Live results pool sourced from database — no mock index data fallback
 
 const COMMANDS: CommandItem[] = [
   // Navigation
@@ -239,10 +210,9 @@ export function GlobalCommandPalette({ open, onClose }: GlobalCommandPaletteProp
     }))
   }, [liveProjects])
 
-  // Filtered results — live projects first, then non-project mock rows
+  // Filtered results — live projects only
   const results = React.useMemo(() => {
-    const mockNonProjects = MOCK_RESULTS.filter((r) => r.type !== 'projects')
-    const pool = [...liveProjectResults, ...(liveProjectResults.length ? mockNonProjects : MOCK_RESULTS)]
+    const pool = liveProjectResults  // Only live results, no mock fallback
     const base = filter === 'all' ? pool : pool.filter((r) => r.type === filter)
     if (!searchQuery) return base
     const q = searchQuery.toLowerCase()
@@ -344,7 +314,7 @@ export function GlobalCommandPalette({ open, onClose }: GlobalCommandPaletteProp
               >
                 {tab.label}
                 <kbd className="hidden sm:inline-flex items-center justify-center rounded border border-border bg-muted px-1 font-mono text-[9px] text-muted-foreground/70">
-                  ⌘{i + 1}
+                  ���{i + 1}
                 </kbd>
               </button>
             ))}
