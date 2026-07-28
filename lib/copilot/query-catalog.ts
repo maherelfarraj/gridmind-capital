@@ -2,16 +2,21 @@
 // These queries are dispatched based on user intent keywords
 // Each query binds to existing read actions, ensuring no new raw DB access
 
-import type { ExcelColumn } from '@/lib/excel/export'
-
 export type CatalogRow = Record<string, any>
+
+export type CatalogColumn = {
+  header: string
+  key: string
+  type?: 'text' | 'number' | 'date' | 'currency'
+  sortable?: boolean
+}
 
 export interface CatalogQuery {
   id: string
   label: string
   intents: string[]
   run: () => Promise<CatalogRow[]>
-  columns: ExcelColumn[]
+  columns: CatalogColumn[]
   rowLink?: (row: CatalogRow) => string | null
 }
 
