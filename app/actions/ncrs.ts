@@ -6,6 +6,7 @@ import { sendNcrEmail } from '@/lib/email/send'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -338,6 +339,12 @@ export async function updateNcr(id: string, patch: {
   root_cause?: string
   corrective_action?: string
 }): Promise<ActionResult<Ncr>> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const admin = createAdminClient()
   const existing = await getNcr(id)
   if (!existing) return { error: 'NCR not found' }

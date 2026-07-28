@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireApprover, getAuthActor, requireAssignedApprover, ADMIN_ROLES } from '@/lib/auth/guard'
+import { requireUser, requireInternalRole } from '@/lib/guards'
 import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
@@ -90,102 +91,108 @@ export async function createApprovalWorkflow(
   objectId: string,
   title: string,
   amount: number | null,
-  createdBy: string,
 ): Promise<{ id: string; error?: string }> {
-  const tenantId = await getCurrentTenantId()
-  const supabase = createAdminClient()
+  try {
+    const { userId } = await requireUser()
+    
+    const tenantId = await getCurrentTenantId()
+    const supabase = createAdminClient()
+    const createdBy = userId
 
-  // Idempotent: skip if pending approval exists for this object
-  const { data: existing } = await supabase
-    .from('approvals')
-    .select('id')
-    .eq('object_id', objectId)
-    .eq('object_type', objectType)
-    .eq('status', 'pending')
-    .limit(1)
-    .maybeSingle()
-  if (existing) return { id: existing.id, error: 'Pending approval already exists for this object' }
+    // Idempotent: skip if pending approval exists for this object
+    const { data: existing } = await supabase
+      .from('approvals')
+      .select('id')
+      .eq('object_id', objectId)
+      .eq('object_type', objectType)
+      .eq('status', 'pending')
+      .limit(1)
+      .maybeSingle()
+    if (existing) return { id: existing.id, error: 'Pending approval already exists for this object' }
 
-  // Find matching approval_rule: object_type + amount within min/max, highest priority
-  const { data: rule } = await supabase
-    .from('approval_rules')
-    .select('id, required_roles, approval_levels, min_amount, max_amount')
-    .eq('object_type', objectType)
-    .eq('is_active', true)
-    .lte('min_amount', amount ?? 0)
-    .gte('max_amount', amount ?? 0)
-    .order('min_amount', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    // Find matching approval_rule: object_type + amount within min/max, highest priority
+    const { data: rule } = await supabase
+      .from('approval_rules')
+      .select('id, required_roles, approval_levels, min_amount, max_amount')
+      .eq('object_type', objectType)
+      .eq('is_active', true)
+      .lte('min_amount', amount ?? 0)
+      .gte('max_amount', amount ?? 0)
+      .order('min_amount', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-  // Fallback if no exact rule match: use default tenant_admin rule
-  let approvalLevels = 1
-  let requiredRoles = ['tenant_admin']
-  if (rule) {
-    approvalLevels = rule.approval_levels ?? 1
-    requiredRoles = rule.required_roles ?? ['tenant_admin']
+    // Fallback if no exact rule match: use default tenant_admin rule
+    let approvalLevels = 1
+    let requiredRoles = ['tenant_admin']
+    if (rule) {
+      approvalLevels = rule.approval_levels ?? 1
+      requiredRoles = rule.required_roles ?? ['tenant_admin']
+    }
+
+    // Resolve the first level approver (will be assigned_to on approvals.assignee_id)
+    const firstLevelRole = requiredRoles[0] ?? 'tenant_admin'
+    const firstLevelAssigneeId = await resolveApproveeSeat(supabase, tenantId, firstLevelRole)
+
+    // Create approvals row with initial assignee = first level approver
+    const { data: approval, error: apprErr } = await supabase
+      .from('approvals')
+      .insert({
+        tenant_id: tenantId,
+        object_type: objectType,
+        object_id: objectId,
+        title,
+        status: 'pending',
+        priority: 'normal',
+        amount,
+        requester_id: createdBy,
+        assignee_id: firstLevelAssigneeId,
+        rule_id: rule?.id,
+      })
+      .select('id')
+      .single()
+
+    if (apprErr || !approval) return { id: '', error: `Approval creation failed: ${apprErr?.message}` }
+
+    // Create approval_steps (one per level)
+    const stepRows = []
+    for (let level = 1; level <= approvalLevels; level++) {
+      const role = requiredRoles[level - 1] ?? 'tenant_admin'
+      const assigneeId = await resolveApproveeSeat(supabase, tenantId, role)
+      stepRows.push({
+        approval_id: approval.id,
+        level,
+        assigned_to: assigneeId,
+        status: 'pending',
+      })
+    }
+
+    const { error: stepErr } = await supabase.from('approval_steps').insert(stepRows)
+    if (stepErr) console.log(`[v0] approval_steps creation warning: ${stepErr.message}`)
+
+    // Emit events: 'created' + 'assigned' per level
+    const eventRows = [
+      {
+        approval_id: approval.id,
+        actor_id: createdBy,
+        event_type: 'created',
+        metadata: { rule: rule?.id, levels: approvalLevels, amount },
+      },
+      ...stepRows.map((s) => ({
+        approval_id: approval.id,
+        actor_id: createdBy,
+        event_type: 'assigned',
+        metadata: { level: s.level, assigned_to: s.assigned_to },
+      })),
+    ]
+
+    const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
+    if (eventErr) console.log(`[v0] approval_events creation warning: ${eventErr.message}`)
+
+    return { id: approval.id }
+  } catch (e: any) {
+    return { id: '', error: e.message }
   }
-
-  // Resolve the first level approver (will be assigned_to on approvals.assignee_id)
-  const firstLevelRole = requiredRoles[0] ?? 'tenant_admin'
-  const firstLevelAssigneeId = await resolveApproveeSeat(supabase, tenantId, firstLevelRole)
-
-  // Create approvals row with initial assignee = first level approver
-  const { data: approval, error: apprErr } = await supabase
-    .from('approvals')
-    .insert({
-      tenant_id: tenantId,
-      object_type: objectType,
-      object_id: objectId,
-      title,
-      status: 'pending',
-      priority: 'normal',
-      amount,
-      requester_id: createdBy,
-      assignee_id: firstLevelAssigneeId,
-      rule_id: rule?.id,
-    })
-    .select('id')
-    .single()
-
-  if (apprErr || !approval) return { id: '', error: `Approval creation failed: ${apprErr?.message}` }
-
-  // Create approval_steps (one per level)
-  const stepRows = []
-  for (let level = 1; level <= approvalLevels; level++) {
-    const role = requiredRoles[level - 1] ?? 'tenant_admin'
-    const assigneeId = await resolveApproveeSeat(supabase, tenantId, role)
-    stepRows.push({
-      approval_id: approval.id,
-      level,
-      assigned_to: assigneeId,
-      status: 'pending',
-    })
-  }
-
-  const { error: stepErr } = await supabase.from('approval_steps').insert(stepRows)
-  if (stepErr) console.log(`[v0] approval_steps creation warning: ${stepErr.message}`)
-
-  // Emit events: 'created' + 'assigned' per level
-  const eventRows = [
-    {
-      approval_id: approval.id,
-      actor_id: createdBy,
-      event_type: 'created',
-      metadata: { rule: rule?.id, levels: approvalLevels, amount },
-    },
-    ...stepRows.map((s) => ({
-      approval_id: approval.id,
-      actor_id: createdBy,
-      event_type: 'assigned',
-      metadata: { level: s.level, assigned_to: s.assigned_to },
-    })),
-  ]
-
-  const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
-  if (eventErr) console.log(`[v0] approval_events creation warning: ${eventErr.message}`)
-
-  return { id: approval.id }
 }
 
 /**
@@ -355,7 +362,6 @@ export async function backfillOPP001DecidedBy(): Promise<{ updated: number; erro
  * Replaces separate insert calls with guaranteed consistency.
  */
 export async function createProjectGoverned(payload: {
-  tenant_id: string
   code: string
   name: string
   technology?: string
@@ -366,14 +372,28 @@ export async function createProjectGoverned(payload: {
   target_completion?: string // ISO date
   project_manager?: string // UUID
   amount?: number
-  created_by: string // UUID
 }): Promise<{ project_id?: string; approval_id?: string; error?: string }> {
-  const supabase = createAdminClient()
+  try {
+    // Require admin role
+    await requireInternalRole(['tenant_admin', 'system_admin', 'project_director'])
+    
+    // Derive tenant_id and created_by from session
+    const tenantId = await getCurrentTenantId()
+    const { userId } = await requireUser()
+    
+    const supabase = createAdminClient()
 
-  // Call RPC function
-  const { data, error } = await supabase.rpc('create_project_governed', {
-    payload: JSON.stringify(payload),
-  })
+    // Build full payload with session-derived values
+    const fullPayload = {
+      tenant_id: tenantId,
+      created_by: userId,
+      ...payload,
+    }
+
+    // Call RPC function
+    const { data, error } = await supabase.rpc('create_project_governed', {
+      payload: JSON.stringify(fullPayload),
+    })
 
   if (error || !data) {
     return { error: error?.message ?? 'RPC call failed' }
@@ -381,13 +401,16 @@ export async function createProjectGoverned(payload: {
 
   // Unwrap result from RPC
   const result = typeof data === 'string' ? JSON.parse(data) : data
-  if (result.error) {
-    return { error: result.error }
-  }
+    if (result.error) {
+      return { error: result.error }
+    }
 
-  return {
-    project_id: result.project_id,
-    approval_id: result.approval_id,
+    return {
+      project_id: result.project_id,
+      approval_id: result.approval_id,
+    }
+  } catch (e: any) {
+    return { error: e.message }
   }
 }
 
