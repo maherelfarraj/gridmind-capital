@@ -339,18 +339,30 @@ export async function approveGate(input: {
   const actor = await getActor()
   const admin = createAdminClient()
 
-  // Verify gate sign-offs are complete by checking the enforce_gate_approval trigger
-  // (the trigger will reject the update if sign-offs are incomplete). This validates
-  // the gate before advancing. The actual phase_gates.status transition (approved →
-  // the next row opening) is handled by advanceProjectGate.
+  // Verify this gate IS the project's current active gate (prevent approving a stale gate)
+  const { data: projectRow, error: projectErr } = await admin
+    .from('projects')
+    .select('current_phase')
+    .eq('id', projectId)
+    .single()
+
+  if (projectErr) return { error: `Could not load project: ${projectErr.message}` }
+  if (!projectRow) return { error: 'Project not found' }
+
   const { data: gateRow, error: gateErr } = await admin
     .from('phase_gates')
-    .select('phase_number')
+    .select('id, phase_number, status')
     .eq('id', phaseGateId)
     .maybeSingle()
 
   if (gateErr) return { error: `Could not find gate: ${gateErr.message}` }
   if (!gateRow) return { error: 'Gate not found.' }
+  
+  // Verify the gate is the current active gate (phase_number = current_phase)
+  // Current active gate has phase_number = current_phase (G0 is phase_number 0, current_phase 0, etc.)
+  if (gateRow.phase_number !== projectRow.current_phase) {
+    return { error: 'This is not the project\'s current active gate' }
+  }
 
   // Verify all sign-offs are signed before advancing
   const { data: unsignedSignoffs, error: soErr } = await admin

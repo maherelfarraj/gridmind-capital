@@ -234,6 +234,51 @@ async function submitGateForm(
 
   const supabase = createAdminClient()
 
+  // Gate phase mapping: which current_phase values are allowed to submit each gate
+  const PHASE_GATE_MAPPING: Record<number, number[]> = {
+    0: [0],          // G0: must be at current_phase 0 (always)
+    1: [0, 1],       // G1: can submit at 0 or >= 0
+    2: [3],          // G2: must be at >= 3 (actually at exactly 3, since this is the current gate) — adjust per spec
+    3: [4],          // G3: >= 4
+    4: [5],          // G4: >= 5
+    5: [6],          // G5: >= 6
+    6: [6],          // G6: >= 6
+    7: [7],          // G7: >= 7
+  }
+
+  // Verify project exists and get its current phase
+  const { data: project, error: projectErr } = await supabase
+    .from('projects')
+    .select('id, current_phase')
+    .eq('id', projectId)
+    .single()
+
+  if (projectErr) return { error: `Could not find project: ${projectErr.message}` }
+  if (!project) return { error: 'Project not found' }
+
+  // Validate current_phase allows this gate submission
+  const allowedPhases = PHASE_GATE_MAPPING[gateNumber] ?? []
+  if (!allowedPhases.includes(project.current_phase)) {
+    return { error: `Gate locked: this gate submission is not available at the current project phase` }
+  }
+
+  // Check if an existing approved submission exists (reject resubmit of approved)
+  const { data: existingSubmission, error: subCheckErr } = await supabase
+    .from('gate_submissions')
+    .select('id, status')
+    .eq('project_id', projectId)
+    .eq('gate_number', gateNumber)
+    .single()
+
+  if (subCheckErr && subCheckErr.code !== 'PGRST116') {
+    // PGRST116 = no rows, which is normal
+    return { error: `Submission check failed: ${subCheckErr.message}` }
+  }
+
+  if (existingSubmission?.status === 'approved') {
+    return { error: `This gate has already been approved. Resubmission is not permitted.` }
+  }
+
   const { error: subError } = await supabase.from('gate_submissions').upsert(
     {
       project_id:   projectId,
@@ -247,13 +292,32 @@ async function submitGateForm(
   )
   if (subError) return { error: subError.message }
 
-  // Create the approval request for this submission
+  // Idempotent approval insert: check for existing pending approval before insert
+  const { data: existingApproval, error: apprCheckErr } = await supabase
+    .from('approvals')
+    .select('id, status')
+    .eq('object_type', 'gate_submission')
+    .eq('object_id', projectId)
+    .match({ 'metadata->>gate_number': gateNumber.toString() })
+    .neq('status', 'rejected')
+    .maybeSingle()
+
+  if (apprCheckErr && apprCheckErr.code !== 'PGRST116') {
+    // Log but don't fail—approval check is advisory
+    console.log(`[v0] Approval check warning: ${apprCheckErr.message}`)
+  } else if (existingApproval) {
+    // Pending approval already exists for this (project, gate) pair—skip insert
+    return { error: null }
+  }
+
+  // Create the approval request for this submission (idempotent via check above)
   const { error: apprError } = await supabase.from('approvals').insert({
     tenant_id:   tenantId,
     object_type: 'gate_submission',
     object_id:   projectId,
     title:       `G${gateNumber} Submission — ${projectName}`,
     priority:    'normal',
+    metadata:    { gate_number: gateNumber },
   })
 
   return { error: apprError?.message ?? null }

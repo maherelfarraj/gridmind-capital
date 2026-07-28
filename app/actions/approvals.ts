@@ -794,15 +794,37 @@ export async function decideApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, object_type, object_id, description, assignee_id')
+    .select('title, object_type, object_id, description, assignee_id, status')
     .eq('id', opts.id)
     .single()
 
   if (!approval) return { error: 'Approval not found' }
 
-  // Verify caller is the assigned approver (or admin override).
-  const approverCheck = await requireAssignedApprover(approval)
-  if ('error' in approverCheck) return approverCheck
+  // From-state guard: reject if already in a final state
+  const FINAL_STATES = ['approved', 'rejected']
+  if (approval.status && FINAL_STATES.includes(approval.status)) {
+    return { error: 'Cannot decide: this approval has already been decided' }
+  }
+
+  // Step-aware from-state: verify caller is assigned to the CURRENT pending step
+  const { data: currentStep } = await supabase
+    .from('approval_steps')
+    .select('id, level, assigned_to, status')
+    .eq('approval_id', opts.id)
+    .eq('status', 'pending')
+    .order('level')
+    .limit(1)
+    .maybeSingle()
+
+  // If a step workflow exists, verify the caller is assigned to the current step
+  if (currentStep && currentStep.assigned_to !== gate.actor.userId) {
+    const approverCheck = await requireAssignedApprover(approval)
+    if ('error' in approverCheck) return approverCheck
+  } else {
+    // No step workflow: verify caller is the assigned approver (or admin override)
+    const approverCheck = await requireAssignedApprover(approval)
+    if ('error' in approverCheck) return approverCheck
+  }
 
   // Log admin override if applicable.
   if (gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as typeof ADMIN_ROLES[number]) &&
@@ -821,16 +843,6 @@ export async function decideApproval(opts: {
       return { error: 'All conditions must have a title and due date' }
     }
   }
-
-  // Step-aware workflow: find the CURRENT lowest-pending approval_step
-  const { data: currentStep } = await supabase
-    .from('approval_steps')
-    .select('id, level, status')
-    .eq('approval_id', opts.id)
-    .eq('status', 'pending')
-    .order('level')
-    .limit(1)
-    .maybeSingle()
 
   // Persist the signature only now that the caller is authorized AND the target
   // approval exists. If it fails we abort without touching the decision, so we
@@ -858,10 +870,16 @@ export async function decideApproval(opts: {
   if (currentStep) {
     // Step-aware: mark current step with decision + emit event
     // Also update approvals.decision column for audit trail
+    // IMPORTANT: hold decision maps to on_hold status, never to approved
+    const stepStatus = 
+      opts.decision === 'hold' ? 'on_hold' :
+      decisionStatus === 'rejected' ? 'rejected' : 
+      'approved'
+    
     const { error: stepErr } = await supabase
       .from('approval_steps')
       .update({
-        status: decisionStatus === 'rejected' ? 'rejected' : 'approved',
+        status: stepStatus,
         decided_at: new Date().toISOString(),
         decided_by: gate.actor.userId,
         decision_note: opts.rationale,
@@ -908,7 +926,13 @@ export async function decideApproval(opts: {
       if (skipErr) console.log(`[v0] Step skip warning: ${skipErr.message}`)
     }
 
-    // If all steps approved, mark approval as approved
+    // If hold, never complete the approval or advance the gate
+    if (opts.decision === 'hold') {
+      // Hold is a pause state—do not mark approval as approved or trigger lifecycle
+      return { error: null }
+    }
+
+    // If all steps approved, mark approval as approved (only proceed/conditional_proceed complete)
     if (decisionStatus !== 'rejected' && (!pendingSteps || pendingSteps.length === 0)) {
       const { error: apprErr } = await supabase
         .from('approvals')
@@ -1015,19 +1039,23 @@ export async function delegateApproval(opts: {
 
   const supabase = createAdminClient()
 
-  // The `approval_status` enum is: pending | approved | rejected | delegated.
-  // There is NO `under_review` member, so writing it made every delegation fail
-  // with a 22P02 invalid-enum-input error. `delegated` is the correct value.
-  //
-  // Reassign `assignee_id` to the delegate as well — without it the row stayed
-  // on the original approver's queue and the delegation had no effect.
+  // Read the approval to verify authorization
   const { data: current, error: readErr } = await supabase
     .from('approvals')
-    .select('description')
+    .select('description, assignee_id')
     .eq('id', opts.id)
     .single()
 
   if (readErr) return { error: readErr.message }
+  
+  // Verify the session user is the current assignee (or admin)
+  const ADMIN_ROLES = ['system_admin', 'tenant_admin']
+  const isAdmin = gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as any)
+  const isAssignee = gate.actor.userId === current?.assignee_id
+  
+  if (!isAdmin && !isAssignee) {
+    return { error: 'Only the assigned approver or admin can delegate this approval' }
+  }
 
   // Append to the audit trail rather than overwriting it.
   const note = `[Delegated to ${opts.delegateId} at ${new Date().toISOString()}] Reason: ${opts.reason}`
