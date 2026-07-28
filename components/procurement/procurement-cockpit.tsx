@@ -57,9 +57,12 @@ function NewRFQModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
     e.preventDefault()
     if (!form.title || !form.vendor) { toast({ title: 'Title and vendor required', variant: 'danger' }); return }
     setLoading(true)
+    // For now, tenant-wide pages cannot call actions without project context
+    // Project-scoped pages would pass projectId here
     const { error } = await issueRFQ({
       title: form.title, vendor: form.vendor,
       amount_usd: Number(form.amount_usd) || 0, close_date: form.close_date,
+      projectId: '',
     })
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
@@ -288,7 +291,7 @@ function VendorTab({ pos, rfqs, loading }: { pos: PORecord[]; rfqs: RFQRecord[];
   )
 }
 
-// ── Main export ──────────────────────────────────────────��─────────────────
+// ── Main export ──────────────────────────────────────────��──────────���──────
 
 export type ProcurementTab = 'rfqs' | 'pos' | 'vendors'
 

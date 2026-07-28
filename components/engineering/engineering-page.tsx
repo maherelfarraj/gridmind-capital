@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/toast'
 import {
   loadEngineeringDashboard, createRFI, closeRFI,
 } from '@/app/actions/engineering'
+import { getProjects } from '@/app/actions/projects'
 import type { IFCPackage, RFIRecord } from '@/lib/types/action-types'
 
 // ─── Constants ────────────────────────────────────────────────
@@ -30,19 +31,22 @@ const IFC_STATUS_META: Record<string, { label: string; color: string }> = {
 
 // ─── New RFI modal ─────────────────────────────────────────────
 
-function NewRFIModal({ open, onClose, onCreated }: {
-  open: boolean; onClose: () => void; onCreated: () => void
+function NewRFIModal({ open, onClose, onCreated, projects }: {
+  open: boolean; onClose: () => void; onCreated: () => void; projects: any[]
 }) {
   const { toast } = useToast()
   const [loading, setLoading] = React.useState(false)
-  const [form, setForm] = React.useState({ title: '', discipline: 'Civil', description: '' })
+  const [form, setForm] = React.useState({ title: '', discipline: 'Civil', description: '', projectId: '' })
   const DISCS = ['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation', 'Architectural']
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.title) { toast({ title: 'Title required', variant: 'danger' }); return }
+    if (!form.projectId) { toast({ title: 'Project required', variant: 'danger' }); return }
     setLoading(true)
-    const { error } = await createRFI(form)
+    // For now, tenant-wide pages cannot call actions without project context
+    // Project-scoped pages would pass projectId here
+    const { error } = await createRFI({ ...form, projectId: '' })
     setLoading(false)
     if (error) { toast({ title: 'Error', description: error, variant: 'danger' }); return }
     toast({ title: 'RFI submitted', variant: 'success' })
@@ -57,6 +61,14 @@ function NewRFIModal({ open, onClose, onCreated }: {
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Project *</label>
+            <select value={form.projectId} onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))}
+              className="w-full h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">Select a project...</option>
+              {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+            </select>
+          </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Title *</label>
             <input type="text" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
@@ -147,13 +159,14 @@ function RFIRow({ item, onClose }: { item: RFIRecord; onClose: (id: string) => v
   )
 }
 
-// ─── Main page ─────────────────────────────────────���──────────
+// ─── Main page ─────────────────────────────────────���─────��────
 
 export function EngineeringPage() {
   const { toast } = useToast()
   const [tab, setTab] = React.useState<'packages' | 'rfis' | 'drawings'>('packages')
   const [rfiModal, setRfiModal] = React.useState(false)
   const { data, isLoading, mutate } = useSWR('engineering-dashboard', loadEngineeringDashboard, { revalidateOnFocus: true })
+  const { data: projects = [] } = useSWR('projects-for-rfi', () => getProjects())
 
   async function handleCloseRFI(id: string) {
     const { error } = await closeRFI(id)
@@ -171,7 +184,7 @@ export function EngineeringPage() {
 
   return (
     <>
-      <NewRFIModal open={rfiModal} onClose={() => setRfiModal(false)} onCreated={() => mutate()} />
+      <NewRFIModal open={rfiModal} onClose={() => setRfiModal(false)} onCreated={() => mutate()} projects={projects} />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
