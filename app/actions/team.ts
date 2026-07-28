@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getActor, getTaskComments, getStaffingRadar } from '@/lib/db/queries'
 import type { StaffingRadar } from '@/lib/db/queries'
+import { requireUser } from '@/lib/guards'
 
 type ActionResult<T = void> = { data?: T; error?: string }
 
@@ -90,6 +91,12 @@ export async function assignRole(input: {
   roleId: string
   personId: string
 }): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const { projectId, roleId, personId } = input
   if (!projectId || !roleId || !personId) return { error: 'Missing required fields.' }
 
@@ -215,6 +222,12 @@ export async function signGate(input: {
   signoffId: string
   projectId: string
 }): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const { signoffId, projectId } = input
   if (!signoffId) return { error: 'Missing sign-off id.' }
 
@@ -262,6 +275,12 @@ export async function unsignGate(input: {
   signoffId: string
   projectId: string
 }): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const { signoffId, projectId } = input
   if (!signoffId) return { error: 'Missing sign-off id.' }
 
@@ -308,6 +327,12 @@ export async function approveGate(input: {
   phaseGateId: string
   projectId: string
 }): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const { phaseGateId, projectId } = input
   if (!phaseGateId) return { error: 'Missing gate id.' }
 
@@ -586,6 +611,12 @@ export async function setProjectGateApprover(input: {
   primaryRole: string
   secondaryRole?: string | null
 }): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const { projectId, gateNumber, primaryRole } = input
   if (!projectId) return { error: 'Select a project first.' }
   if (!primaryRole) return { error: 'A primary approver role is required.' }
@@ -620,6 +651,12 @@ export async function clearProjectGateApprover(input: {
   projectId: string
   gateNumber: number
 }): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const { projectId, gateNumber } = input
   if (!projectId) return { error: 'Select a project first.' }
 
@@ -739,6 +776,12 @@ export async function changeUserHomeRole(input: {
   userId: string
   roleId: string | null
 }): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const { userId, roleId } = input
   if (!userId) return { error: 'Missing user.' }
 

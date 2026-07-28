@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser, requireInternalRole, validateExternalRole } from '@/lib/guards'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -123,7 +124,6 @@ export interface InviteExternalUserArgs {
 
 export interface InviteResult {
   userId?: string
-  inviteLink?: string
   error?: string
   isExisting?: boolean
 }
@@ -137,6 +137,20 @@ export interface InviteResult {
  *  4. Create external_access grants for the specified projects.
  */
 export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<InviteResult> {
+  try {
+    // Require authenticated user with tenant_admin or system_admin role
+    await requireInternalRole(['tenant_admin', 'system_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
+  // Whitelist and validate the role argument
+  try {
+    await validateExternalRole(args.role)
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
@@ -186,17 +200,6 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
     }, { onConflict: 'id', ignoreDuplicates: false })
   }
 
-  // Step 3 — generate a fallback action link (copy/share if email not sent).
-  let inviteLink: string | undefined
-  const { data: linkData } = await admin.auth.admin.generateLink({
-    type: 'magiclink',
-    email: args.email,
-    options: { redirectTo: `${args.siteUrl}/auth/callback?next=/portal` },
-  })
-  if (linkData?.properties?.action_link) {
-    inviteLink = linkData.properties.action_link
-  }
-
   // Step 4 — grant project access (upsert, revived if previously revoked).
   if (args.projectIds.length > 0) {
     await admin.from('external_access').upsert(
@@ -212,7 +215,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
   }
 
   revalidatePath('/admin/users')
-  return { userId, inviteLink, isExisting: !!existing }
+  return { userId, isExisting: !!existing }
 }
 
 // ───────────────────────────────────────────────���─────────────
@@ -224,6 +227,12 @@ export async function assignProjectAccess(args: {
   projectId: string
   organizationName: string
 }): Promise<{ error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { error } = await admin.from('external_access').upsert({
@@ -243,6 +252,12 @@ export async function revokeProjectAccess(args: {
   userId: string
   projectId: string
 }): Promise<{ error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const { error } = await admin
@@ -258,6 +273,12 @@ export async function revokeProjectAccess(args: {
 }
 
 export async function revokeAllAccess(userId: string): Promise<{ error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
   const now = new Date().toISOString()
@@ -288,6 +309,12 @@ export async function toggleDocumentVisibility(
   documentId: string,
   visibleToClient: boolean,
 ): Promise<{ error?: string }> {
+  try {
+    await requireUser()
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const admin = createAdminClient()
   const { error } = await admin
     .from('documents')
