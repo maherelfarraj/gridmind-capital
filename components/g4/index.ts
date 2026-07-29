@@ -1,7 +1,0 @@
-export * from './data'
-export { WorkPackagesTab }  from './work-packages-tab'
-export { HSETab }           from './hse-tab'
-export { PermitsTab }       from './permits-tab'
-export { SiteReadinessTab } from './site-readiness-tab'
-export { ResourcesTab }     from './resources-tab'
-export { ProgressTab }      from './progress-tab'

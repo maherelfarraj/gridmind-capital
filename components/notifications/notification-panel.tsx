@@ -385,53 +385,6 @@ function MentionsTab() {
         <div className="text-sm text-muted-foreground p-4 text-center">
           No mentions available
         </div>
-        {false && (
-          <div>
-                {replyingTo === m.id ? (
-                  <div className="flex gap-2">
-                    <input
-                      autoFocus
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.nativeEvent.isComposing) return
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          setReplyingTo(null)
-                          setReplyText('')
-                        }
-                        if (e.key === 'Escape') setReplyingTo(null)
-                      }}
-                      placeholder="Type a reply…"
-                      className="flex-1 text-xs rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                    <button
-                      onClick={() => { setReplyingTo(null); setReplyText('') }}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:text-primary/80 px-2 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors"
-                    >
-                      <Send size={10} /> Send
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setReplyingTo(m.id)}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:text-primary/80"
-                    >
-                      <MessageSquare size={11} /> Reply
-                    </button>
-                    <span className="text-muted-foreground/40">·</span>
-                    <button className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-                      <ArrowRight size={11} /> Go to thread
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-        {MOCK_MENTIONS.length === 0 && (
-          <p className="py-12 text-center text-sm text-muted-foreground">No mentions yet</p>
-        )}
       </div>
     </ScrollArea>
   )
