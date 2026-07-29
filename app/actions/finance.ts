@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser } from '@/lib/guards'
+import { requireUser } from '@/lib/auth/guard'
 const M = 1_000_000
 
 // ─── Types ────────────────────────────────────────────────────────────────────

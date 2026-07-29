@@ -10,7 +10,7 @@ function svc() {
 }
 
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser } from '@/lib/guards'
+import { requireUser } from '@/lib/auth/guard'
 
 export interface PortfolioProject {
   id: string

@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser, requireInternalRole, validateExternalRole } from '@/lib/guards'
+import { requireUser, requireInternalRole, validateExternalRole } from '@/lib/auth/guard'
 
 // ─────────────────────────────────────────────────────────────
 // Types

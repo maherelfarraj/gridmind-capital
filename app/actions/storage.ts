@@ -7,7 +7,7 @@ import { sendDocumentUploadEmail } from '@/lib/email/send'
 
 const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser } from '@/lib/guards'
+import { requireUser } from '@/lib/auth/guard'
 
 /** Sanitize fileName: remove path separators, strip .., whitelist safe chars */
 function sanitizeFileName(fileName: string): string {

@@ -6,7 +6,7 @@ import { sendNcrEmail } from '@/lib/email/send'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser } from '@/lib/guards'
+import { requireUser } from '@/lib/auth/guard'
 
 // ─────────────────────────────────────────────────────────────
 // Types

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getActor, getTaskComments, getStaffingRadar } from '@/lib/db/queries'
 import type { StaffingRadar } from '@/lib/db/queries'
-import { requireUser, requireInternalRole } from '@/lib/guards'
+import { requireUser, requireInternalRole } from '@/lib/auth/guard'
 
 type ActionResult<T = void> = { data?: T; error?: string }
 

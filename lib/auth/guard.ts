@@ -139,3 +139,60 @@ export async function requireAssignedApprover(
 
   return { error: 'Not the assigned approver' }
 }
+
+/**
+ * Guard: Require authenticated user session.
+ * Throws error if no session or no profile.
+ *
+ * Use at the start of every exported mutation to ensure:
+ * 1. User is authenticated (session exists)
+ * 2. User profile exists in the database
+ * 3. User's identity and role are available for authorization checks
+ *
+ * Returns { userId, profile } on success, throws on error.
+ */
+export async function requireUser(): Promise<{ userId: string; profile: AuthActor }> {
+  const res = await getAuthActor()
+  if ('error' in res) {
+    throw new Error(res.error)
+  }
+  return { userId: res.actor.userId, profile: res.actor }
+}
+
+/**
+ * Guard: Require user with one of the specified internal roles.
+ * Throws error if user role not in the allowed list.
+ *
+ * Use this for operations restricted to admins or staff.
+ * Never pass untrusted user-submitted role values.
+ *
+ * Returns { userId, profile } on success, throws on error.
+ */
+export async function requireInternalRole(allowed: readonly string[]): Promise<{ userId: string; profile: AuthActor }> {
+  const res = await getAuthActor()
+  if ('error' in res) {
+    throw new Error(res.error)
+  }
+
+  if (!res.actor.role || !allowed.includes(res.actor.role)) {
+    throw new Error(`Unauthorized: User role '${res.actor.role}' not in allowed list [${allowed.join(', ')}]`)
+  }
+
+  return { userId: res.actor.userId, profile: res.actor }
+}
+
+/**
+ * Verify role argument is in the whitelist for external user invites.
+ * Prevents callers from self-assigning admin roles.
+ * Allowed: 'subcontractor', 'client_viewer' (no 'vendor' — removed in Batch 18 Phase 1).
+ *
+ * Throws error if role is not in the allowed list.
+ */
+export async function validateExternalRole(role: string): Promise<string> {
+  const allowed = ['subcontractor', 'client_viewer']
+  const valid = allowed.includes(role)
+  if (!valid) {
+    throw new Error(`Invalid external role '${role}'. Allowed: ${allowed.join(', ')}`)
+  }
+  return role
+}

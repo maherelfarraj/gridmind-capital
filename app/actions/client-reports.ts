@@ -23,7 +23,7 @@ import { logExport } from '@/app/actions/exports'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 import { numOrNull } from '@/lib/format-nullable'
-import { requireUser } from '@/lib/guards'
+import { requireUser } from '@/lib/auth/guard'
 const BUCKET = 'reports'
 const WRITE_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'commercial_manager']
 

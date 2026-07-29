@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache'
 
 const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser } from '@/lib/guards'
+import { requireUser } from '@/lib/auth/guard'
 import { requireWriter } from '@/lib/auth/guard'
 
 export interface CertificateDeliverable {

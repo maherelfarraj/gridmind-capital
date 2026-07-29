@@ -6,7 +6,7 @@ import { headers } from 'next/headers'
 
 const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser } from '@/lib/guards'
+import { requireUser } from '@/lib/auth/guard'
 
 export type SignatureEntityType = 'gate_approval' | 'vo_approval' | 'client_report' | 'certificate'
 
