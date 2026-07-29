@@ -4,6 +4,7 @@ import React from 'react'
 import useSWR from 'swr'
 import { MessageSquare, Send, Check, AtSign } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useToast } from '@/components/ui/toast'
 import {
   getComments,
   addComment,
@@ -51,6 +52,7 @@ export function CommentThread({ entityType, entityId, title = 'Discussion', clas
   const [showMentions, setShowMentions] = React.useState(false)
   const [mentionQuery, setMentionQuery] = React.useState('')
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const { toast } = useToast()
 
   const { data: comments, mutate } = useSWR<Comment[]>(
     ['comments', entityType, entityId],
@@ -105,14 +107,10 @@ export function CommentThread({ entityType, entityId, title = 'Discussion', clas
     const text = body.trim()
     setBody('')
     try {
-      const result = await addComment({ entityType, entityId, body: text })
-      if (result.error) {
-        toast({ variant: 'danger', title: 'Error', description: result.error, duration: 3000 })
-        mutate()
-      } else {
-        mutate()
-      }
+      await addComment({ entityType, entityId, body: text })
+      mutate()
     } catch (err) {
+      console.error('[comment] add failed:', err)
       toast({ variant: 'danger', title: 'Error', description: 'Failed to add comment', duration: 3000 })
       mutate()
     }
@@ -121,13 +119,10 @@ export function CommentThread({ entityType, entityId, title = 'Discussion', clas
 
   async function handleResolve(id: string) {
     try {
-      const result = await resolveComment(id)
-      if (result?.error) {
-        toast({ variant: 'danger', title: 'Error', description: result.error, duration: 3000 })
-      } else {
-        mutate()
-      }
+      await resolveComment(id)
+      mutate()
     } catch (err) {
+      console.error('[comment] resolve failed:', err)
       toast({ variant: 'danger', title: 'Error', description: 'Failed to resolve comment', duration: 3000 })
     }
   }
