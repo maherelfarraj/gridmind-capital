@@ -86,3 +86,45 @@ export interface Comment {
   content: string
   createdAt: string
 }
+
+export interface GmcProject {
+  id: string
+  code: string
+  name: string
+  // Widened beyond solar/wind/storage: the DB `technology` column also holds
+  // Hydrogen, Hydroelectric, Transmission and Substation projects, which
+  // previously all fell through a `?? 'PV'` default and rendered as solar.
+  type:
+    | 'PV' | 'PV+BESS' | 'Wind' | 'Wind+BESS' | 'BESS'
+    | 'Hydrogen' | 'Hydro' | 'Transmission' | 'Substation' | 'Hybrid' | 'Other'
+  country: string
+  region: string
+  siteCoordinates: string
+  developerSpv: string
+  /** NULL = capacity not recorded yet (renders "Not set", never "0 MW"). */
+  mwac: number | null
+  mwp: number | null
+  mwh?: number | null
+  gridVoltage: string
+  codTarget: string
+  ppaType: 'PPA' | 'Merchant' | 'Hybrid'
+  /** NULL = budget not recorded yet (renders "Not set", never "$0"). */
+  capex: number | null
+  currency: string
+  equityPct: number
+  debtPct: number
+  targetIrr: number
+  tariffAssumption: string
+  team: {
+    projectDirector: string
+    pmoLead: string
+    engineeringLead: string
+    procurementLead: string
+    constructionManager: string
+    financeLead: string
+  }
+  currentGate: string
+  health: 'green' | 'amber' | 'red'
+  status: 'draft' | 'pending_activation' | 'active' | 'on-hold' | 'completed' | 'archived'
+  createdAt: string
+}

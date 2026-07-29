@@ -10,11 +10,11 @@ import useSWR from 'swr'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { type GmcProject } from '@/lib/mock-store'
+import { type GmcProject } from '@/lib/project-types'
 import { NOT_SET_LABEL } from '@/lib/format-nullable'
 import { getProjects, archiveProject, duplicateProject } from '@/app/actions/projects'
 import { getPhaseNamesForProjects } from '@/app/actions/phase-gates'
-import { parseGateParam } from '@/lib/gate-status'
+import { parseGateCode } from '@/lib/gates/phase-model'
 import type { Project } from '@/components/projects/projects-list-page'
 
 /** Map a live DB row to the display shape used by the registry UI. */
@@ -228,7 +228,7 @@ export function ProjectRegistry() {
 
   // `?gate=G0` must drive the filter. It is matched against `projects.current_phase`
   // server-side (G0 → 0, G1 → 1, …), not against a phase-workstream key.
-  const gateParam = parseGateParam(searchParams?.get('gate'))
+  const gateParam = parseGateCode(searchParams?.get('gate'))
   const [filterGate, setFilterGate] = React.useState<string>(
     gateParam !== null ? `G${gateParam}` : 'All',
   )

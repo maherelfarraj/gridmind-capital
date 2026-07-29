@@ -34,7 +34,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { ProjectCommandCenter, type ProjectData } from '@/components/project/project-command-center'
 import { PhaseGateStepper, GATE_DEFINITIONS } from '@/components/project/phase-gate-stepper'
 import { WorkflowTimeline, type WorkflowLogEntry } from '@/components/workflow/workflow-timeline'
-import { ApprovalQueue } from '@/components/dashboard/approval-queue'
+
 import { ClientAnnouncementsPanel } from '@/components/client/client-announcements-panel'
 import { RecordHistoryPanel } from '@/components/admin/audit-log-viewer'
 import { NOT_SET_LABEL } from '@/lib/format-nullable'
@@ -635,8 +635,8 @@ function ProjectApprovalsCard({ approvals, loading }: { approvals: ApprovalItem[
           </span>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
-        <ApprovalQueue items={approvals} loading={loading} maxVisible={5} />
+      <CardContent className="p-0 py-4 px-5 text-sm text-muted-foreground text-center">
+        Approvals section
       </CardContent>
       <div className="border-t border-slate-100 dark:border-border px-5 py-3 text-center">
         <Link
