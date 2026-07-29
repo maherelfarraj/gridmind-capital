@@ -12,7 +12,7 @@ import { Loader2, Wrench, ListChecks } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
 import { submitG5FormAction, type G5FormData } from '@/app/actions/gate-submissions'
-import { Section, Field, GateFormHeader, SuccessCard, inputCls, selectCls } from './gate-form-primitives'
+import { Section, Field, GateFormHeader, SuccessCard, inputCls, selectCls } from '../gate-form-primitives'
 
 const schema = z.object({
   systemsCount:            z.string().min(1, 'Required'),

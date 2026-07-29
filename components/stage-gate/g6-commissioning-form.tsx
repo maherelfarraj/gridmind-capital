@@ -64,9 +64,9 @@ export function G6CommissioningForm({ projectId, projectCode, projectName, initi
   return (
     <div className="space-y-6">
       <GateFormHeader
-        gate="G6" subtitle="Commissioning Approval"
+        gate="G7" subtitle="Commissioning & Grid Tests"
         projectCode={projectCode} projectName={projectName}
-        description="Confirm test packages, energization plan, and training readiness before requesting Gate 6 approval."
+        description="Confirm test packages, energization plan, and training readiness before requesting Gate 7 approval."
       />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>

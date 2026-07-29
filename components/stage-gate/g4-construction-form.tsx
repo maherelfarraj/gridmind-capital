@@ -74,9 +74,9 @@ export function G4ConstructionForm({ projectId, projectCode, projectName, initia
   return (
     <div className="space-y-6">
       <GateFormHeader
-        gate="G4" subtitle="Construction Approval"
+        gate="G6" subtitle="Construction & Installation"
         projectCode={projectCode} projectName={projectName}
-        description="Confirm contractor mobilization and site readiness before requesting Gate 4 approval."
+        description="Confirm contractor mobilization and site readiness before requesting Gate 6 approval."
       />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>

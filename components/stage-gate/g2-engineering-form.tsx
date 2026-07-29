@@ -69,9 +69,9 @@ export function G2EngineeringForm({ projectId, projectCode, projectName, initial
   return (
     <div className="space-y-6">
       <GateFormHeader
-        gate="G2" subtitle="Engineering Approval"
+        gate="G4" subtitle="Detailed Design (IFC)"
         projectCode={projectCode} projectName={projectName}
-        description="Confirm the engineering scope, disciplines, and design basis before requesting Gate 2 approval."
+        description="Confirm the engineering scope, disciplines, and design basis before requesting Gate 4 approval."
       />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
