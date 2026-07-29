@@ -218,7 +218,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
   return { userId, isExisting: !!existing }
 }
 
-// ───────────────────────────────────────────────���─────────────
+// ────────────────────────────────────────────���──���─────────────
 // Grant / Revoke
 // ─────────────────────────────────���─────────────────��─────────
 
@@ -310,7 +310,7 @@ export async function toggleDocumentVisibility(
   visibleToClient: boolean,
 ): Promise<{ error?: string }> {
   try {
-    await requireUser()
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
   } catch (e: any) {
     return { error: e.message }
   }
@@ -329,6 +329,12 @@ export async function toggleWorkPackageVisibility(
   id: string,
   visibleToClient: boolean,
 ): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const admin = createAdminClient()
   const { error } = await admin
     .from('work_packages')
@@ -342,6 +348,12 @@ export async function toggleEngineeringPackageVisibility(
   id: string,
   visibleToClient: boolean,
 ): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const admin = createAdminClient()
   const { error } = await admin
     .from('engineering_packages')
@@ -355,6 +367,12 @@ export async function toggleVoClientVisible(
   voId: string,
   clientVisible: boolean,
 ): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const admin = createAdminClient()
   const { error } = await admin
     .from('variation_orders')
@@ -369,6 +387,12 @@ export async function toggleMilestoneClientVisible(
   milestoneId: string,
   clientVisible: boolean,
 ): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const admin = createAdminClient()
   const { error } = await admin
     .from('payment_milestones')
@@ -384,6 +408,12 @@ export async function toggleVoCostVisible(
   voId: string,
   clientCostVisible: boolean,
 ): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
+  
   const admin = createAdminClient()
   const { error } = await admin
     .from('variation_orders')
