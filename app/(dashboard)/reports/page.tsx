@@ -1079,6 +1079,7 @@ export default function ReportsPage() {
       {/* Left sidebar */}
       <div className="w-60 shrink-0 flex flex-col border-r border-border print:hidden">
         <ReportListSidebar
+          reports={[]}
           selectedId={selectedReport}
           onSelect={setSelectedReport}
           onNewReport={handleNewReport}

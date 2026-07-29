@@ -164,41 +164,6 @@ export const REPORT_TEMPLATES: ReportTemplate[] = [
   },
 ]
 
-// ─── Mock saved reports ──────────────────────────────────────────────────────
-
-export const MOCK_REPORTS: ReportConfig[] = [
-  {
-    id: 'r1', name: 'Q3 Portfolio Review',       description: 'Board-level summary',
-    folder: 'mine',     createdBy: 'You', updatedAt: '2h ago',  shared: true,
-    blocks: [], projects: [], dateRange: '90d', groupBy: 'project', aggregation: 'sum', colorPalette: 'default',
-  },
-  {
-    id: 'r2', name: 'Sirius 400MW Budget Report', description: 'Monthly cost tracking',
-    folder: 'mine',     createdBy: 'You', updatedAt: '1d ago',  shared: false,
-    blocks: [], projects: ['sirius'], dateRange: '30d', groupBy: 'month', aggregation: 'sum', colorPalette: 'ocean',
-  },
-  {
-    id: 'r3', name: 'Gate Performance — H1',      description: 'Stage-gate analysis',
-    folder: 'shared',   createdBy: 'Sarah Chen', updatedAt: '3d ago',  shared: true,
-    blocks: [], projects: [], dateRange: '6m', groupBy: 'phase', aggregation: 'count', colorPalette: 'default',
-  },
-  {
-    id: 'r4', name: 'Risk Register Summary',       description: '',
-    folder: 'shared',   createdBy: 'Omar Al-Zaid', updatedAt: '5d ago', shared: true,
-    blocks: [], projects: [], dateRange: '30d', groupBy: 'project', aggregation: 'count', colorPalette: 'warm',
-  },
-  {
-    id: 'r5', name: 'Investor Monthly Report',     description: 'LP distribution template',
-    folder: 'template', createdBy: 'System',   updatedAt: '1w ago', shared: false,
-    blocks: [], projects: [], dateRange: '30d', groupBy: 'month', aggregation: 'sum', colorPalette: 'default',
-  },
-  {
-    id: 'r6', name: 'HSE Incident Analysis',       description: 'Safety stats template',
-    folder: 'template', createdBy: 'System',   updatedAt: '2w ago', shared: false,
-    blocks: [], projects: [], dateRange: '90d', groupBy: 'month', aggregation: 'count', colorPalette: 'warm',
-  },
-]
-
 export const COLOR_PALETTES: { id: string; label: string; colors: string[] }[] = [
   { id: 'default', label: 'Default',  colors: ['#6366f1','#22c55e','#f59e0b','#ef4444','#06b6d4','#a855f7'] },
   { id: 'ocean',   label: 'Ocean',    colors: ['#0ea5e9','#0284c7','#0369a1','#38bdf8','#7dd3fc','#bae6fd'] },

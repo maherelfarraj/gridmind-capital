@@ -12,11 +12,12 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { ReportConfig, ReportTemplate } from './types'
-import { MOCK_REPORTS, REPORT_TEMPLATES } from './types'
+import { REPORT_TEMPLATES } from './types'
 
 type Folder = 'mine' | 'shared' | 'template' | 'archived'
 
 interface Props {
+  reports: ReportConfig[]
   selectedId: string | null
   onSelect: (id: string) => void
   onNewReport: (templateId: string) => void
@@ -30,7 +31,7 @@ const FOLDERS: { id: Folder; label: string; icon: React.ElementType }[] = [
   { id: 'archived', label: 'Archived',        icon: Archive },
 ]
 
-export function ReportListSidebar({ selectedId, onSelect, onNewReport, onDeleteReport }: Props) {
+export function ReportListSidebar({ reports, selectedId, onSelect, onNewReport, onDeleteReport }: Props) {
   const [search, setSearch]               = React.useState('')
   const [openFolders, setOpenFolders]     = React.useState<Set<Folder>>(new Set(['mine','shared']))
   const [showTemplates, setShowTemplates] = React.useState(false)
@@ -42,8 +43,8 @@ export function ReportListSidebar({ selectedId, onSelect, onNewReport, onDeleteR
       return next
     })
 
-  // Use live reports only; show empty state when none available
-  const filtered = [].filter(r =>
+  // Filter reports by search term
+  const filtered = reports.filter(r =>
     r.name.toLowerCase().includes(search.toLowerCase())
   )
 
