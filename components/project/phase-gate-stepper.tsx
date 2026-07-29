@@ -965,6 +965,7 @@ export function PhaseGateStepper({
                     isActive={activePanel?.gate.code === gate.code}
                     href={projectId ? `/stage-gates/${projectId}/gate/${gate.id}` : null}
                     dates={gateDates?.[gate.id]}
+                    /* BATCH 20: gate.id is canonical 1-8 phase number */
                   />
                 </div>
               )

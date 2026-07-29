@@ -1,6 +1,7 @@
 /**
  * /stage-gates/[projectId]/gate/[gate]
- * Renders the G0–G7 workflow form for the given project.
+ * Renders the canonical Gate 1–8 workflow forms for the given project.
+ * BATCH 20: Unified around 1-8 phase model (legacy 0-7 rows archived, read-only).
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
@@ -26,7 +27,8 @@ export default async function GateFormPage({ params }: Props) {
   const { projectId, gate } = await params
   const gateNum = parseInt(gate, 10)
 
-  if (isNaN(gateNum) || gateNum < 0 || gateNum > 7) notFound()
+  // Accept canonical 1-8 gate numbers; 0 reserved for legacy/demo only
+  if (isNaN(gateNum) || gateNum < 0 || gateNum > 8) notFound()
 
   const supabase = createAdminClient()
 
@@ -58,22 +60,35 @@ export default async function GateFormPage({ params }: Props) {
   }
 
   function renderForm() {
+    // BATCH 20: Canonical 1-8 phase mapping to forms
+    // Gate 0 reserved (legacy/demo only, fetch from archive rows)
     switch (gateNum) {
       case 0:
+        // Legacy G0 (Opportunity Intake) — still rendered from canonical form
         return <G0IntakeForm {...shared} initialData={initialData} />
       case 1:
+        // G1: Origination (Development/Commercial)
         return <G1DevelopmentForm {...shared} initialData={initialData} />
       case 2:
+        // G2: Permitting & Grid Application
         return <G2EngineeringForm {...shared} initialData={initialData} />
       case 3:
+        // G3: Commercial Close
         return <G3ProcurementForm {...shared} initialData={initialData} />
       case 4:
+        // G4: Detailed Design (Engineering)
         return <G4ConstructionForm {...shared} initialData={initialData} />
       case 5:
+        // G5: Procurement
         return <G5MechanicalCompletionForm {...shared} initialData={initialData} />
       case 6:
+        // G6: Construction
         return <G6CommissioningForm {...shared} initialData={initialData} />
       case 7:
+        // G7: Commissioning
+        return <G7HandoverForm {...shared} initialData={initialData} />
+      case 8:
+        // G8: Handover & Operations (O&M)
         return <G7HandoverForm {...shared} initialData={initialData} />
       default:
         return null
