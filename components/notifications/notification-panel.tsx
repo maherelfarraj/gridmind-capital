@@ -592,11 +592,6 @@ export function NotificationPanel({ open, onClose, unreadCount }: NotificationPa
                 </TabsTrigger>
                 <TabsTrigger value="mentions" className="flex-1 h-full text-xs rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   Mentions
-                  {mentionUnread > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[1rem] rounded-full bg-violet-500/15 text-violet-500 text-[9px] font-bold px-1">
-                      {mentionUnread}
-                    </span>
-                  )}
                 </TabsTrigger>
               </TabsList>
 
