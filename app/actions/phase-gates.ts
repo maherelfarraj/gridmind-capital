@@ -306,7 +306,7 @@ export async function getPhaseNamesForProjects(projectIds: string[]): Promise<Re
     .from('phase_gates')
     .select('project_id, phase_number, phase_name')
     .in('project_id', projectIds)
-    .eq('tenant_id', tenantId)
+    // phase_gates scoped via project_id FK; no tenant_id column
 
   const result: Record<string, Record<number, string>> = {}
   

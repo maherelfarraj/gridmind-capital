@@ -149,7 +149,7 @@ export async function registerDocument(opts: {
 
   // Notify document register team — fire-and-forget
   sendDocumentUploadEmail({
-    to: ['admin@gridmind.capital'],
+    to: [process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital'],
     uploaderName: opts.uploadedBy,
     fileName: opts.fileName,
     documentCode: code,
