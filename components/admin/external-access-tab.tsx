@@ -427,12 +427,17 @@ export function ExternalAccessTab() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setSeedOpen(true)}>
-            <Database className="size-4 mr-2" /> Seed portal demo
-          </Button>
-          <Button variant="outline" onClick={() => setClientSeedOpen(true)}>
-            <Users className="size-4 mr-2" /> Seed client portal
-          </Button>
+          {/* Demo seed CTAs hidden unless ALLOW_DEMO_SEED=true */}
+          {typeof window !== 'undefined' && window.location.search.includes('demo=1') && (
+            <>
+              <Button variant="outline" onClick={() => setSeedOpen(true)}>
+                <Database className="size-4 mr-2" /> Seed portal demo
+              </Button>
+              <Button variant="outline" onClick={() => setClientSeedOpen(true)}>
+                <Users className="size-4 mr-2" /> Seed client portal
+              </Button>
+            </>
+          )}
           <Button onClick={() => setInviteOpen(true)}>
             <UserPlus className="size-4 mr-2" /> Invite user
           </Button>

@@ -19,62 +19,7 @@ export interface KpiData {
   accentColor: string
 }
 
-export const MOCK_KPIS: KpiData[] = [
-  {
-    id: 'portfolio-value',
-    label: 'Portfolio Value',
-    value: '$4.82B',
-    subValue: '18 active projects',
-    trend: 'up',
-    trendLabel: '+$340M QoQ',
-    accentColor: '#64ffda',
-  },
-  {
-    id: 'mw-pipeline',
-    label: 'MW in Pipeline',
-    value: '6,240 MW',
-    subValue: 'Solar · Wind · BESS',
-    trend: 'up',
-    trendLabel: '+480 MW YTD',
-    accentColor: '#3b82f6',
-  },
-  {
-    id: 'active-projects',
-    label: 'Active Projects',
-    value: '18',
-    subValue: '3 at risk',
-    trend: 'neutral',
-    trendLabel: '2 added this month',
-    accentColor: '#8b5cf6',
-  },
-  {
-    id: 'pending-approvals',
-    label: 'Pending Approvals',
-    value: '7',
-    subValue: '2 overdue',
-    trend: 'down',
-    trendLabel: 'Avg 4.2d turnaround',
-    accentColor: '#f59e0b',
-  },
-  {
-    id: 'on-schedule',
-    label: 'On-Schedule Rate',
-    value: '72%',
-    subValue: '13 / 18 projects',
-    trend: 'down',
-    trendLabel: '-6% vs last quarter',
-    accentColor: '#f97316',
-  },
-  {
-    id: 'cod-this-year',
-    label: 'COD This Year',
-    value: '3',
-    subValue: 'Target: 5',
-    trend: 'neutral',
-    trendLabel: 'Next: Sirius · Dec 2025',
-    accentColor: '#22c55e',
-  },
-]
+
 
 // ─────────────────────────────────────────────────────────────
 // Pipeline projects
@@ -96,44 +41,7 @@ export interface PipelineProject {
   targetCod: string
 }
 
-export const MOCK_PROJECTS: PipelineProject[] = [
-  // ── Spec demo project ──────────────────────────────────────
-  // Accessible at /projects/SOL-2026-001 (matched by code)
-  {
-    id:        'SOL-2026-001',
-    name:      'Al Dhafra Solar PV - Phase 1',
-    code:      'SOL-2026-001',
-    client:    'Emirates Water and Electricity Company',
-    gate:       2,
-    phase:     'g2',
-    status:    'active',
-    mw:         2100,
-    budgetM:    1200,
-    progress:   65,
-    healthRag: 'amber',
-    location:  'Al Dhafra, Abu Dhabi, UAE',
-    targetCod: '2028-06-30',
-  },
-  // G0
-  { id: 'p-lyra',    name: 'Lyra Grid Upgrade',       code: 'LYR-220', client: 'TransGrid AU',       gate: 0, phase: 'g0', status: 'planning',   mw: 220,  budgetM: 310,  progress: 8,   healthRag: 'green', location: 'New South Wales, AU', targetCod: 'Q3 2028' },
-  // G1
-  { id: 'p-orion',   name: 'Orion Wind Farm',          code: 'ORN-180', client: 'Clean Energy Corp',  gate: 1, phase: 'g1', status: 'active',     mw: 180,  budgetM: 290,  progress: 22,  healthRag: 'green', location: 'Patagonia, Argentina', targetCod: 'Q1 2027' },
-  { id: 'p-vega',    name: 'Vega BESS Storage',        code: 'VEG-400', client: 'National Grid UK',   gate: 1, phase: 'g1', status: 'active',     mw: 400,  budgetM: 520,  progress: 18,  healthRag: 'amber', location: 'Yorkshire, UK', targetCod: 'Q4 2027' },
-  // G2
-  { id: 'p-helios',  name: 'Helios Substation 132kV',  code: 'HEL-132', client: 'ACWA Power',         gate: 2, phase: 'g2', status: 'active',     mw: 0,    budgetM: 85,   progress: 41,  healthRag: 'green', location: 'Riyadh, Saudi Arabia', targetCod: 'Q2 2026' },
-  // G3
-  { id: 'p-sol',     name: 'Sol Atacama 500MW',        code: 'SOL-500', client: 'Enel Chile',         gate: 3, phase: 'g3', status: 'active',     mw: 500,  budgetM: 680,  progress: 53,  healthRag: 'green', location: 'Atacama Desert, Chile', targetCod: 'Q2 2026' },
-  // G4 (current for Sirius)
-  { id: 'p-sirius',  name: 'Sirius 400MW Solar Farm',  code: 'SRS-400', client: 'TotalEnergies',      gate: 4, phase: 'g4', status: 'active',     mw: 400,  budgetM: 480,  progress: 61,  healthRag: 'amber', location: 'Atacama Desert, Chile', targetCod: 'Q4 2025' },
-  { id: 'p-nova',    name: 'Nova Offshore Wind 600MW', code: 'NOV-600', client: 'Vattenfall',         gate: 4, phase: 'g4', status: 'at-risk',    mw: 600,  budgetM: 1200, progress: 58,  healthRag: 'red',   location: 'Baltic Sea, Denmark', targetCod: 'Q1 2026' },
-  // G5
-  { id: 'p-atlas',   name: 'Atlas Solar PV 300MW',     code: 'ATL-300', client: 'Masdar',             gate: 5, phase: 'g5', status: 'active',     mw: 300,  budgetM: 360,  progress: 74,  healthRag: 'green', location: 'Abu Dhabi, UAE', targetCod: 'Q3 2025' },
-  // G6
-  { id: 'p-ceres',   name: 'Ceres Wind Repowering',    code: 'CRS-150', client: 'RWE Renewables',     gate: 6, phase: 'g6', status: 'active',     mw: 150,  budgetM: 195,  progress: 88,  healthRag: 'green', location: 'Rhineland, Germany', targetCod: 'Q2 2025' },
-  // G6 (Handover & O&M — formerly G7/G8)
-  { id: 'p-ares',    name: 'Ares Solar + Storage',     code: 'ARS-250', client: 'AGL Energy',         gate: 6, phase: 'g6', status: 'active',     mw: 250,  budgetM: 415,  progress: 94,  healthRag: 'green', location: 'Victoria, Australia', targetCod: 'Dec 2024' },
-  { id: 'p-titan',   name: 'Titan Hydro Upgrade',      code: 'TTN-800', client: 'Hydro Quebec',       gate: 6, phase: 'g6', status: 'completed',  mw: 800,  budgetM: 940,  progress: 100, healthRag: 'green', location: 'Quebec, Canada', targetCod: 'Jun 2024' },
-]
+
 
 // ─────────────────────────────────────────────────────────────
 // Gate pipeline lanes (G1–G8 canonical 8-phase model with project buckets)
@@ -191,15 +99,7 @@ export interface ApprovalItem {
   priority: 'critical' | 'high' | 'medium' | 'low'
 }
 
-export const MOCK_APPROVALS: ApprovalItem[] = [
-  { id: 'a1', type: 'gate-review',      title: 'G5 Gate Review Convene',         projectCode: 'SRS-400', projectName: 'Sirius 400MW', requestedBy: 'J. Rivera',  daysOpen: 8,  isOverdue: true,  priority: 'critical' },
-  { id: 'a2', type: 'budget-variance',  title: '+$12.4M Cost Variance Request',  projectCode: 'NOV-600', projectName: 'Nova Offshore', requestedBy: 'T. Müller',  daysOpen: 5,  isOverdue: true,  priority: 'high'     },
-  { id: 'a3', type: 'change-order',     title: 'CO-041 Inverter Substitution',   projectCode: 'ATL-300', projectName: 'Atlas Solar',   requestedBy: 'M. Al-Farsi',daysOpen: 3,  isOverdue: false, priority: 'high'     },
-  { id: 'a4', type: 'contract',         title: 'EPC Sub-contract Award',         projectCode: 'SOL-500', projectName: 'Sol Atacama',   requestedBy: 'R. Chen',    daysOpen: 2,  isOverdue: false, priority: 'medium'   },
-  { id: 'a5', type: 'hse-incident',     title: 'Near-Miss Report #NM-22',        projectCode: 'CRS-150', projectName: 'Ceres Wind',    requestedBy: 'L. Schmidt', daysOpen: 1,  isOverdue: false, priority: 'medium'   },
-  { id: 'a6', type: 'budget-variance',  title: 'Contingency Draw-Down Auth',     projectCode: 'ORN-180', projectName: 'Orion Wind',    requestedBy: 'A. Patel',   daysOpen: 1,  isOverdue: false, priority: 'low'      },
-  { id: 'a7', type: 'change-order',     title: 'CO-019 Cable Route Deviation',   projectCode: 'VEG-400', projectName: 'Vega BESS',     requestedBy: 'S. Park',    daysOpen: 0,  isOverdue: false, priority: 'low'      },
-]
+
 
 // ─────────────────────────────────────────────────────────────
 // Activity feed

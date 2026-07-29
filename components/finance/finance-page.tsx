@@ -32,27 +32,6 @@ type CommitmentLine = CommitmentData
 
 // ─── Mock fallback data ───────────────────────────────────────────────────────
 
-const WBS_MOCK: WbsLine[] = [
-  { id: 'w0',  code: '1.0',   description: 'Sirius 400MW Solar Farm — EPC Total', bac: 480.0, ev: 293.0, ac: 301.4, pv: 270.0, level: 0 },
-  { id: 'w1',  code: '1.1',   description: 'Civil & Structural',                  bac:  96.0, ev:  72.0, ac:  74.2, pv:  68.0, level: 1 },
-  { id: 'w2',  code: '1.2',   description: 'Structural Steel & Racking',           bac:  72.0, ev:  51.8, ac:  54.6, pv:  46.0, level: 1 },
-  { id: 'w3',  code: '1.3',   description: 'Electrical — HV/MV',                  bac:  84.0, ev:  45.2, ac:  44.1, pv:  48.0, level: 1 },
-  { id: 'w4',  code: '1.4',   description: 'Inverters & Transformers',             bac:  86.4, ev:  62.4, ac:  67.8, pv:  58.0, level: 1 },
-  { id: 'w5',  code: '1.5',   description: 'Mechanical & Tracker Systems',         bac:  57.6, ev:  30.6, ac:  32.1, pv:  27.0, level: 1 },
-  { id: 'w6',  code: '1.6',   description: 'SCADA & Commissioning',                bac:  24.0, ev:  12.0, ac:  11.8, pv:  10.0, level: 1 },
-  { id: 'w7',  code: '1.7',   description: 'Project Management & Indirects',       bac:  36.0, ev:  15.0, ac:  14.8, pv:  11.0, level: 1 },
-  { id: 'w8',  code: '1.8',   description: 'Contingency',                          bac:  24.0, ev:   4.0, ac:   2.0, pv:   2.0, level: 1 },
-]
-
-const COMMITMENTS_MOCK: CommitmentLine[] = [
-  { id: 'c1', ref: 'PO-4401', vendor: 'Construcciones Andinas SA', description: 'Civil & Earthworks Sub-Contract', value: 38.2, status: 'committed', date: '18 Jul 2025' },
-  { id: 'c2', ref: 'PO-4389', vendor: 'Huawei Digital Power',      description: 'Inverter Supply & Installation',  value: 52.4, status: 'invoiced',   date: '10 Jun 2025' },
-  { id: 'c3', ref: 'PO-4352', vendor: 'Nextracker Inc.',           description: 'NX Horizon Tracker Systems',     value: 44.8, status: 'paid',       date: '22 Apr 2025' },
-  { id: 'c4', ref: 'PO-4318', vendor: 'Prysmian Group',            description: 'HV Cable Supply',                value: 18.6, status: 'paid',       date: '14 Mar 2025' },
-  { id: 'c5', ref: 'PO-4467', vendor: 'ABB Chile SA',              description: 'MV Switchgear & Transformers',   value: 24.1, status: 'committed',  date: '20 Jul 2025' },
-  { id: 'c6', ref: 'PO-4422', vendor: 'SkyPower Cranes',           description: 'Tower Crane Hire (12 months)',   value:  3.6, status: 'disputed',   date: '05 Jul 2025' },
-]
-
 // ─── Helpers ──────────────────────────────────────────────────
 
 const fmt = (v: number) => `$${v.toFixed(1)}M`
