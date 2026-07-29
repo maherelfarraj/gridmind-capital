@@ -1,27 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-// Session types + mock
+// Session types
+// AppRole is aliased from canonical DB role list (lib/auth/roles.ts).
 // Replace mockSession with a real auth call (e.g. Better Auth /
 // Supabase) when wiring up the backend.
 // ─────────────────────────────────────────────────────────────
 
-export type AppRole =
-  | 'super_admin'
-  | 'tenant_admin'
-  | 'executive_sponsor'
-  | 'pmo_director'
-  | 'project_manager'
-  | 'engineering_manager'
-  | 'procurement_manager'
-  | 'construction_manager'
-  | 'hse_manager'
-  | 'qaqc_manager'
-  | 'commissioning_manager'
-  | 'om_manager'
-  | 'finance_controller'
-  | 'client_pmc'
-  | 'viewer'
-  | 'subcontractor'
-  | 'client_viewer'
+import { type DbUserRole } from '@/lib/auth/roles'
+
+/** Application role — aliased from canonical DB roles. */
+export type AppRole = DbUserRole
 
 export type AppPermission =
   | 'project.read'
@@ -88,22 +75,17 @@ export function getInitials(fullName: string): string {
     .toUpperCase()
 }
 
-/** Human-readable label for a role */
+/** Human-readable label for a role (canonical 12-role set from lib/auth/roles.ts) */
 export const ROLE_LABELS: Record<AppRole, string> = {
-  super_admin: 'Super Admin',
-  tenant_admin: 'Tenant Admin',
-  executive_sponsor: 'Executive Sponsor',
-  pmo_director: 'PMO Director',
+  system_admin: 'System Administrator',
+  tenant_admin: 'Tenant Administrator',
+  project_director: 'Project Director',
   project_manager: 'Project Manager',
-  engineering_manager: 'Engineering Manager',
-  procurement_manager: 'Procurement Manager',
-  construction_manager: 'Construction Manager',
+  engineer: 'Engineer',
   hse_manager: 'HSE Manager',
-  qaqc_manager: 'QA/QC Manager',
   commissioning_manager: 'Commissioning Manager',
-  om_manager: 'O&M Manager',
-  finance_controller: 'Finance Controller',
-  client_pmc: 'Client / PMC',
+  finance_manager: 'Finance Manager',
+  commercial_manager: 'Commercial Manager',
   viewer: 'Viewer',
   subcontractor: 'Subcontractor',
   client_viewer: 'Client Viewer',
@@ -128,11 +110,11 @@ export function hasRole(session: AppSession, ...roles: AppRole[]): boolean {
 export function toNavRole(session: AppSession): import('@/components/app-shell/nav-config').UserRole {
   if (session.isSuperAdmin) return 'admin'
   const role = session.roles[0]
-  if (role === 'super_admin' || role === 'tenant_admin') return 'admin'
+  if (role === 'system_admin' || role === 'tenant_admin' || role === 'project_director') return 'admin'
   if (role === 'subcontractor') return 'subcontractor'
   if (role === 'client_viewer') return 'client_viewer'
   if (role === 'viewer') return 'viewer'
-  if (role === 'engineering_manager') return 'engineer'
-  if (role === 'project_manager' || role === 'pmo_director') return 'pm'
+  if (role === 'engineer') return 'engineer'
+  if (role === 'project_manager' || role === 'commercial_manager' || role === 'finance_manager') return 'pm'
   return 'pm'
 }

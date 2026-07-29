@@ -2,55 +2,13 @@ import { redirect } from 'next/navigation'
 import { ShieldAlert } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { SessionProvider } from '@/lib/session-context'
-import { createClient } from '@/lib/supabase/server'
 import { getUnreadCountAction } from '@/app/actions/notifications'
 import { getPendingApprovalCount } from '@/app/actions/approvals'
 import { signOutAction } from '@/app/actions/auth'
-import {
-  type AppSession,
-  type AppRole,
-  type AppPermission,
-  type AppDigitStyle,
-} from '@/lib/session'
+import { type AppSession } from '@/lib/session'
+import { resolveSession } from '@/lib/auth/resolve-session'
 
 import { cache } from 'react'
-
-// Map DB user_role → AppRole
-const ROLE_MAP: Record<string, AppRole> = {
-  system_admin:         'super_admin',
-  tenant_admin:         'tenant_admin',
-  project_director:     'pmo_director',
-  project_manager:      'project_manager',
-  engineer:             'engineering_manager',
-  hse_manager:          'hse_manager',
-  commissioning_manager:'commissioning_manager',
-  finance_manager:      'finance_controller',
-  commercial_manager:   'procurement_manager',
-  viewer:               'viewer',
-  subcontractor:        'subcontractor',
-  client_viewer:        'client_viewer',
-}
-
-// Permissions granted per role
-const ROLE_PERMISSIONS: Record<AppRole, AppPermission[]> = {
-  super_admin:           ['project.read','project.create','project.update','project.delete','approval.decide','approval.read','document.read','document.upload','document.approve','finance.read','finance.edit','hse.read','hse.report','admin.users','admin.settings','admin.audit'],
-  tenant_admin:          ['project.read','project.create','project.update','project.delete','approval.decide','approval.read','document.read','document.upload','document.approve','finance.read','finance.edit','hse.read','hse.report','admin.users','admin.settings','admin.audit'],
-  pmo_director:          ['project.read','project.create','project.update','approval.decide','approval.read','document.read','document.upload','document.approve','finance.read','hse.read','hse.report'],
-  project_manager:       ['project.read','project.create','project.update','approval.decide','approval.read','document.read','document.upload','finance.read','hse.read','hse.report'],
-  engineering_manager:   ['project.read','project.update','approval.read','document.read','document.upload','hse.read'],
-  hse_manager:           ['project.read','approval.read','document.read','document.upload','hse.read','hse.report'],
-  commissioning_manager: ['project.read','approval.read','document.read','document.upload','hse.read'],
-  construction_manager:  ['project.read','approval.read','document.read','document.upload','hse.read','hse.report'],
-  finance_controller:    ['project.read','approval.read','document.read','finance.read','finance.edit'],
-  procurement_manager:   ['project.read','approval.decide','approval.read','document.read','document.upload'],
-  qaqc_manager:          ['project.read','approval.read','document.read','document.upload','hse.read'],
-  om_manager:            ['project.read','approval.read','document.read','hse.read'],
-  executive_sponsor:     ['project.read','approval.read','document.read','finance.read','hse.read'],
-  client_pmc:            ['project.read','approval.read','document.read'],
-  viewer:                ['project.read','approval.read','document.read'],
-  subcontractor:         ['project.read','document.read'],
-  client_viewer:         ['project.read','document.read'],
-}
 
 // Returns the resolved session, or null when the authenticated user has no
 // profile row. We NEVER fall back to a mock/default identity here — doing so
@@ -59,47 +17,7 @@ const ROLE_PERMISSIONS: Record<AppRole, AppPermission[]> = {
 //
 // Wrapped in React cache() to dedupe per HTTP request.
 const getSession = cache(async (): Promise<AppSession | null> => {
-  const supabase = await createClient()
-
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
-  if (userError || !user) return null
-
-  // Fetch profile + tenant + i18n preferences
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, full_name, email, role, tenant_id, locale, digit_style')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) {
-    // Authenticated but not provisioned — caller must show the setup screen.
-    return null
-  }
-
-  const appRole: AppRole = ROLE_MAP[profile.role] ?? 'viewer'
-  const isSuperAdmin = appRole === 'super_admin'
-
-  // Resolve i18n preferences from profile columns. These columns may not exist
-  // yet in older migrations — coerce nulls to safe defaults.
-  const locale: string     = (profile as Record<string, unknown>).locale as string | null ?? 'en'
-  const digitStyle: AppDigitStyle =
-    ((profile as Record<string, unknown>).digit_style as string | null) === 'arabic_indic'
-      ? 'arabic_indic'
-      : 'western'
-
-  return {
-    userId:      profile.id,
-    tenantId:    profile.tenant_id,
-    roles:       [appRole],
-    permissions: isSuperAdmin
-      ? (Object.values(ROLE_PERMISSIONS).flat() as AppPermission[])
-      : (ROLE_PERMISSIONS[appRole] ?? ['project.read']),
-    fullName:    profile.full_name || user.email?.split('@')[0] || 'User',
-    email:       profile.email || user.email || '',
-    isSuperAdmin,
-    locale,
-    digitStyle,
-  }
+  return await resolveSession()
 })
 
 // Shown when a user is authenticated but has no provisioned profile row.

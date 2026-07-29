@@ -79,8 +79,8 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2200)
   }
 
-  // Real session-driven admin check (super_admin / tenant_admin)
-  const isAdmin = session.isSuperAdmin || hasRole(session, 'super_admin', 'tenant_admin')
+  // Real session-driven admin check (system_admin / tenant_admin)
+  const isAdmin = session.isSuperAdmin || hasRole(session, 'system_admin', 'tenant_admin')
 
   const visibleNav = NAV_ITEMS.filter((n) => !n.adminOnly || isAdmin)
 

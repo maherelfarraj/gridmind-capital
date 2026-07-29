@@ -30,6 +30,8 @@ export const DB_USER_ROLES = [
   'finance_manager',
   'commercial_manager',
   'viewer',
+  'subcontractor',
+  'client_viewer',
 ] as const
 
 export type DbUserRole = (typeof DB_USER_ROLES)[number]
@@ -126,6 +128,20 @@ export const DB_ROLE_META: Record<DbUserRole, DbRoleMeta> = {
     avatar: 'bg-slate-200 text-slate-800',
     description: 'Read-only access to assigned projects.',
     permissions: ['Project view', 'Reports (read)', 'Documents (read)'],
+  },
+  subcontractor: {
+    label: 'Subcontractor',
+    badge: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    avatar: 'bg-indigo-200 text-indigo-800',
+    description: 'External contractor with task and document access.',
+    permissions: ['Tasks', 'Documents (read)', 'Work permits', 'Time tracking'],
+  },
+  client_viewer: {
+    label: 'Client Viewer',
+    badge: 'bg-violet-100 text-violet-700 border-violet-200',
+    avatar: 'bg-violet-200 text-violet-800',
+    description: 'Client representative with read-only project visibility.',
+    permissions: ['Project view (limited)', 'Reports (read)', 'Approved documents'],
   },
 }
 
