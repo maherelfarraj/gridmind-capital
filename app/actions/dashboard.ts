@@ -20,7 +20,7 @@ import { getCurrentTenantId } from '@/lib/tenant'
 // Dashboard stats
 // ─────────────────────────────────────────────────────────────
 
-export async function getDashboardStats(): Promise<DashboardStats> {
+export async function getDashboardStats(): Promise<DashboardStats & { error?: string }> {
   const tenantId = await getCurrentTenantId()
   const supabase = getServiceClient()
 
@@ -28,6 +28,22 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     supabase.from('projects').select('id, status').eq('tenant_id', tenantId),
     supabase.from('approvals').select('id, status, created_at').eq('tenant_id', tenantId),
   ])
+
+  // Check for errors and return explicit unavailable state
+  if (projectsRes.error || approvalsRes.error) {
+    console.error('[dashboard] KPI fetch failed:', { projectsError: projectsRes.error?.message, approvalsError: approvalsRes.error?.message })
+    return {
+      totalProjects: 0,
+      activeProjects: 0,
+      pendingApprovals: 0,
+      overdueApprovals: 0,
+      totalProjectsTrend: 'data unavailable',
+      activeProjectsTrend: 'data unavailable',
+      pendingApprovalsTrend: 'data unavailable',
+      overdueApprovalsTrend: 'data unavailable',
+      error: 'Failed to load dashboard statistics',
+    }
+  }
 
   const projects  = projectsRes.data ?? []
   const approvals = approvalsRes.data ?? []

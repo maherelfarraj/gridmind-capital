@@ -251,7 +251,19 @@ export async function createProject(payload: {
   // This ensures every creation path seeds identical rows using CANONICAL_PHASE_NAMES.
   const gateRows = seedPhaseGatesRows(data.id, tenantId)
   const { error: gateErr } = await supabase.from('phase_gates').insert(gateRows)
-  if (gateErr) console.log('[v0] phase_gates seed failed:', gateErr.message)
+  if (gateErr) {
+    console.error('[v0] phase_gates seed failed:', gateErr.message)
+    // Log to audit trail so this failure is traceable
+    const { error: auditErr } = await supabase.from('audit_log').insert({
+      tenant_id: tenantId,
+      table_name: 'projects',
+      record_id: data.id,
+      action: 'insert',
+      changed_by: null,
+      new_values: { warning: 'phase_gates seed failed: ' + gateErr.message },
+    })
+    if (auditErr) console.error('[audit] warning log failed:', auditErr.message)
+  }
 
   // Fire-and-forget notification email — does not block response
   sendProjectCreatedEmail({

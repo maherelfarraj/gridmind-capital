@@ -104,14 +104,32 @@ export function CommentThread({ entityType, entityId, title = 'Discussion', clas
     mutate((prev) => [...(prev ?? []), optimistic], false)
     const text = body.trim()
     setBody('')
-    await addComment({ entityType, entityId, body: text }).catch(() => {})
-    mutate()
+    try {
+      const result = await addComment({ entityType, entityId, body: text })
+      if (result.error) {
+        toast({ variant: 'danger', title: 'Error', description: result.error, duration: 3000 })
+        mutate()
+      } else {
+        mutate()
+      }
+    } catch (err) {
+      toast({ variant: 'danger', title: 'Error', description: 'Failed to add comment', duration: 3000 })
+      mutate()
+    }
     setSubmitting(false)
   }
 
   async function handleResolve(id: string) {
-    await resolveComment(id).catch(() => {})
-    mutate()
+    try {
+      const result = await resolveComment(id)
+      if (result?.error) {
+        toast({ variant: 'danger', title: 'Error', description: result.error, duration: 3000 })
+      } else {
+        mutate()
+      }
+    } catch (err) {
+      toast({ variant: 'danger', title: 'Error', description: 'Failed to resolve comment', duration: 3000 })
+    }
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
