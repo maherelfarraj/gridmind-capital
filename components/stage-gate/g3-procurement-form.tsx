@@ -66,9 +66,9 @@ export function G3ProcurementForm({ projectId, projectCode, projectName, initial
   return (
     <div className="space-y-6">
       <GateFormHeader
-        gate="G3" subtitle="Procurement Approval"
+        gate="G5" subtitle="Procurement & Manufacturing"
         projectCode={projectCode} projectName={projectName}
-        description="Confirm the contracting strategy, bidders, and award plan before requesting Gate 3 approval."
+        description="Confirm the contracting strategy, bidders, and award plan before requesting Gate 5 approval."
       />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>

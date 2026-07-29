@@ -66,9 +66,9 @@ export function G7HandoverForm({ projectId, projectCode, projectName, initialDat
   return (
     <div className="space-y-6">
       <GateFormHeader
-        gate="G7" subtitle="Handover Approval"
+        gate="G8" subtitle="Handover & O&M"
         projectCode={projectCode} projectName={projectName}
-        description="Confirm O&M readiness, warranty, and deliverables before requesting Gate 7 approval."
+        description="Confirm O&M readiness, warranty, and deliverables before requesting Gate 8 approval."
       />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>

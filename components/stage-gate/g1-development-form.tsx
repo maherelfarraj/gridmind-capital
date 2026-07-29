@@ -152,7 +152,7 @@ export function G1DevelopmentForm({ projectId, projectCode, projectName, onSubmi
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-mono font-bold text-[#64ffda] bg-[#64ffda]/10 px-2 py-0.5 rounded">G1</span>
-            <span className="text-xs text-muted-foreground">Development Approval</span>
+            <span className="text-xs text-muted-foreground">Origination & Feasibility</span>
           </div>
           <h2 className="text-xl font-bold text-foreground">{projectCode} — {projectName}</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Complete all deliverables before requesting Gate 1 approval.</p>

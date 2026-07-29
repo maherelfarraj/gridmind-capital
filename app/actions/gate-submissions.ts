@@ -234,16 +234,19 @@ async function submitGateForm(
 
   const supabase = createAdminClient()
 
-  // Gate phase mapping: which current_phase values are allowed to submit each gate
+  // BATCH 20: Canonical 1-8 phase mapping (gate submission phase requirements)
+  // gate_number 0 archived (legacy), gate_number 1-8 are canonical phases
+  // CHECK constraint interim: gate_number BETWEEN 0 AND 8 (0=legacy, 1-8=canonical)
   const PHASE_GATE_MAPPING: Record<number, number> = {
-    0: 0,    // G0: cp >= 0
-    1: 0,    // G1: cp >= 0
-    2: 3,    // G2: cp >= 3
-    3: 4,    // G3: cp >= 4
-    4: 5,    // G4: cp >= 5
-    5: 6,    // G5: cp >= 6
-    6: 6,    // G6: cp >= 6
-    7: 7,    // G7: cp >= 7
+    0: 0,    // G0 (legacy): Opportunity Intake, cp >= 0
+    1: 0,    // G1: Origination, cp >= 0
+    2: 1,    // G2: Permitting & Grid, cp >= 1
+    3: 2,    // G3: Commercial Close, cp >= 2
+    4: 3,    // G4: Detailed Design, cp >= 3
+    5: 4,    // G5: Procurement, cp >= 4
+    6: 5,    // G6: Construction, cp >= 5
+    7: 6,    // G7: Commissioning, cp >= 6
+    8: 7,    // G8: Handover & O&M, cp >= 7
   }
 
   // Verify project exists and get its current phase

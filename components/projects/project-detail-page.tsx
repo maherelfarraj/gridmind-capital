@@ -798,26 +798,13 @@ export function ProjectDetailPage({
 
   const router = useNextRouter()
 
-  // Canonical gate → workspace gate mapping (honest correspondence until V2 re-map)
-  // Gates without a route (G2, G3) open the info panel instead
-  const GATE_ROUTES: Partial<Record<string, string>> = {
-    G1: `/stage-gates/${project.id}/gate/1`,    // Development ≈ Origination
-    // G2: info panel (Permitting & Grid Application - no form yet)
-    // G3: info panel (Commercial Close - no form yet)
-    G4: `/stage-gates/${project.id}/gate/2`,    // Engineering ≈ Detailed Design
-    G5: `/stage-gates/${project.id}/gate/3`,    // Procurement
-    G6: `/stage-gates/${project.id}/gate/4`,    // Construction
-    G7: `/stage-gates/${project.id}/gate/6`,    // Commissioning
-    G8: `/stage-gates/${project.id}/gate/7`,    // Handover
-  }
-
+  // BATCH 20: Direct canonical 1-8 gate routing (no workaround map)
+  // Each gate G1-G8 maps directly to /stage-gates/{projectId}/gate/{1-8}
   const handleGateClick = React.useCallback(
     (gate: import('@/components/project/phase-gate-stepper').GateDef) => {
-      const route = GATE_ROUTES[gate.code]
-      if (route) {
-        router.push(route)
-      }
-      // Gates without a route (G2, G3) silently do nothing — info panel would open here if needed
+      // BATCH 20: Direct canonical 1-8 phase routing
+      // gate.id is now the canonical phase number (1-8)
+      router.push(`/stage-gates/${project.id}/gate/${gate.id}`)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [project.id, router],
