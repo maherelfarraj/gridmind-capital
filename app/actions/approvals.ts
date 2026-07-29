@@ -1038,7 +1038,7 @@ export async function decideApproval(opts: {
 
   if (approval) {
     sendApprovalDecisionEmail({
-      to: 'admin@gridmind.capital',
+      to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
       requesterName: 'Team',
       title: approval.title ?? opts.id,
       decision: decisionStatus === 'approved' ? 'approved' : 'rejected',
@@ -1338,7 +1338,7 @@ export async function syncQueuedApproval(opts: {
 
   if (!error && approval) {
     sendApprovalDecisionEmail({
-      to: 'admin@gridmind.capital',
+      to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
       requesterName: 'Team',
       title: approval.title ?? opts.id,
       decision: opts.decision,
@@ -1390,7 +1390,7 @@ export async function updateApprovalStatus(id: string, status: 'approved' | 'rej
   if (!error && approval) {
     // Fire-and-forget — do not block response on email delivery
     sendApprovalDecisionEmail({
-      to: 'admin@gridmind.capital',
+      to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
       requesterName: 'Team',
       title: approval.title ?? id,
       decision: status,
