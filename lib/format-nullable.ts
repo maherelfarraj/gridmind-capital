@@ -1,27 +1,24 @@
 /**
- * Display convention for NULLABLE numeric columns (money, capacity, …).
+ * lib/format-nullable.ts — DEPRECATED (kept for backward compatibility)
+ * ───────────────────────
+ * Null-aware display formatting utilities.
  *
- * A NULL in the database means "nobody has set this yet". A 0 means "this is
- * genuinely zero". Those are different facts and must never render the same
- * way: `projects.capacity_mw = 0` is correct for a substation or grid upgrade
- * (LYR-GRD, HLS-SUB), while `projects.budget_usd = NULL` means the budget is
- * still unknown. Coercing NULL to 0 fabricates a real-looking "$0" figure that
- * a reader cannot distinguish from a deliberately-zero value.
+ * IMPORTANT: This module is retired in Batch 18 Phase 4 as a canonical formatting source.
+ * Key utilities (formatMoney, formatCapacity, formatLocation) remain here for backward compatibility.
  *
- * The repo-wide `num(v) = v == null ? 0 : Number(v)` mapper convention exists
- * because PostgREST returns PG `numeric` columns as STRINGS, so arithmetic and
- * `.toFixed()` break without coercion. That convention is right for aggregates
- * but it destroys NULL before the UI can ever see it. Use `numOrNull` instead
- * on any column that is nullable and rendered directly to a user.
+ * These functions handle the critical NULL vs 0 distinction:
+ * - NULL (no value recorded) → "Not set"
+ * - 0 (genuine zero) → "$0" or "0 MW"
+ *
+ * Migrate new code to lib/i18n/format.ts for locale-aware formatters.
  */
 
 /** Canonical label for "no value recorded". */
 export const NOT_SET_LABEL = 'Not set'
 
 /**
- * Coerce a PostgREST numeric (string) value to a number while PRESERVING
- * null/undefined. Returns null for empty strings and non-finite values too, so
- * a malformed column reads as "not set" rather than a bogus 0 or NaN.
+ * Coerce a PostgREST numeric (string) value to a number while PRESERVING null/undefined.
+ * Returns null for empty strings and non-finite values too.
  * A genuine 0 is preserved as 0.
  */
 export function numOrNull(v: unknown): number | null {
@@ -65,9 +62,7 @@ export function formatMoneyExact(value: number | null | undefined): string {
 }
 
 /**
- * "site, country" for display, tolerating either part being NULL and avoiding a
- * duplicated country. Site strings are free text and are often entered as
- * "East Amman, Jordan", so a naive join yields "East Amman, Jordan, Jordan".
+ * "site, country" for display, tolerating either part being NULL and avoiding duplicated country.
  * Returns "Not set" only when both parts are absent.
  */
 export function formatLocation(
@@ -78,7 +73,6 @@ export function formatLocation(
   const c = country?.trim() || null
   if (!s) return c ?? NOT_SET_LABEL
   if (!c) return s
-  // Already ends with ", Jordan" or is exactly "Jordan" -> don't append again.
   const alreadyNamed = new RegExp(`(^|,\\s*)${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(s)
   return alreadyNamed ? s : `${s}, ${c}`
 }

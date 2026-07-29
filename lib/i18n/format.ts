@@ -154,3 +154,26 @@ export function useFormatters(locale: string, digitStyle: DigitStyle = 'western'
                       formatPercent(v, locale, digitStyle),
   }
 }
+
+/**
+ * Canonical label for "no value recorded" (NULL vs 0 distinction).
+ *
+ * Re-exported from lib/format-nullable.ts for backward compatibility.
+ * Use this in UI when displaying NULL numeric columns.
+ */
+export const NOT_SET_LABEL = 'Not set'
+
+/**
+ * Coerce a PostgREST numeric (string) to number while PRESERVING null/undefined.
+ * Use on nullable columns that render directly to users.
+ */
+export function numOrNull(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** True when a value should render as "Not set". */
+export function isNotSet(v: number | null | undefined): boolean {
+  return v == null
+}

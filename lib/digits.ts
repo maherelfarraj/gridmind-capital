@@ -1,84 +1,33 @@
 /**
- * lib/digits.ts
- * ─────────────
- * Thin convenience wrapper for digit-aware number formatting.
+ * lib/digits.ts — DEPRECATED (kept for backward compatibility)
+ * ──────────────
+ * REDIRECT to lib/i18n/format.ts (canonical source).
  *
- * The full locale-aware suite lives in lib/i18n/format.ts.
- * This module exposes the simple two-argument form that KPI cards and tables
- * call directly — no need to import the full formatters suite.
+ * This module is retired in Batch 18 Phase 4. Use lib/i18n/format.ts directly.
  *
- * @example
- *   import { formatNumber, formatCurrencyAmount } from '@/lib/digits'
+ * Backward-compatible re-exports:
+ * - formatNumber        → formatNumber('en', 'western')
+ * - formatCurrencyAmount → formatCurrency(..., 'USD')
+ * - formatPercent       → formatPercent(...)
+ * - toLocaleDigits      → use formatNumber directly
  *
- *   // In a KPI card (RTL-aware, no locale needed for pure digit formatting):
- *   <span dir="ltr">{formatNumber(1234567, digitStyle)}</span>
- *
- *   // With currency:
- *   <LtrSpan>{formatCurrencyAmount(3_500_000, digitStyle)}</LtrSpan>
+ * Migrate to: import { formatNumber, formatCurrency, formatPercent } from '@/lib/i18n/format'
  */
 
 export type DigitStyle = 'western' | 'arabic_indic'
 
-/**
- * Format a plain integer or decimal with digit-style awareness.
- *
- * - 'western'      → Latin digits, system locale  →  "1,234,567"
- * - 'arabic_indic' → Arabic-Indic digits           → "١٬٢٣٤٬٥٦٧"
- *
- * Always returns a string; null/undefined/NaN → "—".
- */
-export function formatNumber(
-  value: number | null | undefined,
-  digitStyle: DigitStyle = 'western',
-  options?: Intl.NumberFormatOptions,
-): string {
-  if (value == null || isNaN(value)) return '—'
-  const locale = digitStyle === 'arabic_indic' ? 'ar-u-nu-arab' : 'en-u-nu-latn'
-  try {
-    return new Intl.NumberFormat(locale, options).format(value)
-  } catch {
-    return String(value)
-  }
-}
-
-/**
- * Format a monetary amount with digit-style awareness (USD default).
- *
- * Currency amounts should always be wrapped in <LtrSpan> or dir="ltr"
- * in RTL layouts so the currency symbol sits at the correct visual edge.
- */
-export function formatCurrencyAmount(
-  value: number | null | undefined,
-  digitStyle: DigitStyle = 'western',
-  currencyCode = 'USD',
-): string {
-  if (value == null || isNaN(value)) return '—'
-  const locale = digitStyle === 'arabic_indic' ? 'ar-u-nu-arab' : 'en-u-nu-latn'
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: currencyCode,
-      maximumFractionDigits: 0,
-    }).format(value)
-  } catch {
-    return `$${value.toLocaleString()}`
-  }
-}
+// For backward compatibility, re-export from canonical source
+export { formatNumber, formatCurrency as formatCurrencyAmount, formatPercent } from '@/lib/i18n/format'
 
 /** Western → Arabic-Indic digit map (U+0660–U+0669). */
 const ARABIC_INDIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'] as const
 
 /**
- * Shape the ASCII digits inside an already-formatted display string to the
- * requested digit style, leaving all non-digit characters (currency symbols,
- * unit suffixes like "MW", separators, "%", "B"/"M") untouched.
+ * DEPRECATED: toLocaleDigits — kept for backward compatibility.
+ * Shape the ASCII digits inside an already-formatted display string.
  *
- * Use this for KPI values and table cells that arrive pre-formatted as strings
- * (e.g. "$4.82B", "6,240 MW", "72%") where re-parsing to a number would lose
- * the units. For raw numbers, prefer formatNumber/formatCurrencyAmount instead.
- *
- * - 'western'      → returned unchanged            → "6,240 MW"
- * - 'arabic_indic' → ASCII 0-9 mapped to ٠-٩       → "٦,٢٤٠ MW"
+ * Use this only for pre-formatted strings where you can't re-parse to a number.
+ * For raw numbers, use formatNumber directly from lib/i18n/format.ts.
  */
 export function toLocaleDigits(
   input: string | null | undefined,
@@ -87,20 +36,4 @@ export function toLocaleDigits(
   if (input == null) return '—'
   if (digitStyle !== 'arabic_indic') return input
   return input.replace(/[0-9]/g, (d) => ARABIC_INDIC_DIGITS[Number(d)])
-}
-
-/**
- * Format a percentage (0–100 scale → "42 %" or "٤٢ %").
- */
-export function formatPercent(
-  value: number | null | undefined,
-  digitStyle: DigitStyle = 'western',
-): string {
-  if (value == null || isNaN(value)) return '—'
-  const locale = digitStyle === 'arabic_indic' ? 'ar-u-nu-arab' : 'en-u-nu-latn'
-  try {
-    return new Intl.NumberFormat(locale, { style: 'percent' }).format(value / 100)
-  } catch {
-    return `${Math.round(value)}%`
-  }
 }
