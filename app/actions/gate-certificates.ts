@@ -83,6 +83,8 @@ export async function issueGateCertificate(opts: {
   gateName?: string
   deliverables: CertificateDeliverable[]
 }): Promise<{ certificate: GateCertificate } | { error: string }> {
+  const session = await requireUser()
+  
   const supabase = createAdminClient()
   const actor = await getActor()
 

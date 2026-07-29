@@ -278,6 +278,8 @@ export async function updateConditionStatus(
  * Called on-load or scheduled periodically.
  */
 export async function autoBreachExpiredConditions(approvalId: string): Promise<void> {
+  const session = await requireUser()
+  
   const supabase = createAdminClient()
 
   const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
@@ -300,10 +302,20 @@ export async function autoBreachExpiredConditions(approvalId: string): Promise<v
  * Auto-breaches expired conditions before returning events.
  */
 export async function getApprovalEvents(approvalId: string) {
+  const actor = await getActor()
   const supabase = createAdminClient()
 
   // Auto-breach any expired conditions before returning events
   await autoBreachExpiredConditions(approvalId)
+
+  // Verify tenant membership before returning events
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('id')
+    .eq('id', approvalId)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (!approval) return [] // IDOR: not in this tenant
 
   const { data: events } = await supabase
     .from('approval_events')
@@ -1099,11 +1111,13 @@ export async function delegateApproval(opts: {
 }
 
 export async function getApprovalById(id: string) {
+  const actor = await getActor()
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('approvals')
     .select('*')
     .eq('id', id)
+    .eq('tenant_id', actor.tenantId)
     .single()
   if (error || !data) return null
   return data
