@@ -1004,11 +1004,17 @@ export function UsersRolesPage({
     })
   }
 
-  function handleDelete(user: UserProfile) {
-    if (onDelete) onDelete(user.id).catch(() => {})
-    setUsers(prev => prev.filter(u => u.id !== user.id))
-    setSelected(s => { const n = new Set(s); n.delete(user.id); return n })
-    toast({ variant: 'danger', title: 'User Deleted', description: `${user.name} has been removed.`, duration: 3500 })
+  async function handleDelete(user: UserProfile) {
+    if (onDelete) {
+      try {
+        await onDelete(user.id)
+        setUsers(prev => prev.filter(u => u.id !== user.id))
+        setSelected(s => { const n = new Set(s); n.delete(user.id); return n })
+        toast({ variant: 'danger', title: 'User Deleted', description: `${user.full_name || 'User'} has been removed.`, duration: 3500 })
+      } catch (err) {
+        toast({ variant: 'danger', title: 'Delete Failed', description: 'Could not delete user. Try again.', duration: 3500 })
+      }
+    }
   }
 
   function handleBulkActivate() {

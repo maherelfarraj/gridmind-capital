@@ -16,13 +16,17 @@ import { getCurrentTenantId } from '@/lib/tenant'
 async function resolveApprovers(
   admin: ReturnType<typeof createAdminClient>,
   tenantId: string,
-): Promise<{ id: string; email: string; name: string }[]> {
-  const { data } = await admin
+): Promise<{ id: string; email: string; name: string }[] | null> {
+  const { data, error } = await admin
     .from('profiles')
     .select('id, email, full_name, role, is_active')
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
     .in('role', APPROVER_ENUM_ROLES)
+  if (error) {
+    console.error('[approvals] resolveApprovers failed:', error.message)
+    return null
+  }
   return (data ?? [])
     .filter((p) => p.email)
     .map((p) => ({ id: p.id, email: p.email as string, name: p.full_name ?? 'Approver' }))
@@ -37,10 +41,10 @@ async function resolveApproveeSeat(
   supabase: ReturnType<typeof createAdminClient>,
   tenantId: string,
   role: string | null | undefined,
-): Promise<string> {
+): Promise<string | null> {
   if (!role) {
     // Fallback: assign to tenant_admin
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('id')
       .eq('tenant_id', tenantId)
@@ -48,11 +52,15 @@ async function resolveApproveeSeat(
       .eq('is_active', true)
       .limit(1)
       .maybeSingle()
+    if (error) {
+      console.error('[approvals] resolveApproveeSeat tenant_admin lookup failed:', error.message)
+      return null
+    }
     return data?.id ?? tenantId // Worst case: tenant_id itself (not ideal, but explicit)
   }
 
   // Look for an active profile with the specified role
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .select('id')
     .eq('tenant_id', tenantId)
@@ -61,10 +69,14 @@ async function resolveApproveeSeat(
     .limit(1)
     .maybeSingle()
 
+  if (error) {
+    console.error('[approvals] resolveApproveeSeat role lookup failed:', error.message)
+    return null
+  }
   if (data?.id) return data.id
 
   // Role exists but no seat is occupied — assign to tenant_admin
-  const { data: admin } = await supabase
+  const { data: admin, error: adminErr } = await supabase
     .from('profiles')
     .select('id')
     .eq('tenant_id', tenantId)
@@ -72,6 +84,10 @@ async function resolveApproveeSeat(
     .eq('is_active', true)
     .limit(1)
     .maybeSingle()
+  if (adminErr) {
+    console.error('[approvals] resolveApproveeSeat fallback lookup failed:', adminErr.message)
+    return null
+  }
   return admin?.id ?? tenantId
 }
 
@@ -133,6 +149,7 @@ export async function createApprovalWorkflow(
     // Resolve the first level approver (will be assigned_to on approvals.assignee_id)
     const firstLevelRole = requiredRoles[0] ?? 'tenant_admin'
     const firstLevelAssigneeId = await resolveApproveeSeat(supabase, tenantId, firstLevelRole)
+    if (!firstLevelAssigneeId) return { id: '', error: 'Failed to resolve approver for first level' }
 
     // Create approvals row with initial assignee = first level approver
     const { data: approval, error: apprErr } = await supabase
@@ -159,6 +176,7 @@ export async function createApprovalWorkflow(
     for (let level = 1; level <= approvalLevels; level++) {
       const role = requiredRoles[level - 1] ?? 'tenant_admin'
       const assigneeId = await resolveApproveeSeat(supabase, tenantId, role)
+      if (!assigneeId) return { id: '', error: `Failed to resolve approver for level ${level}` }
       stepRows.push({
         approval_id: approval.id,
         level,
@@ -746,6 +764,10 @@ export async function createApproval(opts: {
       return
     }
     const approvers = await resolveApprovers(supabase, tenantId)
+    if (!approvers) {
+      console.error('[approvals] resolveApprovers failed, skipping approval email broadcast')
+      return
+    }
     for (const a of approvers) {
       await sendApprovalRequestEmail({
         to: a.email,
