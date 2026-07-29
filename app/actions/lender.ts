@@ -669,7 +669,7 @@ export async function getLenderReportData(
     }
   }
 
-  // ── ITP completion (optional) ────────────────────────────────────────────────
+  // ── ITP completion (optional) ──────────────────────────���─────────────────────
   let itpCompletionPct: number | undefined
   let activePlans: number | undefined
   const { data: itpPlanRows } = await admin
@@ -741,7 +741,7 @@ export async function getLenderReportData(
       currentGate: gateState.currentGate,
       completedGates: gateState.completedGates,
       approvedThrough: gateState.approvedThrough,
-      totalGates: 7,
+      totalGates: 8,
     },
     cost,
     payments: {

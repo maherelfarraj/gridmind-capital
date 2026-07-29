@@ -356,19 +356,34 @@ export function StageGateReviewPage() {
   )
   const submittedSet = React.useMemo(() => new Set(submittedGates ?? []), [submittedGates])
 
-  // Use real CANONICAL_PHASE_NAMES for all 8 gates
-  const realGates: GateMeta[] = CANONICAL_PHASE_NAMES.map((phaseName, idx) => ({
-    gate: idx + 1,
-    phase: phaseName,
-    shortName: `G${idx + 1}`,
-    fullName: phaseName,
-    purpose: 'Project phase - real data to be fetched from gate_submissions.',
-    color: ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#f97316', '#fb923c', '#f59e0b', '#22c55e'][idx],
-    icon: [Zap, Wrench, Building2, Truck, HardHat, Settings, Clock, Leaf][idx],
-    status: (idx === 4 ? 'active' : idx < 4 ? 'passed' : 'locked') as GateStatus,
-    deliverables: [],
-    reviewers: [],
-  }))
+  // Derive gate status from linkedProject's current_phase (0–8)
+  const currentPhase = linkedProject?.current_phase ?? 0
+  
+  // Use real CANONICAL_PHASE_NAMES for all 8 gates, derive status from current_phase
+  const realGates: GateMeta[] = CANONICAL_PHASE_NAMES.map((phaseName, idx) => {
+    const phaseNum = idx + 1 // 1–8
+    let status: GateStatus
+    if (phaseNum < currentPhase) {
+      status = 'passed' // Gates before current are approved
+    } else if (phaseNum === currentPhase) {
+      status = 'active' // Current phase is active
+    } else {
+      status = 'locked' // Future gates are locked
+    }
+    
+    return {
+      gate: idx + 1,
+      phase: phaseName,
+      shortName: `G${idx + 1}`,
+      fullName: phaseName,
+      purpose: 'Project phase - real data from phase_gates table.',
+      color: ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#f97316', '#fb923c', '#f59e0b', '#22c55e'][idx],
+      icon: [Zap, Wrench, Building2, Truck, HardHat, Settings, Clock, Leaf][idx],
+      status,
+      deliverables: [],
+      reviewers: [],
+    }
+  })
 
   const [selectedGate, setSelectedGate] = React.useState<number>(linkedProject ? 1 : 0)
   const gate = realGates.find((g) => g.gate === selectedGate) ?? realGates[0]
