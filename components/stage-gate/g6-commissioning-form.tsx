@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * G6 — Commissioning Approval Form
+ * G7 — Commissioning & Grid Tests Approval Form
+ * BATCH 20: Canonical gate 7 (rendered from g6-commissioning-form.tsx)
  * react-hook-form + zod, shadcn/ui card layout (matches G1 styling).
  */
 import * as React from 'react'
@@ -55,11 +56,11 @@ export function G6CommissioningForm({ projectId, projectCode, projectName, initi
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {
       setSubmitted(true)
-      toast({ title: 'G6 Package submitted', description: 'Commissioning package saved and sent for approval.', variant: 'success' })
+      toast({ title: 'G7 Package submitted', description: 'Commissioning & grid tests package saved and sent for approval.', variant: 'success' })
     }
   }
 
-  if (submitted) return <SuccessCard gate="G6" projectId={projectId} onReset={() => setSubmitted(false)} />
+  if (submitted) return <SuccessCard gate="G7" projectId={projectId} onReset={() => setSubmitted(false)} />
 
   return (
     <div className="space-y-6">
@@ -105,7 +106,7 @@ export function G6CommissioningForm({ projectId, projectCode, projectName, initi
           <div className="flex justify-end">
             <Button type="submit" disabled={isSubmitting} className="gap-2">
               {isSubmitting && <Loader2 className="size-4 animate-spin" aria-hidden />}
-              Submit for G6 Approval
+              Submit for G7 Approval
             </Button>
           </div>
         )}

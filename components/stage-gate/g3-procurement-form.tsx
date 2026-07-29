@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * G3 — Procurement Approval Form
+ * G5 — Procurement & Manufacturing Approval Form
+ * BATCH 20: Canonical gate 5 (rendered from g3-procurement-form.tsx)
  * react-hook-form + zod, shadcn/ui card layout (matches G1 styling).
  */
 import * as React from 'react'
@@ -57,11 +58,11 @@ export function G3ProcurementForm({ projectId, projectCode, projectName, initial
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {
       setSubmitted(true)
-      toast({ title: 'G3 Package submitted', description: 'Procurement package saved and sent for approval.', variant: 'success' })
+      toast({ title: 'G5 Package submitted', description: 'Procurement & manufacturing package saved and sent for approval.', variant: 'success' })
     }
   }
 
-  if (submitted) return <SuccessCard gate="G3" projectId={projectId} onReset={() => setSubmitted(false)} />
+  if (submitted) return <SuccessCard gate="G5" projectId={projectId} onReset={() => setSubmitted(false)} />
 
   return (
     <div className="space-y-6">
@@ -131,7 +132,7 @@ export function G3ProcurementForm({ projectId, projectCode, projectName, initial
           <div className="flex justify-end">
             <Button type="submit" disabled={isSubmitting} className="gap-2">
               {isSubmitting && <Loader2 className="size-4 animate-spin" aria-hidden />}
-              Submit for G3 Approval
+              Submit for G5 Approval
             </Button>
           </div>
         )}

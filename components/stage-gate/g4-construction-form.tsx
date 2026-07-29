@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * G4 — Construction Approval Form
+ * G6 — Construction & Installation Approval Form
+ * BATCH 20: Canonical gate 6 (rendered from g4-construction-form.tsx)
  * react-hook-form + zod, shadcn/ui card layout (matches G1 styling).
  */
 import * as React from 'react'
@@ -65,11 +66,11 @@ export function G4ConstructionForm({ projectId, projectCode, projectName, initia
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {
       setSubmitted(true)
-      toast({ title: 'G4 Package submitted', description: 'Construction package saved and sent for approval.', variant: 'success' })
+      toast({ title: 'G6 Package submitted', description: 'Construction & installation package saved and sent for approval.', variant: 'success' })
     }
   }
 
-  if (submitted) return <SuccessCard gate="G4" projectId={projectId} onReset={() => setSubmitted(false)} />
+  if (submitted) return <SuccessCard gate="G6" projectId={projectId} onReset={() => setSubmitted(false)} />
 
   return (
     <div className="space-y-6">
@@ -114,7 +115,7 @@ export function G4ConstructionForm({ projectId, projectCode, projectName, initia
           <div className="flex justify-end">
             <Button type="submit" disabled={isSubmitting} className="gap-2">
               {isSubmitting && <Loader2 className="size-4 animate-spin" aria-hidden />}
-              Submit for G4 Approval
+              Submit for G6 Approval
             </Button>
           </div>
         )}

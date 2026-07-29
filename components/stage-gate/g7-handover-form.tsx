@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * G7 — Handover Approval Form
+ * G8 — Handover & O&M Approval Form
+ * BATCH 20: Canonical gate 8 (rendered from g7-handover-form.tsx)
  * react-hook-form + zod, shadcn/ui card layout (matches G1 styling).
  */
 import * as React from 'react'
@@ -57,11 +58,11 @@ export function G7HandoverForm({ projectId, projectCode, projectName, initialDat
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {
       setSubmitted(true)
-      toast({ title: 'G7 Package submitted', description: 'Handover package saved and sent for approval.', variant: 'success' })
+      toast({ title: 'G8 Package submitted', description: 'Handover & O&M package saved and sent for approval.', variant: 'success' })
     }
   }
 
-  if (submitted) return <SuccessCard gate="G7" projectId={projectId} onReset={() => setSubmitted(false)} />
+  if (submitted) return <SuccessCard gate="G8" projectId={projectId} onReset={() => setSubmitted(false)} />
 
   return (
     <div className="space-y-6">
@@ -110,7 +111,7 @@ export function G7HandoverForm({ projectId, projectCode, projectName, initialDat
           <div className="flex justify-end">
             <Button type="submit" disabled={isSubmitting} className="gap-2">
               {isSubmitting && <Loader2 className="size-4 animate-spin" aria-hidden />}
-              Submit for G7 Approval
+              Submit for G8 Approval
             </Button>
           </div>
         )}
