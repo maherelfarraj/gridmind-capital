@@ -21,14 +21,6 @@ export async function GET(request: NextRequest) {
   const token = searchParams.get('token')
   const type = searchParams.get('type') as EmailOtpType | null
 
-  // Debug logging
-  console.log('[v0] Auth callback params:', {
-    url: request.nextUrl.toString(),
-    next_param: searchParams.get('next'),
-    type,
-    tokenHash: tokenHash ? `${tokenHash.slice(0, 10)}...` : null,
-  })
-
   // Extract next from direct param OR from redirect_to URL param (magic links encode it)
   let nextValue = searchParams.get('next') ?? '/dashboard'
   
@@ -60,21 +52,16 @@ export async function GET(request: NextRequest) {
   if (session) {
     // Supabase already authenticated the user via /auth/v1/verify
     // Just redirect to next page
-    console.log('[v0] Session found, redirecting to:', next)
     return NextResponse.redirect(`${origin}${next}`)
   }
 
   // Handle email links with explicit token: both token_hash (old format) and token (new Supabase format)
   const tokenValue = tokenHash || token
   if (tokenValue && type) {
-    console.log('[v0] VerifyOtp with token_hash:', { type, tokenHash: tokenValue?.slice(0, 10) })
-    // Note: email is embedded in the token for invite/magiclink types, but we pass it for clarity
-    const { data, error } = await supabase.auth.verifyOtp({ 
-      email: 'maher@tek.jo',
+    const { error } = await supabase.auth.verifyOtp({ 
       type, 
       token_hash: tokenValue
     })
-    console.log('[v0] VerifyOtp result:', { success: !error, error: error?.message, user: data?.user?.email })
     if (!error) return NextResponse.redirect(`${origin}${next}`)
     return NextResponse.redirect(
       `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,

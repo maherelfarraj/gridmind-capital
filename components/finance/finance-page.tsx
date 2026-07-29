@@ -213,12 +213,12 @@ export function FinancePage() {
   const paymentsProjectId =
     financeProjects?.find((p) => p.code === 'SRS-400')?.id ?? financeProjects?.[0]?.id ?? null
 
-  // Prefer live data; fall back to mock while loading or when DB is empty
-  const WBS         = liveData?.seeded ? liveData.wbs         : WBS_MOCK
-  const COMMITMENTS = liveData?.seeded ? liveData.commitments : COMMITMENTS_MOCK
+  // Use live data only; show empty state when DB is not seeded
+  const WBS         = liveData?.seeded ? liveData.wbs         : []
+  const COMMITMENTS = liveData?.seeded ? liveData.commitments : []
 
   // Portfolio-level derived metrics
-  const root   = WBS[0] ?? WBS_MOCK[0]
+  const root   = WBS[0]
   const cpi    = root.ev / (root.ac || 1)
   const spi    = root.ev / (root.pv || 1)
   const eac    = root.bac / (cpi || 1)

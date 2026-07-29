@@ -42,7 +42,8 @@ export function ReportListSidebar({ selectedId, onSelect, onNewReport, onDeleteR
       return next
     })
 
-  const filtered = MOCK_REPORTS.filter(r =>
+  // Use live reports only; show empty state when none available
+  const filtered = [].filter(r =>
     r.name.toLowerCase().includes(search.toLowerCase())
   )
 

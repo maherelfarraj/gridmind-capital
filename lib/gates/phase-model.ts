@@ -68,7 +68,7 @@ export function phaseLabel(
  */
 export function gateCode(phaseNumber: number | null | undefined): string {
   if (phaseNumber == null) return 'G0'
-  const num = Math.max(0, Math.min(phaseNumber, TOTAL_PHASES - 1))
+  const num = Math.max(0, Math.min(phaseNumber, TOTAL_PHASES))
   return `G${num}`
 }
 
@@ -82,7 +82,7 @@ export function parseGateCode(code: string | null | undefined): number | null {
   const match = /^g?(\d+)$/i.exec(code.trim())
   if (!match) return null
   const n = Number(match[1])
-  return n >= 0 && n <= TOTAL_PHASES - 1 ? n : null
+  return n >= 0 && n <= TOTAL_PHASES ? n : null
 }
 
 /**

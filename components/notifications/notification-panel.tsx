@@ -381,50 +381,12 @@ function MentionsTab() {
   return (
     <ScrollArea className="h-[calc(100vh-220px)]">
       <div className="px-4 pb-6 space-y-3">
-        {MOCK_MENTIONS.map((m) => (
-          <div
-            key={m.id}
-            className={cn(
-              'rounded-xl border border-border bg-card p-4 space-y-3',
-              !m.replied && 'border-l-2 border-l-violet-500',
-            )}
-          >
-            {/* header */}
-            <div className="flex items-start gap-2.5">
-              <div
-                className="h-8 w-8 flex-shrink-0 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
-                style={{ background: m.fromColor }}
-              >
-                {m.fromInitials}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">{m.from}</p>
-                  <span className="text-[10px] text-muted-foreground flex-shrink-0">{m.timestamp}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground">{m.thread}</p>
-              </div>
-            </div>
-
-            {/* excerpt */}
-            <p className="text-xs text-foreground/80 bg-muted/30 rounded-lg px-3 py-2 leading-relaxed">
-              {m.excerpt}
-            </p>
-
-            {/* project */}
-            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <Building2 size={9} />
-              <span>{m.project}</span>
-              {m.replied && (
-                <span className="ml-auto text-green-500 font-medium flex items-center gap-0.5">
-                  <CheckCircle2 size={9} /> Replied
-                </span>
-              )}
-            </div>
-
-            {/* reply / go to thread */}
-            {!m.replied && (
-              <div className="space-y-2">
+        {/* Mentions section - currently no live data source */}
+        <div className="text-sm text-muted-foreground p-4 text-center">
+          No mentions available
+        </div>
+        {false && (
+          <div>
                 {replyingTo === m.id ? (
                   <div className="flex gap-2">
                     <input
@@ -576,12 +538,12 @@ export function NotificationPanel({ open, onClose, unreadCount }: NotificationPa
     { revalidateOnFocus: false },
   )
   const activityItems = (feedData && feedData.length > 0
-    ? feedData : MOCK_ACTIVITY) as unknown as ActivityItem[]
+    ? feedData : []) as unknown as ActivityItem[]
 
-  // Map live rows → panel type; merge with mock fallback when DB is empty
+  // Map live rows → panel type; show empty state when DB is empty
   const liveItems: Notification[] = data?.items.length
     ? data.items.map(dbToNotif)
-    : MOCK_NOTIFICATIONS
+    : []
 
   const notifications = liveItems.filter(n => !dismissed.has(n.id))
 
@@ -617,7 +579,6 @@ export function NotificationPanel({ open, onClose, unreadCount }: NotificationPa
   }
 
   const liveUnread = notifications.filter(n => n.status === 'unread').length
-  const mentionUnread = MOCK_MENTIONS.filter(m => !m.replied).length
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
