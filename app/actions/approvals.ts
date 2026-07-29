@@ -302,12 +302,11 @@ export async function autoBreachExpiredConditions(approvalId: string): Promise<v
  * Auto-breaches expired conditions before returning events.
  */
 export async function getApprovalEvents(approvalId: string) {
-  let actor
-  try {
-    actor = await getAuthActor()
-  } catch {
+  const res = await getAuthActor()
+  if ('error' in res) {
     return [] // Not authenticated
   }
+  const { actor } = res
 
   const supabase = createAdminClient()
 
@@ -1117,7 +1116,9 @@ export async function delegateApproval(opts: {
 }
 
 export async function getApprovalById(id: string) {
-  const actor = await getActor()
+  const res = await getAuthActor()
+  if ('error' in res) return null
+  const { actor } = res
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('approvals')
