@@ -126,7 +126,7 @@ export async function submitG0FormAction(
   if (!error) {
     // Notify Executive Sponsor — fire-and-forget
     sendApprovalRequestEmail({
-      to: 'admin@gridmind.capital',
+      to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
       approverName: 'Executive Sponsor',
       title: 'Project Intake Package',
       requestedBy: formData.projectSponsor || 'Project Team',

@@ -99,9 +99,9 @@ export type GateCode = typeof GATE_CODES[number]
  * Used by createProject and createProjectFull to ensure every project
  * gets the same gate template.
  */
-export function seedPhaseGatesRows(projectId: string, tenantId: string) {
+export function seedPhaseGatesRows(projectId: string, _tenantId: string) {
+  // Note: phase_gates does NOT have tenant_id column; scoping via project_id FK only.
   return Array.from({ length: TOTAL_PHASES }, (_, i) => ({
-    tenant_id: tenantId,
     project_id: projectId,
     phase_number: i + 1, // 1–8
     phase_name: CANONICAL_PHASE_NAMES[i],

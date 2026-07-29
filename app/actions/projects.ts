@@ -267,7 +267,7 @@ export async function createProject(payload: {
 
   // Fire-and-forget notification email — does not block response
   sendProjectCreatedEmail({
-    to: 'admin@gridmind.capital',
+    to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
     recipientName: 'GridMind Team',
     projectCode: payload.code,
     projectName: payload.name,
@@ -478,7 +478,7 @@ export async function createProjectFull(
   }
 
   sendProjectCreatedEmail({
-    to: 'admin@gridmind.capital',
+    to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
     recipientName: 'GridMind Team',
     projectCode: code,
     projectName: input.name,
