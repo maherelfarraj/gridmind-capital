@@ -235,15 +235,15 @@ async function submitGateForm(
   const supabase = createAdminClient()
 
   // Gate phase mapping: which current_phase values are allowed to submit each gate
-  const PHASE_GATE_MAPPING: Record<number, number[]> = {
-    0: [0],          // G0: must be at current_phase 0 (always)
-    1: [0, 1],       // G1: can submit at 0 or >= 0
-    2: [3],          // G2: must be at >= 3 (actually at exactly 3, since this is the current gate) — adjust per spec
-    3: [4],          // G3: >= 4
-    4: [5],          // G4: >= 5
-    5: [6],          // G5: >= 6
-    6: [6],          // G6: >= 6
-    7: [7],          // G7: >= 7
+  const PHASE_GATE_MAPPING: Record<number, number> = {
+    0: 0,    // G0: cp >= 0
+    1: 0,    // G1: cp >= 0
+    2: 3,    // G2: cp >= 3
+    3: 4,    // G3: cp >= 4
+    4: 5,    // G4: cp >= 5
+    5: 6,    // G5: cp >= 6
+    6: 6,    // G6: cp >= 6
+    7: 7,    // G7: cp >= 7
   }
 
   // Verify project exists and get its current phase
@@ -256,9 +256,9 @@ async function submitGateForm(
   if (projectErr) return { error: `Could not find project: ${projectErr.message}` }
   if (!project) return { error: 'Project not found' }
 
-  // Validate current_phase allows this gate submission
-  const allowedPhases = PHASE_GATE_MAPPING[gateNumber] ?? []
-  if (!allowedPhases.includes(project.current_phase)) {
+  // Validate current_phase allows this gate submission (current_phase must be >= minimum phase for gate)
+  const minPhase = PHASE_GATE_MAPPING[gateNumber] ?? -1
+  if (project.current_phase < minPhase) {
     return { error: `Gate locked: this gate submission is not available at the current project phase` }
   }
 

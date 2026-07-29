@@ -358,9 +358,9 @@ export async function approveGate(input: {
   if (gateErr) return { error: `Could not find gate: ${gateErr.message}` }
   if (!gateRow) return { error: 'Gate not found.' }
   
-  // Verify the gate is the current active gate (phase_number = current_phase)
-  // Current active gate has phase_number = current_phase (G0 is phase_number 0, current_phase 0, etc.)
-  if (gateRow.phase_number !== projectRow.current_phase) {
+  // Verify the gate is the current active gate (phase_number = current_phase + 1)
+  // Active gate is the first non-approved gate (phase_number = current_phase + 1; G0 phase_number=0 when current_phase=0 are locked, phase_number=1 is active when current_phase=0)
+  if (gateRow.phase_number !== projectRow.current_phase + 1) {
     return { error: 'This is not the project\'s current active gate' }
   }
 

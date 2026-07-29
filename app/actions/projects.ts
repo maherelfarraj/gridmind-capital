@@ -1211,7 +1211,6 @@ export async function resetProjectToPhase(projectId: string, targetPhase: number
     .from('phase_gates')
     .update({ status: 'pending' })
     .eq('project_id', projectId)
-    .eq('tenant_id', tenantId)
 
   if (resetError) throw new Error(`Failed to reset gates: ${resetError.message}`)
 
