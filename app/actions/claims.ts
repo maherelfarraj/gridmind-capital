@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -180,6 +181,8 @@ export async function createClaim(input: {
   eot_days?: number | null
   response_due?: string | null
 }): Promise<ActionResult<Claim>> {
+  const session = await requireUser()
+  
   if (!input.title?.trim()) return { error: 'Title is required' }
   const actor = await getActor()
   const admin = createAdminClient()
@@ -227,6 +230,8 @@ export async function updateClaimStatus(
   status: ClaimStatus,
   comment?: string,
 ): Promise<ActionResult<Claim>> {
+  const session = await requireUser()
+  
   const actor = await getActor()
   const admin = createAdminClient()
 
@@ -266,6 +271,8 @@ export async function updateClaimStatus(
 // ─────────────────────────────────────────────────────────────
 
 export async function seedClaimsDemo(projectId: string): Promise<ActionResult> {
+  const session = await requireUser()
+  
   const actor = await getActor()
   const admin = createAdminClient()
 

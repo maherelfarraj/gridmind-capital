@@ -16,40 +16,41 @@ import type {
   VInbox,
 } from '@/lib/db/types'
 
-export const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
-
 /**
- * Resolve the acting user + tenant. Mirrors the project-wide getActor()
- * convention: Supabase auth → profiles; falls back to DEMO_TENANT for dev.
+ * Resolve the acting user + tenant from Supabase auth → profiles.
+ * Throws if no session (requires authentication).
  *
  * Wrapped in React cache() to dedupe per HTTP request.
  */
 export const getActor = cache(async (): Promise<{
-  userId: string | null
+  userId: string
   tenantId: string
   role: string | null
 }> => {
-  try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return { userId: null, tenantId: DEMO_TENANT, role: null }
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  
+  if (!user) {
+    throw new Error('Unauthorized: User session required')
+  }
 
-    const admin = createAdminClient()
-    const { data: profile } = await admin
-      .from('profiles')
-      .select('tenant_id, role')
-      .eq('id', user.id)
-      .single()
+  const admin = createAdminClient()
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('tenant_id, role')
+    .eq('id', user.id)
+    .single()
 
-    return {
-      userId: user.id,
-      tenantId: profile?.tenant_id ?? DEMO_TENANT,
-      role: profile?.role ?? null,
-    }
-  } catch {
-    return { userId: null, tenantId: DEMO_TENANT, role: null }
+  if (!profile) {
+    throw new Error('Unauthorized: User profile not found')
+  }
+
+  return {
+    userId: user.id,
+    tenantId: profile.tenant_id,
+    role: profile.role ?? null,
   }
 })
 

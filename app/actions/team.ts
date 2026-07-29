@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getActor, getTaskComments, getStaffingRadar } from '@/lib/db/queries'
 import type { StaffingRadar } from '@/lib/db/queries'
-import { requireUser } from '@/lib/guards'
+import { requireUser, requireInternalRole } from '@/lib/guards'
 
 type ActionResult<T = void> = { data?: T; error?: string }
 
@@ -148,6 +148,8 @@ export async function unassignRole(input: {
   projectId: string
   roleId: string
 }): Promise<ActionResult> {
+  const session = await requireUser()
+  
   const { projectId, roleId } = input
   if (!projectId || !roleId) return { error: 'Missing required fields.' }
 
@@ -194,6 +196,8 @@ export async function openGateReview(input: {
   phaseGateId: string
   projectId: string
 }): Promise<ActionResult> {
+  const session = await requireUser()
+  
   const { phaseGateId, projectId } = input
   if (!phaseGateId) return { error: 'Missing gate id.' }
 
@@ -420,6 +424,8 @@ export async function createTask(input: {
   dueDate?: string | null
   deliverableId?: string | null
 }): Promise<ActionResult> {
+  const session = await requireUser()
+  
   const { projectId, title } = input
   if (!projectId) return { error: 'Select a project first.' }
   if (!title?.trim()) return { error: 'Task title is required.' }
@@ -502,6 +508,8 @@ export async function updateTaskStatus(input: {
   status: string
   projectId: string
 }): Promise<ActionResult> {
+  const session = await requireUser()
+  
   const { taskId, status, projectId } = input
   if (!TASK_STATUSES.includes(status as never)) return { error: 'Invalid status.' }
 
@@ -590,6 +598,8 @@ export async function addTaskComment(input: {
   body: string
   projectId: string
 }): Promise<ActionResult> {
+  const session = await requireUser()
+  
   const { taskId, body, projectId } = input
   if (!body?.trim()) return { error: 'Comment cannot be empty.' }
 
@@ -709,6 +719,8 @@ export async function updateRaciCell(input: {
   roleId: string
   letter: RaciLetterValue | null
 }): Promise<ActionResult<{ letter: RaciLetterValue | null }>> {
+  const session = await requireUser()
+  
   const { deliverableId, roleId, letter } = input
   if (!deliverableId || !roleId) return { error: 'Missing deliverable or role.' }
 
@@ -829,6 +841,8 @@ export async function saveGateApproverDefault(input: {
   primaryRole: string
   secondaryRole: string | null
 }): Promise<ActionResult> {
+  await requireInternalRole(['tenant_admin', 'system_admin', 'project_director'])
+  
   const { gateNumber, primaryRole, secondaryRole } = input
   if (!gateNumber || !primaryRole) return { error: 'Gate and primary approver are required.' }
   if (secondaryRole && secondaryRole === primaryRole) {

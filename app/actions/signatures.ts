@@ -6,6 +6,7 @@ import { headers } from 'next/headers'
 
 const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
+import { requireUser } from '@/lib/guards'
 
 export type SignatureEntityType = 'gate_approval' | 'vo_approval' | 'client_report' | 'certificate'
 
@@ -84,25 +85,17 @@ async function resolveIp(): Promise<string | null> {
 }
 
 /**
- * Resolve a valid profiles.id to satisfy the signer_id FK.
- * In production the caller is authenticated; this only falls back
- * for local/dev sessions without an auth cookie.
+ * Resolve the authenticated user's signer profile.
+ * Requires userId from the session (no fallback for unauthenticated).
  */
 async function resolveSignerId(
-  supabase: ReturnType<typeof createAdminClient>,
+  _supabase: ReturnType<typeof createAdminClient>,
   actor: Actor,
 ): Promise<{ id: string; name: string; role: string | null } | null> {
-  if (actor.userId) {
-    return { id: actor.userId, name: actor.fullName ?? 'Authorized Signer', role: actor.role }
+  if (!actor.userId) {
+    return null // Requires authentication (enforced by requireUser guard)
   }
-  const { data } = await supabase
-    .from('profiles')
-    .select('id, full_name, role')
-    .eq('tenant_id', actor.tenantId)
-    .limit(1)
-    .maybeSingle()
-  if (!data) return null
-  return { id: data.id, name: data.full_name ?? 'Authorized Signer', role: data.role }
+  return { id: actor.userId, name: actor.fullName ?? 'Authorized Signer', role: actor.role }
 }
 
 export interface OrphanedSignature {
@@ -197,6 +190,8 @@ export async function createSignature(opts: {
    */
   allowUndecided?: boolean
 }): Promise<{ signature: SignatureRecord } | { error: string }> {
+  const session = await requireUser()
+  
   if (!opts.dataUrl?.startsWith('data:image/')) return { error: 'A signature is required' }
   if (!opts.statement?.trim()) return { error: 'Consent statement missing' }
 
