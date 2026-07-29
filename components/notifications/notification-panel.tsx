@@ -587,22 +587,45 @@ export function NotificationPanel({ open, onClose, unreadCount }: NotificationPa
 
   async function handleDismiss(id: string) {
     setDismissed(prev => new Set([...prev, id]))
-    // optimistically mark read in DB
-    await markNotificationReadAction(id).catch(() => {})
-    mutate()
+    try {
+      const result = await markNotificationReadAction(id)
+      if (result?.error) {
+        toast({ variant: 'danger', title: 'Error', description: result.error, duration: 2500 })
+      } else {
+        mutate()
+      }
+    } catch (err) {
+      toast({ variant: 'danger', title: 'Error', description: 'Failed to dismiss notification', duration: 2500 })
+    }
   }
 
   async function handleView(n: Notification) {
     setDismissed(prev => new Set([...prev, n.id]))
-    await markNotificationReadAction(n.id).catch(() => {})
-    mutate()
-    router.push(n.href)
-    onClose()
+    try {
+      const result = await markNotificationReadAction(n.id)
+      if (result?.error) {
+        toast({ variant: 'danger', title: 'Error', description: result.error, duration: 2500 })
+      } else {
+        mutate()
+        router.push(n.href)
+        onClose()
+      }
+    } catch (err) {
+      toast({ variant: 'danger', title: 'Error', description: 'Failed to mark notification', duration: 2500 })
+    }
   }
 
   async function handleMarkAllRead() {
-    await markAllReadAction().catch(() => {})
-    mutate()
+    try {
+      const result = await markAllReadAction()
+      if (result?.error) {
+        toast({ variant: 'danger', title: 'Error', description: result.error, duration: 2500 })
+      } else {
+        mutate()
+      }
+    } catch (err) {
+      toast({ variant: 'danger', title: 'Error', description: 'Failed to mark all read', duration: 2500 })
+    }
   }
 
   const liveUnread = notifications.filter(n => n.status === 'unread').length
