@@ -327,28 +327,25 @@ async function submitGateForm(
 }
 
 export async function submitG2FormAction(formData: G2FormData, projectId: string, projectName: string) {
-  return submitGateForm(2, formData, projectId, projectName)
-}
-
-export async function submitG3FormAction(formData: G3FormData, projectId: string, projectName: string) {
-  return submitGateForm(3, formData, projectId, projectName)
-}
-
-export async function submitG4FormAction(formData: G4FormData, projectId: string, projectName: string) {
   return submitGateForm(4, formData, projectId, projectName)
 }
 
-export async function submitG5FormAction(formData: G5FormData, projectId: string, projectName: string) {
+export async function submitG3FormAction(formData: G3FormData, projectId: string, projectName: string) {
   return submitGateForm(5, formData, projectId, projectName)
 }
 
-export async function submitG6FormAction(formData: G6FormData, projectId: string, projectName: string) {
+export async function submitG4FormAction(formData: G4FormData, projectId: string, projectName: string) {
   return submitGateForm(6, formData, projectId, projectName)
 }
 
-export async function submitG7FormAction(formData: G7FormData, projectId: string, projectName: string) {
+export async function submitG5FormAction(formData: G5FormData, projectId: string, projectName: string) {
   return submitGateForm(7, formData, projectId, projectName)
 }
+
+export async function submitG6FormAction(formData: G6FormData, projectId: string, projectName: string) {
+  return submitGateForm(8, formData, projectId, projectName)
+}
+
 
 // ─── Reads ────────────────────────────────────────────────────
 
