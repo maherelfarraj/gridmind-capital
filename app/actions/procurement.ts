@@ -1,8 +1,8 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireWriter } from '@/lib/auth/guard'
-import { requireUser } from '@/lib/auth/guard'
+import { requireWriter, requireUser } from '@/lib/auth/guard'
+import { authorizeVendorProvisioning, provisionExternalUser } from '@/lib/auth/provisioning'
 import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
@@ -352,14 +352,11 @@ export async function reissueVendorInvite(args: {
   oldEmail?: string
   siteUrl: string
 }): Promise<{ error?: string; inviteLink?: string }> {
-  // P0: FAIL-CLOSED authorization
-  let actor
-  try {
-    const res = await requireUser()
-    actor = res.profile
-  } catch (e: any) {
-    return { error: e.message }
-  }
+  // Vendor provisioning is an INTERNAL writer capability. requireUser() only
+  // proved the caller was signed in, so viewer / subcontractor / client_viewer
+  // could each mint portal invitations for arbitrary email addresses.
+  const gate = await authorizeVendorProvisioning()
+  if ('error' in gate) return { error: gate.error }
 
   const tenantId = await getCurrentTenantId()
 
@@ -409,15 +406,33 @@ export async function reissueVendorInvite(args: {
     }
     userId = inviteData.user.id
 
-    // P0: Ensure the profile row exists (handle_new_user trigger will set role/tenant)
-    // Do NOT set role/tenant_id here — P0 migration hardened handle_new_user
-    await supabase.from('profiles').upsert({
-      id: userId,
-      email: args.newEmail,
-      full_name: args.vendorName,
-      is_active: true,
-    }, { onConflict: 'id', ignoreDuplicates: false })
+    // Non-authority columns only. This previously set `is_active` here — a
+    // protected field — and discarded the result, so a rejected write was
+    // indistinguishable from success.
+    const { error: rowErr } = await supabase
+      .from('profiles')
+      .upsert({ id: userId, email: args.newEmail, full_name: args.vendorName }, { onConflict: 'id' })
+    if (rowErr) return { error: rowErr.message }
   }
+
+  // Apply vendor authority through the single canonical writer: a vendor is an
+  // external subcontractor scoped to this PO's project.
+  const { data: poForAccess } = await supabase
+    .from('purchase_orders')
+    .select('project_id')
+    .eq('po_number', args.poNumber)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  const provisioned = await provisionExternalUser({
+    userId,
+    role: 'subcontractor',
+    tenantId,
+    projectIds: poForAccess?.project_id ? [poForAccess.project_id] : [],
+    isActive: true,
+    reason: `vendor_reissue:${args.poNumber}`,
+  })
+  if ('error' in provisioned) return { error: provisioned.error }
 
   // Generate a fallback action link for copy/share if email not sent
   let inviteLink: string | undefined
@@ -430,22 +445,17 @@ export async function reissueVendorInvite(args: {
     inviteLink = linkData.properties.action_link
   }
 
-  // Grant project access (find projects associated with this PO)
-  const { data: po } = await supabase
-    .from('purchase_orders')
-    .select('project_id')
-    .eq('po_number', args.poNumber)
-    .eq('tenant_id', tenantId)
-    .maybeSingle()
-
-  if (po?.project_id) {
-    await supabase.from('external_access').upsert({
+  // Grant project access. The project was already resolved and validated as
+  // belonging to this tenant by provisionExternalUser above.
+  if (poForAccess?.project_id) {
+    const { error: grantErr } = await supabase.from('external_access').upsert({
       tenant_id: tenantId,
       user_id: userId,
-      project_id: po.project_id,
+      project_id: poForAccess.project_id,
       organization_name: args.vendorName,
       revoked_at: null,
     }, { onConflict: 'user_id,project_id', ignoreDuplicates: false })
+    if (grantErr) return { error: grantErr.message }
   }
 
   return { inviteLink }
