@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation'
 import { resolveActorState } from '@/lib/auth/actor'
-
-/** Platform roles permitted to reach /admin/*. */
-const ADMIN_ROLES = ['system_admin', 'tenant_admin'] as const
+import { adminDecision } from '@/lib/auth/routing'
 
 export default async function AdminLayout({
   children,
@@ -16,15 +14,12 @@ export default async function AdminLayout({
   // enforces authentication, profile existence, is_active, tenant, and role.
   const state = await resolveActorState()
 
-  if (state.kind === 'invalid') {
-    if (state.reason === 'not_authenticated') redirect('/auth/login')
-    // Authenticated but not usable — the dashboard layout renders the
-    // account-setup screen for this case.
-    redirect('/dashboard')
-  }
+  // No local ADMIN_ROLES copy: adminDecision() applies the canonical
+  // PLATFORM_ADMIN_ROLES group, and is the exact function the tests exercise.
+  const decision = adminDecision(state)
 
-  if (!(ADMIN_ROLES as readonly string[]).includes(state.actor.role)) {
-    redirect('/dashboard')
+  if (decision.action === 'redirect') {
+    redirect(decision.to)
   }
 
   return <>{children}</>

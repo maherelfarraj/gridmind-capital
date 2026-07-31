@@ -6,6 +6,7 @@ import { getUnreadCountAction } from '@/app/actions/notifications'
 import { getPendingApprovalCount } from '@/app/actions/approvals'
 import { signOutAction } from '@/app/actions/auth'
 import { resolveSessionState } from '@/lib/auth/resolve-session'
+import { dashboardDecision } from '@/lib/auth/routing'
 
 // Shown when a user is authenticated but has no usable profile row.
 // We deliberately do NOT grant any role, permission, or tenant in this state,
@@ -47,24 +48,26 @@ export default async function DashboardLayout({
   // actor resolver, so repeated calls within this request are deduplicated.
   const state = await resolveSessionState()
 
-  // Not signed in at all — send them to log in.
-  if (state.kind === 'unauthenticated') {
-    redirect('/auth/login')
+  // The whole routing matrix lives in lib/auth/routing.ts so the unit tests
+  // exercise this exact decision instead of a test-local copy of it.
+  const decision = dashboardDecision(state)
+
+  if (decision.action === 'redirect') {
+    redirect(decision.to)
   }
 
   // Signed in, but the profile is missing/inactive/tenant-less/role-invalid.
   // Redirecting to /auth/login here would loop: the user IS authenticated, so
   // logging in again cannot fix it. Render a terminal screen with no dashboard
-  // data and no session context instead.
-  if (state.kind === 'unprovisioned') {
-    return <AccountSetupIncomplete email={state.email} />
+  // data and no session context instead — note this returns BEFORE any data
+  // fetch below.
+  if (decision.action === 'render-setup-incomplete') {
+    return <AccountSetupIncomplete email={decision.email} />
   }
 
+  // Only an `active` state reaches here; narrow for the session.
+  if (state.kind !== 'active') redirect('/auth/login')
   const { session } = state
-
-  // External roles never see the internal dashboard — bounce to their portal.
-  if (session.roles.includes('client_viewer')) redirect('/client')
-  if (session.roles.includes('subcontractor')) redirect('/portal')
 
   // Fetch pending approvals and notifications in parallel
   const [approvalCount, notificationCount] = await Promise.all([

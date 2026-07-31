@@ -16,9 +16,11 @@ export const dynamic = 'force-dynamic'
 
 export default async function Page() {
   const actor = await getActor()
-  // Non-admins are redirected. A null role is the dev/preview fallback and is allowed.
-  if (actor.role && !isPlatformAdmin(actor.role)) {
-    redirect('/')
+  // FAIL-CLOSED: anything that is not a platform admin is redirected. The old
+  // `actor.role && ...` short-circuit let a falsy role skip the redirect
+  // entirely, which is the inverse of what an authorization gate must do.
+  if (!isPlatformAdmin(actor.role)) {
+    redirect('/dashboard')
   }
 
   const [directory, approverDefaults, matrix, roles, departments, projects] = await Promise.all([

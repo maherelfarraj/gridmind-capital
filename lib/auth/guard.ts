@@ -4,7 +4,13 @@ import {
   actorFailureMessage,
   type ResolvedActor,
 } from '@/lib/auth/actor'
-import { DB_USER_ROLES, isDbUserRole, type DbUserRole } from '@/lib/auth/roles'
+import {
+  isDbUserRole,
+  isWriterRole,
+  PLATFORM_ADMIN_ROLES,
+  WRITER_ROLES,
+  type DbUserRole,
+} from '@/lib/auth/roles'
 
 /**
  * Centralized authentication + role guards for server actions.
@@ -37,17 +43,21 @@ export type AuthActor = ResolvedActor
 
 export type GuardResult = { actor: AuthActor } | { error: string }
 
-/** Roles allowed to manage tenant/user administration and override approval assignments. */
-export const ADMIN_ROLES = ['system_admin', 'tenant_admin'] as const
+/**
+ * Roles allowed to manage tenant/user administration and override approval
+ * assignments. Aliased to the canonical platform-admin group so the /admin
+ * layout and the server-action guards cannot drift apart.
+ */
+export const ADMIN_ROLES: readonly DbUserRole[] = PLATFORM_ADMIN_ROLES
 
 /** Roles allowed to decide/delegate approvals. */
-export const APPROVER_ROLES = [
+export const APPROVER_ROLES: readonly DbUserRole[] = [
   'system_admin',
   'tenant_admin',
   'project_director',
   'project_manager',
   'finance_manager',
-] as const
+]
 
 /**
  * Resolve the authenticated caller and their profile role.
@@ -74,8 +84,12 @@ export async function getAuthActor(): Promise<GuardResult> {
   return { actor: state.actor }
 }
 
-/** Require an authenticated caller whose role is in `allowed`. */
-export async function requireRole(allowed: readonly string[]): Promise<GuardResult> {
+/**
+ * Require an authenticated caller whose role is in `allowed`.
+ * `allowed` is typed to the canonical vocabulary so a typo or a retired role
+ * name is a compile error rather than a permanently-denying guard.
+ */
+export async function requireRole(allowed: readonly DbUserRole[]): Promise<GuardResult> {
   const res = await getAuthActor()
   if ('error' in res) return res
   if (!allowed.includes(res.actor.role)) return { error: 'Not authorized' }
@@ -83,24 +97,27 @@ export async function requireRole(allowed: readonly string[]): Promise<GuardResu
 }
 
 /**
- * Internal (staff) roles permitted to write. Derived by exclusion from the
- * canonical vocabulary so a role added to lib/auth/roles.ts cannot silently
- * gain write access here — it must be classified as read-only explicitly.
+ * Backward-compatible alias for the canonical writer group.
+ *
+ * There is exactly ONE writer classification, the exhaustive
+ * `WRITE_ACCESS_BY_ROLE` record in lib/auth/roles.ts. This module re-exports it
+ * and derives nothing of its own — an exclusion-based derivation here would be
+ * fail-open for any role added to DB_USER_ROLES later.
  */
-const READ_ONLY_ROLES: readonly DbUserRole[] = ['viewer', 'subcontractor', 'client_viewer']
+export const INTERNAL_ROLES: readonly DbUserRole[] = WRITER_ROLES
+export { WRITER_ROLES }
 
-export const INTERNAL_ROLES: readonly DbUserRole[] = DB_USER_ROLES.filter(
-  (role) => !READ_ONLY_ROLES.includes(role),
-)
-
-/** Require an authenticated caller who is NOT a read-only viewer. */
+/**
+ * Require an authenticated caller whose role is classified as a writer.
+ * Read-only roles (viewer, subcontractor, client_viewer) are rejected.
+ */
 export async function requireWriter(): Promise<GuardResult> {
   const res = await getAuthActor()
   if ('error' in res) return res
 
   // res.actor.role is a validated DbUserRole, so no null check is needed.
-  if (!INTERNAL_ROLES.includes(res.actor.role)) {
-    return { error: 'Not authorized: external roles cannot write' }
+  if (!isWriterRole(res.actor.role)) {
+    return { error: 'Not authorized: this role cannot write' }
   }
 
   return res
@@ -147,7 +164,7 @@ export async function requireAssignedApprover(
   }
 
   // Admin override check.
-  if (ADMIN_ROLES.includes(res.actor.role as typeof ADMIN_ROLES[number])) {
+  if (ADMIN_ROLES.includes(res.actor.role)) {
     // Admin is allowed; caller should log this as an override in the action.
     return res
   }
@@ -185,7 +202,9 @@ export async function requireUser(): Promise<{ userId: string; profile: AuthActo
  *
  * Returns { userId, profile } on success, throws on error.
  */
-export async function requireInternalRole(allowed: readonly string[]): Promise<{ userId: string; profile: AuthActor }> {
+export async function requireInternalRole(
+  allowed: readonly DbUserRole[],
+): Promise<{ userId: string; profile: AuthActor }> {
   const res = await getAuthActor()
   if ('error' in res) {
     throw new Error(res.error)

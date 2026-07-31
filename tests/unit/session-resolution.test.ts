@@ -176,108 +176,13 @@ describe('resolveSession compatibility wrapper', () => {
 })
 
 /**
- * Dashboard routing logic.
+ * Layout routing is NOT tested here.
  *
- * The layout is an async server component, so rather than rendering it we
- * assert the branch it selects for each session state — the decision under
- * test is the routing matrix, not the JSX.
+ * This file previously defined local `routeFor()` / `adminRouteFor()` helpers
+ * that re-implemented the routing matrix. Those tests were tautological: they
+ * asserted that a copy of the logic matched the logic, and would still pass if
+ * a real layout stopped routing correctly.
+ *
+ * Layout routing is now covered by tests/unit/layout-routing.test.ts, which
+ * imports and invokes the actual layout modules.
  */
-type Decision = 'redirect:/auth/login' | 'render:AccountSetupIncomplete' | 'render:dashboard'
-
-async function routeFor(): Promise<Decision> {
-  const { resolveSessionState } = await import('@/lib/auth/resolve-session')
-  const state = await resolveSessionState()
-  if (state.kind === 'unauthenticated') return 'redirect:/auth/login'
-  if (state.kind === 'unprovisioned') return 'render:AccountSetupIncomplete'
-  return 'render:dashboard'
-}
-
-describe('dashboard routing matrix', () => {
-  it('sends an unauthenticated visitor to login', async () => {
-    getUser.mockResolvedValue({ data: { user: null } })
-
-    await expect(routeFor()).resolves.toBe('redirect:/auth/login')
-  })
-
-  it('renders the setup screen — not a login redirect — when unprovisioned', async () => {
-    getUser.mockResolvedValue({ data: { user: AUTH_USER } })
-    maybeSingle.mockResolvedValue({ data: null, error: null })
-
-    const decision = await routeFor()
-
-    expect(decision).toBe('render:AccountSetupIncomplete')
-    // Regression guard: redirecting an authenticated user to login loops.
-    expect(decision).not.toBe('redirect:/auth/login')
-  })
-
-  it('renders the setup screen for an inactive account', async () => {
-    getUser.mockResolvedValue({ data: { user: AUTH_USER } })
-    maybeSingle.mockResolvedValue({
-      data: { ...VALID_PROFILE, is_active: false },
-      error: null,
-    })
-
-    await expect(routeFor()).resolves.toBe('render:AccountSetupIncomplete')
-  })
-
-  it('renders the dashboard for an active session', async () => {
-    getUser.mockResolvedValue({ data: { user: AUTH_USER } })
-    maybeSingle.mockResolvedValue({ data: VALID_PROFILE, error: null })
-
-    await expect(routeFor()).resolves.toBe('render:dashboard')
-  })
-})
-
-/**
- * /admin gate. The layout previously scoped its profile lookup to a hardcoded
- * demo tenant UUID and skipped the is_active check.
- */
-type AdminDecision = 'redirect:/auth/login' | 'redirect:/dashboard' | 'render:admin'
-
-async function adminRouteFor(): Promise<AdminDecision> {
-  const { resolveActorState } = await import('@/lib/auth/actor')
-  const state = await resolveActorState()
-  if (state.kind === 'invalid') {
-    return state.reason === 'not_authenticated'
-      ? 'redirect:/auth/login'
-      : 'redirect:/dashboard'
-  }
-  return state.actor.role === 'system_admin' || state.actor.role === 'tenant_admin'
-    ? 'render:admin'
-    : 'redirect:/dashboard'
-}
-
-describe('admin layout gate', () => {
-  it('admits a tenant_admin in a real (non-demo) tenant', async () => {
-    getUser.mockResolvedValue({ data: { user: AUTH_USER } })
-    maybeSingle.mockResolvedValue({
-      data: { ...VALID_PROFILE, role: 'tenant_admin', tenant_id: 'real-tenant-9' },
-      error: null,
-    })
-
-    await expect(adminRouteFor()).resolves.toBe('render:admin')
-  })
-
-  it('rejects a deactivated admin', async () => {
-    getUser.mockResolvedValue({ data: { user: AUTH_USER } })
-    maybeSingle.mockResolvedValue({
-      data: { ...VALID_PROFILE, role: 'system_admin', is_active: false },
-      error: null,
-    })
-
-    await expect(adminRouteFor()).resolves.toBe('redirect:/dashboard')
-  })
-
-  it('rejects a non-admin role', async () => {
-    getUser.mockResolvedValue({ data: { user: AUTH_USER } })
-    maybeSingle.mockResolvedValue({ data: VALID_PROFILE, error: null })
-
-    await expect(adminRouteFor()).resolves.toBe('redirect:/dashboard')
-  })
-
-  it('sends an unauthenticated visitor to login', async () => {
-    getUser.mockResolvedValue({ data: { user: null } })
-
-    await expect(adminRouteFor()).resolves.toBe('redirect:/auth/login')
-  })
-})

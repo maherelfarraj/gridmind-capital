@@ -14,7 +14,10 @@ export default defineConfig({
     environment: 'node',
     // Unit tests only. tests/e2e/** are Playwright browser specs driven by a
     // separate runner and must not be collected here.
-    include: ['tests/unit/**/*.test.ts'],
+    // .tsx is included so React hook/provider behaviour can be tested with
+    // real JSX rather than React.createElement children-as-props, which ESLint
+    // (react/no-children-prop) rejects.
+    include: ['tests/unit/**/*.test.ts', 'tests/unit/**/*.test.tsx'],
     exclude: ['node_modules/**', '.next/**', 'tests/e2e/**'],
   },
 })

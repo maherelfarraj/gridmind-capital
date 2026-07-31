@@ -45,11 +45,18 @@ export const MENU_PERMISSIONS: Record<string, MenuScope> = {
   DCL: ['dashboard', 'projects', 'documents', 'team'],
 }
 
-/** True if a delivery role code may see a given nav item id. */
+/**
+ * True if a delivery role code may see a given nav item id.
+ *
+ * FAIL-CLOSED. A null, undefined, or unrecognised role code grants nothing.
+ * This is a presentation control rather than a server-side authorization gate,
+ * but it must not invent visibility from malformed input: a helper that returns
+ * `true` for an unknown role is an easy thing to later mistake for a real gate.
+ */
 export function canSeeMenu(roleCode: string | null | undefined, navItemId: string): boolean {
-  if (!roleCode) return true // dev / unknown → permissive (matches getActor null-role convention)
+  if (!roleCode) return false
   const scope = MENU_PERMISSIONS[roleCode]
-  if (!scope) return true
+  if (!scope) return false
   if (scope === '*') return true
   return scope.includes(navItemId)
 }
@@ -64,8 +71,7 @@ export function isPlatformAdmin(platformRole: string | null | undefined): boolea
 /**
  * Roles allowed to perform team-management writes (staffing, assigning tasks,
  * editing RACI). Accepts EITHER a delivery role code (PD/PM) OR a platform role
- * (project_director/project_manager/*_admin). A null role is permissive to
- * match the getActor dev-fallback convention used across the app.
+ * (project_director/project_manager/*_admin).
  */
 const TEAM_WRITE_ROLES = new Set<string>([
   'PD',
@@ -76,7 +82,12 @@ const TEAM_WRITE_ROLES = new Set<string>([
   'tenant_admin',
 ])
 
+/**
+ * FAIL-CLOSED. A null, undefined, or unrecognised role grants no team-write
+ * capability. The server actions that perform these writes enforce their own
+ * guards; this helper only decides whether to offer the control.
+ */
 export function canWriteTeam(role: string | null | undefined): boolean {
-  if (!role) return true
+  if (!role) return false
   return TEAM_WRITE_ROLES.has(role)
 }
