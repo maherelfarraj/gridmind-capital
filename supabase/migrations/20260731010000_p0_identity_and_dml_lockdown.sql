@@ -39,6 +39,60 @@ END
 $precheck$;
 
 -- ----------------------------------------------------------------------------
+-- 0a. Global structural-privilege revocation across the whole public schema
+-- ----------------------------------------------------------------------------
+-- TRUNCATE, TRIGGER and REFERENCES are whole-table privileges that RLS does
+-- NOT constrain. A browser role holding them can wipe a table, attach a
+-- trigger, or create a foreign key against it regardless of any policy.
+-- None of these are ever legitimate for anon/authenticated.
+--
+-- SELECT/INSERT/UPDATE/DELETE are deliberately NOT revoked here: some
+-- non-governance application tables may still have intentional browser
+-- behavior that requires separate review.
+
+REVOKE TRUNCATE, TRIGGER, REFERENCES
+  ON ALL TABLES IN SCHEMA public
+  FROM PUBLIC, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 0b. Deny the same structural privileges on FUTURE tables
+-- ----------------------------------------------------------------------------
+-- ALL TABLES above only affects tables that exist right now. Default
+-- privileges close the gap for anything created later. Default privileges are
+-- per-creating-role, so this is applied for each table-owning role that
+-- actually exists, plus the role running this migration.
+
+DO $default_privs$
+DECLARE
+  owner_roles CONSTANT text[] := ARRAY['postgres', 'supabase_admin'];
+  r text;
+BEGIN
+  FOREACH r IN ARRAY owner_roles LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      RAISE NOTICE 'P0: role % not present; skipping default-privilege hardening for it', r;
+      CONTINUE;
+    END IF;
+
+    EXECUTE format(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
+      'REVOKE TRUNCATE, TRIGGER, REFERENCES ON TABLES FROM PUBLIC, anon, authenticated',
+      r
+    );
+
+    RAISE NOTICE 'P0: future-table TRUNCATE/TRIGGER/REFERENCES denied for owner role %', r;
+  END LOOP;
+END
+$default_privs$;
+
+-- Same hardening for the role executing this migration, in case it differs
+-- from the owner roles enumerated above.
+ALTER DEFAULT PRIVILEGES
+  IN SCHEMA public
+  REVOKE TRUNCATE, TRIGGER, REFERENCES
+  ON TABLES
+  FROM PUBLIC, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
 -- 1. handle_new_user() — signup metadata is NOT an authority source
 -- ----------------------------------------------------------------------------
 -- New auth users get an UNPROVISIONED profile:
@@ -173,7 +227,7 @@ ALTER TABLE public.profiles
 --   ALTER TABLE public.profiles VALIDATE CONSTRAINT profiles_role_check;
 
 -- ----------------------------------------------------------------------------
--- 5. Non-core governance tables — total browser lockdown
+-- 5. Non-core governance and configuration tables — total browser lockdown
 -- ----------------------------------------------------------------------------
 -- No proven direct browser/realtime read requirement exists for any table in
 -- this list, so each one receives:
@@ -186,6 +240,7 @@ ALTER TABLE public.profiles
 DO $noncore_lockdown$
 DECLARE
   noncore CONSTANT text[] := ARRAY[
+    -- transactional governance records
     'approval_steps',
     'approval_conditions',
     'approval_events',
@@ -198,7 +253,23 @@ DECLARE
     'workflow_events',
     'audit_log',
     'audit_logs',
-    'signatures'
+    'signatures',
+    -- identity and governance configuration. Repository scan proved every
+    -- reference goes through createAdminClient() (service_role) inside
+    -- 'use server' actions or the 'server-only' lib/db/queries.ts module.
+    -- No 'use client' file, browser Supabase client, or realtime channel
+    -- touches any of these.
+    'tenants',
+    'roles',
+    'departments',
+    'external_access',
+    'approval_rules',
+    'approval_matrix',
+    'gates',
+    'gate_approver_defaults',
+    'gate_role_requirements',
+    'gate_signoff_templates',
+    'gate_templates'
   ];
   tname text;
 BEGIN
@@ -260,7 +331,18 @@ DECLARE
     'workflow_events',
     'audit_log',
     'audit_logs',
-    'signatures'
+    'signatures',
+    'tenants',
+    'roles',
+    'departments',
+    'external_access',
+    'approval_rules',
+    'approval_matrix',
+    'gates',
+    'gate_approver_defaults',
+    'gate_role_requirements',
+    'gate_signoff_templates',
+    'gate_templates'
   ];
   pol record;
   dropped int := 0;
