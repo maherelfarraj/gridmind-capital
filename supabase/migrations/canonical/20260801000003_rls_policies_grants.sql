@@ -241,18 +241,16 @@ CREATE POLICY ann_external_read ON public.client_announcements FOR SELECT TO aut
 
 CREATE POLICY ann_internal_read ON public.client_announcements FOR SELECT TO authenticated USING ((NOT public.is_external_role()));
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.  !!
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
 -- !! expression drift confirmed; production definition NOT captured
 -- !! Verified by normalized expression fingerprint against pg_policies:
 -- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could not be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE dump
+-- !! Production's exact definition could NOT be captured -- the Supabase MCP
+-- !! became unavailable mid-capture. The statement below is the STALE DUMP
 -- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting this baseline:
--- !!   SELECT permissive, cmd, roles, qual, with_check FROM pg_policies
--- !!    WHERE schemaname='public' AND policyname='approval_matrix_read';
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! ACTION: replace with the live definition before adopting. See README 11.1.
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 CREATE POLICY approval_matrix_read ON public.approval_matrix FOR SELECT USING (true);
 
 CREATE POLICY approval_rules_insert ON public.approval_rules FOR INSERT WITH CHECK ((tenant_id = public.get_my_tenant_id()));
@@ -295,32 +293,28 @@ CREATE POLICY cir_update ON public.client_information_requests FOR UPDATE TO aut
 
 CREATE POLICY client_reports_external_read ON public.client_reports AS RESTRICTIVE FOR SELECT TO authenticated USING (((NOT public.is_external_role()) OR ((status = 'issued'::text) AND public.has_external_access(project_id))));
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.  !!
--- !! dump grants access when tenant_id = the demo tenant '…0001'; production does NOT
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
+-- !! dump grants access when tenant_id = the demo tenant '...0001'; production does NOT
 -- !! Verified by normalized expression fingerprint against pg_policies:
 -- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could not be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE dump
+-- !! Production's exact definition could NOT be captured -- the Supabase MCP
+-- !! became unavailable mid-capture. The statement below is the STALE DUMP
 -- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting this baseline:
--- !!   SELECT permissive, cmd, roles, qual, with_check FROM pg_policies
--- !!    WHERE schemaname='public' AND policyname='comments_insert_auth';
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! ACTION: replace with the live definition before adopting. See README 11.1.
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 CREATE POLICY comments_insert_auth ON public.comments FOR INSERT WITH CHECK (((auth.uid() IS NOT NULL) OR (tenant_id = '00000000-0000-0000-0000-000000000001'::uuid)));
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.  !!
--- !! dump grants access when tenant_id = the demo tenant '…0001'; production does NOT
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
+-- !! dump grants access when tenant_id = the demo tenant '...0001'; production does NOT
 -- !! Verified by normalized expression fingerprint against pg_policies:
 -- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could not be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE dump
+-- !! Production's exact definition could NOT be captured -- the Supabase MCP
+-- !! became unavailable mid-capture. The statement below is the STALE DUMP
 -- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting this baseline:
--- !!   SELECT permissive, cmd, roles, qual, with_check FROM pg_policies
--- !!    WHERE schemaname='public' AND policyname='comments_select_tenant';
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! ACTION: replace with the live definition before adopting. See README 11.1.
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 CREATE POLICY comments_select_tenant ON public.comments FOR SELECT USING (((tenant_id = '00000000-0000-0000-0000-000000000001'::uuid) OR (auth.uid() IS NOT NULL)));
 
 CREATE POLICY comments_update_author ON public.comments FOR UPDATE USING ((auth.uid() = author_id));
@@ -387,18 +381,16 @@ CREATE POLICY energy_production_update ON public.energy_production FOR UPDATE US
 
 CREATE POLICY eng_packages_external_read ON public.engineering_packages AS RESTRICTIVE FOR SELECT TO authenticated USING (((NOT public.is_external_role()) OR ((visible_to_client = true) AND public.has_external_access(project_id))));
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.  !!
--- !! dump grants access when tenant_id = the demo tenant '…0001'; production does NOT
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
+-- !! dump grants access when tenant_id = the demo tenant '...0001'; production does NOT
 -- !! Verified by normalized expression fingerprint against pg_policies:
 -- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could not be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE dump
+-- !! Production's exact definition could NOT be captured -- the Supabase MCP
+-- !! became unavailable mid-capture. The statement below is the STALE DUMP
 -- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting this baseline:
--- !!   SELECT permissive, cmd, roles, qual, with_check FROM pg_policies
--- !!    WHERE schemaname='public' AND policyname='gate_templates_select';
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- !! ACTION: replace with the live definition before adopting. See README 11.1.
+-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 CREATE POLICY gate_templates_select ON public.gate_templates FOR SELECT USING (((tenant_id = '00000000-0000-0000-0000-000000000001'::uuid) OR (auth.uid() IS NOT NULL)));
 
 CREATE POLICY gate_templates_write ON public.gate_templates USING ((auth.uid() IS NOT NULL)) WITH CHECK ((auth.uid() IS NOT NULL));

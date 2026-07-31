@@ -297,6 +297,58 @@ database was bootstrapped, destroy it — do not attempt to un-apply the files.
 
 ---
 
+## 11. Open blockers — this baseline is NOT ready to adopt
+
+### 11.1 Four policies do not match production (BLOCKING)
+
+Marked with a `BLOCKED` banner in
+`20260801000003_rls_policies_grants.sql`. Each still carries the **stale dump
+text**, retained only so the object is not silently dropped:
+
+| Policy | Problem |
+|---|---|
+| `comments.comments_insert_auth` | dump allows `tenant_id = '…0001'` (demo tenant); production does not |
+| `comments.comments_select_tenant` | same demo-tenant clause |
+| `gate_templates.gate_templates_select` | same demo-tenant clause |
+| `approval_matrix.approval_matrix_read` | expression drift, cause not yet determined |
+
+Adopting these as-is would **widen access** relative to production. Capture the
+live definitions and replace all four before adoption:
+
+```sql
+SELECT tablename, policyname, permissive, cmd, roles, qual, with_check
+  FROM pg_policies
+ WHERE schemaname='public'
+   AND policyname IN ('approval_matrix_read','comments_insert_auth',
+                      'comments_select_tenant','gate_templates_select');
+```
+
+The capture query failed because the Supabase MCP became unavailable
+(four consecutive failures, including a minimal probe). This is a tooling
+outage, not a schema problem — retry later.
+
+### 11.2 Never executed
+
+No statement here has been run anywhere. Static analysis cannot prove a single
+`CREATE` succeeds. §7 (disposable database) is mandatory before adoption.
+
+### 11.3 Not covered by the fingerprints
+
+Verified: table/column names and order, object counts, policy expressions,
+view definitions. **Not** verified column-by-column: data types, nullability,
+defaults, `ON DELETE`/`ON UPDATE` FK actions, and index predicates — these come
+from the dump and are only known to be *count*-correct. The postcondition file
+checks counts, not shapes.
+
+### 11.4 The demo tenant is a live production fact
+
+19 tables default `tenant_id` to `00000000-0000-0000-0000-000000000001`, and that
+tenant row exists in production. Reproduced faithfully, **not** endorsed: a row
+inserted without an explicit `tenant_id` silently lands in the demo tenant.
+Worth a follow-up decision, separate from this baseline.
+
+---
+
 *Generated 2026-08-01 from read-only introspection of `zmahjutrpvwjcmhkiibj`.
 Production was not modified. Migration history was not modified. No Supabase
 branch was created.*

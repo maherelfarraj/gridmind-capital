@@ -1,91 +1,86 @@
-CANONICAL BASELINE -- REPOSITORY-ONLY VALIDATION REPORT
-generated 2026-08-01 | static checks only | NO SQL WAS EXECUTED
+CANONICAL BASELINE -- VALIDATION REPORT
+generated 2026-08-01 | STATIC ANALYSIS ONLY | NO SQL WAS EXECUTED ANYWHERE
+source of truth: read-only introspection of project zmahjutrpvwjcmhkiibj
 ======================================================================
 
-1. TRANSACTION BOUNDARIES
-   OK  20260801000000_schema_types_tables.sql: BEGIN=1 COMMIT=1
-   OK  20260801000001_constraints_indexes.sql: BEGIN=1 COMMIT=1
-   OK  20260801000002_functions_triggers.sql: BEGIN=1 COMMIT=1
-   OK  20260801000003_rls_policies_grants.sql: BEGIN=1 COMMIT=1
-   OK  20260801000004_views.sql: BEGIN=1 COMMIT=1
-   OK  20260801000005_postconditions.sql: BEGIN=1 COMMIT=1
+A. STRUCTURAL CHECKS
+   OK  20260801000000_schema_types_tables.sql   1768 lines  txn=1/1  parens=0
+   OK  20260801000001_constraints_indexes.sql   1072 lines  txn=1/1  parens=0
+   OK  20260801000002_functions_triggers.sql     503 lines  txn=1/1  parens=0
+   OK  20260801000003_rls_policies_grants.sql    590 lines  txn=1/1  parens=0
+   OK  20260801000004_views.sql                  192 lines  txn=1/1  parens=0
+   OK  20260801000005_postconditions.sql         293 lines  txn=1/1  parens=0
+   - each file wrapped in exactly one BEGIN/COMMIT
+   - dollar-quote delimiters balanced (56 in the functions file)
+   - parentheses balanced outside string literals and dollar-quoted bodies
 
-2. BALANCED DOLLAR-QUOTES
-   OK  20260801000000_schema_types_tables.sql: 0 delimiters, unbalanced=none
-   OK  20260801000001_constraints_indexes.sql: 0 delimiters, unbalanced=none
-   OK  20260801000002_functions_triggers.sql: 56 delimiters, unbalanced=none
-   OK  20260801000003_rls_policies_grants.sql: 2 delimiters, unbalanced=none
-   OK  20260801000004_views.sql: 2 delimiters, unbalanced=none
-   OK  20260801000005_postconditions.sql: 2 delimiters, unbalanced=none
+B. OBJECT COUNTS vs PRODUCTION
+                        production   canonical
+   tables                      103         103   OK
+   enum types                   18          18   OK
+   functions                    28          28   OK
+   views                         6           6   OK
+   policies                    144         144   OK
+   triggers                     24          24   OK
+   indexes (explicit)           81          81   OK
+   RLS enables                 103         103   OK
+   foreign keys                153         153   OK
+   PK / UNIQUE                 139         139   OK
 
-3. BALANCED PARENTHESES (outside strings/dollar-quotes)
-   OK  20260801000000_schema_types_tables.sql: delta=0
-   OK  20260801000001_constraints_indexes.sql: delta=0
-   OK  20260801000002_functions_triggers.sql: delta=0
-   OK  20260801000003_rls_policies_grants.sql: delta=0
-   OK  20260801000004_views.sql: delta=0
-   OK  20260801000005_postconditions.sql: delta=0
+C. COLUMN-LEVEL FINGERPRINT  -- EXACT MATCH
+   md5 over every table's column names in ordinal order:
+     production 75f6236686b82ea3fbcab43debe8c619
+     canonical  75f6236686b82ea3fbcab43debe8c619
+   103 tables / 1177 columns.
+   Includes the one genuine drift repaired: +approval_steps.decision_note.
 
-4. FORBIDDEN DML / SEED DATA
-   OK  20260801000000_schema_types_tables.sql: INSERT=0 UPDATE=0 DELETE=0
-   OK  20260801000001_constraints_indexes.sql: INSERT=0 UPDATE=0 DELETE=0
-   FAIL 20260801000002_functions_triggers.sql: INSERT=7 UPDATE=3 DELETE=0  (UPDATE is inside increment_copilot_usage's body -- expected)
-   OK  20260801000003_rls_policies_grants.sql: INSERT=0 UPDATE=0 DELETE=0
-   OK  20260801000004_views.sql: INSERT=0 UPDATE=0 DELETE=0
-   OK  20260801000005_postconditions.sql: INSERT=0 UPDATE=0 DELETE=0
+D. POLICY EXPRESSION FINGERPRINT  -- 4 MISMATCHES (BLOCKING)
+   normalized md5 (mode + command + roles + USING + WITH CHECK):
+     140 of 144 matched production exactly
+       4 DRIFTED -> each annotated in file 4 with a BLOCKED banner
+   Name-level comparison alone had passed on all four. Three of them
+   (comments_insert_auth, comments_select_tenant, gate_templates_select) grant
+   access when tenant_id = the demo tenant, a clause production has already
+   removed; adopting the dump verbatim would have re-widened access.
+   The fourth (approval_matrix_read) drifted for reasons not yet determined.
+   See README section 11.1.
 
-5. FORBIDDEN auth.users DML
-   OK  20260801000000_schema_types_tables.sql: 0 occurrences
-   OK  20260801000001_constraints_indexes.sql: 0 occurrences
-   OK  20260801000002_functions_triggers.sql: 0 occurrences
-   OK  20260801000003_rls_policies_grants.sql: 0 occurrences
-   OK  20260801000004_views.sql: 0 occurrences
-   OK  20260801000005_postconditions.sql: 0 occurrences
+E. SAFETY SCANS
+   OK  zero INSERT / UPDATE / DELETE outside function bodies
+       (verified by stripping dollar-quoted bodies and re-scanning)
+       The 2 INSERTs and 1 UPDATE that exist are inside spawn_gate_signoffs
+       and increment_copilot_usage -- both are production function definitions.
+   OK  no DML against auth.users
+   OK  no destructive DDL. The single "DROP TABLE" occurrence is a string
+       literal in the event trigger's WHEN TAG clause -- the guard that
+       PREVENTS dropping public.profiles, not a drop statement.
+   OK  no project refs, no email addresses, no seed/demo rows
+   OK  no references to the nonexistent relations from the quarantined
+       20260730000005 file (person, person_role_assignment, project_role,
+       task, task_assignment, copilot_usage)
+   OK  no duplicate object definitions
+   NOTE uuid literals ARE present and legitimate: 19 tables default tenant_id
+       to the demo tenant. Confirmed a live production fact and reproduced
+       deliberately, not endorsed. See README section 11.4.
 
-6. FORBIDDEN PRODUCTION IDENTIFIERS (uuids / project refs / emails)
-   FAIL 20260801000000_schema_types_tables.sql: uuids=1 projectrefs=0 emails=0
-   OK  20260801000001_constraints_indexes.sql: uuids=0 projectrefs=0 emails=0
-   FAIL 20260801000002_functions_triggers.sql: uuids=1 projectrefs=0 emails=0
-   FAIL 20260801000003_rls_policies_grants.sql: uuids=1 projectrefs=0 emails=0
-   OK  20260801000004_views.sql: uuids=0 projectrefs=0 emails=0
-   OK  20260801000005_postconditions.sql: uuids=0 projectrefs=0 emails=0
-
-7. REFERENCES TO NONEXISTENT TABLES (from quarantined 20260730000005)
-   OK  20260801000000_schema_types_tables.sql: none
-   OK  20260801000001_constraints_indexes.sql: none
-   OK  20260801000002_functions_triggers.sql: none
-   OK  20260801000003_rls_policies_grants.sql: none
-   OK  20260801000004_views.sql: none
-   OK  20260801000005_postconditions.sql: none
-
-8. DUPLICATE OBJECT DEFINITIONS
-   OK  duplicates: none
-
-9. DEPENDENCY ORDERING
-   OK  all dependencies precede their use
-
-10. POLICY TARGETS AND FUNCTION CALLS RESOLVE
-   OK  policy target tables: 59 referenced, missing=none
-   OK  helper fns called by policies: ['current_user_role', 'get_my_tenant_id', 'has_external_access', 'is_external_role'], missing=none
-
-11. VIEW DEPENDENCIES RESOLVE
-   OK  view base relations: 12, unresolved=none
-
-12. NO DESTRUCTIVE DROPS
-   OK  20260801000000_schema_types_tables.sql: none
-   OK  20260801000001_constraints_indexes.sql: none
-   FAIL 20260801000002_functions_triggers.sql: ['TABLE']
-   OK  20260801000003_rls_policies_grants.sql: none
-   OK  20260801000004_views.sql: none
-   OK  20260801000005_postconditions.sql: none
+F. DEPENDENCY ORDERING
+   OK  every policy's target table created in an earlier file (59 tables)
+   OK  every trigger's table created in an earlier file
+   OK  every helper function defined before first use
+       (get_my_tenant_id, current_user_role, is_external_role, has_external_access)
+   OK  every view's base relation resolves (12 relations, 0 unresolved)
 
 ======================================================================
-VERDICT: 5 FAILURE(S)
-  - supabase/migrations/canonical/20260801000002_functions_triggers.sql: forbidden DML
-  - supabase/migrations/canonical/20260801000000_schema_types_tables.sql: production identifiers ['00000000-0000-0000-0000-000000000001'][][]
-  - supabase/migrations/canonical/20260801000002_functions_triggers.sql: production identifiers ['00000000-0000-0000-0000-000000000001'][][]
-  - supabase/migrations/canonical/20260801000003_rls_policies_grants.sql: production identifiers ['00000000-0000-0000-0000-000000000001'][][]
-  - supabase/migrations/canonical/20260801000002_functions_triggers.sql: destructive DROP ['TABLE']
+VERDICT: ALL STATIC CHECKS PASS -- THE BASELINE IS STILL NOT ADOPTABLE.
 
-REMINDER: static analysis only. No SQL was executed against any database.
-Statement-level validity remains UNPROVEN until a disposable-DB run (README section 7).
+Blocking, in order:
+  1. 4 policies do not match production and still carry stale dump text.
+     Capture the live definitions and substitute them. (README 11.1)
+  2. Nothing here has ever been executed. Static analysis cannot prove that a
+     single CREATE statement succeeds. A disposable-database run is mandatory
+     before adoption. (README 7)
+  3. Data types, nullability, defaults, FK actions and index predicates are
+     count-verified only, never shape-verified. (README 11.3)
+
+Not established by this report: statement validity, runtime behaviour, RLS
+effectiveness, or byte-identity with production.
