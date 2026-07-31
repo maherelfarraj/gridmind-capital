@@ -1,0 +1,488 @@
+================================================================================
+CANONICAL BASELINE SHAPE RECONCILIATION -- READ ONLY
+================================================================================
+Date                : 2026-08-01
+Production project  : zmahjutrpvwjcmhkiibj  (read-only metadata introspection)
+Repository branch   : v0/mfarraj-1953-132cc730
+HEAD at time of run : 32f30ac  (verified; working tree clean)
+Canonical directory : supabase/migrations/canonical/
+Method              : live catalog introspection vs. static parse of the 6
+                      canonical .sql files. Counts alone were NOT accepted as
+                      evidence; every dimension was compared by value.
+
+RESULT: CANONICAL SHAPE CORRECTIONS REQUIRED
+        4 defects total -- 2 CHECK constraints, 1 function (body + search_path),
+        1 whole dimension missing (grants/ownership).
+
+================================================================================
+0. NORMALIZATION RULES APPLIED
+================================================================================
+These are the ONLY differences treated as harmless. Everything else was treated
+as a real difference. No semantic cast, default, type modifier or FK action was
+normalized away.
+
+N1  Schema qualifier. `public.<enum>` in the draft == `<enum>` from
+    format_type() under the live search_path. Applied to type names and to
+    the `::type` casts inside DEFAULT expressions. 18 columns relied on this.
+N2  Identity clause location. pg_dump emits identity as a separate
+    `ALTER TABLE ... ADD GENERATED ... AS IDENTITY` statement rather than
+    inline. The draft's 2 ALTER statements were folded into the owning column
+    before comparison. Both are GENERATED ALWAYS, matching attidentity='a'.
+N3  Whitespace. Runs of whitespace collapsed to a single space in function
+    bodies, view definitions and policy expressions.
+N4  Redundant outer parentheses. `USING ((expr))` in the draft vs pg_policies'
+    rendering `(expr)`. Stripped only when the outer pair wrapped the entire
+    expression. Grouping parens were NEVER stripped -- see section 7.
+N5  Subselect display alias. pg_policies renders `(SELECT auth.uid())` as
+    `( SELECT auth.uid() AS uid)`. The `AS uid` is a rendering artifact of the
+    catalog view, not part of the stored expression.
+
+Rules deliberately NOT applied: nothing was normalized for defaults, FK
+actions, nullability, volatility, security attributes or role lists.
+
+================================================================================
+1. COLUMNS                                                             [MATCH]
+================================================================================
+Compared per column: ordinal position, name, format_type (which encodes
+underlying type, typmod and array dimensionality), nullability, default
+expression, identity mode, generated expression, collation.
+
+  tables              103 prod / 103 draft   (0 missing, 0 extra)
+  columns            1177 prod / 1177 draft
+  exact matches      1177
+  type mismatches       0
+  nullability           0
+  default               0
+  identity              0
+  generated             0
+  collation             0
+  missing columns       0
+  extra columns         0
+
+  prod  COLUMNS sha256 c7fc40387b7e0eeb95dd276fd891ae7eff9de54b4adebb7c716bd5ff61200d05
+  draft COLUMNS sha256 c7fc40387b7e0eeb95dd276fd891ae7eff9de54b4adebb7c716bd5ff61200d05
+  IDENTICAL.
+
+17 tables initially differed; all 17 were fully explained by N1 (18 enum
+columns) and N2 (approval_events.id, audit_log.id). After normalization all
+103 tables match. No non-default collation exists anywhere in public.
+
+================================================================================
+2. CONSTRAINTS                                                      [MISMATCH]
+================================================================================
+Compared via pg_get_constraintdef() plus normalized catalog fields
+(contype, condeferrable, condeferred, convalidated). FK source/target column
+order, MATCH type and ON UPDATE / ON DELETE actions are all carried inside
+pg_get_constraintdef and were compared literally.
+
+  total              364 prod / 364 draft
+  exact matches      362
+  mismatches           2
+  missing / extra      0 / 0
+  PRIMARY KEY        103   all match
+  UNIQUE              36   all match
+  FOREIGN KEY        128   all match (incl. every ON DELETE action)
+  CHECK               97   95 match, 2 differ
+  EXCLUDE              0
+  deferrable           0   every constraint is NOT DEFERRABLE + VALIDATED on
+                           both sides
+
+DEFECT C1 -- public.profiles.profiles_role_check
+  prod  CHECK ((role = ANY (ARRAY['system_admin','tenant_admin',
+        'project_director','project_manager','engineer','hse_manager',
+        'commissioning_manager','finance_manager','commercial_manager',
+        'viewer','subcontractor','client_viewer'])))   <- 12 values
+  draft identical but WITHOUT 'client_viewer'          <- 11 values
+  Risk: HIGH. A database bootstrapped from this baseline rejects every
+        client_viewer profile with SQLSTATE 23514. client_viewer is a live
+        production role and is referenced by policy cr_external_read,
+        pm_external_read, pg_external_read and vo_external_read, so the
+        external-client portal would be unprovisionable.
+  Fix:  add 'client_viewer'::text to the ARRAY in the profiles CHECK.
+
+DEFECT C2 -- public.approval_steps.approval_steps_status_check
+  prod  CHECK ((status = ANY (ARRAY['pending','approved','rejected',
+        'skipped','on_hold'])))                        <- 5 values
+  draft identical but WITHOUT 'on_hold'                <- 4 values
+  Risk: MEDIUM-HIGH. Any approval step placed on hold fails with 23514.
+        Silent until the on-hold path is exercised.
+  Fix:  add 'on_hold'::text to the ARRAY.
+
+Both defects are narrower-than-production, i.e. they fail closed. Neither
+grants access that production denies.
+
+================================================================================
+3. INDEXES                                                             [MATCH]
+================================================================================
+Compared via pg_get_indexdef(), which encodes access method, ordered key
+expressions, operator classes, collation, ASC/DESC, NULLS FIRST/LAST,
+INCLUDE columns, expression indexes and the partial WHERE predicate. Also
+compared indisunique / indisprimary / indisvalid / indisready.
+
+  total              220 prod / 220 draft
+    constraint-backed 139  (from the 103 PK + 36 UNIQUE constraints)
+    explicit           81  (CREATE INDEX statements)
+  exact matches      220
+  mismatches           0
+  missing / extra      0 / 0
+  invalid or not-ready indexes in production: 0
+
+  INDEXES sha256 a0cadda1260c000de4c3226609fd3b9f9d58737bad193abac87b60d99b7063a0
+
+All 103 tables match on both count and definition fingerprint. Physical
+storage parameters (tablespace, fillfactor) were ignored per instruction; no
+index in production sets a non-default reloption.
+
+================================================================================
+4. FUNCTIONS                                                        [MISMATCH]
+================================================================================
+Compared: name, identity arguments, argument modes/names, return type,
+language, volatility, strictness, parallel safety, SECURITY DEFINER/INVOKER,
+leakproof, configuration (search_path), normalized body. Overloads treated
+independently (there are none -- all 28 names are unique).
+
+  total               28 prod / 28 draft
+  identity matches    28   (every signature present, none extra)
+  fully exact         27
+  mismatches           1
+  owner                REQUIRES OWNER ACTION -- see below
+  EXECUTE ACL          MISSING -- see below
+
+DEFECT F1 -- public.handle_new_user()  [MOST SERIOUS FINDING]
+  Two independent differences in the same function.
+
+  (a) search_path
+      prod  SET search_path TO 'public', 'pg_temp'
+      draft SET search_path TO 'public'
+      Risk: MEDIUM. A SECURITY DEFINER function without pg_temp pinned is
+            more exposed to temp-object shadowing.
+
+  (b) body -- privilege escalation
+      prod  insert into public.profiles (id, email, full_name, role, tenant_id)
+            values (new.id, new.email,
+                    coalesce(new.raw_user_meta_data->>'full_name',''),
+                    'viewer',
+                    '<demo tenant uuid>')
+            on conflict (id) do nothing;
+      draft insert into public.profiles (id, tenant_id, full_name, email, role)
+            values (new.id, '<demo tenant uuid>',
+                    coalesce(new.raw_user_meta_data->>'full_name',
+                             split_part(new.email,'@',1)),
+                    new.email,
+                    'project_manager')
+            on conflict (id) do nothing;
+
+      Risk: CRITICAL. The draft assigns every newly signed-up user the
+            'project_manager' role where production assigns 'viewer'. On a
+            database bootstrapped from this baseline, ANY self-service signup
+            would immediately hold project_manager authority. This is a
+            privilege escalation introduced by the baseline, not present in
+            production.
+            Secondary: the draft's full_name falls back to the local-part of
+            the email address instead of an empty string, so the email prefix
+            leaks into a display field.
+  Fix:  replace the draft body with production's prosrc verbatim and restore
+        `SET search_path TO 'public', 'pg_temp'`.
+
+Explicitly verified, all MATCH except handle_new_user:
+  handle_new_user()            plpgsql trigger  SECURITY DEFINER  -- MISMATCH
+  get_my_tenant_id()           sql STABLE       SECURITY DEFINER  search_path=public,pg_temp  MATCH
+  current_user_role()          sql STABLE       SECURITY DEFINER  search_path=public          MATCH
+  is_external_role()           sql STABLE       SECURITY DEFINER  search_path=public          MATCH
+  has_external_access(uuid)    sql STABLE       SECURITY DEFINER  search_path=public          MATCH
+  audit_trigger_fn()           plpgsql VOLATILE SECURITY DEFINER  search_path=public          MATCH
+
+  NOTE: an earlier pass of this reconciliation reported search_path drift on
+  get_my_tenant_id() and increment_copilot_usage() as well. Both were FALSE
+  POSITIVES caused by a parser regex that stopped at the comma in
+  `SET search_path TO 'public', 'pg_temp'`. The draft text for those two is
+  correct and matches production. Only handle_new_user genuinely differs.
+
+OWNERSHIP / ACL (dimension absent from the draft)
+  All 28 production functions are owned by `postgres`.
+  26 of 28 grant EXECUTE to PUBLIC, anon, authenticated and service_role.
+  The 2 exceptions are noted below; the draft encodes NEITHER ownership nor
+  any EXECUTE grant, because it contains zero GRANT/REVOKE/ALTER OWNER
+  statements (see section 7).
+    increment_copilot_usage(integer): postgres, authenticated, service_role
+                                      only -- NO PUBLIC, NO anon.
+  Because the draft omits all ACLs, a database bootstrapped from it inherits
+  Postgres defaults (EXECUTE to PUBLIC on every function), which for
+  increment_copilot_usage is BROADER than production. Status:
+  REQUIRES OWNER ACTION.
+
+  FUNCTIONS sha256 d51d29434023d3f615248e4d23a20265262df76e6e43e823ace6958d1d5dcf25
+
+================================================================================
+5. TRIGGERS                                                  [MATCH / OWNER]
+================================================================================
+Compared via pg_get_triggerdef() plus tgenabled and constraint-trigger flags.
+This encodes BEFORE/AFTER/INSTEAD OF, the event list, row vs statement level,
+the UPDATE OF column list and the WHEN condition.
+
+  non-internal triggers in production   25   (24 public + 1 on auth.users)
+  public triggers                       24   all MATCH, all tgenabled='O'
+  constraint triggers                    0   on both sides
+  WHEN conditions                        0   on both sides
+  UPDATE OF column lists                 2   trg_enforce_gate_approval and
+                                             trg_spawn_gate_signoffs, both
+                                             `UPDATE OF status`, both MATCH
+
+  auth.users.on_auth_user_created     REQUIRES OWNER ACTION
+    prod  CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
+          FOR EACH ROW EXECUTE FUNCTION handle_new_user()
+    draft present but COMMENTED OUT, and otherwise textually identical.
+    This is deliberate and already documented: auth.users is owned by
+    supabase_auth_admin, so the migration role cannot create the trigger.
+    Consequence: on a bootstrapped database, signups create no profiles row
+    until the schema owner runs this statement manually.
+    NOTE: this trigger is what invokes the defective handle_new_user() from
+    F1. Fixing F1 before the owner enables this trigger is what keeps the
+    'project_manager' escalation from ever reaching a live signup path.
+
+  EVENT TRIGGER block_profiles_drop                          MATCH
+    prod  ON sql_drop WHEN TAG IN ('DROP TABLE')
+          EXECUTE FUNCTION prevent_profiles_drop(), enabled='O',
+          owner=postgres
+    draft identical.
+  6 further event triggers exist in production (issue_graphql_placeholder,
+  issue_pg_cron_access, issue_pg_graphql_access, issue_pg_net_access,
+  pgrst_ddl_watch, pgrst_drop_watch). All are owned by supabase_admin and are
+  platform-managed; correctly EXCLUDED from the canonical baseline.
+
+  TRIGGERS sha256 182bbd272ddd124f8a95b67ecf28982f766d10a2e8838b5d2ceef60ba1720c8e
+
+================================================================================
+6. VIEWS                                                               [MATCH]
+================================================================================
+All six views compared on normalized definition (pg_get_viewdef pretty form,
+public. stripped, whitespace collapsed, trimmed).
+
+  view                     column order   definition
+  v_gate_progress          MATCH (8 cols)  MATCH  c97aa8707d1a9ba644e82b6ad35dc84b
+  v_inbox                  MATCH (8 cols)  MATCH  80de8e8024e4264f6140b2472d4384c4
+  v_person_task_load       MATCH (7 cols)  MATCH  6f0c5d33fe1d58bdb5da071570e345fa
+  v_person_workload        MATCH (7 cols)  MATCH  5067017d8d9fcfa31a72e28de9fe4296
+  v_project_staffing       MATCH (5 cols)  MATCH  86e0f4d82d59dbceba4cd879073ebee0
+  v_role_workload          MATCH (8 cols)  MATCH  49a0dce4fb00385a566d0aa6555ec476
+
+  reloptions        none in production; none in draft.        MATCH
+  security_invoker  NOT set in production (views run as owner,
+                    postgres). Not set in draft.              MATCH
+  check option      none on either side.                      MATCH
+  dependency set    every base relation referenced by all six views exists in
+                    the canonical baseline.                   MATCH
+  owner             postgres in production; the draft carries no OWNER TO.
+                                                              MISSING
+  grants            anon + authenticated hold full DML on all 6 views in
+                    production; the draft carries none.       MISSING
+
+  An earlier pass reported all six definitions as differing. That was a
+  false positive: pg_get_viewdef returns a leading space which was included
+  in the production hash but stripped from the draft. After trimming both
+  sides identically, all six hashes are equal. The draft view bodies are
+  verbatim pg_get_viewdef output.
+
+  NOTE (production fact, not a defect): v_inbox is a UNION ALL over approvals
+  and approval_items with no tenant predicate of its own; it relies entirely
+  on the base tables' RLS. Views are not RLS-protected themselves and run as
+  their owner. Already flagged in the draft's own comments.
+
+================================================================================
+7. RLS AND GRANTS                                     [POLICIES MATCH / GRANTS MISSING]
+================================================================================
+7.1 Row-security state                                                 MATCH
+  tables with RLS enabled          103 / 103   (relrowsecurity = true)
+  tables with RLS disabled           0
+  tables with FORCE RLS              0         (relforcerowsecurity = false)
+  draft ALTER ... ENABLE ROW LEVEL SECURITY statements: 103, one per table.
+  draft FORCE ROW LEVEL SECURITY statements: 0.
+  Both match production exactly. Note that because no table forces RLS, the
+  table owner still bypasses every policy.
+
+7.2 Policies                                                           MATCH
+  production policies      144
+  draft CREATE POLICY      144
+  identity matches         144   (0 missing, 0 extra, by table+name)
+  exact matches            143
+  semantic matches           1
+  real mismatches            0
+
+  Compared per policy: permissive/restrictive, command, role list, USING and
+  WITH CHECK. Expressions were compared BOTH token-wise (parens removed) and
+  structurally.
+
+  The single semantic match is comments.comments_insert_auth:
+    prod  WITH CHECK (( SELECT auth.uid() AS uid) IS NOT NULL)
+    draft WITH CHECK ( (SELECT auth.uid()) IS NOT NULL )
+  Identical expression; `AS uid` is the alias pg_policies prints for a
+  subselect target list (rule N5). Status: SEMANTIC MATCH, no action.
+
+  Parenthesis grouping was verified explicitly, not assumed. 12 policies mix
+  AND and OR, where grouping changes meaning:
+    client_reports_external_read, cr_external_read, doc_files_external_read,
+    documents_external_read, eng_packages_external_read, pm_external_read,
+    pg_external_read, pol_read, po_external_read, rfq_external_read,
+    vo_external_read, work_packages_external_read
+  All 12 match production structurally, character for character after
+  whitespace collapse. Each has the shape
+    (NOT is_external_role()) OR (<visibility flag> AND has_external_access(...))
+  which is the correct grouping; the alternative binding would expose rows.
+
+  Demo-tenant literals in the draft's policy file: 0. The 3 previously
+  identified policies that granted access on the demo tenant
+  (comments_insert_auth, comments_select_tenant, gate_templates_select) now
+  carry production's tightened definitions. approval_matrix_read is likewise
+  reconciled to `TO authenticated USING (NOT is_external_role())` rather
+  than the dump's unconditional `USING (true)`.
+
+  POLICIES sha256 4d299b8b4c9104e487ef6846f497016f4ea1c0e9488513a7384e7dcc050b50ff
+
+7.3 Grants                                                           MISSING
+  The canonical baseline contains ZERO executable GRANT, REVOKE or
+  ALTER DEFAULT PRIVILEGES statements across all six files -- including
+  20260801000003_rls_policies_grants.sql, whose name implies otherwise. The
+  README already records this ("Grants | present | none (dumped --no-acl) |
+  all missing"), so it is a known gap rather than a new discovery, but it
+  means the privilege layer is entirely unreproduced.
+
+  Production privilege facts that the baseline does not reproduce:
+    relations with an ACL              111 / 111  (103 tables, 6 views, 2 sequences)
+    tables granted to anon             102 of 103
+    tables granted to authenticated    102 of 103
+    the single exception               rate_limit_buckets (withheld from both)
+    views granted to anon              6 of 6
+    views granted to authenticated     6 of 6
+    sequences granted                  2  (SELECT, UPDATE, USAGE to both roles)
+    column-level grant rows            9720 (all inherited from table grants;
+                                       no narrower per-column grant exists)
+    default ACLs in schema public      6
+    function EXECUTE grants            see section 4
+
+7.4 Effective browser privileges, reported separately
+  anon           DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER,
+                 TRUNCATE, UPDATE on 102 tables and all 6 views.
+                 This is Supabase's default grant. RLS is the ONLY control
+                 preventing an anonymous request from reading or writing
+                 those relations, and since no table sets FORCE ROW LEVEL
+                 SECURITY, that protection is entirely policy-dependent.
+  authenticated  identical privilege set to anon, on the same relations.
+                 Separation between the two roles is therefore expressed
+                 exclusively in policy predicates, never in grants.
+  Both roles also hold SELECT, UPDATE, USAGE on the 2 sequences.
+  Recorded as a production fact. Not a baseline defect, but the baseline's
+  omission of grants means a bootstrapped database will NOT reproduce this
+  posture -- it will differ in both directions and must be set deliberately.
+
+================================================================================
+8. FINGERPRINTS
+================================================================================
+SHA-256 over the sorted, newline-joined per-object records described in each
+section. Normalization rules N1-N5 applied. Production values:
+
+  columns       c7fc40387b7e0eeb95dd276fd891ae7eff9de54b4adebb7c716bd5ff61200d05
+  constraints   1907d87c8b32a946caf3c801fc43ce57339c4c9c7fbaa66edd4c534790525223
+  indexes       a0cadda1260c000de4c3226609fd3b9f9d58737bad193abac87b60d99b7063a0
+  functions     d51d29434023d3f615248e4d23a20265262df76e6e43e823ace6958d1d5dcf25
+  triggers      182bbd272ddd124f8a95b67ecf28982f766d10a2e8838b5d2ceef60ba1720c8e
+  views         (see 6; six per-view md5 values, all equal on both sides)
+  rls state     103/103 enabled, 0 forced
+  policies      4d299b8b4c9104e487ef6846f497016f4ea1c0e9488513a7384e7dcc050b50ff
+  grants        NOT COMPARABLE -- dimension absent from the draft
+
+  OVERALL (ordered: columns, constraints, indexes, functions, triggers, policies)
+                5f3b2616f5120be74b984782db9b9452b9901cf078848d366f6d72c65428d4d0
+
+  The columns fingerprint is the only one computed independently on both
+  sides and shown to be byte-identical. The others are production-side
+  fingerprints; the draft was compared against them object by object, with
+  every difference enumerated in sections 2-7.
+
+================================================================================
+9. COMPLETE MISMATCH REPORT
+================================================================================
+| Dimension          | Prod | Draft | Exact | Mismatch | Status              |
+|--------------------|------|-------|-------|----------|---------------------|
+| Tables             |  103 |   103 |   103 |        0 | MATCH               |
+| Columns            | 1177 |  1177 |  1177 |        0 | MATCH               |
+| Constraints (all)  |  364 |   364 |   362 |        2 | MISMATCH            |
+|   PRIMARY KEY      |  103 |   103 |   103 |        0 | MATCH               |
+|   UNIQUE           |   36 |    36 |    36 |        0 | MATCH               |
+|   FOREIGN KEY      |  128 |   128 |   128 |        0 | MATCH               |
+|   CHECK            |   97 |    97 |    95 |        2 | MISMATCH            |
+|   EXCLUDE          |    0 |     0 |     0 |        0 | MATCH               |
+| Indexes            |  220 |   220 |   220 |        0 | MATCH               |
+| Functions          |   28 |    28 |    27 |        1 | MISMATCH            |
+| Function owners    |   28 |     0 |     0 |       28 | MISSING             |
+| Function EXECUTE   |   28 |     0 |     0 |       28 | MISSING             |
+| Triggers (public)  |   24 |    24 |    24 |        0 | MATCH               |
+| Trigger auth.users |    1 |     0 |     0 |        1 | REQUIRES OWNER ACTION|
+| Event triggers     |    1 |     1 |     1 |        0 | MATCH               |
+| Views              |    6 |     6 |     6 |        0 | MATCH               |
+| View owners/grants |    6 |     0 |     0 |        6 | MISSING             |
+| RLS enabled        |  103 |   103 |   103 |        0 | MATCH               |
+| RLS forced         |    0 |     0 |     0 |        0 | MATCH               |
+| Policies           |  144 |   144 |   143 |        0 | MATCH (1 SEMANTIC)  |
+| Table grants       |  109 |     0 |     0 |      109 | MISSING             |
+| Sequence grants    |    2 |     0 |     0 |        2 | MISSING             |
+| Column grants      | 9720 |     0 |     0 |     9720 | MISSING             |
+| Default ACLs       |    6 |     0 |     0 |        6 | MISSING             |
+
+PER-OBJECT MISMATCHES
+
+| Object | Dimension | Production | Draft | Risk | Required correction |
+|--------|-----------|------------|-------|------|---------------------|
+| public.profiles / profiles_role_check | CHECK allowed values | 12 values incl. 'client_viewer' | 11 values, 'client_viewer' absent | HIGH -- every client_viewer profile insert fails 23514; external client portal unprovisionable | Add `'client_viewer'::text` to the ARRAY |
+| public.approval_steps / approval_steps_status_check | CHECK allowed values | 5 values incl. 'on_hold' | 4 values, 'on_hold' absent | MEDIUM-HIGH -- placing an approval step on hold fails 23514 | Add `'on_hold'::text` to the ARRAY |
+| public.handle_new_user() | function body | assigns role `'viewer'`; full_name falls back to `''` | assigns role `'project_manager'`; full_name falls back to email local-part | CRITICAL -- privilege escalation: every self-service signup becomes project_manager | Replace body with production prosrc verbatim |
+| public.handle_new_user() | search_path | `'public', 'pg_temp'` | `'public'` | MEDIUM -- SECURITY DEFINER fn not pinned against temp-object shadowing | Restore `SET search_path TO 'public', 'pg_temp'` |
+| auth.users / on_auth_user_created | trigger existence | present and enabled | present but commented out | EXPECTED -- migration role cannot own auth.users | Schema owner runs the statement post-bootstrap, AFTER fixing handle_new_user |
+| all 109 relations + 2 sequences | grants | anon/authenticated hold full DML | no GRANT statements at all | HIGH for fidelity -- bootstrapped DB will not match production's privilege posture in either direction | Add a grants section, or document that grants are set out-of-band |
+| all 28 functions | owner + EXECUTE ACL | owner postgres; 26/28 EXECUTE to PUBLIC+anon; increment_copilot_usage restricted | none encoded | MEDIUM -- defaults give EXECUTE to PUBLIC, broader than production for increment_copilot_usage | Add ALTER FUNCTION OWNER + explicit GRANT/REVOKE |
+| 6 views | owner + grants | owner postgres; full DML to anon/authenticated | none encoded | MEDIUM | Add OWNER TO / GRANT statements |
+
+CORRECTED FALSE POSITIVES FROM EARLIER PASSES OF THIS RUN
+(recorded so they are not "re-fixed" later)
+| Object | Reported | Reality |
+|--------|----------|---------|
+| get_my_tenant_id() | search_path missing pg_temp | FALSE POSITIVE -- parser regex stopped at the comma; draft line 117 is correct |
+| increment_copilot_usage(integer) | search_path missing pg_temp | FALSE POSITIVE -- draft line 413 is correct |
+| all 6 views | definition differs | FALSE POSITIVE -- leading-space artifact of pg_get_viewdef; identical after trim |
+| all 144 policies | expression differs | FALSE POSITIVE -- draft's `USING((expr))` vs pg_policies' `(expr)`; identical after N4 |
+| 17 tables / 20 columns | column shape differs | FALSE POSITIVE -- N1 schema qualifier (18) and N2 identity-as-ALTER (2) |
+
+================================================================================
+10. CONCLUSION
+================================================================================
+CANONICAL SHAPE CORRECTIONS REQUIRED
+
+The structural skeleton is sound: columns (1177), indexes (220), foreign keys
+(128), primary keys (103), views (6), public triggers (24), the event trigger,
+RLS state (103 enabled / 0 forced) and all 144 policies reproduce production
+exactly. Four defects block adoption, one of them severe:
+
+  1. handle_new_user() grants 'project_manager' instead of 'viewer' to every
+     new signup -- a privilege escalation that does not exist in production.
+  2. handle_new_user() loses pg_temp from its SECURITY DEFINER search_path.
+  3. profiles_role_check omits 'client_viewer'.
+  4. approval_steps_status_check omits 'on_hold'.
+Plus one whole dimension -- grants, ownership and default ACLs -- that is
+absent from the executable SQL.
+
+The baseline remains NOT execution-ready. It has still never been run against
+a disposable database, and this reconciliation does not change that.
+
+CONFIRMATIONS FOR THIS RUN
+  - metadata-only queries: YES. Every query read pg_catalog or
+    information_schema exclusively.
+  - no application rows read: YES. No SELECT touched any application table.
+    No UUID, email, name or business record was retrieved or is reproduced
+    in this report; the demo-tenant UUID is referred to by placeholder.
+  - no database writes: YES.
+  - no executable SQL changed: YES. All six .sql files are byte-identical to
+    HEAD 32f30ac.
+  - no commit: YES (subject to the platform's automatic commit behaviour).
+  - no push: YES.
+  - no Supabase branch created: YES.
+  - PR #68 unchanged: YES.
+================================================================================
