@@ -1,239 +1,400 @@
--- P0 GOVERNANCE REMEDIATION — BATCH 1: IDENTITY AND DML LOCKDOWN
--- Executed on: 2026-07-31
--- Purpose: Establish fail-closed authorization, remove hard-coded demo tenant,
---          lock down DML to authorized roles only, and implement strict identity validation.
--- SECURITY DEFINER FUNCTIONS: Run as postgres/owner (elevated), but with explicit authorization checks.
--- NO PRODUCTION EXECUTION: This migration must be reviewed and approved before any production deployment.
+-- ============================================================================
+-- P0 GOVERNANCE REMEDIATION — BATCH 1: IDENTITY AND DML CONTAINMENT
+-- ============================================================================
+-- Scope: identity provisioning + privilege/policy containment ONLY.
+-- Explicitly OUT OF SCOPE: approval engine redesign, gate model changes,
+-- historical data backfills, role value rewrites.
+--
+-- This migration is transactional. Any failure rolls the whole thing back.
+-- ============================================================================
 
--- ============================================================================
--- PHASE 1: CRITICAL FIX — Remove hardcoded demo tenant from handle_new_user()
--- ============================================================================
--- Current state: signup auto-assigns tenant_id '00000000-0000-0000-0000-000000000001'
--- This is a critical security violation: all new signups share a single tenant.
--- Fix: Mark new signups as unprovisioned (tenant_id = NULL, is_active = FALSE).
+BEGIN;
+
+-- ----------------------------------------------------------------------------
+-- 0. PRECONDITIONS — fail loudly if the critical surface is missing
+-- ----------------------------------------------------------------------------
+
+DO $precheck$
+DECLARE
+  required_tables CONSTANT text[] := ARRAY[
+    'public.profiles',
+    'public.projects',
+    'public.phase_gates',
+    'public.approvals'
+  ];
+  t text;
+BEGIN
+  FOREACH t IN ARRAY required_tables LOOP
+    IF to_regclass(t) IS NULL THEN
+      RAISE EXCEPTION 'P0 precondition failed: required table % does not exist', t;
+    END IF;
+  END LOOP;
+END
+$precheck$;
+
+-- ----------------------------------------------------------------------------
+-- 1. handle_new_user() — signup metadata is NOT an authority source
+-- ----------------------------------------------------------------------------
+-- New auth users get an UNPROVISIONED profile:
+--   role = 'viewer', tenant_id = NULL, is_active = FALSE
+-- An administrator must explicitly provision tenant + role + activation.
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $handle_new_user$
 BEGIN
-  -- Create profile for new auth user in UNPROVISIONED state
-  -- Requires explicit admin provisioning to assign tenant and activate
   INSERT INTO public.profiles (id, email, full_name, role, tenant_id, is_active)
   VALUES (
     new.id,
     new.email,
-    COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    'viewer',  -- Canonical role, not project_manager
-    NULL,      -- Unprovisioned: no tenant assigned
-    FALSE      -- Inactive: not yet approved
+    COALESCE(
+      NULLIF(btrim(new.raw_user_meta_data ->> 'full_name'), ''),
+      split_part(COALESCE(new.email, ''), '@', 1)
+    ),
+    'viewer',
+    NULL,
+    FALSE
   )
   ON CONFLICT (id) DO NOTHING;
+
   RETURN new;
 END;
-$$;
+$handle_new_user$;
 
--- ============================================================================
--- PHASE 2: FAIL-CLOSED SESSION RESOLUTION
--- ============================================================================
--- Create hardened function to safely retrieve current user's tenant.
--- Returns NULL if user is unprovisioned, inactive, or has no valid tenant.
+COMMENT ON FUNCTION public.handle_new_user() IS
+  'P0: creates an UNPROVISIONED profile (role=viewer, tenant_id=NULL, is_active=false). Never derives authority from signup metadata.';
+
+REVOKE EXECUTE ON FUNCTION public.handle_new_user()
+  FROM PUBLIC, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 2. get_my_tenant_id() — fail-closed tenant resolution for RLS
+-- ----------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.get_my_tenant_id()
 RETURNS uuid
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT tenant_id
-  FROM public.profiles
-  WHERE id = auth.uid()
-    AND is_active = true
-    AND tenant_id IS NOT NULL
-  LIMIT 1;
-$$;
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $get_my_tenant_id$
+  SELECT p.tenant_id
+  FROM public.profiles p
+  WHERE p.id = auth.uid()
+    AND p.is_active IS TRUE
+    AND p.tenant_id IS NOT NULL
+$get_my_tenant_id$;
 
--- ============================================================================
--- PHASE 3: ROLE VALIDATION
--- ============================================================================
--- Create canonical role validator (used by app-layer guards).
--- Returns TRUE if role is in the approved list.
+COMMENT ON FUNCTION public.get_my_tenant_id() IS
+  'P0: returns NULL when the caller is missing, inactive, or unprovisioned. Never falls back to a default tenant.';
 
-CREATE OR REPLACE FUNCTION public.is_db_user_role(role_name text)
-RETURNS boolean
-LANGUAGE sql IMMUTABLE
-AS $$
-  SELECT role_name = ANY(ARRAY[
-    'system_admin', 'tenant_admin', 'project_director', 'project_manager',
-    'engineer', 'hse_manager', 'commissioning_manager', 'finance_manager',
-    'commercial_manager', 'viewer', 'subcontractor', 'client_viewer'
-  ]);
-$$;
+REVOKE EXECUTE ON FUNCTION public.get_my_tenant_id() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_my_tenant_id() TO authenticated;
 
--- ============================================================================
--- PHASE 4: UPDATE PROFILES ROLE CONSTRAINT (include client_viewer)
--- ============================================================================
--- Drop existing constraint and add new one that includes 'client_viewer'
+-- ----------------------------------------------------------------------------
+-- 3. rls_auto_enable() — remove direct client execution (event trigger stays)
+-- ----------------------------------------------------------------------------
+
+DO $rls_auto$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc pr
+    JOIN pg_namespace n ON n.oid = pr.pronamespace
+    WHERE n.nspname = 'public'
+      AND pr.proname = 'rls_auto_enable'
+  ) THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated';
+    RAISE NOTICE 'P0: revoked direct EXECUTE on public.rls_auto_enable()';
+  ELSE
+    RAISE NOTICE 'P0: public.rls_auto_enable() not present; nothing to revoke';
+  END IF;
+END
+$rls_auto$;
+
+-- ----------------------------------------------------------------------------
+-- 4. Canonical role vocabulary — direct CHECK constraint on profiles.role
+-- ----------------------------------------------------------------------------
+-- Existing invalid rows are reported, NOT rewritten. The new constraint is
+-- added NOT VALID so no unsafe full-table rewrite/validation happens here.
+
+DO $role_report$
+DECLARE
+  invalid_count bigint;
+  invalid_values text;
+BEGIN
+  SELECT count(*), COALESCE(string_agg(DISTINCT COALESCE(p.role, '<null>'), ', '), '')
+    INTO invalid_count, invalid_values
+  FROM public.profiles p
+  WHERE p.role IS NULL
+     OR p.role NOT IN (
+       'system_admin','tenant_admin','project_director','project_manager',
+       'engineer','hse_manager','commissioning_manager','finance_manager',
+       'commercial_manager','viewer','subcontractor','client_viewer'
+     );
+
+  IF invalid_count > 0 THEN
+    RAISE NOTICE 'P0: % profile row(s) hold non-canonical role values: %', invalid_count, invalid_values;
+    RAISE NOTICE 'P0: these rows are NOT modified by this migration; remediate them before VALIDATE CONSTRAINT.';
+  ELSE
+    RAISE NOTICE 'P0: all profiles.role values are canonical.';
+  END IF;
+END
+$role_report$;
 
 ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
 
-ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check
-CHECK (public.is_db_user_role(role));
+ALTER TABLE public.profiles
+  ADD CONSTRAINT profiles_role_check
+  CHECK (role IN (
+    'system_admin','tenant_admin','project_director','project_manager',
+    'engineer','hse_manager','commissioning_manager','finance_manager',
+    'commercial_manager','viewer','subcontractor','client_viewer'
+  ))
+  NOT VALID;
 
--- ============================================================================
--- PHASE 5: PROTECTED PROFILE COLUMNS
--- ============================================================================
--- Prevent direct client-side updates to sensitive profile columns.
--- Trigger: profile_protect_sensitive_fields
--- Enforces: tenant_id, role, is_active can only be modified by admin context.
+-- Enforced for every INSERT/UPDATE from now on. Once any legacy rows reported
+-- above are remediated, run this separately as a controlled operation:
+--
+--   ALTER TABLE public.profiles VALIDATE CONSTRAINT profiles_role_check;
+
+-- ----------------------------------------------------------------------------
+-- 5. profiles privileges — browser may read own row, write 4 harmless columns
+-- ----------------------------------------------------------------------------
+
+REVOKE ALL ON TABLE public.profiles FROM anon;
+
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER
+  ON TABLE public.profiles FROM authenticated;
+
+GRANT SELECT ON TABLE public.profiles TO authenticated;
+
+GRANT UPDATE (full_name, locale, digit_style, last_active)
+  ON TABLE public.profiles TO authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 6. Defensive BEFORE UPDATE trigger on profiles
+-- ----------------------------------------------------------------------------
+-- SECURITY INVOKER on purpose: current_user must reflect the real caller so
+-- anon/authenticated can be distinguished from trusted service contexts.
 
 CREATE OR REPLACE FUNCTION public.profile_protect_sensitive_fields()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+SET search_path = pg_catalog, public
+AS $protect$
+DECLARE
+  table_owner name;
+  is_untrusted boolean;
 BEGIN
-  -- If any sensitive field is being changed, deny the operation
-  -- (Apps must use server actions with proper authorization)
-  IF (OLD.tenant_id IS DISTINCT FROM NEW.tenant_id)
-     OR (OLD.role IS DISTINCT FROM NEW.role)
-     OR (OLD.is_active IS DISTINCT FROM NEW.is_active) THEN
-    RAISE EXCEPTION 'Sensitive profile fields (tenant_id, role, is_active) can only be modified via authorized server actions';
+  SELECT pg_get_userbyid(c.relowner)
+    INTO table_owner
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relname = 'profiles';
+
+  is_untrusted := current_user IN ('anon', 'authenticated')
+                  OR current_user NOT IN ('postgres', 'service_role', 'supabase_admin', table_owner);
+
+  IF is_untrusted THEN
+    IF OLD.id            IS DISTINCT FROM NEW.id
+    OR OLD.email         IS DISTINCT FROM NEW.email
+    OR OLD.tenant_id     IS DISTINCT FROM NEW.tenant_id
+    OR OLD.role          IS DISTINCT FROM NEW.role
+    OR OLD.is_active     IS DISTINCT FROM NEW.is_active
+    OR OLD.user_type     IS DISTINCT FROM NEW.user_type
+    OR OLD.external_org  IS DISTINCT FROM NEW.external_org
+    OR OLD.home_role_id  IS DISTINCT FROM NEW.home_role_id
+    OR OLD.department    IS DISTINCT FROM NEW.department
+    THEN
+      RAISE EXCEPTION
+        'P0: protected profile fields (id, email, tenant_id, role, is_active, user_type, external_org, home_role_id, department) cannot be changed by role %', current_user
+        USING ERRCODE = 'insufficient_privilege';
+    END IF;
   END IF;
+
   RETURN NEW;
 END;
-$$;
+$protect$;
+
+REVOKE EXECUTE ON FUNCTION public.profile_protect_sensitive_fields()
+  FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS profile_protect_sensitive_trigger ON public.profiles;
+
 CREATE TRIGGER profile_protect_sensitive_trigger
 BEFORE UPDATE ON public.profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.profile_protect_sensitive_fields();
 
--- ============================================================================
--- PHASE 6: APPROVAL_STEPS MAINTENANCE
--- ============================================================================
--- Ensure approval_steps has decision_note column and correct status check.
+COMMENT ON TRIGGER profile_protect_sensitive_trigger ON public.profiles IS
+  'P0: blocks anon/authenticated changes to identity and authority columns. Trusted service contexts pass through.';
 
-DO $$
-BEGIN
-  -- Add decision_note if it doesn't exist
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'approval_steps' AND column_name = 'decision_note'
-  ) THEN
-    ALTER TABLE public.approval_steps ADD COLUMN decision_note text;
-  END IF;
-END $$;
+-- ----------------------------------------------------------------------------
+-- 7. Governance table DML lockdown (anon + authenticated)
+-- ----------------------------------------------------------------------------
 
--- Update status check constraint if needed
-ALTER TABLE public.approval_steps DROP CONSTRAINT IF EXISTS approval_steps_status_check;
-ALTER TABLE public.approval_steps ADD CONSTRAINT approval_steps_status_check
-CHECK (status IN ('pending', 'approved', 'rejected', 'skipped', 'on_hold'));
-
--- ============================================================================
--- PHASE 7: DML REVOCATION — Governance Tables
--- ============================================================================
--- Revoke direct INSERT/UPDATE/DELETE on governance tables from authenticated users.
--- Force all mutations through authorized server actions.
-
--- List of governance tables (cannot be modified directly via RLS policy)
--- Users must call server actions with authorization checks
-DO $$
+DO $dml_lockdown$
 DECLARE
-  tables_to_revoke TEXT[] := ARRAY[
-    'public.profiles',
+  covered CONSTANT text[] := ARRAY[
+    'public.projects',
+    'public.phase_gates',
     'public.approvals',
     'public.approval_steps',
+    'public.approval_conditions',
+    'public.approval_events',
+    'public.approval_items',
     'public.gate_submissions',
+    'public.gate_signoffs',
     'public.project_gate_approvers',
-    'public.external_access',
-    'public.role_assignments',
-    'public.tenant_roles',
-    'public.permissions',
+    'public.project_team',
+    'public.project_members',
+    'public.workflow_events',
+    'public.audit_log',
+    'public.audit_logs',
     'public.signatures'
   ];
-  t TEXT;
+  t text;
 BEGIN
-  FOREACH t IN ARRAY tables_to_revoke LOOP
-    -- Drop any overly permissive RLS policies
-    EXECUTE format('DROP POLICY IF EXISTS %I_insert_own ON %I', t || '_insert', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_update_own ON %I', t || '_update', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_delete_own ON %I', t || '_delete', t);
+  FOREACH t IN ARRAY covered LOOP
+    IF to_regclass(t) IS NULL THEN
+      RAISE NOTICE 'P0: skipping % (table not present)', t;
+      CONTINUE;
+    END IF;
+
+    EXECUTE format(
+      'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER ON TABLE %s FROM anon',
+      t
+    );
+    EXECUTE format(
+      'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER ON TABLE %s FROM authenticated',
+      t
+    );
   END LOOP;
-END $$;
+END
+$dml_lockdown$;
 
--- ============================================================================
--- PHASE 8: REMOVE PROBLEMATIC POLICIES
--- ============================================================================
--- Remove any policies that allow unauthed or tenant-blind mutations
+-- ----------------------------------------------------------------------------
+-- 8. Drop every non-SELECT RLS policy on the covered surface
+-- ----------------------------------------------------------------------------
+-- Discovered from pg_policies rather than guessed by name. cmd = 'ALL' counts
+-- as a mutation policy and is dropped too.
 
--- profiles: No direct user update; use provisioning action only
-DROP POLICY IF EXISTS profiles_insert_own ON public.profiles;
-DROP POLICY IF EXISTS profiles_update_own ON public.profiles;
-
--- approvals: No direct user mutations (use server actions with auth)
-DROP POLICY IF EXISTS approvals_insert_own ON public.approvals;
-DROP POLICY IF EXISTS approvals_update_own ON public.approvals;
-
--- ============================================================================
--- PHASE 9: TENANT-SCOPED READ POLICIES (where actually required)
--- ============================================================================
--- Re-create read policies that properly enforce tenant scoping.
--- Example: Projects can only be read if user's tenant_id matches.
-
--- profiles: Users can read themselves + project team (if in same tenant)
--- NOTE: Must be implemented with active+provisioned check
-
--- ============================================================================
--- PHASE 10: FUNCTION EXECUTE REVOCATION
--- ============================================================================
--- Revoke EXECUTE from public on sensitive functions; only app uses them via RLS
-
-DO $$
+DO $drop_mutation_policies$
+DECLARE
+  covered CONSTANT text[] := ARRAY[
+    'profiles',
+    'projects',
+    'phase_gates',
+    'approvals',
+    'approval_steps',
+    'approval_conditions',
+    'approval_events',
+    'approval_items',
+    'gate_submissions',
+    'gate_signoffs',
+    'project_gate_approvers',
+    'project_team',
+    'project_members',
+    'workflow_events',
+    'audit_log',
+    'audit_logs',
+    'signatures'
+  ];
+  pol record;
+  dropped int := 0;
 BEGIN
-  -- Revoke unnecessary execution privileges on sensitive functions
-  EXECUTE 'REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM public';
-  EXECUTE 'REVOKE EXECUTE ON FUNCTION public.get_my_tenant_id() FROM public';
-  EXECUTE 'REVOKE EXECUTE ON FUNCTION public.is_db_user_role(text) FROM public';
-  EXECUTE 'REVOKE EXECUTE ON FUNCTION public.profile_protect_sensitive_fields() FROM public';
-EXCEPTION WHEN OTHERS THEN
-  -- Function privileges may not exist; continue
-  NULL;
-END $$;
+  FOR pol IN
+    SELECT schemaname, tablename, policyname, cmd
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = ANY (covered)
+      AND cmd <> 'SELECT'
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      pol.policyname, pol.schemaname, pol.tablename
+    );
+    dropped := dropped + 1;
+    RAISE NOTICE 'P0: dropped mutation policy % on %.% [cmd=%]',
+      pol.policyname, pol.schemaname, pol.tablename, pol.cmd;
+  END LOOP;
 
--- ============================================================================
--- PHASE 11: SEARCH PATH HARDENING
--- ============================================================================
--- Ensure search_path is explicitly set to 'public' for all SECURITY DEFINER functions
--- (Already applied in function creations above; this is a reference reminder)
+  RAISE NOTICE 'P0: dropped % non-SELECT policy/policies across the governance surface', dropped;
+END
+$drop_mutation_policies$;
 
--- ============================================================================
--- PHASE 12: AUDIT / DOCUMENTATION
--- ============================================================================
--- Log the migration execution for compliance tracking
+-- ----------------------------------------------------------------------------
+-- 9. Rebuild SELECT policies for the browser/realtime core
+-- ----------------------------------------------------------------------------
+-- Verified browser/realtime consumers:
+--   projects, approvals  -> components/dashboard/dashboard-page-client.tsx
+--   profiles, phase_gates -> direct session/stepper reads
+-- No other governance table has a proven browser read requirement, so none
+-- receive an authenticated SELECT grant.
 
-COMMENT ON FUNCTION public.handle_new_user() IS
-  'HARDENED: New signups are unprovisioned (tenant_id=NULL, is_active=FALSE). Requires explicit admin provisioning.';
+ALTER TABLE public.profiles    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.projects    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.approvals   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.phase_gates ENABLE ROW LEVEL SECURITY;
 
-COMMENT ON FUNCTION public.get_my_tenant_id() IS
-  'FAIL-CLOSED: Returns NULL if user is inactive, unprovisioned, or has no valid tenant.';
+-- profiles: own row only
+DROP POLICY IF EXISTS profiles_select_own ON public.profiles;
+CREATE POLICY profiles_select_own
+  ON public.profiles
+  FOR SELECT
+  TO authenticated
+  USING (id = auth.uid());
 
-COMMENT ON FUNCTION public.is_db_user_role(text) IS
-  'CANONICAL: Validator for approved role names. Includes client_viewer.';
+-- profiles: own row update (column privileges + trigger are the real limits)
+DROP POLICY IF EXISTS profiles_update_own ON public.profiles;
+CREATE POLICY profiles_update_own
+  ON public.profiles
+  FOR UPDATE
+  TO authenticated
+  USING (id = auth.uid())
+  WITH CHECK (id = auth.uid());
 
-COMMENT ON TRIGGER profile_protect_sensitive_trigger ON public.profiles IS
-  'P0 GOVERNANCE: Prevents direct client-side modification of tenant_id, role, is_active. All changes require server-side authorization.';
+-- projects: own tenant only
+DROP POLICY IF EXISTS projects_select_tenant ON public.projects;
+CREATE POLICY projects_select_tenant
+  ON public.projects
+  FOR SELECT
+  TO authenticated
+  USING (tenant_id = public.get_my_tenant_id());
 
--- ============================================================================
--- MIGRATION VERIFICATION CHECKLIST (MANUAL - NOT EXECUTED HERE)
--- ============================================================================
--- Before production deployment, verify:
--- ✓ handle_new_user() no longer hardcodes demo tenant
--- ✓ get_my_tenant_id() returns NULL for unprovisioned users
--- ✓ is_db_user_role() validator is accessible to app layer
--- ✓ profile_protect_sensitive_fields trigger blocks direct updates
--- ✓ Problematic RLS policies are removed
--- ✓ No existing tests are broken by role constraint addition
--- ✓ Server actions have explicit authorization checks before service-role mutations
--- ✓ UI properly handles unprovisioned state (redirect to provisioning flow)
+-- approvals: own tenant only
+DROP POLICY IF EXISTS approvals_select_tenant ON public.approvals;
+CREATE POLICY approvals_select_tenant
+  ON public.approvals
+  FOR SELECT
+  TO authenticated
+  USING (tenant_id = public.get_my_tenant_id());
 
+-- phase_gates: via parent project's tenant
+DROP POLICY IF EXISTS phase_gates_select_tenant ON public.phase_gates;
+CREATE POLICY phase_gates_select_tenant
+  ON public.phase_gates
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.projects p
+      WHERE p.id = phase_gates.project_id
+        AND p.tenant_id = public.get_my_tenant_id()
+    )
+  );
+
+GRANT SELECT ON TABLE public.projects    TO authenticated;
+GRANT SELECT ON TABLE public.approvals   TO authenticated;
+GRANT SELECT ON TABLE public.phase_gates TO authenticated;
+
+REVOKE ALL ON TABLE public.projects    FROM anon;
+REVOKE ALL ON TABLE public.approvals   FROM anon;
+REVOKE ALL ON TABLE public.phase_gates FROM anon;
+
+COMMIT;
