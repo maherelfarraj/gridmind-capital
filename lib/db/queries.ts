@@ -1,7 +1,8 @@
 import 'server-only'
 import { cache } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
+import { resolveActorState, actorFailureMessage } from '@/lib/auth/actor'
+import type { DbUserRole } from '@/lib/auth/roles'
 import type {
   Department,
   Role,
@@ -18,39 +19,30 @@ import type {
 
 /**
  * Resolve the acting user + tenant from Supabase auth → profiles.
- * Throws if no session (requires authentication).
  *
- * Wrapped in React cache() to dedupe per HTTP request.
+ * Delegates to the canonical resolver in lib/auth/actor.ts so this data layer
+ * and the server-action guards share ONE authorization algorithm. Previously
+ * this function ran a weaker second algorithm that accepted inactive profiles,
+ * a null tenant_id, and an unvalidated (or null) role.
+ *
+ * FAIL-CLOSED: throws on lookup error, missing profile, inactive profile,
+ * missing tenant, or invalid role. Callers already treat it as throwing.
  */
 export const getActor = cache(async (): Promise<{
   userId: string
   tenantId: string
-  role: string | null
+  role: DbUserRole
 }> => {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  
-  if (!user) {
-    throw new Error('Unauthorized: User session required')
-  }
+  const state = await resolveActorState()
 
-  const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('tenant_id, role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) {
-    throw new Error('Unauthorized: User profile not found')
+  if (state.kind === 'invalid') {
+    throw new Error(actorFailureMessage(state.reason))
   }
 
   return {
-    userId: user.id,
-    tenantId: profile.tenant_id,
-    role: profile.role ?? null,
+    userId: state.actor.userId,
+    tenantId: state.actor.tenantId,
+    role: state.actor.role,
   }
 })
 
