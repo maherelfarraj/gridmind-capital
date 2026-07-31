@@ -6,7 +6,11 @@ import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 import { requireInternalRole, validateExternalRole } from '@/lib/auth/guard'
-import { deactivateUser, provisionExternalUser } from '@/lib/auth/provisioning'
+import {
+  deactivateUser,
+  provisionExternalUser,
+  provisionInvitedUser,
+} from '@/lib/auth/provisioning'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -164,6 +168,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
     .maybeSingle()
 
   let userId: string
+  let wasNewlyInvited = false
 
   if (existing) {
     // User already exists — re-grant projects. The role/tenant/user_type write
@@ -189,25 +194,37 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
       return { error: inviteErr?.message ?? 'Failed to invite user' }
     }
     userId = inviteData.user.id
-
-    // Non-authority columns only — the canonical service applies role, tenant,
-    // user_type and active state after validating the projects and the caller.
-    const { error: rowErr } = await admin
-      .from('profiles')
-      .upsert({ id: userId, email: args.email }, { onConflict: 'id' })
-    if (rowErr) return { error: rowErr.message }
+    wasNewlyInvited = true
   }
 
-  // Step 3 — apply external authority through the single canonical writer.
-  // This validates that every project belongs to the tenant BEFORE granting
-  // anything, so a cross-tenant project id can no longer be attached.
-  const provisioned = await provisionExternalUser({
+  // Step 3 — apply external authority through the single canonical writer,
+  // under compensation. This validates that every project belongs to the tenant
+  // BEFORE granting anything, so a cross-tenant project id cannot be attached.
+  //
+  // organizationName is passed explicitly. It is NOT read back from the auth
+  // metadata set above: metadata is attacker-influenceable and is never an
+  // authority source.
+  const provisioned = await provisionInvitedUser({
     userId,
-    role: args.role,
-    tenantId,
-    projectIds: args.projectIds,
-    isActive: true,
-    reason: existing ? 'reinvite_existing_external' : 'invite_new_external',
+    wasNewlyInvited,
+    provision: async () => {
+      // Non-authority columns only — the canonical service applies role,
+      // tenant, user_type, external_org and active state.
+      const { error: rowErr } = await admin
+        .from('profiles')
+        .upsert({ id: userId, email: args.email }, { onConflict: 'id' })
+      if (rowErr) return { error: rowErr.message }
+
+      return provisionExternalUser({
+        userId,
+        role: args.role,
+        tenantId,
+        projectIds: args.projectIds,
+        externalOrg: args.organizationName,
+        isActive: true,
+        reason: existing ? 'reinvite_existing_external' : 'invite_new_external',
+      })
+    },
   })
   if ('error' in provisioned) return { error: provisioned.error }
 

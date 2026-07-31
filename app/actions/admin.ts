@@ -9,6 +9,7 @@ import {
   changeUserRole,
   deactivateUser as deactivateUserAuthority,
   provisionInternalUser,
+  provisionInvitedUser,
 } from '@/lib/auth/provisioning'
 import { getCurrentTenantId } from '@/lib/tenant'
 
@@ -180,6 +181,9 @@ export async function inviteInternalUser(
   if (!isDbUserRole(args.role)) {
     return { error: `"${args.role}" is not a valid role.` }
   }
+  // Captured after narrowing: the guard above does not survive into the async
+  // closure below, where args.role would widen back to string.
+  const role = args.role
 
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
@@ -193,6 +197,9 @@ export async function inviteInternalUser(
     .maybeSingle()
 
   let userId: string
+  // Must describe THIS operation: it decides whether a failure below cancels a
+  // brand-new invitation or deletes a pre-existing colleague's account.
+  let wasNewlyInvited = false
 
   if (existing) {
     userId = existing.id
@@ -209,28 +216,41 @@ export async function inviteInternalUser(
       return { error: inviteErr?.message ?? 'Failed to invite user.' }
     }
     userId = invited.user.id
+    wasNewlyInvited = true
   }
 
-  // Step 2b — non-authority display fields only. The handle_new_user trigger
-  // creates the row; this fills in the name without touching any protected
-  // field. Authority is applied by the canonical service below, which is what
-  // enforces "tenant_admin may not invite a system_admin" — the old inline
-  // upsert wrote args.role directly and had no such check.
-  const { error: nameErr } = await admin
-    .from('profiles')
-    .upsert({ id: userId, email, full_name: fullName }, { onConflict: 'id' })
-  if (nameErr) return { error: nameErr.message }
-
-  const provisioned = await provisionInternalUser({
+  // Step 2b — write the display row, then apply authority. Both run under
+  // compensation: if either fails for a user we just created, the pending Auth
+  // identity is removed rather than left able to sign in with no provisioning.
+  const provisioned = await provisionInvitedUser({
     userId,
-    role: args.role,
-    tenantId,
-    department: args.department?.trim() || null,
-    homeRoleId: args.homeRoleId ?? null,
-    isActive: true,
-    reason: existing ? 'reinvite_existing_profile' : 'invite_new_user',
+    wasNewlyInvited,
+    provision: async () => {
+      // Non-authority display fields only. The handle_new_user trigger creates
+      // the row; this fills in the name without touching any protected field.
+      // Authority is applied by the canonical service, which is what enforces
+      // "tenant_admin may not invite a system_admin".
+      const { error: nameErr } = await admin
+        .from('profiles')
+        .upsert({ id: userId, email, full_name: fullName }, { onConflict: 'id' })
+      if (nameErr) return { error: nameErr.message }
+
+      return provisionInternalUser({
+        userId,
+        role,
+        tenantId,
+        department: args.department?.trim() || null,
+        homeRoleId: args.homeRoleId ?? null,
+        isActive: true,
+        reason: existing ? 'reinvite_existing_profile' : 'invite_new_user',
+      })
+    },
   })
   if ('error' in provisioned) return { error: provisioned.error }
+
+  // Everything below is DELIVERY, not provisioning. A failure to mint a link
+  // must not delete a correctly provisioned user — the account is valid and the
+  // link can be regenerated.
 
   // Step 3 — always produce a shareable link as an SMTP-independent fallback.
   //

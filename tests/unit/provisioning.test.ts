@@ -8,10 +8,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * likewise mocked so each case can state exactly who is calling.
  */
 
-const { resolveActorState, tableHandlers, calls } = vi.hoisted(() => ({
+const { resolveActorState, tableHandlers, calls, deleteUser } = vi.hoisted(() => ({
   resolveActorState: vi.fn(),
   tableHandlers: new Map<string, unknown>(),
   calls: [] as { table: string; op: string; payload?: unknown }[],
+  // The Auth Admin API is mocked too — no real auth user is ever created or
+  // deleted, and no network call is made.
+  deleteUser: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/actor', async (importOriginal) => {
@@ -54,7 +57,10 @@ function makeQuery(table: string) {
 }
 
 vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({ from: (table: string) => makeQuery(table) }),
+  createAdminClient: () => ({
+    from: (table: string) => makeQuery(table),
+    auth: { admin: { deleteUser } },
+  }),
 }))
 
 const ACTOR_TENANT = 'tenant-a'
@@ -83,6 +89,7 @@ function targetProfile(over: Record<string, unknown> = {}) {
           role: 'engineer',
           is_active: true,
           user_type: 'internal',
+          external_org: null,
           home_role_id: null,
           department: null,
           ...over,
@@ -107,6 +114,8 @@ beforeEach(() => {
   tableHandlers.clear()
   calls.length = 0
   resolveActorState.mockReset()
+  deleteUser.mockReset()
+  deleteUser.mockResolvedValue({ data: null, error: null })
   okTable('tenants')
   okTable('roles')
   okTable('audit_log', null)
@@ -478,5 +487,267 @@ describe('vendor provisioning authorization', () => {
     const { authorizeVendorProvisioning } = await load()
 
     expect(await authorizeVendorProvisioning()).toHaveProperty('error')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Correction pass: exhaustive classification, external_org,
+// and failed-invitation compensation.
+// ─────────────────────────────────────────────────────────────
+
+describe('exhaustive user-type classification', () => {
+  it('C1. every canonical role has an explicit internal/external classification', async () => {
+    const { USER_TYPE_BY_ROLE } = await load()
+    const { DB_USER_ROLES } = await import('@/lib/auth/roles')
+
+    for (const role of DB_USER_ROLES) {
+      expect(USER_TYPE_BY_ROLE[role], `${role} is unclassified`).toMatch(/^(internal|external)$/)
+    }
+    // No stray keys beyond the canonical vocabulary.
+    expect(Object.keys(USER_TYPE_BY_ROLE).sort()).toEqual([...DB_USER_ROLES].sort())
+  })
+
+  it('C2. the classification is a source-level exhaustive Record, not a filter', async () => {
+    // A new role must break TYPECHECK. That is only guaranteed while the map is
+    // annotated Record<DbUserRole, …>; if someone relaxes the annotation or
+    // rebuilds it by exclusion, adding a role silently defaults to internal.
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync('lib/auth/provisioning.ts', 'utf8')
+
+    expect(src).toMatch(/USER_TYPE_BY_ROLE:\s*Record<DbUserRole,\s*UserTypeClass>/)
+    // Classification must not be derived by excluding an allowlist.
+    expect(src).not.toMatch(/DB_USER_ROLES\.filter\(\(r\) => !isExternalRole/)
+  })
+
+  it('C3. internal and external sets are disjoint and cover the vocabulary', async () => {
+    const { INTERNAL_ROLES, EXTERNAL_ROLES } = await load()
+    const { DB_USER_ROLES } = await import('@/lib/auth/roles')
+
+    expect([...INTERNAL_ROLES, ...EXTERNAL_ROLES].sort()).toEqual([...DB_USER_ROLES].sort())
+    expect(INTERNAL_ROLES.filter((r) => EXTERNAL_ROLES.includes(r))).toEqual([])
+  })
+})
+
+describe('external_org is protected authority', () => {
+  it('C4. subcontractor requires an external organisation', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'subcontractor', user_type: 'external', external_org: 'Acme' })
+    const { provisionExternalUser } = await load()
+
+    const res = await provisionExternalUser({ userId: 'target-1', role: 'subcontractor' })
+
+    expect(res).toEqual({ error: 'An external organisation is required for a subcontractor.' })
+    expect(profileWrite()).toBeUndefined()
+  })
+
+  it('C5. a blank/whitespace organisation is not accepted as provided', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'subcontractor', user_type: 'external', external_org: 'Acme' })
+    const { provisionExternalUser } = await load()
+
+    const res = await provisionExternalUser({
+      userId: 'target-1',
+      role: 'subcontractor',
+      externalOrg: '   ',
+    })
+
+    expect(res).toHaveProperty('error')
+    expect(profileWrite()).toBeUndefined()
+  })
+
+  it('C6. external provisioning writes external_org, trimmed', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'subcontractor', user_type: 'external', external_org: 'Old Firm' })
+    const { provisionExternalUser } = await load()
+
+    const res = await provisionExternalUser({
+      userId: 'target-1',
+      role: 'subcontractor',
+      externalOrg: '  Bechtel  ',
+    })
+
+    expect(res).toEqual({ data: undefined })
+    expect(profileWrite()?.payload).toMatchObject({
+      role: 'subcontractor',
+      user_type: 'external',
+      external_org: 'Bechtel',
+    })
+  })
+
+  it('C7. external-to-internal conversion clears external_org', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'subcontractor', user_type: 'external', external_org: 'Bechtel' })
+    const { changeUserRole } = await load()
+
+    const res = await changeUserRole({ userId: 'target-1', role: 'engineer' })
+
+    expect(res).toEqual({ data: undefined })
+    expect(profileWrite()?.payload).toMatchObject({
+      role: 'engineer',
+      user_type: 'internal',
+      external_org: null,
+    })
+  })
+
+  it('C8. internal-to-external conversion without an organisation is rejected', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'engineer', user_type: 'internal', external_org: null })
+    const { changeUserRole } = await load()
+
+    const res = await changeUserRole({ userId: 'target-1', role: 'client_viewer' })
+
+    expect(res).toEqual({
+      error:
+        'An external organisation is required when converting an internal user to an external role.',
+    })
+    expect(profileWrite()).toBeUndefined()
+  })
+
+  it('C9. internal-to-external conversion succeeds when an organisation is given', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'engineer', user_type: 'internal', external_org: null })
+    const { changeUserRole } = await load()
+
+    const res = await changeUserRole({
+      userId: 'target-1',
+      role: 'client_viewer',
+      externalOrg: 'Client Co',
+    })
+
+    expect(res).toEqual({ data: undefined })
+    expect(profileWrite()?.payload).toMatchObject({
+      user_type: 'external',
+      external_org: 'Client Co',
+    })
+  })
+
+  it('C10. internal provisioning clears any stale external_org', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'subcontractor', user_type: 'external', external_org: 'Bechtel' })
+    const { provisionInternalUser } = await load()
+
+    const res = await provisionInternalUser({ userId: 'target-1', role: 'engineer' })
+
+    expect(res).toEqual({ data: undefined })
+    expect(profileWrite()?.payload).toMatchObject({ user_type: 'internal', external_org: null })
+  })
+
+  it('C11. external_org appears in BOTH audit before and after values', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'subcontractor', user_type: 'external', external_org: 'Old Firm' })
+    const { provisionExternalUser } = await load()
+
+    await provisionExternalUser({
+      userId: 'target-1',
+      role: 'subcontractor',
+      externalOrg: 'New Firm',
+    })
+
+    const audit = auditWrite()?.payload as { old_values: unknown; new_values: unknown }
+    expect(audit.old_values).toMatchObject({ external_org: 'Old Firm' })
+    expect(audit.new_values).toMatchObject({ external_org: 'New Firm' })
+  })
+
+  it('C12. external_org is restored when audit compensation runs', async () => {
+    actingAs('tenant_admin')
+    targetProfile({ role: 'subcontractor', user_type: 'external', external_org: 'Old Firm' })
+    tableHandlers.set('audit_log', () => ({ data: null, error: { message: 'audit down' } }))
+    const { provisionExternalUser } = await load()
+
+    const res = await provisionExternalUser({
+      userId: 'target-1',
+      role: 'subcontractor',
+      externalOrg: 'New Firm',
+    })
+
+    expect(res).toHaveProperty('error')
+    const writes = calls.filter((c) => c.table === 'profiles' && c.op === 'update')
+    expect(writes).toHaveLength(2)
+    // The rollback must put the ORIGINAL organisation back, not null it.
+    expect(writes[1].payload).toMatchObject({ external_org: 'Old Firm' })
+  })
+})
+
+describe('failed invitation compensation', () => {
+  const failingProvision = async () => ({ error: 'provisioning refused' })
+
+  it('C13. a newly invited auth user is deleted when provisioning fails', async () => {
+    actingAs('tenant_admin')
+    const { provisionInvitedUser } = await load()
+
+    const res = await provisionInvitedUser({
+      userId: 'new-user-1',
+      wasNewlyInvited: true,
+      provision: failingProvision,
+    })
+
+    expect(deleteUser).toHaveBeenCalledWith('new-user-1')
+    expect(res).toHaveProperty('error')
+    expect(res).not.toHaveProperty('data')
+    expect((res as { error: string }).error).toContain('provisioning refused')
+  })
+
+  it('C14. an EXISTING user is never deleted when provisioning fails', async () => {
+    actingAs('tenant_admin')
+    const { provisionInvitedUser } = await load()
+
+    const res = await provisionInvitedUser({
+      userId: 'existing-user-1',
+      wasNewlyInvited: false,
+      provision: failingProvision,
+    })
+
+    expect(deleteUser).not.toHaveBeenCalled()
+    expect(res).toEqual({ error: 'provisioning refused' })
+  })
+
+  it('C15. cleanup failure returns a repair-required error naming the user id', async () => {
+    actingAs('tenant_admin')
+    deleteUser.mockResolvedValue({ data: null, error: { message: 'auth unreachable' } })
+    const { provisionInvitedUser } = await load()
+
+    const res = await provisionInvitedUser({
+      userId: 'orphan-1',
+      wasNewlyInvited: true,
+      provision: failingProvision,
+    })
+
+    const err = (res as { error: string }).error
+    expect(err).toContain('CRITICAL')
+    expect(err).toContain('orphan-1')
+    expect(err).toContain('auth unreachable')
+    // No secret material may leak into an operator-facing error.
+    expect(err).not.toMatch(/token|hashed|secret|password/i)
+  })
+
+  it('C16. successful provisioning never deletes the auth user', async () => {
+    actingAs('tenant_admin')
+    const { provisionInvitedUser } = await load()
+
+    const res = await provisionInvitedUser({
+      userId: 'new-user-2',
+      wasNewlyInvited: true,
+      provision: async () => ({ data: undefined }),
+    })
+
+    expect(deleteUser).not.toHaveBeenCalled()
+    expect(res).toEqual({ data: undefined })
+  })
+
+  it('C17. deletion result error is checked, not assumed', async () => {
+    // supabase-js RESOLVES with { error } rather than rejecting. A helper that
+    // ignored the result would return the plain failure and silently strand the
+    // orphan, so the repair path must be reached without any throw.
+    actingAs('tenant_admin')
+    deleteUser.mockResolvedValue({ data: null, error: { message: 'boom' } })
+    const { provisionInvitedUser } = await load()
+
+    const res = await provisionInvitedUser({
+      userId: 'orphan-2',
+      wasNewlyInvited: true,
+      provision: failingProvision,
+    })
+
+    expect((res as { error: string }).error).toContain('Manual repair required')
   })
 })

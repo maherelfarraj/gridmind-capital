@@ -35,23 +35,62 @@ type AdminClient = ReturnType<typeof createAdminClient>
 // Vocabulary
 // ─────────────────────────────────────────────────────────────
 
-/** Explicit allowlist of roles an EXTERNAL identity may hold. */
-export const EXTERNAL_ROLES = ['subcontractor', 'client_viewer'] as const
-export type ExternalRole = (typeof EXTERNAL_ROLES)[number]
-
-export function isExternalRole(value: unknown): value is ExternalRole {
-  return typeof value === 'string' && (EXTERNAL_ROLES as readonly string[]).includes(value)
-}
+export type UserTypeClass = 'internal' | 'external'
 
 /**
- * Roles an INTERNAL identity may hold — derived from the canonical vocabulary
- * by removing the external allowlist, so a role added to DB_USER_ROLES is
- * internal-provisionable by default only if it is not an external role.
+ * THE exhaustive internal/external classification of the canonical role
+ * vocabulary.
+ *
+ * This is a `Record<DbUserRole, …>`, NOT a filter over an external allowlist.
+ * Derivation by exclusion is fail-open: a role added to DB_USER_ROLES and
+ * forgotten would silently classify as `internal`, quietly granting staff
+ * user_type — and, with it, whatever internal surfaces key off user_type — to a
+ * role nobody ever reviewed.
+ *
+ * Because every key is required, adding a role to DB_USER_ROLES BREAKS
+ * TYPECHECK here until it is explicitly classified. That compile error is the
+ * control; the map is deliberately verbose so the failure is unmissable.
  */
-export const INTERNAL_ROLES: readonly DbUserRole[] = DB_USER_ROLES.filter((r) => !isExternalRole(r))
+export const USER_TYPE_BY_ROLE: Record<DbUserRole, UserTypeClass> = {
+  system_admin: 'internal',
+  tenant_admin: 'internal',
+  project_director: 'internal',
+  project_manager: 'internal',
+  engineer: 'internal',
+  hse_manager: 'internal',
+  commissioning_manager: 'internal',
+  finance_manager: 'internal',
+  commercial_manager: 'internal',
+  viewer: 'internal',
+  subcontractor: 'external',
+  client_viewer: 'external',
+}
+
+/** Roles an EXTERNAL identity may hold, derived from the exhaustive map. */
+export const EXTERNAL_ROLES: readonly DbUserRole[] = DB_USER_ROLES.filter(
+  (r) => USER_TYPE_BY_ROLE[r] === 'external',
+)
+export type ExternalRole = DbUserRole
+
+/** Roles an INTERNAL identity may hold, derived from the exhaustive map. */
+export const INTERNAL_ROLES: readonly DbUserRole[] = DB_USER_ROLES.filter(
+  (r) => USER_TYPE_BY_ROLE[r] === 'internal',
+)
+
+/**
+ * Classify a role. Unknown input is NOT classified — callers must treat an
+ * unrecognised role as invalid rather than defaulting it to a user_type.
+ */
+export function userTypeForRole(role: DbUserRole): UserTypeClass {
+  return USER_TYPE_BY_ROLE[role]
+}
+
+export function isExternalRole(value: unknown): value is ExternalRole {
+  return isDbUserRole(value) && USER_TYPE_BY_ROLE[value] === 'external'
+}
 
 export function isInternalRole(value: unknown): value is DbUserRole {
-  return isDbUserRole(value) && !isExternalRole(value)
+  return isDbUserRole(value) && USER_TYPE_BY_ROLE[value] === 'internal'
 }
 
 /** Roles permitted to provision anyone at all. */
@@ -78,18 +117,29 @@ async function requireProvisioner(): Promise<{ actor: ResolvedActor } | { error:
   return { actor }
 }
 
-/** The protected authority fields, as stored. */
+/**
+ * The protected authority fields, as stored.
+ *
+ * external_org is protected, not cosmetic: it is the organisation an external
+ * identity acts on behalf of, so it is part of who that identity IS. The P0
+ * migration's profile_protect_sensitive_fields trigger already lists it
+ * alongside role and tenant_id, so leaving it out of this service would mean
+ * the one column the database treats as authority had no application-level
+ * owner, no validation, and no audit trail.
+ */
 interface ProfileAuthority {
   id: string
   tenant_id: string | null
   role: string | null
   is_active: boolean | null
   user_type: string | null
+  external_org: string | null
   home_role_id: string | null
   department: string | null
 }
 
-const AUTHORITY_COLUMNS = 'id, tenant_id, role, is_active, user_type, home_role_id, department'
+const AUTHORITY_COLUMNS =
+  'id, tenant_id, role, is_active, user_type, external_org, home_role_id, department'
 
 /**
  * Enforce the authorization matrix against a concrete target.
@@ -177,6 +227,39 @@ async function assertHomeRoleValid(
   if (error) return { error: `Role catalogue lookup failed: ${error.message}` }
   if (!data) return { error: 'home_role_id does not reference a known role' }
   return null
+}
+
+/**
+ * Resolve the external_org value to store for an external role.
+ *
+ * Rules, in one place so no caller can invent its own:
+ *  - subcontractor ALWAYS requires a non-empty organisation. A subcontractor
+ *    with no organisation is not a meaningful identity.
+ *  - client_viewer may omit it in general, but NOT when the target is currently
+ *    internal: promoting an internal user into an external role without stating
+ *    the organisation would leave the identity externally-scoped while silently
+ *    unattributed.
+ *  - The value is trimmed. It is NEVER derived from auth metadata, which is
+ *    attacker-influenced and is not an authority source.
+ */
+function resolveExternalOrg(args: {
+  role: DbUserRole
+  externalOrg: string | null | undefined
+  targetIsInternal: boolean
+}): { value: string | null } | { error: string } {
+  const trimmed = typeof args.externalOrg === 'string' ? args.externalOrg.trim() : null
+  const provided = trimmed !== null && trimmed.length > 0
+
+  if (args.role === 'subcontractor' && !provided) {
+    return { error: 'An external organisation is required for a subcontractor.' }
+  }
+  if (!provided && args.targetIsInternal) {
+    return {
+      error:
+        'An external organisation is required when converting an internal user to an external role.',
+    }
+  }
+  return { value: provided ? trimmed : null }
 }
 
 /** Every project must belong to the tenant the user is being provisioned into. */
@@ -384,8 +467,12 @@ export async function provisionInternalUser(
   const patch: Partial<ProfileAuthority> = {
     tenant_id: tenantId,
     role: args.role,
-    user_type: 'internal',
+    user_type: userTypeForRole(args.role),
     is_active: args.isActive ?? true,
+    // An internal identity acts for the tenant itself, never on behalf of an
+    // outside organisation. Clearing this explicitly means converting a former
+    // subcontractor to staff cannot leave their old firm attached.
+    external_org: null,
   }
   if (args.department !== undefined) patch.department = args.department
   if (args.homeRoleId !== undefined) patch.home_role_id = args.homeRoleId
@@ -410,6 +497,11 @@ export interface ProvisionExternalUserArgs {
   tenantId?: string
   /** Projects the external identity may reach. All must be in the tenant. */
   projectIds?: readonly string[]
+  /**
+   * The organisation this identity acts for. Required for subcontractor, and
+   * required whenever the target is currently an internal user.
+   */
+  externalOrg?: string | null
   isActive?: boolean
   reason?: string
   correlationId?: string
@@ -450,11 +542,19 @@ export async function provisionExternalUser(
   })
   if (authErr) return authErr
 
+  const org = resolveExternalOrg({
+    role: args.role,
+    externalOrg: args.externalOrg,
+    targetIsInternal: isInternalRole(target.role),
+  })
+  if ('error' in org) return org
+
   const patch: Partial<ProfileAuthority> = {
     tenant_id: tenantId,
     role: args.role,
-    user_type: 'external',
+    user_type: userTypeForRole(args.role),
     is_active: args.isActive ?? true,
+    external_org: org.value,
   }
 
   const err = await applyAuthorityChange(admin, {
@@ -471,10 +571,19 @@ export async function provisionExternalUser(
   return { data: undefined }
 }
 
-/** Change only the role of an existing user. */
+/**
+ * Change the role of an existing user, keeping user_type and external_org
+ * coherent with it.
+ *
+ * A role change can cross the internal/external boundary, so it cannot treat
+ * role as an isolated column: promoting a subcontractor to staff must drop
+ * their organisation, and moving staff to an external role must state one.
+ */
 export async function changeUserRole(args: {
   userId: string
   role: DbUserRole
+  /** Required when converting an internal user into an external role. */
+  externalOrg?: string | null
   reason?: string
   correlationId?: string
 }): Promise<ProvisioningResult> {
@@ -494,11 +603,24 @@ export async function changeUserRole(args: {
   const authErr = authorizeTargetMutation({ actor, target, nextRole: args.role })
   if (authErr) return authErr
 
-  // Keep user_type coherent with the new role rather than leaving an internal
-  // user_type attached to an external role (or vice versa).
+  // Keep user_type AND external_org coherent with the new role rather than
+  // leaving an internal user_type attached to an external role, or a stale
+  // organisation attached to someone who is now staff.
   const patch: Partial<ProfileAuthority> = {
     role: args.role,
-    user_type: isExternalRole(args.role) ? 'external' : 'internal',
+    user_type: userTypeForRole(args.role),
+  }
+
+  if (isExternalRole(args.role)) {
+    const org = resolveExternalOrg({
+      role: args.role,
+      externalOrg: args.externalOrg,
+      targetIsInternal: isInternalRole(target.role),
+    })
+    if ('error' in org) return org
+    patch.external_org = org.value
+  } else {
+    patch.external_org = null
   }
 
   const err = await applyAuthorityChange(admin, {
@@ -594,6 +716,78 @@ export async function activateUser(args: {
   if (err) return err
 
   return { data: undefined }
+}
+
+/**
+ * Compensate a provisioning failure that happened after an Auth user was
+ * created in the SAME operation.
+ *
+ * Without this, a failed invite leaves an orphan: an Auth identity that can
+ * complete the email link and sign in, attached to a profile row that never
+ * received a tenant, role, or active state. That is precisely the
+ * unprovisioned-but-authenticated state the identity work exists to prevent,
+ * and it is created by the error path rather than the happy path — so it is
+ * invisible in normal use.
+ *
+ * Rules encoded here so no caller can get them subtly wrong:
+ *  - An EXISTING (re-invited) user is never deleted. Their Auth identity
+ *    predates this operation and deleting it would destroy an unrelated account
+ *    because an unrelated update failed.
+ *  - The deletion result is checked explicitly. supabase-js returns errors, it
+ *    does not throw, so an unchecked call would silently leave the orphan it
+ *    was written to remove.
+ *  - Failure is never reported as success.
+ *  - If cleanup itself fails, the caller gets a repair-required error naming
+ *    the user id — an operator cannot fix an orphan they cannot identify. No
+ *    token, link, or secret is included.
+ */
+async function compensateFailedProvisioning(args: {
+  admin: AdminClient
+  userId: string
+  wasNewlyInvited: boolean
+  provisioningError: string
+}): Promise<{ error: string }> {
+  if (!args.wasNewlyInvited) {
+    return { error: args.provisioningError }
+  }
+
+  const { error: deleteErr } = await args.admin.auth.admin.deleteUser(args.userId)
+
+  if (deleteErr) {
+    return {
+      error:
+        `${args.provisioningError}. CRITICAL: the newly created auth user could not be ` +
+        `removed (${deleteErr.message}). Manual repair required for auth user ${args.userId}, ` +
+        `which now exists without valid provisioning.`,
+    }
+  }
+
+  return { error: `${args.provisioningError}. The pending invitation was cancelled.` }
+}
+
+/**
+ * Provision a freshly invited identity, cleaning up the Auth user if the
+ * provisioning step fails.
+ *
+ * `wasNewlyInvited` must describe THIS operation: it is the difference between
+ * cancelling an invitation nobody has used yet and deleting a colleague's
+ * account.
+ */
+export async function provisionInvitedUser(args: {
+  wasNewlyInvited: boolean
+  provision: () => Promise<ProvisioningResult>
+  userId: string
+}): Promise<ProvisioningResult> {
+  const result = await args.provision()
+  if (!('error' in result)) return result
+
+  const admin = createAdminClient()
+  return compensateFailedProvisioning({
+    admin,
+    userId: args.userId,
+    wasNewlyInvited: args.wasNewlyInvited,
+    provisioningError: result.error,
+  })
 }
 
 /**

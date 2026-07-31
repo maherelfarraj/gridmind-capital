@@ -2,7 +2,11 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireUser } from '@/lib/auth/guard'
-import { authorizeVendorProvisioning, provisionExternalUser } from '@/lib/auth/provisioning'
+import {
+  authorizeVendorProvisioning,
+  provisionExternalUser,
+  provisionInvitedUser,
+} from '@/lib/auth/provisioning'
 import type { RFQRecord, PORecord, ProcurementDashboard } from '@/lib/types/action-types'
 
 import { getCurrentTenantId } from '@/lib/tenant'
@@ -383,6 +387,7 @@ export async function reissueVendorInvite(args: {
     .maybeSingle()
 
   let userId: string
+  let wasNewlyInvited = false
 
   if (existing) {
     // P0: User already exists — do NOT update role here (use authoritative inviteExternalUser path)
@@ -405,14 +410,7 @@ export async function reissueVendorInvite(args: {
       return { error: inviteErr?.message ?? 'Failed to invite vendor user' }
     }
     userId = inviteData.user.id
-
-    // Non-authority columns only. This previously set `is_active` here — a
-    // protected field — and discarded the result, so a rejected write was
-    // indistinguishable from success.
-    const { error: rowErr } = await supabase
-      .from('profiles')
-      .upsert({ id: userId, email: args.newEmail, full_name: args.vendorName }, { onConflict: 'id' })
-    if (rowErr) return { error: rowErr.message }
+    wasNewlyInvited = true
   }
 
   // Apply vendor authority through the single canonical writer: a vendor is an
@@ -424,13 +422,33 @@ export async function reissueVendorInvite(args: {
     .eq('tenant_id', tenantId)
     .maybeSingle()
 
-  const provisioned = await provisionExternalUser({
+  const provisioned = await provisionInvitedUser({
     userId,
-    role: 'subcontractor',
-    tenantId,
-    projectIds: poForAccess?.project_id ? [poForAccess.project_id] : [],
-    isActive: true,
-    reason: `vendor_reissue:${args.poNumber}`,
+    wasNewlyInvited,
+    provision: async () => {
+      // Non-authority columns only. This previously set `is_active` here — a
+      // protected field — and discarded the result, so a rejected write was
+      // indistinguishable from success.
+      const { error: rowErr } = await supabase
+        .from('profiles')
+        .upsert(
+          { id: userId, email: args.newEmail, full_name: args.vendorName },
+          { onConflict: 'id' },
+        )
+      if (rowErr) return { error: rowErr.message }
+
+      // vendorName is the organisation, passed explicitly rather than read back
+      // from the auth metadata written above.
+      return provisionExternalUser({
+        userId,
+        role: 'subcontractor',
+        tenantId,
+        projectIds: poForAccess?.project_id ? [poForAccess.project_id] : [],
+        externalOrg: args.vendorName,
+        isActive: true,
+        reason: `vendor_reissue:${args.poNumber}`,
+      })
+    },
   })
   if ('error' in provisioned) return { error: provisioned.error }
 
