@@ -617,21 +617,53 @@ CREATE POLICY profiles_update_own
   USING (id = auth.uid())
   WITH CHECK (id = auth.uid());
 
--- projects: own tenant only
+-- External-user scoping is folded INTO the tenant policies below rather than
+-- expressed as separate policies. PostgreSQL combines permissive policies with
+-- OR, so a separate permissive "external" policy would WIDEN, not narrow, the
+-- tenant policies. The pre-P0 schema expressed this as RESTRICTIVE policies
+-- (projects_external_read, approvals_external_block, pg_external_read); those
+-- are dropped in section 7, and their intent is preserved here.
+--
+-- Canonical helpers reused as-is (no second external-access model):
+--   public.is_external_role()          -> true for subcontractor / client_viewer
+--   public.has_external_access(uuid)   -> explicit, non-revoked project grant
+-- Both are STABLE SECURITY DEFINER and owned by the table owner, so they read
+-- profiles / external_access without re-entering these policies (no recursion).
+--
+-- Inactive, tenantless, and unprovisioned callers are denied by
+-- get_my_tenant_id() returning NULL, which makes every predicate below NULL.
+
+REVOKE EXECUTE ON FUNCTION public.is_external_role()            FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.has_external_access(uuid)     FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.is_external_role()            TO authenticated;
+GRANT  EXECUTE ON FUNCTION public.has_external_access(uuid)     TO authenticated;
+
+-- projects: own tenant; external roles additionally need an explicit grant
 CREATE POLICY projects_select_tenant
   ON public.projects
   FOR SELECT
   TO authenticated
-  USING (tenant_id = public.get_my_tenant_id());
+  USING (
+    tenant_id = public.get_my_tenant_id()
+    AND (
+      NOT public.is_external_role()
+      OR public.has_external_access(projects.id)
+    )
+  );
 
--- approvals: own tenant only
+-- approvals: own tenant, internal roles only. External users must not be able
+-- to read or infer approval records for any project, granted or not.
 CREATE POLICY approvals_select_tenant
   ON public.approvals
   FOR SELECT
   TO authenticated
-  USING (tenant_id = public.get_my_tenant_id());
+  USING (
+    tenant_id = public.get_my_tenant_id()
+    AND NOT public.is_external_role()
+  );
 
--- phase_gates: via parent project's tenant
+-- phase_gates: via parent project's tenant, with the same external scoping
+-- applied to the parent project.
 CREATE POLICY phase_gates_select_tenant
   ON public.phase_gates
   FOR SELECT
@@ -642,6 +674,10 @@ CREATE POLICY phase_gates_select_tenant
       FROM public.projects p
       WHERE p.id = phase_gates.project_id
         AND p.tenant_id = public.get_my_tenant_id()
+        AND (
+          NOT public.is_external_role()
+          OR public.has_external_access(p.id)
+        )
     )
   );
 
