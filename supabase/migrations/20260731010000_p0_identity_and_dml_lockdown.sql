@@ -41,16 +41,21 @@ $precheck$;
 -- ----------------------------------------------------------------------------
 -- 0a. Global structural-privilege revocation across the whole public schema
 -- ----------------------------------------------------------------------------
--- TRUNCATE, TRIGGER and REFERENCES are whole-table privileges that RLS does
--- NOT constrain. A browser role holding them can wipe a table, attach a
--- trigger, or create a foreign key against it regardless of any policy.
--- None of these are ever legitimate for anon/authenticated.
+-- MAINTAIN, TRUNCATE, TRIGGER and REFERENCES are whole-table privileges that
+-- RLS does NOT constrain. A browser role holding them can wipe a table, attach
+-- a trigger, create a foreign key against it, or run maintenance commands
+-- (VACUUM, ANALYZE, CLUSTER, REINDEX, REFRESH MATERIALIZED VIEW) regardless of
+-- any policy. None of these are ever legitimate for anon/authenticated.
+--
+-- MAINTAIN is a PostgreSQL 17 table privilege. A read-only catalog check
+-- confirmed anon and authenticated currently hold all four across every
+-- existing public relation.
 --
 -- SELECT/INSERT/UPDATE/DELETE are deliberately NOT revoked here: some
 -- non-governance application tables may still have intentional browser
 -- behavior that requires separate review.
 
-REVOKE TRUNCATE, TRIGGER, REFERENCES
+REVOKE MAINTAIN, TRUNCATE, TRIGGER, REFERENCES
   ON ALL TABLES IN SCHEMA public
   FROM PUBLIC, anon, authenticated;
 
@@ -61,11 +66,22 @@ REVOKE TRUNCATE, TRIGGER, REFERENCES
 -- privileges close the gap for anything created later.
 --
 -- Default privileges are per-creating-role, so the owner list is discovered
--- dynamically rather than hard-coded: current_user plus the actual owners of
--- every relation in the public schema. Role existence alone is not enough —
--- ALTER DEFAULT PRIVILEGES FOR ROLE requires the executing role to BE the
--- target role or hold membership in it, so pg_has_role is checked first and
--- any role we cannot act for is reported for a separate owner-authorized run.
+-- dynamically rather than hard-coded. Three sources are unioned:
+--   1. current_user
+--   2. actual owners of every relation in the public schema
+--   3. owners of existing table default-ACL records that affect global
+--      (defaclnamespace = 0) or public-schema defaults
+--
+-- Source 3 matters because a role such as supabase_admin can hold a default
+-- ACL that grants structural privileges on future tables while owning no
+-- public relation today — sources 1 and 2 would never surface it.
+--
+-- Role existence alone is not enough: ALTER DEFAULT PRIVILEGES FOR ROLE
+-- requires the executing role to BE the target role or hold membership in it,
+-- so pg_has_role is checked first. Any role we cannot act for raises a
+-- WARNING (not a silent skip) because a real gap remains open until an
+-- owner-authorized operation closes it. Role membership and ownership are
+-- never modified to work around this.
 
 DO $default_privs$
 DECLARE
@@ -84,6 +100,16 @@ BEGIN
         ON n.oid = c.relnamespace
       WHERE n.nspname = 'public'
         AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+
+      UNION
+
+      SELECT pg_get_userbyid(d.defaclrole)::name
+      FROM pg_default_acl d
+      WHERE d.defaclobjtype = 'r'
+        AND (
+          d.defaclnamespace = 0
+          OR d.defaclnamespace = 'public'::regnamespace
+        )
     ) owners
     WHERE owner_name IS NOT NULL
   LOOP
@@ -94,7 +120,7 @@ BEGIN
       -- undo a privilege granted through global default privileges.
       EXECUTE format(
         'ALTER DEFAULT PRIVILEGES FOR ROLE %I '
-        'REVOKE TRUNCATE, TRIGGER, REFERENCES '
+        'REVOKE MAINTAIN, TRUNCATE, TRIGGER, REFERENCES '
         'ON TABLES FROM PUBLIC, anon, authenticated',
         owner_role
       );
@@ -103,7 +129,7 @@ BEGIN
       -- default grants.
       EXECUTE format(
         'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
-        'REVOKE TRUNCATE, TRIGGER, REFERENCES '
+        'REVOKE MAINTAIN, TRUNCATE, TRIGGER, REFERENCES '
         'ON TABLES FROM PUBLIC, anon, authenticated',
         owner_role
       );
@@ -112,9 +138,10 @@ BEGIN
         'P0: hardened global and public-schema table defaults for owner role %',
         owner_role;
     ELSE
-      RAISE NOTICE
-        'P0: current role % is not a member of owner role %; '
-        'default privileges for that role require a separate owner-authorized operation',
+      RAISE WARNING
+        'P0: current role % cannot administer owner role %; future-table '
+        'MAINTAIN/TRUNCATE/TRIGGER/REFERENCES defaults for that role are NOT '
+        'revoked and an owner-authorized operation is still required',
         current_user,
         owner_role;
     END IF;
@@ -530,5 +557,51 @@ GRANT SELECT ON TABLE public.phase_gates TO authenticated;
 -- guarded server action.
 GRANT UPDATE (full_name, locale, digit_style, last_active)
   ON TABLE public.profiles TO authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 10. POSTCONDITION — no structural privileges survive for browser roles
+-- ----------------------------------------------------------------------------
+-- Runs before COMMIT so any surviving MAINTAIN/TRUNCATE/TRIGGER/REFERENCES
+-- grant aborts the transaction and rolls the whole migration back.
+--
+-- has_table_privilege() resolves the effective privilege, so this also catches
+-- grants inherited through role membership or PUBLIC, not just direct grants.
+--
+-- Scope note: this verifies EXISTING relations. Future-table defaults for any
+-- owner role reported by the WARNING in section 0b are outside what this
+-- migration can close and remain an owner-authorized follow-up.
+
+DO $verify_structural_privileges$
+DECLARE
+  remaining_count bigint;
+BEGIN
+  SELECT count(*)
+    INTO remaining_count
+  FROM pg_class c
+  JOIN pg_namespace n
+    ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+    AND (
+      has_table_privilege('anon', c.oid, 'MAINTAIN')
+      OR has_table_privilege('anon', c.oid, 'TRUNCATE')
+      OR has_table_privilege('anon', c.oid, 'TRIGGER')
+      OR has_table_privilege('anon', c.oid, 'REFERENCES')
+      OR has_table_privilege('authenticated', c.oid, 'MAINTAIN')
+      OR has_table_privilege('authenticated', c.oid, 'TRUNCATE')
+      OR has_table_privilege('authenticated', c.oid, 'TRIGGER')
+      OR has_table_privilege('authenticated', c.oid, 'REFERENCES')
+    );
+
+  IF remaining_count > 0 THEN
+    RAISE EXCEPTION
+      'P0 postcondition failed: % public relations retain structural privileges for anon/authenticated',
+      remaining_count;
+  END IF;
+
+  RAISE NOTICE
+    'P0 postcondition passed: anon/authenticated retain no MAINTAIN, TRUNCATE, TRIGGER, or REFERENCES privileges on public relations';
+END
+$verify_structural_privileges$;
 
 COMMIT;
