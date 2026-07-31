@@ -5,6 +5,12 @@
 -- Explicitly OUT OF SCOPE: approval engine redesign, gate model changes,
 -- historical data backfills, role value rewrites.
 --
+-- Containment model:
+--   * Non-core governance tables   -> zero browser privileges, zero policies.
+--   * Core browser/realtime tables -> exact SELECT baseline, tenant scoped.
+--   * service_role / postgres / supabase_admin are never revoked and bypass
+--     RLS, so guarded server actions keep full access.
+--
 -- This migration is transactional. Any failure rolls the whole thing back.
 -- ============================================================================
 
@@ -116,10 +122,12 @@ END
 $rls_auto$;
 
 -- ----------------------------------------------------------------------------
--- 4. Canonical role vocabulary — direct CHECK constraint on profiles.role
+-- 4. Canonical role vocabulary — NULL and off-vocabulary values are rejected
 -- ----------------------------------------------------------------------------
 -- Existing invalid rows are reported, NOT rewritten. The new constraint is
 -- added NOT VALID so no unsafe full-table rewrite/validation happens here.
+-- handle_new_user() already writes role='viewer', so no code path depends on
+-- a NULL role for unprovisioned users.
 
 DO $role_report$
 DECLARE
@@ -137,10 +145,10 @@ BEGIN
      );
 
   IF invalid_count > 0 THEN
-    RAISE NOTICE 'P0: % profile row(s) hold non-canonical role values: %', invalid_count, invalid_values;
+    RAISE NOTICE 'P0: % profile row(s) hold NULL or non-canonical role values: %', invalid_count, invalid_values;
     RAISE NOTICE 'P0: these rows are NOT modified by this migration; remediate them before VALIDATE CONSTRAINT.';
   ELSE
-    RAISE NOTICE 'P0: all profiles.role values are canonical.';
+    RAISE NOTICE 'P0: all profiles.role values are canonical and non-null.';
   END IF;
 END
 $role_report$;
@@ -149,11 +157,14 @@ ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
 
 ALTER TABLE public.profiles
   ADD CONSTRAINT profiles_role_check
-  CHECK (role IN (
-    'system_admin','tenant_admin','project_director','project_manager',
-    'engineer','hse_manager','commissioning_manager','finance_manager',
-    'commercial_manager','viewer','subcontractor','client_viewer'
-  ))
+  CHECK (
+    role IS NOT NULL
+    AND role IN (
+      'system_admin','tenant_admin','project_director','project_manager',
+      'engineer','hse_manager','commissioning_manager','finance_manager',
+      'commercial_manager','viewer','subcontractor','client_viewer'
+    )
+  )
   NOT VALID;
 
 -- Enforced for every INSERT/UPDATE from now on. Once any legacy rows reported
@@ -162,21 +173,119 @@ ALTER TABLE public.profiles
 --   ALTER TABLE public.profiles VALIDATE CONSTRAINT profiles_role_check;
 
 -- ----------------------------------------------------------------------------
--- 5. profiles privileges — browser may read own row, write 4 harmless columns
+-- 5. Non-core governance tables — total browser lockdown
 -- ----------------------------------------------------------------------------
+-- No proven direct browser/realtime read requirement exists for any table in
+-- this list, so each one receives:
+--   * REVOKE ALL PRIVILEGES from PUBLIC, anon, authenticated
+--   * RLS enabled (defense in depth)
+--   * every RLS policy dropped (section 7), and none recreated
+-- service_role bypasses RLS and is never revoked, so guarded server actions
+-- retain full read/write access.
 
-REVOKE ALL ON TABLE public.profiles FROM anon;
+DO $noncore_lockdown$
+DECLARE
+  noncore CONSTANT text[] := ARRAY[
+    'approval_steps',
+    'approval_conditions',
+    'approval_events',
+    'approval_items',
+    'gate_submissions',
+    'gate_signoffs',
+    'project_gate_approvers',
+    'project_team',
+    'project_members',
+    'workflow_events',
+    'audit_log',
+    'audit_logs',
+    'signatures'
+  ];
+  tname text;
+BEGIN
+  FOREACH tname IN ARRAY noncore LOOP
+    IF to_regclass(format('public.%I', tname)) IS NULL THEN
+      RAISE NOTICE 'P0: skipping public.% (table not present)', tname;
+      CONTINUE;
+    END IF;
 
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER
-  ON TABLE public.profiles FROM authenticated;
+    EXECUTE format(
+      'REVOKE ALL PRIVILEGES ON TABLE %I.%I FROM PUBLIC, anon, authenticated',
+      'public', tname
+    );
 
-GRANT SELECT ON TABLE public.profiles TO authenticated;
+    EXECUTE format(
+      'ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY',
+      'public', tname
+    );
 
-GRANT UPDATE (full_name, locale, digit_style, last_active)
-  ON TABLE public.profiles TO authenticated;
+    RAISE NOTICE 'P0: locked down public.% (all browser privileges revoked, RLS enabled)', tname;
+  END LOOP;
+END
+$noncore_lockdown$;
 
 -- ----------------------------------------------------------------------------
--- 6. Defensive BEFORE UPDATE trigger on profiles
+-- 6. Core governance tables — reset privileges to an empty baseline
+-- ----------------------------------------------------------------------------
+-- Everything is revoked first. Section 9 regrants the exact allowed set.
+
+REVOKE ALL PRIVILEGES ON TABLE public.profiles    FROM PUBLIC, anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.projects    FROM PUBLIC, anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.approvals   FROM PUBLIC, anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.phase_gates FROM PUBLIC, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 7. Drop EVERY existing RLS policy across the whole governed surface
+-- ----------------------------------------------------------------------------
+-- No command filter of any kind. PostgreSQL combines permissive policies with
+-- OR, so a surviving legacy SELECT policy would bypass the new tenant
+-- resolver. Every policy is discovered from pg_policies and removed; section 9
+-- then recreates only the five approved core policies.
+
+DO $drop_all_policies$
+DECLARE
+  governed CONSTANT text[] := ARRAY[
+    'profiles',
+    'projects',
+    'approvals',
+    'phase_gates',
+    'approval_steps',
+    'approval_conditions',
+    'approval_events',
+    'approval_items',
+    'gate_submissions',
+    'gate_signoffs',
+    'project_gate_approvers',
+    'project_team',
+    'project_members',
+    'workflow_events',
+    'audit_log',
+    'audit_logs',
+    'signatures'
+  ];
+  pol record;
+  dropped int := 0;
+BEGIN
+  FOR pol IN
+    SELECT schemaname, tablename, policyname, cmd
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = ANY (governed)
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      pol.policyname, pol.schemaname, pol.tablename
+    );
+    dropped := dropped + 1;
+    RAISE NOTICE 'P0: dropped policy % on %.% [cmd=%]',
+      pol.policyname, pol.schemaname, pol.tablename, pol.cmd;
+  END LOOP;
+
+  RAISE NOTICE 'P0: dropped % policy/policies across the governed surface', dropped;
+END
+$drop_all_policies$;
+
+-- ----------------------------------------------------------------------------
+-- 8. Defensive BEFORE UPDATE trigger on profiles
 -- ----------------------------------------------------------------------------
 -- SECURITY INVOKER on purpose: current_user must reflect the real caller so
 -- anon/authenticated can be distinguished from trusted service contexts.
@@ -195,6 +304,12 @@ BEGIN
   FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public' AND c.relname = 'profiles';
+
+  IF table_owner IS NULL THEN
+    RAISE EXCEPTION
+      'P0: could not resolve owner of public.profiles'
+      USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
 
   is_untrusted := current_user IN ('anon', 'authenticated')
                   OR current_user NOT IN ('postgres', 'service_role', 'supabase_admin', table_owner);
@@ -234,107 +349,12 @@ COMMENT ON TRIGGER profile_protect_sensitive_trigger ON public.profiles IS
   'P0: blocks anon/authenticated changes to identity and authority columns. Trusted service contexts pass through.';
 
 -- ----------------------------------------------------------------------------
--- 7. Governance table DML lockdown (anon + authenticated)
--- ----------------------------------------------------------------------------
-
-DO $dml_lockdown$
-DECLARE
-  covered CONSTANT text[] := ARRAY[
-    'public.projects',
-    'public.phase_gates',
-    'public.approvals',
-    'public.approval_steps',
-    'public.approval_conditions',
-    'public.approval_events',
-    'public.approval_items',
-    'public.gate_submissions',
-    'public.gate_signoffs',
-    'public.project_gate_approvers',
-    'public.project_team',
-    'public.project_members',
-    'public.workflow_events',
-    'public.audit_log',
-    'public.audit_logs',
-    'public.signatures'
-  ];
-  t text;
-BEGIN
-  FOREACH t IN ARRAY covered LOOP
-    IF to_regclass(t) IS NULL THEN
-      RAISE NOTICE 'P0: skipping % (table not present)', t;
-      CONTINUE;
-    END IF;
-
-    EXECUTE format(
-      'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER ON TABLE %s FROM anon',
-      t
-    );
-    EXECUTE format(
-      'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER ON TABLE %s FROM authenticated',
-      t
-    );
-  END LOOP;
-END
-$dml_lockdown$;
-
--- ----------------------------------------------------------------------------
--- 8. Drop every non-SELECT RLS policy on the covered surface
--- ----------------------------------------------------------------------------
--- Discovered from pg_policies rather than guessed by name. cmd = 'ALL' counts
--- as a mutation policy and is dropped too.
-
-DO $drop_mutation_policies$
-DECLARE
-  covered CONSTANT text[] := ARRAY[
-    'profiles',
-    'projects',
-    'phase_gates',
-    'approvals',
-    'approval_steps',
-    'approval_conditions',
-    'approval_events',
-    'approval_items',
-    'gate_submissions',
-    'gate_signoffs',
-    'project_gate_approvers',
-    'project_team',
-    'project_members',
-    'workflow_events',
-    'audit_log',
-    'audit_logs',
-    'signatures'
-  ];
-  pol record;
-  dropped int := 0;
-BEGIN
-  FOR pol IN
-    SELECT schemaname, tablename, policyname, cmd
-    FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = ANY (covered)
-      AND cmd <> 'SELECT'
-  LOOP
-    EXECUTE format(
-      'DROP POLICY IF EXISTS %I ON %I.%I',
-      pol.policyname, pol.schemaname, pol.tablename
-    );
-    dropped := dropped + 1;
-    RAISE NOTICE 'P0: dropped mutation policy % on %.% [cmd=%]',
-      pol.policyname, pol.schemaname, pol.tablename, pol.cmd;
-  END LOOP;
-
-  RAISE NOTICE 'P0: dropped % non-SELECT policy/policies across the governance surface', dropped;
-END
-$drop_mutation_policies$;
-
--- ----------------------------------------------------------------------------
--- 9. Rebuild SELECT policies for the browser/realtime core
+-- 9. Core browser/realtime surface — exact policy and privilege baseline
 -- ----------------------------------------------------------------------------
 -- Verified browser/realtime consumers:
---   projects, approvals  -> components/dashboard/dashboard-page-client.tsx
---   profiles, phase_gates -> direct session/stepper reads
--- No other governance table has a proven browser read requirement, so none
--- receive an authenticated SELECT grant.
+--   projects, approvals   -> components/dashboard/dashboard-page-client.tsx
+--   profiles, phase_gates -> session resolution and gate stepper reads
+-- No other governance table has a proven browser read requirement.
 
 ALTER TABLE public.profiles    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.projects    ENABLE ROW LEVEL SECURITY;
@@ -342,15 +362,14 @@ ALTER TABLE public.approvals   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.phase_gates ENABLE ROW LEVEL SECURITY;
 
 -- profiles: own row only
-DROP POLICY IF EXISTS profiles_select_own ON public.profiles;
 CREATE POLICY profiles_select_own
   ON public.profiles
   FOR SELECT
   TO authenticated
   USING (id = auth.uid());
 
--- profiles: own row update (column privileges + trigger are the real limits)
-DROP POLICY IF EXISTS profiles_update_own ON public.profiles;
+-- profiles: own row update. Column privileges and the protective trigger are
+-- the real limits on what may actually change.
 CREATE POLICY profiles_update_own
   ON public.profiles
   FOR UPDATE
@@ -359,7 +378,6 @@ CREATE POLICY profiles_update_own
   WITH CHECK (id = auth.uid());
 
 -- projects: own tenant only
-DROP POLICY IF EXISTS projects_select_tenant ON public.projects;
 CREATE POLICY projects_select_tenant
   ON public.projects
   FOR SELECT
@@ -367,7 +385,6 @@ CREATE POLICY projects_select_tenant
   USING (tenant_id = public.get_my_tenant_id());
 
 -- approvals: own tenant only
-DROP POLICY IF EXISTS approvals_select_tenant ON public.approvals;
 CREATE POLICY approvals_select_tenant
   ON public.approvals
   FOR SELECT
@@ -375,7 +392,6 @@ CREATE POLICY approvals_select_tenant
   USING (tenant_id = public.get_my_tenant_id());
 
 -- phase_gates: via parent project's tenant
-DROP POLICY IF EXISTS phase_gates_select_tenant ON public.phase_gates;
 CREATE POLICY phase_gates_select_tenant
   ON public.phase_gates
   FOR SELECT
@@ -389,12 +405,18 @@ CREATE POLICY phase_gates_select_tenant
     )
   );
 
+-- Exact regrant set. Nothing else is granted to anon or authenticated.
+GRANT SELECT ON TABLE public.profiles    TO authenticated;
 GRANT SELECT ON TABLE public.projects    TO authenticated;
 GRANT SELECT ON TABLE public.approvals   TO authenticated;
 GRANT SELECT ON TABLE public.phase_gates TO authenticated;
 
-REVOKE ALL ON TABLE public.projects    FROM anon;
-REVOKE ALL ON TABLE public.approvals   FROM anon;
-REVOKE ALL ON TABLE public.phase_gates FROM anon;
+-- Column-scoped write set. last_active is included because a client-side
+-- writer is proven: app/auth/login/page.tsx is a 'use client' component that
+-- stamps profiles.last_active through the browser Supabase client after
+-- signInWithPassword. Remove last_active here if that writer is moved to a
+-- guarded server action.
+GRANT UPDATE (full_name, locale, digit_style, last_active)
+  ON TABLE public.profiles TO authenticated;
 
 COMMIT;
