@@ -3,9 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireAdmin } from '@/lib/auth/guard'
-import { isDbUserRole } from '@/lib/auth/roles'
-
+import { requireInternalRole, isDbUserRole } from '@/lib/auth/guard'
 import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
@@ -54,9 +52,12 @@ export async function getTenant(): Promise<TenantData | null> {
 }
 
 export async function updateTenant(payload: Partial<Pick<TenantData, 'name' | 'settings'>>): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
   const tenantId = await getCurrentTenantId()
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
 
   const supabase = createAdminClient()
 
@@ -207,8 +208,11 @@ export interface InviteInternalUserResult {
 export async function inviteInternalUser(
   args: InviteInternalUserArgs,
 ): Promise<InviteInternalUserResult> {
-  const gate = await requireAdmin()
-  if ('error' in gate) return { error: gate.error }
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
 
   const email = args.email.trim().toLowerCase()
   const fullName = args.fullName.trim()
@@ -303,9 +307,12 @@ export async function inviteInternalUser(
 }
 
 export async function deactivateUser(userId: string): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
   const tenantId = await getCurrentTenantId()
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
 
   const supabase = createAdminClient()
 
@@ -362,9 +369,11 @@ export interface PlatformHealth {
  * Restricted to system_admin / tenant_admin — returns { error } otherwise.
  */
 export async function getPlatformHealth(): Promise<PlatformHealth | { error: string }> {
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
-
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 
