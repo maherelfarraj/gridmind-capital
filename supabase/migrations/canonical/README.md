@@ -299,33 +299,44 @@ database was bootstrapped, destroy it — do not attempt to un-apply the files.
 
 ## 11. Open blockers — this baseline is NOT ready to adopt
 
-### 11.1 Four policies do not match production (BLOCKING)
+### 11.1 RLS policies — FULLY RECONCILED (no longer blocking)
 
-Marked with a `BLOCKED` banner in
-`20260801000003_rls_policies_grants.sql`. Each still carries the **stale dump
-text**, retained only so the object is not silently dropped:
+Resolved 2026-08-01. The four previously `BLOCKED` policies were replaced with
+their verified live production definitions, captured read-only from `pg_policy`,
+and all `BLOCKED` banners were removed.
 
-| Policy | Problem |
+| Dimension | Result |
 |---|---|
-| `comments.comments_insert_auth` | dump allows `tenant_id = '…0001'` (demo tenant); production does not |
-| `comments.comments_select_tenant` | same demo-tenant clause |
-| `gate_templates.gate_templates_select` | same demo-tenant clause |
-| `approval_matrix.approval_matrix_read` | expression drift, cause not yet determined |
+| Policy identities matched | **144 / 144** |
+| Control fingerprints matched (mode + command + roles) | **144 / 144** |
+| Expression fingerprints matched (USING + WITH CHECK) | **144 / 144** |
+| Full fingerprints matched | **144 / 144** |
+| Demo-tenant literals in the canonical draft | **0** |
+| Unresolved policy blockers | **0** |
 
-Adopting these as-is would **widen access** relative to production. Capture the
-live definitions and replace all four before adoption:
+What the four corrections fixed:
 
-```sql
-SELECT tablename, policyname, permissive, cmd, roles, qual, with_check
-  FROM pg_policies
- WHERE schemaname='public'
-   AND policyname IN ('approval_matrix_read','comments_insert_auth',
-                      'comments_select_tenant','gate_templates_select');
-```
+| Policy | Defect in the pg_dump draft |
+|---|---|
+| `approval_matrix.approval_matrix_read` | `USING (true)` — unconditional read of the approval matrix, including external subcontractors. Production restricts to `NOT is_external_role()`. |
+| `comments.comments_insert_auth` | demo-tenant bypass `tenant_id = '…0001'`, absent from production |
+| `comments.comments_select_tenant` | demo-tenant bypass, plus production's tenant predicate replaced by a bare `auth.uid() IS NOT NULL` (cross-tenant read for any logged-in user) |
+| `gate_templates.gate_templates_select` | same two defects as above |
 
-The capture query failed because the Supabase MCP became unavailable
-(four consecutive failures, including a minimal probe). This is a tooling
-outage, not a schema problem — retry later.
+All four also omitted `TO authenticated`, which Postgres treats as `PUBLIC` —
+reaching `anon`, which holds `GRANT ALL` on nearly every relation with RLS as the
+only barrier. Fixed.
+
+**Normalization used** (applied identically to both sides): strip redundant outer
+parentheses; treat `TO public` and `PUBLIC` as equivalent; treat an omitted `TO`
+as `PUBLIC`; compare exact command, permissive/restrictive mode, sorted roles,
+normalized `USING`, normalized `WITH CHECK`. Two `pg_get_expr` deparser artifacts
+are also normalized: the output-column alias it adds to a scalar sub-select
+(`SELECT auth.uid() AS uid`) and its space after an opening parenthesis. Both are
+rendering-only; Postgres reproduces them when it re-deparses the written SQL.
+
+> Reconciliation covers the RLS policy layer **only**. It does not make the
+> overall canonical baseline ready for execution — see 11.2 through 11.4.
 
 ### 11.2 Never executed
 

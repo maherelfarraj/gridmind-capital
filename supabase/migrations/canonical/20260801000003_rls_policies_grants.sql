@@ -241,17 +241,17 @@ CREATE POLICY ann_external_read ON public.client_announcements FOR SELECT TO aut
 
 CREATE POLICY ann_internal_read ON public.client_announcements FOR SELECT TO authenticated USING ((NOT public.is_external_role()));
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
--- !! expression drift confirmed; production definition NOT captured
--- !! Verified by normalized expression fingerprint against pg_policies:
--- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could NOT be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE DUMP
--- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting. See README 11.1.
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-CREATE POLICY approval_matrix_read ON public.approval_matrix FOR SELECT USING (true);
+-- Reconciled against production pg_policy on 2026-08-01.
+-- The pg_dump draft had USING (true) -- an unconditional read of the approval
+-- matrix, including external subcontractors -- and omitted TO authenticated.
+CREATE POLICY approval_matrix_read
+  ON public.approval_matrix
+  AS PERMISSIVE
+  FOR SELECT
+  TO authenticated
+  USING (
+    NOT public.is_external_role()
+  );
 
 CREATE POLICY approval_rules_insert ON public.approval_rules FOR INSERT WITH CHECK ((tenant_id = public.get_my_tenant_id()));
 
@@ -293,29 +293,30 @@ CREATE POLICY cir_update ON public.client_information_requests FOR UPDATE TO aut
 
 CREATE POLICY client_reports_external_read ON public.client_reports AS RESTRICTIVE FOR SELECT TO authenticated USING (((NOT public.is_external_role()) OR ((status = 'issued'::text) AND public.has_external_access(project_id))));
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
--- !! dump grants access when tenant_id = the demo tenant '...0001'; production does NOT
--- !! Verified by normalized expression fingerprint against pg_policies:
--- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could NOT be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE DUMP
--- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting. See README 11.1.
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-CREATE POLICY comments_insert_auth ON public.comments FOR INSERT WITH CHECK (((auth.uid() IS NOT NULL) OR (tenant_id = '00000000-0000-0000-0000-000000000001'::uuid)));
+-- Reconciled against production pg_policy on 2026-08-01.
+-- The pg_dump draft carried a demo-tenant bypass (tenant_id = '...0001') that
+-- production has already removed, and omitted TO authenticated.
+CREATE POLICY comments_insert_auth
+  ON public.comments
+  AS PERMISSIVE
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    (SELECT auth.uid()) IS NOT NULL
+  );
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
--- !! dump grants access when tenant_id = the demo tenant '...0001'; production does NOT
--- !! Verified by normalized expression fingerprint against pg_policies:
--- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could NOT be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE DUMP
--- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting. See README 11.1.
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-CREATE POLICY comments_select_tenant ON public.comments FOR SELECT USING (((tenant_id = '00000000-0000-0000-0000-000000000001'::uuid) OR (auth.uid() IS NOT NULL)));
+-- Reconciled against production pg_policy on 2026-08-01.
+-- The pg_dump draft replaced production's tenant predicate with a bare
+-- auth.uid() IS NOT NULL (cross-tenant read for any logged-in user), added a
+-- demo-tenant bypass, and omitted TO authenticated.
+CREATE POLICY comments_select_tenant
+  ON public.comments
+  AS PERMISSIVE
+  FOR SELECT
+  TO authenticated
+  USING (
+    tenant_id = public.get_my_tenant_id()
+  );
 
 CREATE POLICY comments_update_author ON public.comments FOR UPDATE USING ((auth.uid() = author_id));
 
@@ -381,17 +382,18 @@ CREATE POLICY energy_production_update ON public.energy_production FOR UPDATE US
 
 CREATE POLICY eng_packages_external_read ON public.engineering_packages AS RESTRICTIVE FOR SELECT TO authenticated USING (((NOT public.is_external_role()) OR ((visible_to_client = true) AND public.has_external_access(project_id))));
 
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
--- !! BLOCKED -- THIS POLICY DOES NOT MATCH PRODUCTION. DO NOT ADOPT.    !!
--- !! dump grants access when tenant_id = the demo tenant '...0001'; production does NOT
--- !! Verified by normalized expression fingerprint against pg_policies:
--- !! 140 of 144 policies matched exactly; this is one of the 4 that did not.
--- !! Production's exact definition could NOT be captured -- the Supabase MCP
--- !! became unavailable mid-capture. The statement below is the STALE DUMP
--- !! version, retained only so the object is not silently omitted.
--- !! ACTION: replace with the live definition before adopting. See README 11.1.
--- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-CREATE POLICY gate_templates_select ON public.gate_templates FOR SELECT USING (((tenant_id = '00000000-0000-0000-0000-000000000001'::uuid) OR (auth.uid() IS NOT NULL)));
+-- Reconciled against production pg_policy on 2026-08-01.
+-- The pg_dump draft replaced production's tenant predicate with a bare
+-- auth.uid() IS NOT NULL (cross-tenant read for any logged-in user), added a
+-- demo-tenant bypass, and omitted TO authenticated.
+CREATE POLICY gate_templates_select
+  ON public.gate_templates
+  AS PERMISSIVE
+  FOR SELECT
+  TO authenticated
+  USING (
+    tenant_id = public.get_my_tenant_id()
+  );
 
 CREATE POLICY gate_templates_write ON public.gate_templates USING ((auth.uid() IS NOT NULL)) WITH CHECK ((auth.uid() IS NOT NULL));
 

@@ -7,7 +7,7 @@ A. STRUCTURAL CHECKS
    OK  20260801000000_schema_types_tables.sql   1768 lines  txn=1/1  parens=0
    OK  20260801000001_constraints_indexes.sql   1072 lines  txn=1/1  parens=0
    OK  20260801000002_functions_triggers.sql     503 lines  txn=1/1  parens=0
-   OK  20260801000003_rls_policies_grants.sql    590 lines  txn=1/1  parens=0
+   OK  20260801000003_rls_policies_grants.sql    592 lines  txn=1/1  parens=0
    OK  20260801000004_views.sql                  192 lines  txn=1/1  parens=0
    OK  20260801000005_postconditions.sql         293 lines  txn=1/1  parens=0
    - each file wrapped in exactly one BEGIN/COMMIT
@@ -34,16 +34,45 @@ C. COLUMN-LEVEL FINGERPRINT  -- EXACT MATCH
    103 tables / 1177 columns.
    Includes the one genuine drift repaired: +approval_steps.decision_note.
 
-D. POLICY EXPRESSION FINGERPRINT  -- 4 MISMATCHES (BLOCKING)
-   normalized md5 (mode + command + roles + USING + WITH CHECK):
-     140 of 144 matched production exactly
-       4 DRIFTED -> each annotated in file 4 with a BLOCKED banner
-   Name-level comparison alone had passed on all four. Three of them
-   (comments_insert_auth, comments_select_tenant, gate_templates_select) grant
-   access when tenant_id = the demo tenant, a clause production has already
-   removed; adopting the dump verbatim would have re-widened access.
-   The fourth (approval_matrix_read) drifted for reasons not yet determined.
-   See README section 11.1.
+D. POLICY RECONCILIATION  -- FULLY RECONCILED, 0 BLOCKERS
+   Resolved 2026-08-01 against live pg_policy (read-only).
+
+     total live policies                144
+     total draft policies               144
+     policy identities matched          144 / 144   OK
+     control fingerprints matched       144 / 144   OK   (mode+command+roles)
+     expression fingerprints matched    144 / 144   OK   (USING+WITH CHECK)
+     FULL fingerprints matched          144 / 144   OK
+     role-target mismatches               0         OK
+     USING mismatches                     0         OK
+     WITH CHECK mismatches                0         OK
+     command mismatches                   0         OK
+     permissive/restrictive mismatches    0         OK
+     missing from draft                   0         OK
+     extra in draft                       0         OK
+     demo-tenant literals in draft        0         OK
+     unresolved policy blockers           0         OK
+
+   The 4 previously BLOCKED policies were replaced with their verified live
+   definitions and all BLOCKED banners were removed:
+     approval_matrix_read    dump had USING (true) -- unconditional read of the
+                             approval matrix incl. external subcontractors;
+                             production restricts to NOT is_external_role()
+     comments_insert_auth    dump had a demo-tenant bypass, absent in production
+     comments_select_tenant  demo-tenant bypass + production's tenant predicate
+                             replaced by bare auth.uid() IS NOT NULL, i.e.
+                             cross-tenant read for any logged-in user
+     gate_templates_select   same two defects
+   All four also omitted TO authenticated (= PUBLIC, reaching anon). Fixed.
+
+   Normalization, applied identically to both sides: strip redundant outer
+   parens; TO public == PUBLIC; omitted TO == PUBLIC; exact command; exact
+   permissive/restrictive mode; sorted roles; normalized USING; normalized
+   WITH CHECK. Two pg_get_expr deparser artifacts are also normalized -- the
+   output-column alias on a scalar sub-select (SELECT auth.uid() AS uid) and
+   the space after an opening paren. Both are rendering-only.
+   Python-side normalization was hash-verified against SQL-side normalization
+   before use. See README section 11.1.
 
 E. SAFETY SCANS
    OK  zero INSERT / UPDATE / DELETE outside function bodies
@@ -71,15 +100,20 @@ F. DEPENDENCY ORDERING
    OK  every view's base relation resolves (12 relations, 0 unresolved)
 
 ======================================================================
-VERDICT: ALL STATIC CHECKS PASS -- THE BASELINE IS STILL NOT ADOPTABLE.
+VERDICT: ALL STATIC CHECKS PASS. THE RLS POLICY LAYER IS FULLY RECONCILED
+         (144/144, 0 blockers). THE BASELINE AS A WHOLE IS STILL NOT READY
+         FOR EXECUTION.
 
-Blocking, in order:
-  1. 4 policies do not match production and still carry stale dump text.
-     Capture the live definitions and substitute them. (README 11.1)
-  2. Nothing here has ever been executed. Static analysis cannot prove that a
+Resolved:
+  - 4 policy blockers closed. All 144 policies now match production on
+    identity, control and expression fingerprints. Zero demo-tenant literals
+    remain in the canonical policy draft. (README 11.1)
+
+Still blocking, in order:
+  1. Nothing here has ever been executed. Static analysis cannot prove that a
      single CREATE statement succeeds. A disposable-database run is mandatory
      before adoption. (README 7)
-  3. Data types, nullability, defaults, FK actions and index predicates are
+  2. Data types, nullability, defaults, FK actions and index predicates are
      count-verified only, never shape-verified. (README 11.3)
 
 Not established by this report: statement validity, runtime behaviour, RLS
