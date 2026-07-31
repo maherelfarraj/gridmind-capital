@@ -20,9 +20,22 @@ export interface AuthActor {
   userId: string
   role: string
   tenantId: string | null
+  isActive: boolean
 }
 
 export type GuardResult = { actor: AuthActor } | { error: string }
+
+/** Canonical whitelist of all valid roles (matches DB CHECK constraint) */
+export const CANONICAL_ROLES = [
+  'system_admin', 'tenant_admin', 'project_director', 'project_manager',
+  'engineer', 'hse_manager', 'commissioning_manager', 'finance_manager',
+  'commercial_manager', 'viewer', 'subcontractor', 'client_viewer'
+] as const
+
+/** Validator: Is this role in the canonical whitelist? */
+export function isDbUserRole(role: unknown): role is typeof CANONICAL_ROLES[number] {
+  return typeof role === 'string' && CANONICAL_ROLES.includes(role as typeof CANONICAL_ROLES[number])
+}
 
 /** Roles allowed to manage tenant/user administration and override approval assignments. */
 export const ADMIN_ROLES = ['system_admin', 'tenant_admin'] as const
@@ -38,7 +51,12 @@ export const APPROVER_ROLES = [
 
 /**
  * Resolve the authenticated caller and their profile role.
- * Returns { error } when not authenticated.
+ * FAIL-CLOSED: Returns { error } if:
+ *   - Not authenticated
+ *   - Profile does not exist (signup not yet provisioned)
+ *   - Profile is inactive
+ *   - Profile has invalid/null tenant_id (unprovisioned)
+ *   - Profile role is not in canonical whitelist
  *
  * Wrapped in React cache() to dedupe per HTTP request.
  */
@@ -50,20 +68,41 @@ export const getAuthActor = cache(async (): Promise<GuardResult> => {
 
   if (!user) return { error: 'Not authenticated' }
 
-  // Read the caller's role via the admin client so the lookup itself
-  // is not subject to RLS visibility rules.
+  // Read the caller's profile via the admin client
+  // (lookup itself is not subject to RLS visibility rules)
   const admin = createAdminClient()
-  const { data: profile } = await admin
+  const { data: profile, error } = await admin
     .from('profiles')
-    .select('role, tenant_id')
+    .select('role, tenant_id, is_active')
     .eq('id', user.id)
     .single()
+
+  // FAIL-CLOSED: Profile must exist
+  if (error || !profile) {
+    return { error: 'User profile not found. Contact administrator.' }
+  }
+
+  // FAIL-CLOSED: User must be active
+  if (!profile.is_active) {
+    return { error: 'User account is inactive. Contact administrator.' }
+  }
+
+  // FAIL-CLOSED: User must have a provisioned tenant
+  if (!profile.tenant_id) {
+    return { error: 'User is not provisioned to any tenant. Contact administrator.' }
+  }
+
+  // FAIL-CLOSED: Role must be in canonical whitelist (no silent downgrade to viewer)
+  if (!isDbUserRole(profile.role)) {
+    return { error: `Invalid or missing role: ${profile.role}` }
+  }
 
   return {
     actor: {
       userId: user.id,
-      role: profile?.role ?? 'viewer',
-      tenantId: profile?.tenant_id ?? null,
+      role: profile.role,
+      tenantId: profile.tenant_id,
+      isActive: profile.is_active,
     },
   }
 })
@@ -141,14 +180,16 @@ export async function requireAssignedApprover(
 }
 
 /**
- * Guard: Require authenticated user session.
- * Throws error if no session or no profile.
+ * Guard: Require authenticated, active, provisioned user.
+ * FAIL-CLOSED: Throws if user is missing, unprovisioned, inactive, or invalid.
  *
  * Use at the start of every exported mutation to ensure:
  * 1. User is authenticated (session exists)
- * 2. User profile exists in the database
- * 3. User's identity and role are available for authorization checks
+ * 2. User profile exists and is active
+ * 3. User is provisioned (tenant_id is not null)
+ * 4. User has canonical role
  *
+ * getAuthActor() already enforces all these checks; requireUser() adds explicit guard.
  * Returns { userId, profile } on success, throws on error.
  */
 export async function requireUser(): Promise<{ userId: string; profile: AuthActor }> {
@@ -161,7 +202,7 @@ export async function requireUser(): Promise<{ userId: string; profile: AuthActo
 
 /**
  * Guard: Require user with one of the specified internal roles.
- * Throws error if user role not in the allowed list.
+ * FAIL-CLOSED: Throws if user is not authenticated, inactive, unprovisioned, or role not allowed.
  *
  * Use this for operations restricted to admins or staff.
  * Never pass untrusted user-submitted role values.
@@ -174,11 +215,19 @@ export async function requireInternalRole(allowed: readonly string[]): Promise<{
     throw new Error(res.error)
   }
 
-  if (!res.actor.role || !allowed.includes(res.actor.role)) {
-    throw new Error(`Unauthorized: User role '${res.actor.role}' not in allowed list [${allowed.join(', ')}]`)
+  const actor = res.actor
+  
+  // Verify role is in allowed list
+  if (!actor.role || !allowed.includes(actor.role)) {
+    throw new Error(`Unauthorized: User role '${actor.role}' not in allowed list [${allowed.join(', ')}]`)
   }
 
-  return { userId: res.actor.userId, profile: res.actor }
+  // Verify tenant (getAuthActor already checked, but be explicit)
+  if (!actor.tenantId) {
+    throw new Error('User is not provisioned to any tenant.')
+  }
+
+  return { userId: actor.userId, profile: actor }
 }
 
 /**
