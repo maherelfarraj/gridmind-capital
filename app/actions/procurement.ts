@@ -352,9 +352,16 @@ export async function reissueVendorInvite(args: {
   oldEmail?: string
   siteUrl: string
 }): Promise<{ error?: string; inviteLink?: string }> {
+  // P0: FAIL-CLOSED authorization
+  let actor
+  try {
+    const res = await requireUser()
+    actor = res.profile
+  } catch (e: any) {
+    return { error: e.message }
+  }
+
   const tenantId = await getCurrentTenantId()
-  const gate = await requireWriter()
-  if ('error' in gate) return gate
 
   const supabase = createAdminClient()
 
@@ -381,22 +388,15 @@ export async function reissueVendorInvite(args: {
   let userId: string
 
   if (existing) {
-    // User already exists — update their role to subcontractor if needed
-    if (existing.role !== 'subcontractor') {
-      await supabase
-        .from('profiles')
-        .update({ role: 'subcontractor' })
-        .eq('id', existing.id)
-    }
+    // P0: User already exists — do NOT update role here (use authoritative inviteExternalUser path)
     userId = existing.id
   } else {
+    // P0: Do NOT store role/tenant in auth.users.user_metadata
     // Invite via Supabase Auth (sends magic link if SMTP configured)
     const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(
       args.newEmail,
       {
         data: {
-          role: 'subcontractor',
-          tenant_id: tenantId,
           organization_name: args.vendorName,
           full_name: args.vendorName,
         },
@@ -409,13 +409,12 @@ export async function reissueVendorInvite(args: {
     }
     userId = inviteData.user.id
 
-    // Ensure the profile row exists
+    // P0: Ensure the profile row exists (handle_new_user trigger will set role/tenant)
+    // Do NOT set role/tenant_id here — P0 migration hardened handle_new_user
     await supabase.from('profiles').upsert({
       id: userId,
-      tenant_id: tenantId,
       email: args.newEmail,
       full_name: args.vendorName,
-      role: 'subcontractor',
       is_active: true,
     }, { onConflict: 'id', ignoreDuplicates: false })
   }

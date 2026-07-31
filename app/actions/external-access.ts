@@ -169,13 +169,13 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
     userId = existing.id
     await admin.from('profiles').update({ role: args.role }).eq('id', userId)
   } else {
+    // P0: Do NOT store role/tenant in auth.users.user_metadata
+    // The P0 migration hardened handle_new_user trigger to NOT use metadata as authority
     // Step 2 — invite via Supabase Auth (sends magic link if SMTP configured).
     const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
       args.email,
       {
         data: {
-          role: args.role,
-          tenant_id: tenantId,
           organization_name: args.organizationName,
           full_name: '',
         },

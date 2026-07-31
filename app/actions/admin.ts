@@ -98,25 +98,74 @@ export async function getUsers(): Promise<UserProfile[]> {
 }
 
 export async function updateUserRole(userId: string, role: string): Promise<{ error?: string }> {
-  const tenantId = await getCurrentTenantId()
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
+  // P0: FAIL-CLOSED authorization
+  let actor
+  try {
+    const res = await requireInternalRole(['system_admin', 'tenant_admin'])
+    actor = res.profile
+  } catch (e: any) {
+    return { error: e.message }
+  }
 
-  // `profiles.role` is a Postgres enum. Writing a value outside the enum
-  // raises 22P02, so reject unknown roles up front with a clear message.
+  const tenantId = actor.tenantId
+
+  // P0: Validate requested role is in canonical whitelist
   if (!isDbUserRole(role)) {
     return { error: `"${role}" is not a valid role.` }
   }
 
-  const supabase = createAdminClient()
+  // P0: tenant_admin cannot assign system_admin
+  if (actor.role === 'tenant_admin' && role === 'system_admin') {
+    return { error: 'Only system_admin can assign system_admin role' }
+  }
 
-  const { error } = await supabase
+  const admin = createAdminClient()
+
+  // P0: Verify target user exists and is in the same tenant
+  const { data: targetProfile, error: lookupErr } = await admin
     .from('profiles')
-    .update({ role })
+    .select('id, role, tenant_id, is_active')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (lookupErr) return { error: `Profile lookup failed: ${lookupErr.message}` }
+  if (!targetProfile) return { error: 'User not found' }
+  
+  // P0: tenant_admin can only manage users in their tenant
+  if (actor.role === 'tenant_admin' && targetProfile.tenant_id !== tenantId) {
+    return { error: 'Cannot modify users outside your tenant' }
+  }
+
+  // P0: tenant_admin cannot modify existing system_admin
+  if (actor.role === 'tenant_admin' && targetProfile.role === 'system_admin') {
+    return { error: 'Cannot modify system_admin accounts' }
+  }
+
+  // P0: Update role
+  const { error } = await admin
+    .from('profiles')
+    .update({ role, updated_at: new Date().toISOString() })
     .eq('id', userId)
     .eq('tenant_id', tenantId)
 
   if (error) return { error: error.message }
+
+  // P0: Write audit log (required by P0 migration)
+  try {
+    await admin.from('audit_log').insert({
+      tenant_id: tenantId,
+      actor_id: actor.userId,
+      action: 'updateUserRole',
+      resource_type: 'profile',
+      resource_id: userId,
+      details: { old_role: targetProfile.role, new_role: role },
+      timestamp: new Date().toISOString(),
+    })
+  } catch (auditErr: any) {
+    // Log audit failure but don't fail the mutation (already committed)
+    console.error('[P0] Audit log insert failed:', auditErr.message)
+  }
+
   return {}
 }
 
@@ -199,9 +248,11 @@ export async function inviteInternalUser(
       .eq('id', userId)
     if (updErr) return { error: updErr.message }
   } else {
+    // P0: Do NOT store role/tenant in auth.users.user_metadata
+    // The P0 migration hardened handle_new_user trigger to NOT use metadata as authority
     // Step 2 — create the auth user. Sends the invite email when SMTP is set.
     const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { role: args.role, tenant_id: tenantId, full_name: fullName },
+      data: { full_name: fullName },
       redirectTo: `${args.siteUrl}/auth/callback?next=/`,
     })
 
