@@ -83,3 +83,25 @@ describe('canonical role source', () => {
     expect(guard.isDbUserRole).toBe(isDbUserRole)
   })
 })
+
+/**
+ * Tenant isolation. `getCurrentTenantId()` and `actor.tenantId` are both
+ * non-null-or-throw, so a `if (tenantId) query.eq('tenant_id', ...)` guard is
+ * dead code whose only reachable effect is an UNFILTERED cross-tenant read.
+ */
+describe('tenant filters are unconditional', () => {
+  it('no server action guards a tenant filter behind a truthiness check', () => {
+    const code = readCode('app/actions/approvals.ts')
+
+    expect(code).not.toMatch(/if\s*\(\s*tenantId\s*\)/)
+    expect(code).not.toMatch(/if\s*\(\s*scope\.tenantId\s*\)/)
+  })
+
+  it('still applies a tenant filter to the approvals queries', () => {
+    const code = readCode('app/actions/approvals.ts')
+
+    // Guard against "fixing" the above by deleting the filter entirely.
+    expect(code).toMatch(/\.eq\('tenant_id', tenantId\)/)
+    expect(code).toMatch(/\.eq\('tenant_id', scope\.tenantId\)/)
+  })
+})

@@ -713,7 +713,10 @@ export async function getApprovals(approverRole?: string): Promise<ApprovalRecor
     .order('created_at', { ascending: false })
     .limit(100)
 
-  if (tenantId) query = query.eq('tenant_id', tenantId)
+  // Unconditional: getCurrentTenantId() returns a non-null string or throws,
+  // so this guard could only ever be skipped by a future regression — and
+  // skipping it returns every tenant's approvals.
+  query = query.eq('tenant_id', tenantId)
 
   // Scope to the approver's object types. If the role has no rules, it sees nothing.
   if (allowedObjectTypes !== null) {
@@ -1181,7 +1184,9 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
     .from('approvals')
     .select('id, object_type, status, priority, created_at')
     .order('created_at', { ascending: false })
-  if (tenantId) approvalsQuery = approvalsQuery.eq('tenant_id', tenantId)
+  // Unconditional — see getApprovals(): a skipped tenant filter is a
+  // cross-tenant read, not a harmless wider query.
+  approvalsQuery = approvalsQuery.eq('tenant_id', tenantId)
   if (allowedObjectTypes !== null) {
     // `.in()` with an empty list yields zero rows, which is the correct answer
     // for a role that routes to nothing.
@@ -1196,7 +1201,7 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
     .from('approval_rules')
     .select('object_type, approval_levels, required_roles')
     .order('approval_levels')
-  if (tenantId) rulesQuery = rulesQuery.eq('tenant_id', tenantId)
+  rulesQuery = rulesQuery.eq('tenant_id', tenantId)
   if (allowedObjectTypes !== null) rulesQuery = rulesQuery.in('object_type', allowedObjectTypes)
 
   const [appRes, rulesRes] = await Promise.all([approvalsQuery, rulesQuery])
