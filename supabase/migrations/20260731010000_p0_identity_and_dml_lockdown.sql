@@ -188,6 +188,107 @@ REVOKE EXECUTE ON FUNCTION public.handle_new_user()
   FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
+-- 1b. Ensure the auth.users provisioning trigger actually exists
+-- ----------------------------------------------------------------------------
+-- Rewriting handle_new_user() is worthless if nothing invokes it. A Supabase
+-- development branch can be provisioned without the on_auth_user_created
+-- trigger, which would leave every new signup with no profile row at all.
+--
+-- An existing trigger is inspected rather than trusted: a trigger with the
+-- right NAME but the wrong function, timing, level, or event provides no
+-- guarantee. An incompatible trigger raises an exception instead of being
+-- silently dropped or replaced, because dropping an unknown trigger could
+-- destroy provisioning behavior this migration does not own.
+--
+-- tgtype bit layout (see PostgreSQL src/include/catalog/pg_trigger.h):
+--   bit 0 (1)  = ROW level        (must be SET)
+--   bit 1 (2)  = BEFORE           (must be CLEAR -> AFTER)
+--   bit 2 (4)  = INSERT           (must be SET)
+--   bit 6 (64) = INSTEAD OF       (must be CLEAR)
+
+DO $ensure_auth_trigger$
+DECLARE
+  trigger_row  pg_trigger%ROWTYPE;
+  match_count  integer;
+BEGIN
+  IF to_regclass('auth.users') IS NULL THEN
+    RAISE EXCEPTION
+      'P0: auth.users is missing; cannot guarantee profile provisioning';
+  END IF;
+
+  SELECT count(*)
+    INTO match_count
+  FROM pg_trigger
+  WHERE tgrelid = 'auth.users'::regclass
+    AND tgname  = 'on_auth_user_created'
+    AND NOT tgisinternal;
+
+  IF match_count = 0 THEN
+    EXECUTE
+      'CREATE TRIGGER on_auth_user_created '
+      'AFTER INSERT ON auth.users '
+      'FOR EACH ROW '
+      'EXECUTE FUNCTION public.handle_new_user()';
+
+    RAISE NOTICE
+      'P0: on_auth_user_created was absent and has been created on auth.users';
+
+  ELSIF match_count > 1 THEN
+    RAISE EXCEPTION
+      'P0: % triggers named on_auth_user_created exist on auth.users; resolve manually',
+      match_count;
+
+  ELSE
+    SELECT *
+      INTO trigger_row
+    FROM pg_trigger
+    WHERE tgrelid = 'auth.users'::regclass
+      AND tgname  = 'on_auth_user_created'
+      AND NOT tgisinternal;
+
+    IF trigger_row.tgfoid <> 'public.handle_new_user()'::regprocedure THEN
+      RAISE EXCEPTION
+        'P0: on_auth_user_created calls %, not public.handle_new_user(); refusing to replace it',
+        trigger_row.tgfoid::regprocedure;
+    END IF;
+
+    IF (trigger_row.tgtype & 1) = 0 THEN
+      RAISE EXCEPTION
+        'P0: on_auth_user_created is statement-level; a row-level trigger is required';
+    END IF;
+
+    IF (trigger_row.tgtype & 4) = 0 THEN
+      RAISE EXCEPTION
+        'P0: on_auth_user_created does not fire on INSERT';
+    END IF;
+
+    IF (trigger_row.tgtype & 2) <> 0 THEN
+      RAISE EXCEPTION
+        'P0: on_auth_user_created fires BEFORE INSERT; AFTER INSERT is required';
+    END IF;
+
+    IF (trigger_row.tgtype & 64) <> 0 THEN
+      RAISE EXCEPTION
+        'P0: on_auth_user_created is an INSTEAD OF trigger; AFTER INSERT is required';
+    END IF;
+
+    RAISE NOTICE
+      'P0: existing on_auth_user_created trigger verified compatible';
+
+    -- 'O' = fires in origin/local mode. 'D' (disabled) or replica-only modes
+    -- would leave provisioning silently inert.
+    IF trigger_row.tgenabled <> 'O' THEN
+      EXECUTE 'ALTER TABLE auth.users ENABLE TRIGGER on_auth_user_created';
+
+      RAISE NOTICE
+        'P0: on_auth_user_created was in tgenabled=% and has been re-enabled',
+        trigger_row.tgenabled;
+    END IF;
+  END IF;
+END
+$ensure_auth_trigger$;
+
+-- ----------------------------------------------------------------------------
 -- 2. get_my_tenant_id() — fail-closed tenant resolution for RLS
 -- ----------------------------------------------------------------------------
 
@@ -559,7 +660,74 @@ GRANT UPDATE (full_name, locale, digit_style, last_active)
   ON TABLE public.profiles TO authenticated;
 
 -- ----------------------------------------------------------------------------
--- 10. POSTCONDITION — no structural privileges survive for browser roles
+-- 10. Server-only reporting views — browser lockdown + invoker semantics
+-- ----------------------------------------------------------------------------
+-- A view without security_invoker executes as its OWNER, so it silently
+-- bypasses RLS on every base table it reads. Combined with a default SELECT
+-- grant to anon/authenticated, each of these views is an unrestricted
+-- cross-tenant read of the governance surface it aggregates.
+--
+-- A repository scan proved all six are server-only: every reference lives in
+-- lib/db/queries.ts (an `import 'server-only'` module) and goes through
+-- createAdminClient() (service_role). No 'use client' file touches them.
+--
+-- Both fixes are applied: privileges are revoked so browsers cannot reach the
+-- views at all, and security_invoker is enabled as defense in depth so the
+-- views stop laundering owner privileges even if a grant is restored later.
+-- service_role is deliberately untouched and continues to bypass RLS.
+--
+-- The views are NOT dropped, recreated, redefined, or fed into any
+-- ALTER TABLE ... ENABLE ROW LEVEL SECURITY loop (invalid for views).
+
+DO $lock_server_only_views$
+DECLARE
+  target_views CONSTANT text[] := ARRAY[
+    'v_gate_progress',
+    'v_inbox',
+    'v_person_task_load',
+    'v_person_workload',
+    'v_project_staffing',
+    'v_role_workload'
+  ];
+  view_name text;
+  view_oid  oid;
+  kind      "char";
+BEGIN
+  FOREACH view_name IN ARRAY target_views LOOP
+    view_oid := to_regclass(format('public.%I', view_name));
+
+    IF view_oid IS NULL THEN
+      RAISE NOTICE 'P0: view public.% not present; skipping', view_name;
+      CONTINUE;
+    END IF;
+
+    SELECT c.relkind INTO kind FROM pg_class c WHERE c.oid = view_oid;
+
+    IF kind <> 'v' THEN
+      RAISE EXCEPTION
+        'P0: public.% is relkind=%, expected a view; refusing to alter it',
+        view_name, kind;
+    END IF;
+
+    EXECUTE format(
+      'REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC, anon, authenticated',
+      view_name
+    );
+
+    EXECUTE format(
+      'ALTER VIEW public.%I SET (security_invoker = true)',
+      view_name
+    );
+
+    RAISE NOTICE
+      'P0: public.% locked to server-only access with invoker semantics',
+      view_name;
+  END LOOP;
+END
+$lock_server_only_views$;
+
+-- ----------------------------------------------------------------------------
+-- 11. POSTCONDITION — no structural privileges survive for browser roles
 -- ----------------------------------------------------------------------------
 -- Runs before COMMIT so any surviving MAINTAIN/TRUNCATE/TRIGGER/REFERENCES
 -- grant aborts the transaction and rolls the whole migration back.
@@ -603,5 +771,116 @@ BEGIN
     'P0 postcondition passed: anon/authenticated retain no MAINTAIN, TRUNCATE, TRIGGER, or REFERENCES privileges on public relations';
 END
 $verify_structural_privileges$;
+
+-- ----------------------------------------------------------------------------
+-- 12. POSTCONDITION — exactly one enabled, compatible auth trigger
+-- ----------------------------------------------------------------------------
+-- Re-derived from the catalog rather than trusting section 1b, so that any
+-- later statement in this transaction that disturbed the trigger is caught
+-- before COMMIT.
+
+DO $verify_auth_trigger$
+DECLARE
+  compatible_count integer;
+BEGIN
+  SELECT count(*)
+    INTO compatible_count
+  FROM pg_trigger t
+  WHERE t.tgrelid = 'auth.users'::regclass
+    AND t.tgname  = 'on_auth_user_created'
+    AND NOT t.tgisinternal
+    AND t.tgfoid    = 'public.handle_new_user()'::regprocedure
+    AND t.tgenabled = 'O'
+    AND (t.tgtype & 1)  <> 0   -- row level
+    AND (t.tgtype & 4)  <> 0   -- fires on INSERT
+    AND (t.tgtype & 2)  =  0   -- AFTER, not BEFORE
+    AND (t.tgtype & 64) =  0;  -- not INSTEAD OF
+
+  IF compatible_count <> 1 THEN
+    RAISE EXCEPTION
+      'P0 postcondition failed: expected exactly 1 enabled AFTER INSERT ROW trigger '
+      'on auth.users named on_auth_user_created calling public.handle_new_user(), found %',
+      compatible_count;
+  END IF;
+
+  RAISE NOTICE
+    'P0 postcondition passed: on_auth_user_created is present, enabled, and correctly bound';
+END
+$verify_auth_trigger$;
+
+-- ----------------------------------------------------------------------------
+-- 13. POSTCONDITION — server-only views are invoker-scoped and browser-denied
+-- ----------------------------------------------------------------------------
+-- Verifies every view that actually exists. reloptions is NULL when a view has
+-- no options set, so it is coalesced to an empty array before the membership
+-- test to avoid a NULL comparison silently passing.
+
+DO $verify_server_only_views$
+DECLARE
+  target_views CONSTANT text[] := ARRAY[
+    'v_gate_progress',
+    'v_inbox',
+    'v_person_task_load',
+    'v_person_workload',
+    'v_project_staffing',
+    'v_role_workload'
+  ];
+  view_name  text;
+  view_oid   oid;
+  kind       "char";
+  opts       text[];
+  checked    integer := 0;
+BEGIN
+  FOREACH view_name IN ARRAY target_views LOOP
+    view_oid := to_regclass(format('public.%I', view_name));
+
+    IF view_oid IS NULL THEN
+      RAISE NOTICE 'P0: view public.% absent; postcondition not applicable', view_name;
+      CONTINUE;
+    END IF;
+
+    SELECT c.relkind, coalesce(c.reloptions, ARRAY[]::text[])
+      INTO kind, opts
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.oid = view_oid
+      AND n.nspname = 'public';
+
+    IF kind <> 'v' THEN
+      RAISE EXCEPTION
+        'P0 postcondition failed: public.% is relkind=%, expected v',
+        view_name, kind;
+    END IF;
+
+    IF NOT ('security_invoker=true' = ANY (opts)) THEN
+      RAISE EXCEPTION
+        'P0 postcondition failed: public.% does not have security_invoker=true (reloptions=%)',
+        view_name, opts;
+    END IF;
+
+    IF has_table_privilege('anon', view_oid, 'SELECT') THEN
+      RAISE EXCEPTION
+        'P0 postcondition failed: anon can still SELECT public.%', view_name;
+    END IF;
+
+    IF has_table_privilege('authenticated', view_oid, 'SELECT') THEN
+      RAISE EXCEPTION
+        'P0 postcondition failed: authenticated can still SELECT public.%', view_name;
+    END IF;
+
+    IF NOT has_table_privilege('service_role', view_oid, 'SELECT') THEN
+      RAISE EXCEPTION
+        'P0 postcondition failed: service_role lost SELECT on public.%; server reads would break',
+        view_name;
+    END IF;
+
+    checked := checked + 1;
+  END LOOP;
+
+  RAISE NOTICE
+    'P0 postcondition passed: % server-only view(s) are invoker-scoped, browser-denied, service_role-readable',
+    checked;
+END
+$verify_server_only_views$;
 
 COMMIT;
