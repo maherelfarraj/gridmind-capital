@@ -1,0 +1,91 @@
+CANONICAL BASELINE -- REPOSITORY-ONLY VALIDATION REPORT
+generated 2026-08-01 | static checks only | NO SQL WAS EXECUTED
+======================================================================
+
+1. TRANSACTION BOUNDARIES
+   OK  20260801000000_schema_types_tables.sql: BEGIN=1 COMMIT=1
+   OK  20260801000001_constraints_indexes.sql: BEGIN=1 COMMIT=1
+   OK  20260801000002_functions_triggers.sql: BEGIN=1 COMMIT=1
+   OK  20260801000003_rls_policies_grants.sql: BEGIN=1 COMMIT=1
+   OK  20260801000004_views.sql: BEGIN=1 COMMIT=1
+   OK  20260801000005_postconditions.sql: BEGIN=1 COMMIT=1
+
+2. BALANCED DOLLAR-QUOTES
+   OK  20260801000000_schema_types_tables.sql: 0 delimiters, unbalanced=none
+   OK  20260801000001_constraints_indexes.sql: 0 delimiters, unbalanced=none
+   OK  20260801000002_functions_triggers.sql: 56 delimiters, unbalanced=none
+   OK  20260801000003_rls_policies_grants.sql: 2 delimiters, unbalanced=none
+   OK  20260801000004_views.sql: 2 delimiters, unbalanced=none
+   OK  20260801000005_postconditions.sql: 2 delimiters, unbalanced=none
+
+3. BALANCED PARENTHESES (outside strings/dollar-quotes)
+   OK  20260801000000_schema_types_tables.sql: delta=0
+   OK  20260801000001_constraints_indexes.sql: delta=0
+   OK  20260801000002_functions_triggers.sql: delta=0
+   OK  20260801000003_rls_policies_grants.sql: delta=0
+   OK  20260801000004_views.sql: delta=0
+   OK  20260801000005_postconditions.sql: delta=0
+
+4. FORBIDDEN DML / SEED DATA
+   OK  20260801000000_schema_types_tables.sql: INSERT=0 UPDATE=0 DELETE=0
+   OK  20260801000001_constraints_indexes.sql: INSERT=0 UPDATE=0 DELETE=0
+   FAIL 20260801000002_functions_triggers.sql: INSERT=7 UPDATE=3 DELETE=0  (UPDATE is inside increment_copilot_usage's body -- expected)
+   OK  20260801000003_rls_policies_grants.sql: INSERT=0 UPDATE=0 DELETE=0
+   OK  20260801000004_views.sql: INSERT=0 UPDATE=0 DELETE=0
+   OK  20260801000005_postconditions.sql: INSERT=0 UPDATE=0 DELETE=0
+
+5. FORBIDDEN auth.users DML
+   OK  20260801000000_schema_types_tables.sql: 0 occurrences
+   OK  20260801000001_constraints_indexes.sql: 0 occurrences
+   OK  20260801000002_functions_triggers.sql: 0 occurrences
+   OK  20260801000003_rls_policies_grants.sql: 0 occurrences
+   OK  20260801000004_views.sql: 0 occurrences
+   OK  20260801000005_postconditions.sql: 0 occurrences
+
+6. FORBIDDEN PRODUCTION IDENTIFIERS (uuids / project refs / emails)
+   FAIL 20260801000000_schema_types_tables.sql: uuids=1 projectrefs=0 emails=0
+   OK  20260801000001_constraints_indexes.sql: uuids=0 projectrefs=0 emails=0
+   FAIL 20260801000002_functions_triggers.sql: uuids=1 projectrefs=0 emails=0
+   FAIL 20260801000003_rls_policies_grants.sql: uuids=1 projectrefs=0 emails=0
+   OK  20260801000004_views.sql: uuids=0 projectrefs=0 emails=0
+   OK  20260801000005_postconditions.sql: uuids=0 projectrefs=0 emails=0
+
+7. REFERENCES TO NONEXISTENT TABLES (from quarantined 20260730000005)
+   OK  20260801000000_schema_types_tables.sql: none
+   OK  20260801000001_constraints_indexes.sql: none
+   OK  20260801000002_functions_triggers.sql: none
+   OK  20260801000003_rls_policies_grants.sql: none
+   OK  20260801000004_views.sql: none
+   OK  20260801000005_postconditions.sql: none
+
+8. DUPLICATE OBJECT DEFINITIONS
+   OK  duplicates: none
+
+9. DEPENDENCY ORDERING
+   OK  all dependencies precede their use
+
+10. POLICY TARGETS AND FUNCTION CALLS RESOLVE
+   OK  policy target tables: 59 referenced, missing=none
+   OK  helper fns called by policies: ['current_user_role', 'get_my_tenant_id', 'has_external_access', 'is_external_role'], missing=none
+
+11. VIEW DEPENDENCIES RESOLVE
+   OK  view base relations: 12, unresolved=none
+
+12. NO DESTRUCTIVE DROPS
+   OK  20260801000000_schema_types_tables.sql: none
+   OK  20260801000001_constraints_indexes.sql: none
+   FAIL 20260801000002_functions_triggers.sql: ['TABLE']
+   OK  20260801000003_rls_policies_grants.sql: none
+   OK  20260801000004_views.sql: none
+   OK  20260801000005_postconditions.sql: none
+
+======================================================================
+VERDICT: 5 FAILURE(S)
+  - supabase/migrations/canonical/20260801000002_functions_triggers.sql: forbidden DML
+  - supabase/migrations/canonical/20260801000000_schema_types_tables.sql: production identifiers ['00000000-0000-0000-0000-000000000001'][][]
+  - supabase/migrations/canonical/20260801000002_functions_triggers.sql: production identifiers ['00000000-0000-0000-0000-000000000001'][][]
+  - supabase/migrations/canonical/20260801000003_rls_policies_grants.sql: production identifiers ['00000000-0000-0000-0000-000000000001'][][]
+  - supabase/migrations/canonical/20260801000002_functions_triggers.sql: destructive DROP ['TABLE']
+
+REMINDER: static analysis only. No SQL was executed against any database.
+Statement-level validity remains UNPROVEN until a disposable-DB run (README section 7).
