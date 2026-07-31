@@ -58,39 +58,69 @@ REVOKE TRUNCATE, TRIGGER, REFERENCES
 -- 0b. Deny the same structural privileges on FUTURE tables
 -- ----------------------------------------------------------------------------
 -- ALL TABLES above only affects tables that exist right now. Default
--- privileges close the gap for anything created later. Default privileges are
--- per-creating-role, so this is applied for each table-owning role that
--- actually exists, plus the role running this migration.
+-- privileges close the gap for anything created later.
+--
+-- Default privileges are per-creating-role, so the owner list is discovered
+-- dynamically rather than hard-coded: current_user plus the actual owners of
+-- every relation in the public schema. Role existence alone is not enough —
+-- ALTER DEFAULT PRIVILEGES FOR ROLE requires the executing role to BE the
+-- target role or hold membership in it, so pg_has_role is checked first and
+-- any role we cannot act for is reported for a separate owner-authorized run.
 
 DO $default_privs$
 DECLARE
-  owner_roles CONSTANT text[] := ARRAY['postgres', 'supabase_admin'];
-  r text;
+  owner_role name;
 BEGIN
-  FOREACH r IN ARRAY owner_roles LOOP
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-      RAISE NOTICE 'P0: role % not present; skipping default-privilege hardening for it', r;
-      CONTINUE;
+  FOR owner_role IN
+    SELECT DISTINCT owner_name
+    FROM (
+      SELECT current_user::name AS owner_name
+
+      UNION
+
+      SELECT pg_get_userbyid(c.relowner)::name
+      FROM pg_class c
+      JOIN pg_namespace n
+        ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+    ) owners
+    WHERE owner_name IS NOT NULL
+  LOOP
+    IF owner_role = current_user
+       OR pg_has_role(current_user, owner_role, 'MEMBER')
+    THEN
+      -- Global defaults: required because a schema-scoped REVOKE cannot
+      -- undo a privilege granted through global default privileges.
+      EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES FOR ROLE %I '
+        'REVOKE TRUNCATE, TRIGGER, REFERENCES '
+        'ON TABLES FROM PUBLIC, anon, authenticated',
+        owner_role
+      );
+
+      -- Schema-scoped defaults: reverses any matching public-schema
+      -- default grants.
+      EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
+        'REVOKE TRUNCATE, TRIGGER, REFERENCES '
+        'ON TABLES FROM PUBLIC, anon, authenticated',
+        owner_role
+      );
+
+      RAISE NOTICE
+        'P0: hardened global and public-schema table defaults for owner role %',
+        owner_role;
+    ELSE
+      RAISE NOTICE
+        'P0: current role % is not a member of owner role %; '
+        'default privileges for that role require a separate owner-authorized operation',
+        current_user,
+        owner_role;
     END IF;
-
-    EXECUTE format(
-      'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
-      'REVOKE TRUNCATE, TRIGGER, REFERENCES ON TABLES FROM PUBLIC, anon, authenticated',
-      r
-    );
-
-    RAISE NOTICE 'P0: future-table TRUNCATE/TRIGGER/REFERENCES denied for owner role %', r;
   END LOOP;
 END
 $default_privs$;
-
--- Same hardening for the role executing this migration, in case it differs
--- from the owner roles enumerated above.
-ALTER DEFAULT PRIVILEGES
-  IN SCHEMA public
-  REVOKE TRUNCATE, TRIGGER, REFERENCES
-  ON TABLES
-  FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 1. handle_new_user() — signup metadata is NOT an authority source
