@@ -1,0 +1,343 @@
+================================================================================
+CANONICAL PRIVILEGE GAP CAPTURE -- PRODUCTION INTROSPECTION
+================================================================================
+Date              : 2026-08-01
+Production project: zmahjutrpvwjcmhkiibj  (authoritative)
+Repository branch : v0/mfarraj-1953-132cc730
+HEAD at capture   : bdbd71349ecdbe7b335292b74f3de5a84730c0b3  (verified, tree clean)
+Method            : metadata-only SELECTs against pg_namespace, pg_class,
+                    pg_proc, pg_attribute, pg_default_acl, pg_auth_members,
+                    pg_roles. Explicit ACL columns (relacl/proacl/attacl/
+                    defaclacl/nspacl) expanded with aclexplode().
+Scope             : REPORT ONLY. No executable SQL changed this turn.
+
+READING NOTE -- EXPLICIT vs EFFECTIVE vs OWNER-DERIVED
+  Every figure below comes from the stored ACL arrays, never from
+  has_table_privilege()/information_schema effective views. Where production
+  shows a `postgres` ACL entry on an object owned by postgres, that entry is
+  the ordinary owner-default that PostgreSQL materialises into the ACL as soon
+  as any GRANT is issued on the object. It is classified OWNER-DERIVED: it
+  needs no statement in the baseline provided the baseline is executed as
+  postgres. It is NOT evidence of a hand-written GRANT.
+
+================================================================================
+1. SCHEMA PRIVILEGES -- public                                     [GAP B1 CLOSED]
+================================================================================
+Schema owner: pg_database_owner        nspacl is NOT NULL (not a default ACL)
+
+| grantee           | USAGE | CREATE | grantor           | grant opt | kind     |
+|-------------------|-------|--------|-------------------|-----------|----------|
+| PUBLIC            | yes   | no     | pg_database_owner | no        | explicit |
+| anon              | yes   | no     | pg_database_owner | no        | explicit |
+| authenticated     | yes   | no     | pg_database_owner | no        | explicit |
+| service_role      | yes   | no     | pg_database_owner | no        | explicit |
+| postgres          | yes   | no     | pg_database_owner | no        | explicit |
+| pg_database_owner | yes   | YES    | pg_database_owner | no        | owner    |
+
+NOT PRESENT as grantees: supabase_admin, supabase_auth_admin, dashboard_user.
+(They reach the schema by superuser / other means, not via this ACL.)
+
+FINDINGS
+  - anon and authenticated DO hold explicit schema USAGE. The section-A table
+    grants are therefore usable in production. My earlier note said this was
+    "never captured" -- it now is, and it is satisfied.
+  - PUBLIC also holds USAGE, so the anon/authenticated entries are redundant in
+    effect but exist explicitly and must be reproduced explicitly.
+  - CREATE is held ONLY by pg_database_owner. postgres does NOT hold CREATE on
+    public via this ACL.
+  - GRANTOR IS pg_database_owner, NOT postgres. A GRANT issued by postgres
+    would record grantor=postgres and would NOT byte-match production.
+
+REQUIRED STATEMENTS (grantor caveat below)
+  GRANT USAGE ON SCHEMA public TO PUBLIC;
+  GRANT USAGE ON SCHEMA public TO anon;
+  GRANT USAGE ON SCHEMA public TO authenticated;
+  GRANT USAGE ON SCHEMA public TO service_role;
+  GRANT USAGE ON SCHEMA public TO postgres;
+  -- pg_database_owner USAGE+CREATE is the owner entry; no statement needed
+  -- when the database owner is unchanged.
+
+================================================================================
+2. TABLE AND VIEW ACLS                                             [GAP B2 CLOSED]
+================================================================================
+All 103 tables and all 6 views: owner = postgres, relacl NOT NULL for every one.
+Privilege set is identical everywhere it appears -- all 8 of
+DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+(= GRANT ALL on PostgreSQL 17). No grant options anywhere. Grantor is postgres
+for every entry.
+
+| kind  | grantee       | relations | priv rows | grantor  | classification |
+|-------|---------------|-----------|-----------|----------|----------------|
+| table | anon          | 102       | 816       | postgres | explicit       |
+| table | authenticated | 102       | 816       | postgres | explicit       |
+| table | service_role  | 103       | 824       | postgres | explicit       |
+| table | postgres      | 103       | 824       | postgres | OWNER-DERIVED  |
+| view  | anon          | 6         | 48        | postgres | explicit       |
+| view  | authenticated | 6         | 48        | postgres | explicit       |
+| view  | service_role  | 6         | 48        | postgres | explicit       |
+| view  | postgres      | 6         | 48        | postgres | OWNER-DERIVED  |
+
+NOT PRESENT as grantees on any public table or view:
+  supabase_admin, supabase_auth_admin, dashboard_user, PUBLIC.
+
+rate_limit_buckets -- exact ACL (the 103rd table):
+  postgres     = all 8   (owner-derived)
+  service_role = all 8   (EXPLICIT)
+  anon         = ABSENT
+  authenticated= ABSENT
+
+FINDINGS
+  - service_role IS granted, on 103 tables + 6 views. The canonical draft has
+    ZERO service_role grants. This is the single largest gap.
+  - rate_limit_buckets is withheld from anon/authenticated ONLY. It is NOT
+    withheld from service_role. The draft's section A2 emits no statement at
+    all for this table, which is correct for anon/authenticated and WRONG for
+    service_role.
+  - No admin role (supabase_admin / supabase_auth_admin / dashboard_user)
+    appears in any public relation ACL. Those entries do not exist and must not
+    be invented.
+
+================================================================================
+3. SEQUENCE ACLS                                                   [GAP B2 CLOSED]
+================================================================================
+Exactly 2 sequences, both owner=postgres, both relacl NOT NULL.
+Names CONFIRMED: approval_events_id_seq, audit_log_id_seq
+(the draft's A4 guess at the identity-sequence naming was correct).
+
+Privileges are SELECT, UPDATE, USAGE for every grantee. Grantor postgres.
+No grant options.
+
+| sequence               | anon | authenticated | service_role | postgres      |
+|------------------------|------|---------------|--------------|---------------|
+| approval_events_id_seq | rwU  | rwU           | rwU          | rwU (derived) |
+| audit_log_id_seq       | rwU  | rwU           | rwU          | rwU (derived) |
+
+FINDING: draft covers anon + authenticated. service_role MISSING on both.
+
+================================================================================
+4. FUNCTION EXECUTE ACLS                                           [GAP B4 CLOSED]
+================================================================================
+28 functions in public. All owner=postgres. All proacl NOT NULL. No grant
+options. Grantor postgres throughout.
+
+27 of 28 share one identical ACL:
+    PUBLIC=X, anon=X, authenticated=X, postgres=X(derived), service_role=X
+
+1 of 28 differs:
+    increment_copilot_usage(p_token_count integer)
+        authenticated=X, postgres=X(derived), service_role=X
+        NO PUBLIC. NO anon.
+
+>>> THERE IS EXACTLY ONE EXCEPTION, NOT TWO. <<<
+The shape-reconciliation report claimed "2 exceptions" among 28 functions and
+named only one. That claim was WRONG: 27 + 1 = 28 and the arithmetic closes.
+The draft's section A6 -- 27 functions to PUBLIC/anon/authenticated/
+service_role, plus REVOKE ALL FROM PUBLIC then GRANT to authenticated +
+service_role for increment_copilot_usage -- is CORRECT AS WRITTEN. Gap B4 was
+a phantom created by a miscount, not a real unaccounted ACL.
+
+Explicit verification requested:
+| function                            | PUBLIC | anon | auth | service_role | dashboard_user |
+|-------------------------------------|--------|------|------|--------------|----------------|
+| increment_copilot_usage(integer)    | NO     | NO   | yes  | yes          | no             |
+| handle_new_user()                   | yes    | yes  | yes  | yes          | no             |
+| get_my_tenant_id()                  | yes    | yes  | yes  | yes          | no             |
+| current_user_role()                 | yes    | yes  | yes  | yes          | no             |
+| is_external_role()                  | yes    | yes  | yes  | yes          | no             |
+| has_external_access(p_project_id uuid) | yes | yes  | yes  | yes          | no             |
+| audit_trigger_fn()                  | yes    | yes  | yes  | yes          | no             |
+
+Identity arguments confirmed for the 3 non-zero-arg functions:
+  consume_rate_limit(p_key text, p_capacity integer, p_refill_per_sec numeric)
+  has_external_access(p_project_id uuid)
+  increment_copilot_usage(p_token_count integer)
+The draft's identity-argument type lists match these exactly.
+
+NOTE: the 4 SECURITY DEFINER helpers remain executable by PUBLIC and anon in
+production. That is a real posture question, but it is production's current
+state and the baseline must reproduce it, not silently tighten it.
+
+================================================================================
+5. COLUMN PRIVILEGES                                     [DRAFT CONFIRMED EXACT]
+================================================================================
+Query: pg_attribute.attacl IS NOT NULL in schema public.
+RESULT: 0 rows. ZERO explicit column-level ACLs exist in production.
+
+Every one of the 9720 rows visible in information_schema.column_privileges is
+an EXPANSION of a table/view grant, not a stored column ACL. The draft emits no
+column GRANT statements, and that is EXACTLY right: emitting them would create
+narrower explicit ACLs that production does not have.
+
+This confirms the A5 arithmetic by direct evidence rather than by inference.
+The earlier reconciliation reached the right answer via a row-count identity;
+attacl now proves it structurally.
+
+================================================================================
+6. DEFAULT ACLS                                                    [GAP B3 CLOSED]
+================================================================================
+pg_default_acl rows with defaclnamespace = public: EXACTLY 6. Confirmed.
+(Production has many more default ACLs in cron/extensions/graphql/
+graphql_public/realtime/storage/auth. Those are OUT OF SCOPE -- the "6" figure
+was always scoped to schema public, and that scoping is correct.)
+
+| # | owner role     | objtype        | exact ACL                                                                                   |
+|---|----------------|----------------|---------------------------------------------------------------------------------------------|
+| 1 | postgres       | r (tables)     | {postgres=arwdDxtm/postgres, anon=arwdDxtm/postgres, authenticated=arwdDxtm/postgres, service_role=arwdDxtm/postgres} |
+| 2 | postgres       | S (sequences)  | {postgres=rwU/postgres, anon=rwU/postgres, authenticated=rwU/postgres, service_role=rwU/postgres} |
+| 3 | postgres       | f (functions)  | {postgres=X/postgres, anon=X/postgres, authenticated=X/postgres, service_role=X/postgres}   |
+| 4 | supabase_admin | r (tables)     | {postgres=arwdDxtm/supabase_admin, anon=…, authenticated=…, service_role=…}                 |
+| 5 | supabase_admin | S (sequences)  | {postgres=rwU/supabase_admin, anon=…, authenticated=…, service_role=…}                      |
+| 6 | supabase_admin | f (functions)  | {postgres=X/supabase_admin, anon=…, authenticated=…, service_role=…}                        |
+
+Expanded: rows 1 and 4 grant all 8 table privileges to each of the 4 grantees;
+rows 2 and 5 grant SELECT+UPDATE+USAGE; rows 3 and 6 grant EXECUTE. No grant
+options on any of the six.
+
+ROLE FACTS BEARING ON REPRODUCIBILITY
+  postgres:        NOT superuser; createrole=true, bypassrls=true
+  supabase_admin:  SUPERUSER
+  postgres is NOT a member of supabase_admin (checked pg_auth_members).
+  postgres IS a member (WITH ADMIN) of anon, authenticated, service_role,
+  authenticator and the 12 application roles.
+
+CLASSIFICATION AND EXACT STATEMENTS
+
+  Rows 1-3 -- EXECUTABLE BY POSTGRES
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT SELECT, UPDATE, USAGE ON SEQUENCES TO postgres, anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT EXECUTE ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+    Run as postgres with no FOR ROLE clause, these record grantor=postgres and
+    match rows 1-3 exactly.
+
+  Rows 4-6 -- PLATFORM ACTION REQUIRED
+    Would require:
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public …
+    postgres is not a member of supabase_admin and supabase_admin is a
+    superuser, so postgres CANNOT issue these. They cannot be reproduced by the
+    migration runner at all. On a fresh Supabase project they are created by
+    the platform's own bootstrap, so a new project will normally already have
+    them. DO NOT attempt to write them into the baseline.
+
+================================================================================
+7. OWNERSHIP
+================================================================================
+| object class     | count | owner             | reproducible by migration runner |
+|------------------|-------|-------------------|----------------------------------|
+| schema public    | 1     | pg_database_owner | NO -- see below                  |
+| tables           | 103   | postgres          | yes (implicit if run as postgres)|
+| views            | 6     | postgres          | yes                              |
+| sequences        | 2     | postgres          | yes (implicit, identity-owned)   |
+| functions        | 28    | postgres          | yes                              |
+
+CANNOT BE REPRODUCED SAFELY
+  - Schema public is owned by pg_database_owner, a PostgreSQL-internal role
+    that cannot be logged in as. Its ACL entries carry grantor=pg_database_owner.
+    A migration running as postgres cannot produce that grantor. On a fresh
+    Supabase project the schema already exists with this ownership, so the
+    baseline should NOT create or re-own schema public; it should assume it.
+    Whether postgres can even issue GRANT USAGE ON SCHEMA public depends on
+    implicit pg_database_owner membership (true only if postgres owns the
+    database). pg_auth_members does not record implicit membership, so this was
+    NOT verifiable by introspection and must be confirmed at execution time.
+  - supabase_admin-owned default ACLs (section 6, rows 4-6).
+
+Everything else is owned by postgres and is reproduced implicitly by executing
+the baseline as postgres. The draft's explicit ALTER … OWNER TO postgres for 28
+functions and 6 views is harmless and self-documenting; ALTER OWNER for tables
+and sequences is unnecessary for the same reason.
+
+================================================================================
+8. RECONCILIATION MATRIX
+================================================================================
+
+| Privilege dimension        | Production | Draft | Exact match | Missing | Extra | Owner action |
+|----------------------------|-----------|-------|-------------|---------|-------|--------------|
+| Schema public ACL entries  | 7         | 0     | 0           | 7       | 0     | grantor only |
+| Table ACL (anon)           | 102       | 102   | 102         | 0       | 0     | no           |
+| Table ACL (authenticated)  | 102       | 102   | 102         | 0       | 0     | no           |
+| Table ACL (service_role)   | 103       | 0     | 0           | 103     | 0     | no           |
+| Table ACL (postgres)       | 103       | 0     | n/a derived | 0       | 0     | owner-derived|
+| View ACL (anon)            | 6         | 6     | 6           | 0       | 0     | no           |
+| View ACL (authenticated)   | 6         | 6     | 6           | 0       | 0     | no           |
+| View ACL (service_role)    | 6         | 0     | 0           | 6       | 0     | no           |
+| View ACL (postgres)        | 6         | 0     | n/a derived | 0       | 0     | owner-derived|
+| Sequence ACL (anon)        | 2         | 2     | 2           | 0       | 0     | no           |
+| Sequence ACL (authenticated)| 2        | 2     | 2           | 0       | 0     | no           |
+| Sequence ACL (service_role)| 2         | 0     | 0           | 2       | 0     | no           |
+| Sequence ACL (postgres)    | 2         | 0     | n/a derived | 0       | 0     | owner-derived|
+| Function EXECUTE (27 std)  | 27        | 27    | 27          | 0       | 0     | no           |
+| Function EXECUTE (excepted)| 1         | 1     | 1           | 0       | 0     | no           |
+| Explicit column ACLs       | 0         | 0     | 0           | 0       | 0     | no           |
+| Default ACLs (public)      | 6         | 0     | 0           | 6       | 0     | 3 of 6       |
+| Object ownership           | 140       | 34    | 34          | 0       | 0     | schema only  |
+
+MISMATCH DETAIL
+
+| Object | Grantee | Privilege | Production | Draft | Grantor | Risk | Required action |
+|--------|---------|-----------|-----------|-------|---------|------|-----------------|
+| schema public | PUBLIC | USAGE | present | absent | pg_database_owner | LOW in practice: a fresh Supabase project ships this. HIGH on a bare PostgreSQL target, where anon/authenticated could not use any table grant. | Add GRANT USAGE; accept grantor difference |
+| schema public | anon | USAGE | present | absent | pg_database_owner | same | Add GRANT USAGE |
+| schema public | authenticated | USAGE | present | absent | pg_database_owner | same | Add GRANT USAGE |
+| schema public | service_role | USAGE | present | absent | pg_database_owner | same | Add GRANT USAGE |
+| schema public | postgres | USAGE | present | absent | pg_database_owner | low | Add GRANT USAGE |
+| 102 tables | service_role | all 8 | present | absent | postgres | **HIGH -- the service-role key would be rejected on every table** | Add GRANT to service_role |
+| rate_limit_buckets | service_role | all 8 | present | absent | postgres | **HIGH -- rate limiting is server-side only and runs as service_role; the draft withholds this table from everyone** | Add GRANT to service_role ONLY (not anon/authenticated) |
+| 6 views | service_role | all 8 | present | absent | postgres | HIGH | Add GRANT to service_role |
+| 2 sequences | service_role | SELECT,UPDATE,USAGE | present | absent | postgres | HIGH -- inserts into approval_events/audit_log as service_role would fail | Add GRANT to service_role |
+| default ACL r | postgres,anon,authenticated,service_role | all 8 | present | absent | postgres | MEDIUM -- future tables would not inherit grants | Add ALTER DEFAULT PRIVILEGES |
+| default ACL S | same 4 | rwU | present | absent | postgres | MEDIUM | Add ALTER DEFAULT PRIVILEGES |
+| default ACL f | same 4 | EXECUTE | present | absent | postgres | MEDIUM | Add ALTER DEFAULT PRIVILEGES |
+| default ACL r/S/f | same 4 | as above | present | absent | supabase_admin | LOW -- platform-supplied | PLATFORM ACTION; do not write |
+
+CORRECTIONS THIS CAPTURE FORCES ON EARLIER WORK
+  1. Removing the service_role grants was WRONG IN EFFECT, though right in
+     method. The previous pass deleted an unverified service_role grant rather
+     than carry it forward on faith; the grant turns out to be real. The
+     honest conclusion is that the deletion protected against inventing an ACL
+     and must now be reversed WITH evidence -- not that guessing would have
+     been fine.
+  2. Gap B4 does not exist. There is one function exception, not two. The
+     "2 exceptions" claim was a miscount in my own report.
+  3. Gap B1 was real but is now satisfied by evidence, with one caveat the
+     original note missed entirely: the grantor is pg_database_owner, so the
+     schema ACL cannot be byte-reproduced by postgres.
+  4. The draft's A2 treatment of rate_limit_buckets is incomplete: correct to
+     withhold from anon/authenticated, wrong to withhold from service_role.
+
+================================================================================
+9. CONCLUSION
+================================================================================
+PRIVILEGE CAPTURE COMPLETE -- CORRECTION CAN PROCEED
+
+All five target gaps are resolved:
+  1. Schema privileges on public ......... CAPTURED (7 entries, grantor caveat)
+  2. service_role / administrative ACLs .. CAPTURED (service_role real; the
+                                           three admin roles hold nothing)
+  3. All six default ACL records ......... CAPTURED (3 executable, 3 platform)
+  4. Unaccounted function EXECUTE ACL .... RESOLVED -- it never existed
+  5. Owner-specific statements ........... IDENTIFIED (schema public ownership
+                                           and grantor; supabase_admin defaults)
+
+Two items remain outside what introspection can settle, and neither blocks the
+correction:
+  - Whether postgres holds implicit pg_database_owner membership (i.e. owns the
+    database) cannot be read from pg_auth_members. This decides whether the
+    schema-level GRANT USAGE statements will execute. Verify at execution time
+    on the disposable database.
+  - Default ACL rows 4-6 (grantor supabase_admin) are unreproducible by any
+    migration role and must be left to the platform.
+
+CONFIRMATIONS
+  - metadata-only queries ................ yes (catalog + information_schema)
+  - no application rows read ............. yes
+  - no database writes ................... yes (SELECT only)
+  - no executable SQL changed ............ yes (this report is the only file)
+  - no commit ............................ yes
+  - no push .............................. yes
+  - no Supabase branch created ........... yes
+  - PR #68 unchanged ..................... yes
+  - production unmodified ................ yes
+================================================================================
