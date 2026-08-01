@@ -109,12 +109,46 @@ Resolved:
     identity, control and expression fingerprints. Zero demo-tenant literals
     remain in the canonical policy draft. (README 11.1)
 
+  - 2026-08-01 shape-correction pass. Four defects found by value-by-value
+    reconciliation are now fixed in the SQL:
+      F1  handle_new_user() assigned 'project_manager' to every signup where
+          production assigns 'viewer' -- a privilege escalation introduced by
+          this baseline. Body replaced; search_path restored to
+          'public', 'pg_temp'.
+      C1  profiles_role_check gained the missing 'client_viewer' (12 values).
+      C2  approval_steps_status_check gained the missing 'on_hold' (5 values).
+      G1  grants rewritten from a dynamic DO block into explicit verified
+          statements, plus a blocked section for what was never captured.
+    Data-type, nullability, default, identity, collation, index-predicate,
+    FK-action, policy-expression and view-definition dimensions were ALL
+    re-verified by value in that pass and match -- superseding the old
+    "count-verified only" caveat below for those dimensions.
+
 Still blocking, in order:
   1. Nothing here has ever been executed. Static analysis cannot prove that a
      single CREATE statement succeeds. A disposable-database run is mandatory
      before adoption. (README 7)
-  2. Data types, nullability, defaults, FK actions and index predicates are
-     count-verified only, never shape-verified. (README 11.3)
+  2. PRIVILEGE GAPS -- the grants rewrite is incomplete by design, because the
+     underlying metadata was never captured and this pass was not permitted to
+     connect to Supabase:
+       a. Schema USAGE on public was never captured. Without it, NONE of the
+          table grants are usable. Highest-priority gap.
+       b. ACLs for service_role, postgres, supabase_admin, supabase_auth_admin
+          and dashboard_user were never captured. The old draft's unverified
+          service_role grant was removed rather than carried forward, so a
+          bootstrapped database will most likely reject the service-role key.
+       c. The 6 default ACLs are known to exist; contents never captured.
+          ALTER DEFAULT PRIVILEGES is per-grantor and may need a separate
+          owner-authorised platform step.
+       d. One function's EXECUTE ACL is unaccounted for: the reconciliation
+          cites 2 exceptions among 28 functions but names only one.
+  3. on_auth_user_created remains commented out. Fixing handle_new_user()
+     removes the known escalation but is not proof the signup path works.
+
+Correction to this report's own method: a scan anchored on statement-initial
+GRANT/REVOKE keywords reported "0 grants" in the canonical baseline. That was a
+FALSE NEGATIVE -- the grants existed as dynamic SQL inside a DO block. SQL
+scanners must look inside DO blocks and function bodies.
 
 Not established by this report: statement validity, runtime behaviour, RLS
 effectiveness, or byte-identity with production.

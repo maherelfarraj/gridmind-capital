@@ -283,7 +283,13 @@ CREATE TABLE public.approval_steps (
     decided_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     decision_note text,
-    CONSTRAINT approval_steps_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'skipped'::text])))
+    -- DEFECT C2 CORRECTED 2026-08-01. 'on_hold' was absent from the draft
+    -- (4 values vs production's 5); placing an approval step on hold would have
+    -- failed 23514, silently, until the on-hold path was first exercised.
+    -- Exactly production's 5 values, in production's order. No further values
+    -- inferred. NULL behaviour preserved: `status` is nullable with DEFAULT
+    -- 'pending', and the CHECK passes on NULL.
+    CONSTRAINT approval_steps_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'skipped'::text, 'on_hold'::text])))
 );
 
 CREATE TABLE public.approvals (
@@ -1191,7 +1197,17 @@ CREATE TABLE public.profiles (
     is_active boolean DEFAULT true NOT NULL,
     user_type text DEFAULT 'internal'::text NOT NULL,
     home_role_id uuid,
-    CONSTRAINT profiles_role_check CHECK ((role = ANY (ARRAY['system_admin'::text, 'tenant_admin'::text, 'project_director'::text, 'project_manager'::text, 'engineer'::text, 'hse_manager'::text, 'commissioning_manager'::text, 'finance_manager'::text, 'commercial_manager'::text, 'viewer'::text, 'subcontractor'::text])))
+    -- DEFECT C1 CORRECTED 2026-08-01. 'client_viewer' was absent from the draft
+    -- (11 values vs production's 12). Every client_viewer profile insert would
+    -- have failed 23514, making the external client portal unprovisionable,
+    -- while policies cr_external_read / pm_external_read / pg_external_read /
+    -- vo_external_read already reference that role. Vocabulary is now exactly
+    -- production's 12 values, in production's order, and matches the 12 labels
+    -- of the public.user_role enum declared above.
+    -- NULL behaviour preserved: a CHECK evaluates to NULL (and therefore passes)
+    -- on a NULL role, and production does NOT declare `role` NOT NULL. No
+    -- NOT NULL has been added here.
+    CONSTRAINT profiles_role_check CHECK ((role = ANY (ARRAY['system_admin'::text, 'tenant_admin'::text, 'project_director'::text, 'project_manager'::text, 'engineer'::text, 'hse_manager'::text, 'commissioning_manager'::text, 'finance_manager'::text, 'commercial_manager'::text, 'viewer'::text, 'subcontractor'::text, 'client_viewer'::text])))
 );
 
 CREATE TABLE public.progress_updates (

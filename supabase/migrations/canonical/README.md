@@ -12,6 +12,63 @@ define it, and they have never run against it.
 
 ---
 
+## 0. Shape-correction pass — 2026-08-01
+
+A value-by-value reconciliation against production
+(`shape-reconciliation-report.txt`) found **four defects** in this baseline. All
+four have now been corrected in the SQL. Execution on a disposable database
+**remains mandatory and has still not happened.**
+
+| # | Defect | Where | Correction |
+|---|--------|-------|------------|
+| F1 | `handle_new_user()` assigned **`project_manager`** to every signup; production assigns **`viewer`**. Also dropped `pg_temp` from its `SECURITY DEFINER` `search_path` and leaked the email local-part into `full_name`. | `…0002_functions_triggers.sql` | Body replaced with production's, `search_path` restored to `'public', 'pg_temp'`. |
+| C1 | `profiles_role_check` omitted **`client_viewer`** (11 values vs 12). | `…0000_schema_types_tables.sql` | 12th value added. |
+| C2 | `approval_steps_status_check` omitted **`on_hold`** (4 values vs 5). | `…0000_schema_types_tables.sql` | 5th value added. |
+| G1 | Grants: sequences, function `EXECUTE` ACLs, ownership and default ACLs entirely absent; the table grants that did exist were a dynamic rule, not a reproduction. | `…0003_rls_policies_grants.sql` | Rewritten as explicit verified statements (section A) plus an explicitly blocked, non-executable section B. |
+
+**F1 was the serious one.** It was a privilege escalation *introduced by this
+baseline* and absent from production: any self-service signup on a database
+bootstrapped from the old draft would have held `project_manager` authority.
+
+Two corrections to the process itself, both recorded so they are not repeated:
+
+- **The reconciliation report was wrong to say this baseline contained zero
+  `GRANT` statements.** It contained grants built dynamically as strings inside a
+  `DO` block, invisible to a scan anchored on a statement-initial `GRANT`
+  keyword. The report has been amended. This is the same class of regex-scanning
+  error that produced five separate waves of false positives during the
+  reconciliation.
+- **The report also mis-cited this README.** It quoted the row
+  "Grants | present | none (dumped `--no-acl`) | all missing" as the README
+  admitting the *canonical baseline* had no grants. It does not: that table
+  compares **the pg_dump** against production, and the very next section records
+  that grants were "reconstructed from `information_schema.role_table_grants`".
+  The README was right and the report misread it. Recorded because the misread
+  is what made the missing-grants finding look already-known and settled.
+
+### Not fixed, and deliberately so
+
+- **Schema `USAGE` on `public` was never captured.** Without it none of the table
+  grants are usable, so a bootstrap is incomplete. Highest-priority gap.
+- **`service_role`, `postgres`, `supabase_admin`, `supabase_auth_admin` and
+  `dashboard_user` ACLs were never captured.** The old draft granted
+  `service_role` unconditionally; that was not evidence-backed and has been
+  **removed rather than carried forward**, so a bootstrapped database will most
+  likely reject the service-role key until the real ACLs are captured.
+- **The 6 default ACLs** are known to exist but their contents were never
+  captured. `ALTER DEFAULT PRIVILEGES` is per-grantor and may require a separate
+  owner-authorised platform step.
+- **One function's `EXECUTE` ACL is unaccounted for**: the reconciliation cites
+  "2 exceptions" among 28 functions but names only `increment_copilot_usage`.
+- **`on_auth_user_created` stays commented out.** Correcting `handle_new_user()`
+  removes the known escalation; it is not proof the signup path works.
+
+Broad `anon`/`authenticated` privileges are reproduced **as production facts to
+be matched, not as endorsed configuration.** RLS is the only control over them
+and no table sets `FORCE ROW LEVEL SECURITY`.
+
+---
+
 ## 1. Why the tracked migration history is non-replayable
 
 Supabase branch creation replays the **project's tracked migration history** in

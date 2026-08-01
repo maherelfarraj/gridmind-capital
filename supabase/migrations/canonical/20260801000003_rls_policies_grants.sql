@@ -570,23 +570,316 @@ CREATE POLICY portal_invoices_select_tenant ON public.portal_invoices AS PERMISS
 CREATE POLICY projects_select_tenant ON public.projects AS PERMISSIVE FOR SELECT TO public USING ((tenant_id = public.get_my_tenant_id()));
 
 -- ---------------------------------------------------------------------
--- GRANTS
+-- GRANTS, OWNERSHIP AND DEFAULT ACLs
 -- ---------------------------------------------------------------------
+--
+-- REWRITTEN 2026-08-01 (defect G1 of the reconciliation report).
+--
+-- CORRECTION TO THE RECONCILIATION REPORT ITSELF: that report stated this
+-- baseline contained ZERO GRANT statements. That was WRONG. A grants block did
+-- exist here, but every GRANT was assembled dynamically as a string inside a
+-- DO block, so a scan anchored on a statement-initial GRANT/REVOKE keyword
+-- could not see it. Same class of error as the parser false positives in
+-- section 4 of that report. The report has been amended.
+--
+-- The previous DO block was nonetheless unfit as a canonical baseline:
+--   1. It was a RULE, not a reproduction. It granted to whatever relations
+--      happened to exist at run time, so it could not fail loudly if the
+--      relation set drifted from production's verified 102 tables + 6 views.
+--   2. It granted to service_role, which the reconciliation never verified.
+--   3. It invented a GRANT on rate_limit_buckets to service_role.
+--   4. It omitted sequences, function EXECUTE ACLs, ownership and default ACLs
+--      entirely -- so increment_copilot_usage inherited PostgreSQL's default
+--      EXECUTE TO PUBLIC, which is BROADER than production.
+--
+-- Everything below is either VERIFIED (section A, executable) or NOT VERIFIED
+-- (section B, commented out and blocked). Nothing is inferred into section A.
+-- Production's broad anon/authenticated posture is reproduced as a FACT to be
+-- matched, not as a recommendation. RLS is the only control over these grants,
+-- and no table sets FORCE ROW LEVEL SECURITY, so the owner still bypasses every
+-- policy. Tightening belongs in a later migration, never in this baseline.
 
--- Production fact, recorded verbatim. Supabase's default grants give anon and
--- authenticated FULL DML on every public relation; RLS is the ONLY thing limiting
--- them. This is reproduced because the baseline must match production, NOT because
--- it is desirable. Tightening belongs in a later migration, not here.
-DO $$
-DECLARE r record;
-BEGIN
-  FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-           WHERE n.nspname='public' AND c.relkind IN ('r','v')
-             AND c.relname <> 'rate_limit_buckets'
-  LOOP
-    EXECUTE format('GRANT ALL ON TABLE public.%I TO anon, authenticated, service_role', r.relname);
-  END LOOP;
-  -- rate_limit_buckets is deliberately NOT granted to anon/authenticated in production.
-  EXECUTE 'GRANT ALL ON TABLE public.rate_limit_buckets TO service_role';
-END $$;
+-- =====================================================================
+-- SECTION A -- VERIFIED AGAINST PRODUCTION. EXECUTABLE.
+-- =====================================================================
+
+-- A1. TABLE PRIVILEGES -- 102 of 103 tables to anon + authenticated.
+-- Verified: anon and authenticated each hold DELETE, INSERT, MAINTAIN,
+-- REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE. That set is identical to
+-- GRANT ALL on PostgreSQL 17; it is spelled out explicitly so the statement
+-- stays exact if it is ever replayed on a server whose ALL means something
+-- different. Listed one relation per line, not discovered dynamically, so a
+-- missing table fails loudly instead of being silently skipped.
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.activity_dependencies TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ai_insights TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_conditions TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_events TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_items TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_matrix TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_rules TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_steps TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approvals TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.assets TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.audit_log TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bess_metrics TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.cash_flow_records TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.claims TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.client_announcements TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.client_information_requests TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.client_reports TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.comments TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.commissioning_tests TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.contract_milestones TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.contracts TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_audit_trail TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_conversations TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_intent_log TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_messages TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_tenant_budget TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.cost_entries TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.daily_reports TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.delivery_documents TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.departments TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.document_files TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.documents TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.email_log TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.energy_production TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.engineering_packages TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.external_access TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.field_photos TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.finance_records TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_approver_defaults TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_certificates TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_role_requirements TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_signoff_templates TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_signoffs TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_submissions TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_templates TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gates TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.grid_compliance_tests TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.guarantees TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.handover_records TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.help_articles TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.help_topics TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.hse_incidents TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.hse_permits TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.inspections TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.itp_activities TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.itp_plans TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.lender_facilities TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.lender_reports TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.maintenance_plans TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.marketplace_providers TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ncrs TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.notification_prefs TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.notifications TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.opportunities TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.payment_certificates TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.payment_milestones TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.phase_gates TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.portal_invoices TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.profiles TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.progress_updates TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.project_gate_approvers TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.project_members TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.project_team TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.projects TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.purchase_order_lines TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.purchase_orders TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.raci_assignments TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.raci_deliverables TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.resource_plan TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.retention_entries TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.rfq_responses TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.rfqs TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.risks TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.roles TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.schedule_activities TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.schedule_baselines TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.schedule_milestones TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.securities TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.signatures TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.task_comments TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.tasks TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.tenants TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.tickets TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.transmittal_items TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.transmittals TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.variation_orders TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.variations TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.work_packages TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.work_permits TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_definitions TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_events TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_instances TO anon, authenticated;
+
+-- A2. rate_limit_buckets -- THE SINGLE EXCEPTION.
+-- Verified: withheld from BOTH anon and authenticated in production.
+-- Deliberately no statement. On an empty bootstrap target there is no grant to
+-- revoke, so emitting a REVOKE would create an ACL entry production does not
+-- have. Absence is the faithful reproduction.
+
+-- A3. VIEW PRIVILEGES -- all 6 views, same privilege set as the tables.
+-- Views are not RLS-protected and run as their owner (postgres). v_inbox in
+-- particular is a UNION ALL with no tenant predicate of its own.
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_gate_progress TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_inbox TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_task_load TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_workload TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_project_staffing TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_role_workload TO anon, authenticated;
+
+-- A4. SEQUENCE PRIVILEGES -- 2 sequences, SELECT + UPDATE + USAGE.
+-- Production has exactly 2 sequences in schema public. Both are the implicit
+-- identity sequences of the only 2 GENERATED ALWAYS AS IDENTITY columns in the
+-- schema (approval_events.id and audit_log.id), which PostgreSQL names
+-- <table>_<column>_seq. Postcondition P-G4 asserts both names exist, so a
+-- naming surprise fails loudly rather than silently skipping the grant.
+
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.approval_events_id_seq TO anon, authenticated;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.audit_log_id_seq TO anon, authenticated;
+
+-- A5. COLUMN-LEVEL PRIVILEGES -- ZERO STATEMENTS, AND THAT IS EXACT.
+-- Production reports 9720 column-privilege rows. Every one is INHERITED from a
+-- table/view grant; production holds no narrower per-column grant. Emitting
+-- per-column GRANTs would therefore CREATE explicit column ACLs that production
+-- does not have -- a real difference, not a compression of one.
+--
+-- The count reconciles exactly, which is what proves inheritance rather than
+-- assuming it. PostgreSQL tracks 4 column-level privileges (SELECT, INSERT,
+-- UPDATE, REFERENCES):
+--   tables: (1177 total columns - 5 on rate_limit_buckets) = 1172
+--           1172 columns x 2 roles x 4 privileges              = 9376
+--   views:  (8+8+7+7+5+8) = 43 columns x 2 roles x 4 privileges =  344
+--                                                        total  = 9720
+-- 9720 == the production figure, to the row. A5 is complete BECAUSE A1/A3 are.
+
+-- A6. FUNCTION EXECUTE ACLs -- corrects the one privilege that was BROADER
+-- than production. 26 of 28 functions are verified as EXECUTE to PUBLIC, anon,
+-- authenticated and service_role. increment_copilot_usage is verified as
+-- restricted to postgres, authenticated and service_role -- NO PUBLIC, NO anon.
+-- PostgreSQL grants EXECUTE TO PUBLIC by default, so the REVOKE is mandatory:
+-- without it a bootstrapped database is MORE permissive than production.
+
+REVOKE ALL ON FUNCTION public.increment_copilot_usage(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.increment_copilot_usage(integer) TO authenticated, service_role;
+
+-- The remaining 27 signatures keep EXECUTE TO PUBLIC and are granted explicitly
+-- to anon, authenticated and service_role so the ACL is materialised rather
+-- than left implicit. See the caveat in section B4 about the count 26 vs 27.
+
+GRANT EXECUTE ON FUNCTION public.audit_trigger_fn() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.consume_rate_limit(text, integer, numeric) TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.current_user_org() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.current_user_role() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.enforce_gate_approval() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_my_tenant_id() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b1() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b10() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b2() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b3() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b4() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b5() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b6() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b7() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b8() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.gm_rule_b9() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.handle_new_user() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.has_external_access(uuid) TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_external_role() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.prevent_profiles_drop() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.set_ncr_number() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.set_risk_number() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.set_ticket_number() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.set_updated_at() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.set_vo_number() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.spawn_gate_signoffs() TO PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.touch_updated_at() TO PUBLIC, anon, authenticated, service_role;
+
+-- A7. OWNERSHIP -- verified: all 28 functions and all 6 views are owned by
+-- postgres. These statements are no-ops when the baseline is executed AS
+-- postgres, and fail loudly if it is not -- which is the desired signal.
+
+ALTER FUNCTION public.audit_trigger_fn() OWNER TO postgres;
+ALTER FUNCTION public.consume_rate_limit(text, integer, numeric) OWNER TO postgres;
+ALTER FUNCTION public.current_user_org() OWNER TO postgres;
+ALTER FUNCTION public.current_user_role() OWNER TO postgres;
+ALTER FUNCTION public.enforce_gate_approval() OWNER TO postgres;
+ALTER FUNCTION public.get_my_tenant_id() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b1() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b10() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b2() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b3() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b4() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b5() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b6() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b7() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b8() OWNER TO postgres;
+ALTER FUNCTION public.gm_rule_b9() OWNER TO postgres;
+ALTER FUNCTION public.handle_new_user() OWNER TO postgres;
+ALTER FUNCTION public.has_external_access(uuid) OWNER TO postgres;
+ALTER FUNCTION public.increment_copilot_usage(integer) OWNER TO postgres;
+ALTER FUNCTION public.is_external_role() OWNER TO postgres;
+ALTER FUNCTION public.prevent_profiles_drop() OWNER TO postgres;
+ALTER FUNCTION public.set_ncr_number() OWNER TO postgres;
+ALTER FUNCTION public.set_risk_number() OWNER TO postgres;
+ALTER FUNCTION public.set_ticket_number() OWNER TO postgres;
+ALTER FUNCTION public.set_updated_at() OWNER TO postgres;
+ALTER FUNCTION public.set_vo_number() OWNER TO postgres;
+ALTER FUNCTION public.spawn_gate_signoffs() OWNER TO postgres;
+ALTER FUNCTION public.touch_updated_at() OWNER TO postgres;
+
+ALTER VIEW public.v_gate_progress OWNER TO postgres;
+ALTER VIEW public.v_inbox OWNER TO postgres;
+ALTER VIEW public.v_person_task_load OWNER TO postgres;
+ALTER VIEW public.v_person_workload OWNER TO postgres;
+ALTER VIEW public.v_project_staffing OWNER TO postgres;
+ALTER VIEW public.v_role_workload OWNER TO postgres;
+
+-- =====================================================================
+-- SECTION B -- NOT VERIFIED. BLOCKED. DO NOT UNCOMMENT WITHOUT CAPTURE.
+-- =====================================================================
+--
+-- These dimensions were NEVER captured from production. The reconciliation
+-- recorded aggregate facts about them but not their contents, and this pass is
+-- forbidden from connecting to Supabase. They are left non-executable on
+-- purpose. Writing Supabase's usual defaults here would be INFERENCE presented
+-- as verified fact -- exactly the failure mode this baseline exists to prevent.
+--
+-- B1. SCHEMA PRIVILEGES on public (USAGE / CREATE, and to which roles).
+--     Not captured. anon and authenticated cannot use ANY of the grants in
+--     section A without USAGE on the schema, so a bootstrap is INCOMPLETE until
+--     this is captured and added. HIGHEST-PRIORITY GAP.
+--
+-- B2. TABLE / VIEW / SEQUENCE privileges for service_role, postgres,
+--     supabase_admin, supabase_auth_admin and dashboard_user.
+--     Not captured -- only anon and authenticated were enumerated. The previous
+--     draft granted service_role unconditionally; that grant was NOT evidence-
+--     backed and has been removed rather than carried forward. This very likely
+--     means a bootstrapped database will NOT accept the service-role key until
+--     the real ACLs are captured. OWNER ACTION REQUIRED.
+--
+-- B3. DEFAULT ACLs -- production has exactly 6 in schema public; their contents
+--     (grantor, grantee, object type, privileges) were not captured.
+--     ALTER DEFAULT PRIVILEGES is per-GRANTOR: it can only be written by, or FOR
+--     ROLE, the owning role. It is therefore an owner-authorised platform step
+--     and may not be executable by the migration role at all.
+--     Shape only, values unknown:
+--       ALTER DEFAULT PRIVILEGES FOR ROLE <grantor> IN SCHEMA public
+--           GRANT <privs> ON <TABLES|SEQUENCES|FUNCTIONS|TYPES> TO <grantee>;
+--
+-- B4. THE SECOND FUNCTION EXECUTE EXCEPTION. The reconciliation says '2
+--     exceptions' among the 28 functions but names only ONE
+--     (increment_copilot_usage). 26 verified + 1 named exception = 27, not 28,
+--     so exactly one function's EXECUTE ACL is UNACCOUNTED FOR. Section A6
+--     grants all 27 non-increment_copilot_usage functions to PUBLIC, which is
+--     correct for 26 of them and possibly TOO BROAD for one. Must be resolved
+--     by capture before this baseline is trusted.
+--
+-- B5. TABLE OWNERSHIP. Verified for functions and views (postgres); never
+--     captured for the 103 tables. Executing the baseline as postgres makes them
+--     postgres-owned implicitly, so no statement is emitted.
+
 COMMIT;

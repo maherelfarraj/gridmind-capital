@@ -250,18 +250,36 @@ CREATE FUNCTION public.gm_rule_b9() RETURNS jsonb
   where pm.status = 'paid' and (pm.paid_at is null or pm.paid_amount is null);
 $$;
 
+-- ---------------------------------------------------------------------------
+-- handle_new_user() -- CORRECTED 2026-08-01 from verified production prosrc.
+--
+-- DEFECT F1 (reconciliation report section 4). The previous draft of this
+-- function differed from production in two independent ways:
+--   (a) it assigned the signup role 'project_manager'; production assigns
+--       'viewer'. That was a PRIVILEGE ESCALATION introduced by this baseline
+--       and absent from production -- every self-service signup on a
+--       bootstrapped database would have held project_manager authority.
+--   (b) it dropped 'pg_temp' from the SECURITY DEFINER search_path, and its
+--       full_name fallback leaked the email local-part instead of ''.
+-- Both are corrected below. Column order, the conflict clause and the tenant
+-- default are reproduced exactly as production stores them.
+--
+-- Owner in production: postgres. Ownership and the EXECUTE ACL are NOT set
+-- here -- they belong to the grants file (20260801000003), per section 4 of
+-- the reconciliation report.
+-- ---------------------------------------------------------------------------
 CREATE FUNCTION public.handle_new_user() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
+    SET search_path TO 'public', 'pg_temp'
     AS $$
 begin
-  insert into public.profiles (id, tenant_id, full_name, email, role)
+  insert into public.profiles (id, email, full_name, role, tenant_id)
   values (
     new.id,
-    '00000000-0000-0000-0000-000000000001',
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
     new.email,
-    'project_manager'
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    'viewer',
+    '00000000-0000-0000-0000-000000000001'
   )
   on conflict (id) do nothing;
   return new;
@@ -497,7 +515,14 @@ CREATE EVENT TRIGGER block_profiles_drop ON sql_drop
 -- auth.users is owned by supabase_auth_admin. Creating a trigger on it requires
 -- that owner (or a platform-managed step) and normally FAILS as the migration role.
 -- Left commented deliberately: without it, signups do not create a profiles row.
--- ACTION REQUIRED BY SCHEMA OWNER after bootstrap:
+--
+-- STILL BLOCKED AS OF 2026-08-01. Defect F1 (the 'project_manager' escalation)
+-- has been corrected above, but that ALONE does not unblock this trigger. It
+-- stays commented until execution against a disposable database proves the
+-- complete signup path end to end. Correcting the function removes the known
+-- escalation; it does not constitute proof that the path works.
+--
+-- ACTION REQUIRED BY SCHEMA OWNER after bootstrap AND after that proof:
 -- CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
 --     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 COMMIT;

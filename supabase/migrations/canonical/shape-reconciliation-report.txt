@@ -15,6 +15,93 @@ RESULT: CANONICAL SHAPE CORRECTIONS REQUIRED
         1 whole dimension missing (grants/ownership).
 
 ================================================================================
+AMENDMENT -- 2026-08-01 (correction pass, repository only)
+================================================================================
+All four defects have been CORRECTED in the canonical SQL. This report is left
+intact above as the record of what was found; the amendments below record what
+was wrong WITH THIS REPORT.
+
+STATUS OF THE FOUR DEFECTS
+  C1  profiles_role_check ....... FIXED  ('client_viewer' added, 12 values)
+  C2  approval_steps_status_check FIXED  ('on_hold' added, 5 values)
+  F1  handle_new_user() ......... FIXED  (body -> 'viewer'; search_path ->
+                                          'public', 'pg_temp'; split_part
+                                          fallback removed)
+  G1  grants dimension .......... PARTIALLY FIXED -- see AMENDMENT 2
+
+AMENDMENT 1 -- SECTION 7.3 IS WRONG.
+  Section 7.3 states the baseline "contains ZERO executable GRANT, REVOKE or
+  ALTER DEFAULT PRIVILEGES statements across all six files". THAT IS FALSE.
+  20260801000003_rls_policies_grants.sql already carried a grants block which
+  granted anon, authenticated and service_role on every public table and view.
+  Every GRANT in it was assembled dynamically as a string inside a DO block, so
+  a scan anchored on a statement-initial GRANT/REVOKE keyword returned zero.
+
+  This is the SIXTH regex/scanner false result in this reconciliation, and the
+  only one that produced a false NEGATIVE rather than a false positive: it
+  under-reported what the baseline contained instead of over-reporting drift.
+  Scanners over SQL must account for dynamic SQL inside DO blocks and function
+  bodies, not only statement-initial keywords.
+
+  Section 7.3 also cited the README as corroboration ("Grants | present | none
+  (dumped --no-acl) | all missing"). That row compares THE PG_DUMP to
+  production, not the canonical baseline to production. The README was correct;
+  this report misread it. That misreading is what made the gap look like a
+  known, already-accepted limitation.
+
+AMENDMENT 2 -- WHAT THE GRANTS REWRITE DOES AND DOES NOT COVER.
+  The dynamic block was replaced with explicit, deterministic statements:
+    VERIFIED and executable (section A of that file)
+      - 102 tables  x anon, authenticated, 8-privilege DML set
+      - rate_limit_buckets deliberately omitted (production withholds it)
+      - 6 views     x anon, authenticated, same privilege set
+      - 2 sequences x anon, authenticated (SELECT, UPDATE, USAGE)
+      - increment_copilot_usage: REVOKE ALL FROM PUBLIC, then GRANT EXECUTE to
+        authenticated + service_role. This is the one place the old baseline was
+        BROADER than production, because PostgreSQL's default is EXECUTE TO
+        PUBLIC and nothing revoked it.
+      - 27 remaining functions: EXECUTE to PUBLIC, anon, authenticated,
+        service_role
+      - ALTER OWNER TO postgres for 28 functions and 6 views
+    NOT VERIFIED, left commented and blocked (section B of that file)
+      B1 schema USAGE/CREATE on public -- NEVER CAPTURED. Without it every
+         grant in section A is unusable. Highest-priority remaining gap.
+      B2 ACLs for service_role, postgres, supabase_admin, supabase_auth_admin,
+         dashboard_user -- NEVER CAPTURED. Only anon and authenticated were
+         enumerated. The old draft's unconditional service_role grant was not
+         evidence-backed and was REMOVED rather than carried forward.
+      B3 the 6 default ACLs -- existence known, contents never captured.
+      B4 the unnamed second function EXECUTE exception (see AMENDMENT 3).
+      B5 table ownership -- verified for functions and views only.
+
+  COLUMN GRANTS: zero statements emitted, and that is EXACT, not a compression.
+  Section 7.3 records that all 9720 column-privilege rows are inherited from
+  table grants with no narrower per-column grant anywhere. Emitting per-column
+  GRANTs would CREATE explicit column ACLs production does not have. The count
+  reconciles to the row, which is what proves inheritance rather than assuming
+  it: (1177 - 5 rate_limit_buckets) = 1172 columns x 2 roles x 4 column-level
+  privileges = 9376, plus 43 view columns x 2 x 4 = 344, total 9720.
+
+AMENDMENT 3 -- SECTION 4 IS INTERNALLY INCONSISTENT.
+  Section 4 says "The 2 exceptions are noted below" and then names only ONE
+  (increment_copilot_usage). 26 verified + 1 named = 27, not 28. Exactly one
+  function's EXECUTE ACL is therefore UNACCOUNTED FOR. The rewrite grants all 27
+  non-increment_copilot_usage functions to PUBLIC, which is correct for 26 and
+  possibly too broad for one. UNRESOLVED; requires capture.
+
+AMENDMENT 4 -- NO GRANT FINGERPRINT EXISTS.
+  Section 8 correctly records grants as "NOT COMPARABLE". No production-side
+  grant fingerprint was ever computed, so the postconditions CANNOT assert one.
+  They assert the exact verified values instead (102/6/2/9720, the
+  increment_copilot_usage ACL, ownership) and RAISE NOTICE with the observed
+  fingerprint so a future pass can pin it. An invented expected hash would
+  guarantee either a permanent false failure or a meaningless constant.
+
+SCOPE OF THIS AMENDMENT
+  Repository only. No connection to Supabase, no migration applied, no branch
+  created, no production change, no push. The corrections are unexecuted SQL.
+
+================================================================================
 0. NORMALIZATION RULES APPLIED
 ================================================================================
 These are the ONLY differences treated as harmless. Everything else was treated
