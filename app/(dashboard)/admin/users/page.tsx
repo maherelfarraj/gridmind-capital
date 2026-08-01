@@ -6,8 +6,15 @@ import { formatDistanceToNow } from 'date-fns'
 
 import { UsersRolesPage } from '@/components/admin/users-roles-page'
 import { ExternalAccessTab } from '@/components/admin/external-access-tab'
-import { getUsers, updateUserRole, inviteInternalUser } from '@/app/actions/admin'
+import {
+  getUsers,
+  updateUserRole,
+  inviteInternalUser,
+  deactivateUser,
+  activateUser,
+} from '@/app/actions/admin'
 import { isDbUserRole } from '@/lib/auth/roles'
+import { statusFromProfile } from '@/lib/admin/user-status'
 import { useSession } from '@/lib/session-context'
 import { useToast } from '@/components/ui/toast'
 import type { UserProfile, UserRole } from '@/components/admin/users-roles-page'
@@ -47,18 +54,32 @@ export default function Page() {
     email: u.email,
     role: toComponentRole(u.role),
     department: u.department ?? '—',
-    status: (u.department === 'Deactivated' ? 'inactive' : 'active') as 'active' | 'inactive',
+    // Read the authorization flag itself, via the shared tested mapper. The
+    // previous expression keyed off department === 'Deactivated', a marker the
+    // canonical service stopped writing and which no production row carries,
+    // so every user rendered Active and deactivation appeared to revert.
+    status: statusFromProfile(u),
     lastActive: toRelativeTime(u.last_seen_at),
     joinedAt: u.created_at?.split('T')[0] ?? '',
   })), [rawUsers])
 
+  /**
+   * Throwing on failure is deliberate and matches `handleInvite`: the caller
+   * must not report success for a mutation the server rejected. Awaiting
+   * `mutate()` means the row is re-read from the server before the promise
+   * settles, so the confirmation the admin sees reflects persisted state
+   * rather than local optimism.
+   */
   const handleUpdateRole = async (userId: string, role: UserRole) => {
     const res = await updateUserRole(userId, role)
-    if (res?.error) {
-      toast({ variant: 'danger', title: 'Role Not Updated', description: res.error, duration: 6000 })
-      return
-    }
-    mutate()
+    if (res?.error) throw new Error(res.error)
+    await mutate()
+  }
+
+  const handleToggleStatus = async (userId: string, isActive: boolean) => {
+    const res = isActive ? await activateUser(userId) : await deactivateUser(userId)
+    if (res?.error) throw new Error(res.error)
+    await mutate()
   }
 
   const handleInvite = async (data: {
@@ -131,7 +152,9 @@ export default function Page() {
           isLoading={false}
           onInvite={handleInvite}
           onUpdateRole={handleUpdateRole}
+          onToggleStatus={handleToggleStatus}
           currentUserRole={currentUserRole}
+          currentUserId={session.userId}
         />
       )}
 

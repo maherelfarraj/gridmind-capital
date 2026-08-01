@@ -56,6 +56,12 @@ export interface UsersRolesProps {
   isLoading?: boolean
   /** Role of the signed-in admin — gates which roles the invite modal offers. */
   currentUserRole?: string | null
+  /**
+   * Id of the signed-in admin, so the UI can refuse to offer self-mutation.
+   * The server rejects it regardless; this stops us presenting an action that
+   * is guaranteed to fail.
+   */
+  currentUserId?: string | null
 }
 
 /* ─────────────────────────────────────────────
@@ -321,9 +327,11 @@ interface RowActionsProps {
   onToggleStatus: (user: UserProfile) => void
   onDelete: (user: UserProfile) => void
   onEditRole: (user: UserProfile) => void
+  /** True while a status mutation for this row is in flight. */
+  pending?: boolean
 }
 
-function RowActions({ user, onToggleStatus, onDelete, onEditRole }: RowActionsProps) {
+function RowActions({ user, onToggleStatus, onDelete, onEditRole, pending = false }: RowActionsProps) {
   const [open, setOpen] = React.useState(false)
   const ref = React.useRef<HTMLDivElement>(null)
 
@@ -379,13 +387,16 @@ function RowActions({ user, onToggleStatus, onDelete, onEditRole }: RowActionsPr
                 ? 'text-amber-600 hover:bg-amber-50'
                 : 'text-green-600 hover:bg-green-50',
             )}
-            onClick={() => { onToggleStatus(user); setOpen(false) }}
-          >
-            {user.status === 'active'
-              ? <XCircle className="size-3.5" />
-              : <CheckCircle className="size-3.5" />
-            }
-            {user.status === 'active' ? 'Deactivate' : 'Activate'}
+              disabled={pending}
+              onClick={() => { onToggleStatus(user); setOpen(false) }}
+            >
+              {user.status === 'active'
+                ? <XCircle className="size-3.5" />
+                : <CheckCircle className="size-3.5" />
+              }
+              {pending
+                ? 'Saving…'
+                : user.status === 'active' ? 'Deactivate' : 'Activate'}
           </button>
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 transition-colors"
@@ -794,6 +805,159 @@ function InviteModal({ open, onClose, onInvite, currentUserRole }: InviteModalPr
 }
 
 /* ─────────────────────────────────────────────
+   CHANGE ROLE MODAL
+───────────────────────────────────────────── */
+
+interface ChangeRoleModalProps {
+  /** The user being edited, or null when closed. */
+  user: UserProfile | null
+  onClose: () => void
+  onSubmit: (userId: string, role: UserRole) => Promise<void>
+  currentUserRole?: string | null
+  currentUserId?: string | null
+}
+
+/**
+ * Real role editor, replacing the "Role editor coming soon" toast.
+ *
+ * It submits through the page's `onUpdateRole`, which calls the
+ * `updateUserRole` server action and thence the canonical provisioning
+ * service — the client never writes `profiles` directly. Success is reported
+ * only after that promise resolves, and the parent re-reads the row from the
+ * server before it does, so the confirmation always reflects persisted state.
+ */
+function ChangeRoleModal({
+  user,
+  onClose,
+  onSubmit,
+  currentUserRole,
+  currentUserId,
+}: ChangeRoleModalProps) {
+  const [role, setRole] = React.useState('')
+  const [error, setError] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(false)
+
+  const open = user !== null
+  const isSelf = user != null && currentUserId != null && user.id === currentUserId
+
+  // Same authority mirror the invite modal uses. The server re-checks it.
+  const roleOptions = React.useMemo(
+    () => assignableRoleOptionsFor(currentUserRole),
+    [currentUserRole],
+  )
+
+  React.useEffect(() => {
+    if (user) {
+      setRole(user.role)
+      setError(null)
+      setLoading(false)
+    }
+  }, [user])
+
+  React.useEffect(() => {
+    if (!open) return
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', fn)
+    return () => document.removeEventListener('keydown', fn)
+  }, [open, onClose])
+
+  if (!user) return null
+
+  const unchanged = role === user.role
+  const assignable = roleOptions.some(o => o.value === role)
+  const canSubmit = !loading && !isSelf && !unchanged && assignable
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!user) return
+    if (isSelf) {
+      setError('You cannot change your own role.')
+      return
+    }
+    if (unchanged) {
+      setError('Select a different role.')
+      return
+    }
+    if (!assignable) {
+      setError('You are not permitted to assign that role.')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      await onSubmit(user.id, role as UserRole)
+      onClose()
+    } catch (err) {
+      // Keep the modal open and show the server's reason. Nothing in the table
+      // has been changed at this point, so there is no optimistic state to undo.
+      setError(err instanceof Error ? err.message : 'Could not change the role.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="change-role-title"
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl z-10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h2 id="change-role-title" className="text-xl font-bold text-slate-900">Change Role</h2>
+            <p className="text-sm text-slate-500 mt-0.5">{user.name || user.email}</p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="flex flex-col gap-4 px-6 py-5">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <span>Current role</span>
+              <RoleBadge role={user.role} />
+            </div>
+
+            <Select
+              label="New role"
+              value={role}
+              onValueChange={v => setRole(v ?? '')}
+              options={roleOptions}
+              placeholder="Select a role"
+              disabled={loading || isSelf}
+              error={error ?? undefined}
+            />
+
+            {isSelf && (
+              <p className="text-sm text-amber-600" role="alert">
+                You cannot change your own role. Ask another administrator.
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canSubmit}>
+              {loading ? 'Saving…' : 'Save Role'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
    ROLE DETAIL PANEL (slide-in from right)
 ───────────────────────────────────────────── */
 
@@ -914,6 +1078,7 @@ export function UsersRolesPage({
   onDelete,
   isLoading: externalLoading = false,
   currentUserRole,
+  currentUserId,
 }: UsersRolesProps = {}) {
   const [users, setUsers]           = React.useState<UserProfile[]>([])
   const [modalOpen, setModalOpen]   = React.useState(false)
@@ -925,6 +1090,10 @@ export function UsersRolesPage({
   const [page, setPage]             = React.useState(externalPage ?? 1)
   const [pageSize, setPageSize]     = React.useState(externalPageSize ?? 10)
   const [detailRole, setDetailRole] = React.useState<UserRole | null>(null)
+  /** User whose role is being edited, or null when the editor is closed. */
+  const [roleUser, setRoleUser]     = React.useState<UserProfile | null>(null)
+  /** Rows with an in-flight status mutation, to block double submission. */
+  const [pendingIds, setPendingIds] = React.useState<Set<string>>(new Set())
 
   const { toast } = useToast()
 
@@ -1006,16 +1175,72 @@ export function UsersRolesPage({
     toast({ variant: 'gate', title: 'Invitation Sent', description: `Invite sent to ${data.email}.`, duration: 4000 })
   }
 
-  function handleToggleStatus(user: UserProfile) {
+  /**
+   * Activate/deactivate a user.
+   *
+   * The previous implementation fired `onToggleStatus(...).catch(() => {})`,
+   * then flipped local state and announced success unconditionally. Three
+   * things were wrong: the promise was never awaited, so the toast preceded
+   * the write; the rejection handler was empty, so a server refusal was
+   * silently discarded; and the local edit was never undone, so the table
+   * disagreed with the database until the next refresh.
+   *
+   * It now awaits the server, reports only what actually persisted, and rolls
+   * the row back on failure. The optimistic flip is kept for responsiveness
+   * but is now genuinely provisional.
+   */
+  async function handleToggleStatus(user: UserProfile) {
     const nextActive = user.status !== 'active'
-    if (onToggleStatus) {
-      onToggleStatus(user.id, nextActive).catch(() => {})
+
+    if (currentUserId && user.id === currentUserId && !nextActive) {
+      toast({
+        variant: 'danger',
+        title: 'Not Allowed',
+        description: 'You cannot deactivate your own account.',
+        duration: 5000,
+      })
+      return
     }
-    setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: nextActive ? 'active' : 'inactive' } : u))
+
+    if (!onToggleStatus) return
+
+    const previousStatus = user.status
+    setPendingIds(prev => new Set(prev).add(user.id))
+    setUsers(prev => prev.map(u =>
+      u.id === user.id ? { ...u, status: nextActive ? 'active' : 'inactive' } : u,
+    ))
+
+    try {
+      await onToggleStatus(user.id, nextActive)
+      toast({
+        variant: nextActive ? 'success' : 'warning',
+        title: nextActive ? 'User Activated' : 'User Deactivated',
+        description: `${user.name} has been ${nextActive ? 'activated' : 'deactivated'}.`,
+        duration: 3500,
+      })
+    } catch (err) {
+      // Put the row back exactly as it was, so the table never keeps a change
+      // the database rejected.
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: previousStatus } : u))
+      toast({
+        variant: 'danger',
+        title: nextActive ? 'Activation Failed' : 'Deactivation Failed',
+        description: err instanceof Error ? err.message : 'The change was not saved.',
+        duration: 6000,
+      })
+    } finally {
+      setPendingIds(prev => { const n = new Set(prev); n.delete(user.id); return n })
+    }
+  }
+
+  async function handleChangeRole(userId: string, role: UserRole) {
+    if (!onUpdateRole) throw new Error('Role changes are not available here.')
+    await onUpdateRole(userId, role)
+    const label = roleMeta(role).label
     toast({
-      variant: nextActive ? 'success' : 'warning',
-      title: nextActive ? 'User Activated' : 'User Deactivated',
-      description: `${user.name} has been ${nextActive ? 'activated' : 'deactivated'}.`,
+      variant: 'success',
+      title: 'Role Updated',
+      description: `Role changed to ${label}.`,
       duration: 3500,
     })
   }
@@ -1033,23 +1258,112 @@ export function UsersRolesPage({
     }
   }
 
-  function handleBulkActivate() {
-    setUsers(prev => prev.map(u => selected.has(u.id) ? { ...u, status: 'active' } : u))
-    toast({ variant: 'success', title: 'Users Activated', description: `${selected.size} user${selected.size !== 1 ? 's' : ''} activated.`, duration: 3000 })
+  /**
+   * Bulk activate/deactivate.
+   *
+   * These previously mutated local state only and always claimed success, so
+   * the whole selection appeared to change and silently reverted on refresh.
+   * Each user now goes through the same server action as the row action, and
+   * the toast reports the real split between saved and rejected.
+   */
+  async function handleBulkSetActive(nextActive: boolean) {
+    if (!onToggleStatus) {
+      toast({
+        variant: 'danger',
+        title: 'Unavailable',
+        description: 'Status changes are not available here.',
+        duration: 4000,
+      })
+      return
+    }
+
+    const targets = users.filter(u =>
+      selected.has(u.id) &&
+      (u.status === 'active') !== nextActive &&
+      // Self-deactivation is refused by the server; skip it rather than
+      // sending a request that is guaranteed to fail.
+      !(currentUserId && u.id === currentUserId && !nextActive),
+    )
+
+    if (targets.length === 0) {
+      toast({
+        variant: 'info',
+        title: 'Nothing to Change',
+        description: 'The selected users are already in that state.',
+        duration: 3000,
+      })
+      return
+    }
+
+    const results = await Promise.allSettled(
+      targets.map(u => onToggleStatus(u.id, nextActive)),
+    )
+    const succeeded = targets.filter((_, i) => results[i].status === 'fulfilled')
+    const failed = results.length - succeeded.length
+
+    // Apply only what the server actually accepted.
+    const okIds = new Set(succeeded.map(u => u.id))
+    setUsers(prev => prev.map(u =>
+      okIds.has(u.id) ? { ...u, status: nextActive ? 'active' : 'inactive' } : u,
+    ))
+
+    toast({
+      variant: failed > 0 ? 'danger' : nextActive ? 'success' : 'warning',
+      title: failed > 0 ? 'Partially Applied' : nextActive ? 'Users Activated' : 'Users Deactivated',
+      description: failed > 0
+        ? `${succeeded.length} saved, ${failed} rejected.`
+        : `${succeeded.length} user${succeeded.length !== 1 ? 's' : ''} ${nextActive ? 'activated' : 'deactivated'}.`,
+      duration: failed > 0 ? 6000 : 3000,
+    })
     setSelected(new Set())
   }
 
-  function handleBulkDeactivate() {
-    setUsers(prev => prev.map(u => selected.has(u.id) ? { ...u, status: 'inactive' } : u))
-    toast({ variant: 'warning', title: 'Users Deactivated', description: `${selected.size} user${selected.size !== 1 ? 's' : ''} deactivated.`, duration: 3000 })
-    setSelected(new Set())
-  }
+  async function handleBulkDelete() {
+    if (!onDelete) {
+      toast({
+        variant: 'danger',
+        title: 'Unavailable',
+        description: 'Deleting users is not available here.',
+        duration: 4000,
+      })
+      return
+    }
 
-  function handleBulkDelete() {
     const ids = Array.from(selected)
-    setUsers(prev => prev.filter(u => !ids.includes(u.id)))
-    toast({ variant: 'danger', title: 'Users Deleted', description: `${selected.size} user${selected.size !== 1 ? 's' : ''} removed.`, duration: 3000 })
+    const results = await Promise.allSettled(ids.map(id => onDelete(id)))
+    const okIds = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'))
+    const failed = ids.length - okIds.size
+
+    setUsers(prev => prev.filter(u => !okIds.has(u.id)))
+    toast({
+      variant: failed > 0 ? 'danger' : 'danger',
+      title: failed > 0 ? 'Partially Applied' : 'Users Deleted',
+      description: failed > 0
+        ? `${okIds.size} removed, ${failed} rejected.`
+        : `${okIds.size} user${okIds.size !== 1 ? 's' : ''} removed.`,
+      duration: failed > 0 ? 6000 : 3000,
+    })
     setSelected(new Set())
+  }
+
+  /**
+   * Bulk role change is not a server operation — each change is authorized and
+   * audited individually — so this opens the single-user editor rather than
+   * pretending a batch endpoint exists.
+   */
+  function handleBulkChangeRole() {
+    const ids = Array.from(selected)
+    if (ids.length !== 1) {
+      toast({
+        variant: 'info',
+        title: 'Select One User',
+        description: 'Roles are changed one user at a time.',
+        duration: 4000,
+      })
+      return
+    }
+    const target = users.find(u => u.id === ids[0])
+    if (target) setRoleUser(target)
   }
 
   return (
@@ -1087,9 +1401,9 @@ export function UsersRolesPage({
         {selected.size > 0 && (
           <BulkActionsBar
             count={selected.size}
-            onChangeRole={() => toast({ variant: 'info', title: 'Change Role', description: 'Role editor coming soon.', duration: 2500 })}
-            onActivate={handleBulkActivate}
-            onDeactivate={handleBulkDeactivate}
+            onChangeRole={handleBulkChangeRole}
+            onActivate={() => { void handleBulkSetActive(true) }}
+            onDeactivate={() => { void handleBulkSetActive(false) }}
             onDelete={handleBulkDelete}
             onClear={() => setSelected(new Set())}
           />
@@ -1194,7 +1508,11 @@ export function UsersRolesPage({
                           user={user}
                           onToggleStatus={handleToggleStatus}
                           onDelete={handleDelete}
-                          onEditRole={u => setDetailRole(u.role)}
+                          // Previously opened the read-only role description
+                          // panel, which is why "Edit Role" never edited
+                          // anything. It now opens the real editor.
+                          onEditRole={setRoleUser}
+                          pending={pendingIds.has(user.id)}
                         />
                       </td>
                     </tr>
@@ -1223,6 +1541,15 @@ export function UsersRolesPage({
         onClose={() => setModalOpen(false)}
         onInvite={handleInvite}
         currentUserRole={currentUserRole}
+      />
+
+      {/* ── Change role modal ── */}
+      <ChangeRoleModal
+        user={roleUser}
+        onClose={() => setRoleUser(null)}
+        onSubmit={handleChangeRole}
+        currentUserRole={currentUserRole}
+        currentUserId={currentUserId}
       />
 
       {/* ── Role detail panel ── */}
