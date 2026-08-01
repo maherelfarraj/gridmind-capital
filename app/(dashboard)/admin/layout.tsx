@@ -1,35 +1,25 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-
-const DEMO_TENANT = '00000000-0000-0000-0000-000000000001'
+import { resolveActorState } from '@/lib/auth/actor'
+import { adminDecision } from '@/lib/auth/routing'
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Previously this layout ran its own identity lookup that (a) filtered the
+  // profile by a hardcoded demo tenant UUID, so admins in any real tenant were
+  // bounced out, and (b) never checked is_active, so a deactivated admin in
+  // that one tenant still passed. It now uses the canonical resolver, which
+  // enforces authentication, profile existence, is_active, tenant, and role.
+  const state = await resolveActorState()
 
-  if (!user) {
-    redirect('/auth/login')
-  }
+  // No local ADMIN_ROLES copy: adminDecision() applies the canonical
+  // PLATFORM_ADMIN_ROLES group, and is the exact function the tests exercise.
+  const decision = adminDecision(state)
 
-  // Read role from profiles via admin client (bypasses RLS)
-  const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .eq('tenant_id', DEMO_TENANT)
-    .maybeSingle()
-
-  const role = profile?.role as string | null | undefined
-
-  // Only system_admin and tenant_admin may access /admin/*
-  if (role !== 'system_admin' && role !== 'tenant_admin') {
-    redirect('/dashboard')
+  if (decision.action === 'redirect') {
+    redirect(decision.to)
   }
 
   return <>{children}</>

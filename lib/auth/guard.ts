@@ -1,6 +1,16 @@
-import { cache } from 'react'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import 'server-only'
+import {
+  resolveActorState,
+  actorFailureMessage,
+  type ResolvedActor,
+} from '@/lib/auth/actor'
+import {
+  isDbUserRole,
+  isWriterRole,
+  PLATFORM_ADMIN_ROLES,
+  WRITER_ROLES,
+  type DbUserRole,
+} from '@/lib/auth/roles'
 
 /**
  * Centralized authentication + role guards for server actions.
@@ -14,40 +24,40 @@ import { createAdminClient } from '@/lib/supabase/admin'
  *   const gate = await requireWriter()
  *   if ('error' in gate) return gate   // { error: string }
  *   // ...proceed with createAdminClient() data operation using gate.actor
+ *
+ * ── Role vocabulary ──
+ * This module owns NO role list. `lib/auth/roles.ts` is the single canonical
+ * source for the `profiles.role` vocabulary; `isDbUserRole` and `DbUserRole`
+ * are re-exported below purely so existing importers keep working.
  */
 
-export interface AuthActor {
-  userId: string
-  role: string
-  tenantId: string | null
-  isActive: boolean
-}
+// Re-export (do not redefine) the canonical role validator and type.
+export { isDbUserRole }
+export type { DbUserRole }
+
+/**
+ * A validated caller. Every field is guaranteed non-null and in-vocabulary:
+ * `getAuthActor()` returns `{ error }` rather than a partially valid actor.
+ */
+export type AuthActor = ResolvedActor
 
 export type GuardResult = { actor: AuthActor } | { error: string }
 
-/** Canonical whitelist of all valid roles (matches DB CHECK constraint) */
-export const CANONICAL_ROLES = [
-  'system_admin', 'tenant_admin', 'project_director', 'project_manager',
-  'engineer', 'hse_manager', 'commissioning_manager', 'finance_manager',
-  'commercial_manager', 'viewer', 'subcontractor', 'client_viewer'
-] as const
-
-/** Validator: Is this role in the canonical whitelist? */
-export function isDbUserRole(role: unknown): role is typeof CANONICAL_ROLES[number] {
-  return typeof role === 'string' && CANONICAL_ROLES.includes(role as typeof CANONICAL_ROLES[number])
-}
-
-/** Roles allowed to manage tenant/user administration and override approval assignments. */
-export const ADMIN_ROLES = ['system_admin', 'tenant_admin'] as const
+/**
+ * Roles allowed to manage tenant/user administration and override approval
+ * assignments. Aliased to the canonical platform-admin group so the /admin
+ * layout and the server-action guards cannot drift apart.
+ */
+export const ADMIN_ROLES: readonly DbUserRole[] = PLATFORM_ADMIN_ROLES
 
 /** Roles allowed to decide/delegate approvals. */
-export const APPROVER_ROLES = [
+export const APPROVER_ROLES: readonly DbUserRole[] = [
   'system_admin',
   'tenant_admin',
   'project_director',
   'project_manager',
   'finance_manager',
-] as const
+]
 
 /**
  * Resolve the authenticated caller and their profile role.
@@ -60,73 +70,56 @@ export const APPROVER_ROLES = [
  *
  * Wrapped in React cache() to dedupe per HTTP request.
  */
-export const getAuthActor = cache(async (): Promise<GuardResult> => {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+export async function getAuthActor(): Promise<GuardResult> {
+  const state = await resolveActorState()
 
-  if (!user) return { error: 'Not authenticated' }
-
-  // Read the caller's profile via the admin client
-  // (lookup itself is not subject to RLS visibility rules)
-  const admin = createAdminClient()
-  const { data: profile, error } = await admin
-    .from('profiles')
-    .select('role, tenant_id, is_active')
-    .eq('id', user.id)
-    .single()
-
-  // FAIL-CLOSED: Profile must exist
-  if (error || !profile) {
-    return { error: 'User profile not found. Contact administrator.' }
+  // Distinct internal reasons (not_authenticated, profile_lookup_failed,
+  // profile_missing, profile_inactive, tenant_missing, role_invalid) are
+  // mapped to safe messages. Raw database errors are never surfaced, and the
+  // invalid role value itself is not echoed back to the browser.
+  if (state.kind === 'invalid') {
+    return { error: actorFailureMessage(state.reason) }
   }
 
-  // FAIL-CLOSED: User must be active
-  if (!profile.is_active) {
-    return { error: 'User account is inactive. Contact administrator.' }
-  }
+  return { actor: state.actor }
+}
 
-  // FAIL-CLOSED: User must have a provisioned tenant
-  if (!profile.tenant_id) {
-    return { error: 'User is not provisioned to any tenant. Contact administrator.' }
-  }
-
-  // FAIL-CLOSED: Role must be in canonical whitelist (no silent downgrade to viewer)
-  if (!isDbUserRole(profile.role)) {
-    return { error: `Invalid or missing role: ${profile.role}` }
-  }
-
-  return {
-    actor: {
-      userId: user.id,
-      role: profile.role,
-      tenantId: profile.tenant_id,
-      isActive: profile.is_active,
-    },
-  }
-})
-
-/** Require an authenticated caller whose role is in `allowed`. */
-export async function requireRole(allowed: readonly string[]): Promise<GuardResult> {
+/**
+ * Require an authenticated caller whose role is in `allowed`.
+ * `allowed` is typed to the canonical vocabulary so a typo or a retired role
+ * name is a compile error rather than a permanently-denying guard.
+ */
+export async function requireRole(allowed: readonly DbUserRole[]): Promise<GuardResult> {
   const res = await getAuthActor()
   if ('error' in res) return res
   if (!allowed.includes(res.actor.role)) return { error: 'Not authorized' }
   return res
 }
 
-/** Require an authenticated caller who is NOT a read-only viewer. */
+/**
+ * Backward-compatible alias for the canonical writer group.
+ *
+ * There is exactly ONE writer classification, the exhaustive
+ * `WRITE_ACCESS_BY_ROLE` record in lib/auth/roles.ts. This module re-exports it
+ * and derives nothing of its own — an exclusion-based derivation here would be
+ * fail-open for any role added to DB_USER_ROLES later.
+ */
+export const INTERNAL_ROLES: readonly DbUserRole[] = WRITER_ROLES
+export { WRITER_ROLES }
+
+/**
+ * Require an authenticated caller whose role is classified as a writer.
+ * Read-only roles (viewer, subcontractor, client_viewer) are rejected.
+ */
 export async function requireWriter(): Promise<GuardResult> {
   const res = await getAuthActor()
   if ('error' in res) return res
-  
-  // Only accept internal roles from DB CHECK constraint
-  const INTERNAL_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager', 'engineer', 'hse_manager', 'commissioning_manager', 'finance_manager', 'commercial_manager']
-  
-  if (!res.actor.role || !INTERNAL_ROLES.includes(res.actor.role)) {
-    return { error: 'Not authorized: external roles cannot write' }
+
+  // res.actor.role is a validated DbUserRole, so no null check is needed.
+  if (!isWriterRole(res.actor.role)) {
+    return { error: 'Not authorized: this role cannot write' }
   }
-  
+
   return res
 }
 
@@ -171,7 +164,7 @@ export async function requireAssignedApprover(
   }
 
   // Admin override check.
-  if (ADMIN_ROLES.includes(res.actor.role as typeof ADMIN_ROLES[number])) {
+  if (ADMIN_ROLES.includes(res.actor.role)) {
     // Admin is allowed; caller should log this as an override in the action.
     return res
   }
@@ -209,22 +202,23 @@ export async function requireUser(): Promise<{ userId: string; profile: AuthActo
  *
  * Returns { userId, profile } on success, throws on error.
  */
-export async function requireInternalRole(allowed: readonly string[]): Promise<{ userId: string; profile: AuthActor }> {
+export async function requireInternalRole(
+  allowed: readonly DbUserRole[],
+): Promise<{ userId: string; profile: AuthActor }> {
   const res = await getAuthActor()
   if ('error' in res) {
     throw new Error(res.error)
   }
 
   const actor = res.actor
-  
-  // Verify role is in allowed list
-  if (!actor.role || !allowed.includes(actor.role)) {
-    throw new Error(`Unauthorized: User role '${actor.role}' not in allowed list [${allowed.join(', ')}]`)
-  }
 
-  // Verify tenant (getAuthActor already checked, but be explicit)
-  if (!actor.tenantId) {
-    throw new Error('User is not provisioned to any tenant.')
+  // actor.role and actor.tenantId are already validated non-null by
+  // getAuthActor(); re-querying or re-deriving a weaker value here would
+  // reintroduce the second authorization algorithm this batch removed.
+  if (!allowed.includes(actor.role)) {
+    throw new Error(
+      `Unauthorized: User role '${actor.role}' not in allowed list [${allowed.join(', ')}]`,
+    )
   }
 
   return { userId: actor.userId, profile: actor }
