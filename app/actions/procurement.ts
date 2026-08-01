@@ -446,6 +446,8 @@ export async function reissueVendorInvite(args: {
         projectIds: poForAccess?.project_id ? [poForAccess.project_id] : [],
         externalOrg: args.vendorName,
         isActive: true,
+        // Same provenance that authorizes compensation to delete this auth user.
+        adoptNewlyInvited: wasNewlyInvited,
         reason: `vendor_reissue:${args.poNumber}`,
       })
     },
