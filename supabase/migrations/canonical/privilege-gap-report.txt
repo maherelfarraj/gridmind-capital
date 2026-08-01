@@ -133,8 +133,15 @@ The shape-reconciliation report claimed "2 exceptions" among 28 functions and
 named only one. That claim was WRONG: 27 + 1 = 28 and the arithmetic closes.
 The draft's section A6 -- 27 functions to PUBLIC/anon/authenticated/
 service_role, plus REVOKE ALL FROM PUBLIC then GRANT to authenticated +
-service_role for increment_copilot_usage -- is CORRECT AS WRITTEN. Gap B4 was
-a phantom created by a miscount, not a real unaccounted ACL.
+  service_role for increment_copilot_usage -- is CORRECT AS WRITTEN. Gap B4 was
+  a phantom created by a miscount, not a real unaccounted ACL.
+
+  [PARTIALLY RETRACTED 2026-08-01. The B4 miscount finding stands: 27 + 1 = 28
+   and there is no unaccounted function. But "CORRECT AS WRITTEN" was WRONG.
+   Local execution proved REVOKE ALL ... FROM PUBLIC leaves anon holding an
+   explicit EXECUTE grant, because the Supabase image's ALTER DEFAULT PRIVILEGES
+   creates a per-role entry that a PUBLIC revoke cannot touch. An additional
+   REVOKE ... FROM anon was required. See section 11.]
 
 Explicit verification requested:
 | function                            | PUBLIC | anon | auth | service_role | dashboard_user |
@@ -361,9 +368,13 @@ Statement counts now in the grants file:
 
 rate_limit_buckets final matrix:
   service_role  = all 8   (1 GRANT, emitted in A4b)
-  anon          = none    (0 statements -- absence, not REVOKE)
-  authenticated = none    (0 statements -- absence, not REVOKE)
+  anon          = none    (1 explicit REVOKE -- see correction below)
+  authenticated = none    (1 explicit REVOKE -- see correction below)
   postgres      = all 8   (owner-derived, no statement)
+
+  [CORRECTED 2026-08-01 -- these two rows previously read
+   "none (0 statements -- absence, not REVOKE)". THAT WAS WRONG AND IT WAS A
+   SECURITY DEFECT. See section 11 below.]
 
 FIDELITY IS REPORTED AS TWO NUMBERS AND MUST NOT BE COLLAPSED
   A. Executable-baseline fidelity -- exact on every dimension the migration role
@@ -455,3 +466,76 @@ NET EFFECT ON THE TWO FIDELITY NUMBERS -- STILL NOT COLLAPSED
      the 3 platform-owned default ACLs.
 
 Nothing in this amendment was executed against production.
+
+================================================================================
+11. THE "ABSENCE = DENIAL" REASONING WAS DISPROVEN BY EXECUTION -- 2026-08-01
+================================================================================
+Two privilege conclusions in this report were derived by reasoning about what a
+bootstrap "would" produce. Both were WRONG, both were security-relevant, and both
+were found only once the baseline was actually RUN on a disposable
+supabase/postgres 17.6.1.158 instance. Nothing was executed against production.
+
+THE FLAWED PREMISE, STATED PLAINLY
+  "The bootstrap target is empty, so there is no grant to revoke, and emitting a
+   REVOKE would CREATE an ACL entry production does not have. Absence is the
+   faithful reproduction."
+
+  The target is empty of TABLES. It is NOT empty of DEFAULT PRIVILEGES. The
+  supabase/postgres image ships ALTER DEFAULT PRIVILEGES records -- owned by both
+  postgres and supabase_admin -- that grant arwdDxtm on every newly created table
+  in schema public, and EXECUTE on every newly created function, to anon,
+  authenticated and service_role. Those records are already active before the
+  first CREATE TABLE in file ...0000 runs.
+
+  Therefore a newly created object does not start with an empty ACL. It starts
+  with whatever the default privileges say -- and here that is full access.
+  ABSENCE OF A STATEMENT IS NOT DENIAL. An explicit REVOKE removes an inherited
+  entry; it does not invent one.
+
+DEFECT D3 -- rate_limit_buckets was LEAKED to anon and authenticated
+  Observed on the bootstrapped database:
+      anon=arwdDxtm/postgres   authenticated=arwdDxtm/postgres
+  i.e. full DML on the rate-limit table for both roles, granted by no statement
+  in this baseline. Production grants it to service_role and the owner only.
+  Practical impact: the anonymous role could read, insert, update and delete
+  rate-limit buckets -- i.e. defeat rate limiting -- on any database bootstrapped
+  from these files.
+  Fix: explicit REVOKE ALL PRIVILEGES ON TABLE public.rate_limit_buckets
+       FROM anon, authenticated; in ...0003 section A2, placed after the table
+       exists so there is a real inherited entry to remove.
+
+DEFECT D4 -- anon retained EXECUTE on increment_copilot_usage
+  The baseline already had REVOKE ALL ... FROM PUBLIC, and that part was right:
+  it removes PostgreSQL's own built-in default. But the image ALSO creates a
+  SEPARATE, EXPLICIT anon=X entry, and
+      REVOKE ... FROM PUBLIC DOES NOT REMOVE AN EXPLICIT PER-ROLE GRANT.
+  PUBLIC is its own pseudo-grantee, not a superset that sweeps up named roles.
+  Verified: has_function_privilege('anon', ..., 'EXECUTE') = true.
+  Fix: an additional REVOKE ALL ON FUNCTION ... FROM anon, issued before the
+       GRANT so nothing later re-adds it.
+
+HOW THEY WERE CAUGHT -- POSTCONDITIONS WORK, BUT ONLY WHEN RUN
+  P-G1 counted 103 tables granted to anon where 102 were expected.
+  P-G5 counted 9760 column-privilege rows where 9720 were expected; the surplus
+  40 is exactly 5 columns x 2 roles x 4 column-level privileges -- one table.
+  The arithmetic identified rate_limit_buckets before it was even named.
+
+  This is the second time in this project that a correct postcondition sat
+  unexecuted beside a defect it was capable of detecting. Postconditions are
+  worthless until something runs them.
+
+ASSERTIONS STRENGTHENED AS A RESULT
+  has_table_privilege / has_function_privilege answer the EFFECTIVE question and
+  are necessary but not sufficient: they cannot distinguish "no ACL entry" from
+  "an entry granting nothing", and they silently follow role membership. New
+  aclexplode-based checks (P-G1a, P-G5a) now read the STORED relacl and proacl
+  and assert the exact grantee list, so a leak is reported as the entry that
+  causes it rather than as a count that happens to be off by one.
+
+NET EFFECT ON THE TWO FIDELITY NUMBERS -- STILL NOT COLLAPSED
+  A. Executable-baseline fidelity: previously reported as exact. That report was
+     premature -- it described a file that had never been run. With D3 and D4
+     corrected it is exact on every dimension the migration role can reach, and
+     that claim is now backed by execution rather than by inference.
+  B. Full production fidelity: unchanged. NOT reached, still blocked solely on
+     the 3 platform-owned default ACLs.

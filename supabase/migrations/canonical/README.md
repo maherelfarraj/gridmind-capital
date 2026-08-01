@@ -1,6 +1,6 @@
 # Canonical Production Baseline — REVIEW AREA (not yet active)
 
-**Status: DRAFT. Nothing in this directory has been executed anywhere.**
+**Status: DRAFT. Executed once on a disposable database; never against production.**
 
 These files are a proposed clean-bootstrap reconstruction of the GREOS production
 schema (Supabase project `zmahjutrpvwjcmhkiibj`). They are deliberately **outside**
@@ -8,7 +8,88 @@ the active migration replay path (`supabase/migrations/*.sql`) until reviewed an
 approved by the schema owner.
 
 Production remains authoritative. These files describe production; they do not
-define it, and they have never run against it.
+define it, and they have **never run against it**.
+
+---
+
+## 0-A. Execution-correction pass — 2026-08-01 (six defects)
+
+The baseline was **run for the first time** on a disposable
+`supabase/postgres:17.6.1.158` container (the exact production PostgreSQL
+version). **It did not bootstrap.** Six defects were found — two of them
+security-relevant, and neither detectable by reading the files. All six are now
+corrected.
+
+| # | Defect | Severity | Where | Correction |
+|---|--------|----------|-------|------------|
+| D1 | `CREATE SCHEMA public;` failed `42P06` on **statement 1 of 1784**. An "empty" database still has `public` — `initdb` creates it. There was no target on which this could ever have succeeded. | blocker | `…0000` | Replaced with a fail-loud precondition block that verifies `public`, its owner, `auth.users`, the three platform roles, and that `public` is empty. |
+| D2 | Grants on the 6 views ran **before the views existed** (`42P01`), because they sat in file `…0003` while the views are created in `…0004`. | blocker | `…0003` → `…0004` | 18 statements relocated after the view definitions; ownership set before grants. Dynamic `DO`-block grant loop deleted in favour of explicit enumeration. |
+| **D3** | **`rate_limit_buckets` was granted `arwdDxtm` to `anon` and `authenticated`** — full DML on the rate-limit table for the anonymous role. | **security** | `…0003` | Explicit `REVOKE`. See below. |
+| **D4** | **`anon` could `EXECUTE increment_copilot_usage`** despite `REVOKE ALL … FROM PUBLIC`. | **security** | `…0003` | Added `REVOKE … FROM anon`. See below. |
+| D5 | A postcondition compared `format('%s', <boolean>)` against `'row=true,before=false,…'`. PostgreSQL renders booleans as `t`/`f`, so the check **could never pass** — it reported a correct trigger as drifted. | false failure | `…0005` | Each `tgtype` bit now asserted as a boolean expression; text used only in the diagnostic message. |
+| D6 | Signup was **100% broken**: `handle_new_user()` hardcodes tenant `…0001`, `profiles.tenant_id` has an FK to `tenants`, and the baseline seeds no tenants. The `AFTER INSERT` trigger aborts the whole `auth.users` insert (`23503`) → 0 users, 0 profiles. | blocker | documented | Recorded as an operational prerequisite + disposable test procedure in `…0005`. No seed data added — see below. |
+
+### The lesson from D3 and D4: absence is not denial
+
+Both security defects came from one plausible-sounding but **false** premise:
+
+> *"The bootstrap target is empty, so there is no grant to revoke, and emitting a
+> `REVOKE` would create an ACL production does not have."*
+
+The target is empty of **tables** — not of **default privileges**. The
+`supabase/postgres` image ships `ALTER DEFAULT PRIVILEGES` records granting
+`arwdDxtm` on every new table and `EXECUTE` on every new function in `public` to
+`anon`, `authenticated` and `service_role`. Those are active *before* the first
+`CREATE TABLE`. A new object is therefore born with that ACL, and **omitting a
+statement grants everything rather than nothing.**
+
+D4 adds a second trap: `REVOKE … FROM PUBLIC` **does not remove an explicit
+per-role grant**. `PUBLIC` is its own pseudo-grantee, not a superset covering
+named roles, so the image's explicit `anon=X` entry survived a `PUBLIC` revoke.
+
+Both were caught by postconditions that already existed (103 granted tables vs
+102 expected; 9760 column-privilege rows vs 9720 — a surplus of exactly
+5 columns × 2 roles × 4 privileges). **This is the second time a correct
+postcondition sat unexecuted beside the defect it was capable of catching.
+Postconditions are worthless until something runs them.** New `aclexplode`-based
+assertions now inspect the *stored* ACL, not just the effective answer.
+
+### What D6 does not change
+
+`handle_new_user()` is reproduced **verbatim from production**, hardcoded tenant
+and all, and production has that tenant row — so production signups work. The
+failure is a property of bootstrapping an empty database, not a defect introduced
+here. Neither the function nor a seed row was added: changing the function would
+stop the baseline describing production, and a tenant row is business data, not
+schema. It is documented as a **deployment prerequisite** with a reversible test
+procedure instead.
+
+With the prerequisite tenant present, all 11 signup assertions pass — including
+`role = 'viewer'`, confirming the earlier F1 escalation fix by execution.
+
+### Also corrected
+
+- **Foreign keys: production has 153, not 128.** The reconciliation report's 128
+  matched no rule that was ever run and was nonetheless labelled "all match". The
+  local bootstrap's 153 was right all along. Re-verified read-only against
+  production under six counting rules, which agree at 153 (145 `public`→`public`
+  + 8 → `auth.users`).
+- **One column fingerprint, one formula.** Two non-comparable column hashes
+  existed; the weaker name-and-order-only hash
+  (`75f6236…`) is retired and its assertion deleted. Canonical values, each
+  recorded beside its formula: columns `0b1a44c861bb61cc6ca26dee3f63db02`,
+  FKs `f061c43fcdf08eccae779b7bcabe6ac6`.
+
+### Verification status
+
+Repository checks pass: **161/161 tests**, typecheck clean, build clean. A static
+scanner (comment- and dollar-quote-aware) confirms no `CREATE SCHEMA public`, no
+view reference before creation, no executable DML, and balanced transactions in
+all six files.
+
+**Still not done: a full clean re-run of all six corrected files end-to-end.** The
+six defects were found and fixed against a run of the *previous* revision. This
+revision has not been executed. Do not treat it as bootstrap-proven.
 
 ---
 
@@ -16,8 +97,13 @@ define it, and they have never run against it.
 
 A value-by-value reconciliation against production
 (`shape-reconciliation-report.txt`) found **four defects** in this baseline. All
-four have now been corrected in the SQL. Execution on a disposable database
-**remains mandatory and has still not happened.**
+four have now been corrected in the SQL.
+
+> **Superseded in part by section 0-A above.** When this section was written,
+> execution on a disposable database "remained mandatory and had not happened".
+> It has since happened, and it found six further defects that no amount of
+> reading could have surfaced — including two security defects caused by
+> privileges the files never mention. Read 0-A first.
 
 | # | Defect | Where | Correction |
 |---|--------|-------|------------|
@@ -211,13 +297,32 @@ already closed.
 | 1 | `20260801000000_schema_types_tables.sql` | schema, 18 enums, 103 tables, 2 identity sequences, comments |
 | 2 | `20260801000001_constraints_indexes.sql` | 139 PK/UNIQUE, 153 FK, 81 indexes |
 | 3 | `20260801000002_functions_triggers.sql` | 28 functions, 24 triggers, 1 event trigger |
-| 4 | `20260801000003_rls_policies_grants.sql` | 103 RLS enables, 144 policies, grants |
-| 5 | `20260801000004_views.sql` | 6 views + view grants |
+| 4 | `20260801000003_rls_policies_grants.sql` | 103 RLS enables, 144 policies, **table/sequence/function grants only** |
+| 5 | `20260801000004_views.sql` | 6 views, **then their ownership and all 18 view grants** |
 | 6 | `20260801000005_postconditions.sql` | assertions; aborts on any mismatch |
 
 Functions precede policies because policies call `get_my_tenant_id()`,
 `current_user_role()` and `is_external_role()`. Views come after tables. Each file
 is wrapped in `BEGIN`/`COMMIT` and commits independently.
+
+> **File 4 must not grant on views (defect D2, fixed 2026-08-01).** File 4
+> previously carried `GRANT`/`ALTER VIEW` statements naming the six views, but the
+> views are not created until file 5. Executing the baseline failed there with
+> `42P01 relation "public.v_gate_progress" does not exist`. The 18 statements
+> (6 `anon`/`authenticated` grants, 6 `service_role` grants, 6 `ALTER VIEW … OWNER`)
+> now live in file 5 immediately after the view definitions.
+>
+> The fix was to move the statements after the objects they depend on — **not** to
+> renumber the files and **not** to weaken the statements. Ownership is set before
+> the grants because the owner is recorded as the grantor in every resulting ACL
+> entry, and production shows `grantor=postgres` on all view privileges.
+>
+> File 5's dynamic `DO`-block grant loop was also **deleted**. It granted to
+> whatever views existed at runtime, so a missing or renamed view would have been
+> silently skipped instead of failing loudly, and grants buried inside a `DO` block
+> are invisible to statement-level scanners — the same blind spot that once let
+> this directory be reported as containing "0 grants". All 18 statements are now
+> enumerated explicitly, one per line.
 
 ## 5. Quarantined and misread source files
 
@@ -477,7 +582,7 @@ production is unchanged.
 |---|---|
 | No schema-level statement (B1 blocked) | **A0** — `GRANT USAGE ON SCHEMA public` to the 5 captured grantees |
 | Zero `service_role` grants (B2 blocked) | **A4b** — 103 tables + 6 views + 2 sequences, enumerated one per line |
-| `rate_limit_buckets`: no statement at all | **A2/A4b** — granted to `service_role`; still withheld from `anon`/`authenticated` |
+| `rate_limit_buckets`: no statement at all | **A2/A4b** — granted to `service_role`; **explicitly `REVOKE`d** from `anon`/`authenticated` (see D3 — omitting the statement leaked the table) |
 | No default ACLs (B3 blocked) | **A8** — the 3 `postgres`-owned records; the 3 platform-owned ones documented as commented, non-executable |
 | B4 "second function ACL exception" | **Withdrawn — it never existed.** 27 + 1 = 28 |
 
