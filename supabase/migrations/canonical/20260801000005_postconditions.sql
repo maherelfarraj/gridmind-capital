@@ -68,8 +68,10 @@ BEGIN
     WHERE n.nspname='public' AND c.relkind='S';
   IF v_n <> 2 THEN v_fail := v_fail || format('sequences: expected 2, got %s%s', v_n, E'\n'); END IF;
 
-  SELECT count(*) INTO v_n FROM pg_indexes WHERE schemaname='public';
-  IF v_n <> 220 THEN v_fail := v_fail || format('indexes: expected 220 (81 explicit + 139 constraint-backed), got %s%s', v_n, E'\n'); END IF;
+  -- Index validation moved to P-IDX1 (section 2), which asserts the same count of
+  -- 220 plus a full normalized fingerprint, validity, and partial/expression/
+  -- INCLUDE coverage. Deliberately not duplicated here: two assertions over one
+  -- dimension is how non-comparable checks drift apart.
 
   SELECT count(*) INTO v_n FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public';
@@ -193,6 +195,126 @@ BEGIN
   SELECT count(*) INTO v_n FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid
     JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public' AND c.contype='c';
   IF v_n <> 72 THEN v_fail := v_fail || format('check constraints: expected 72, got %s%s', v_n, E'\n'); END IF;
+
+  ------------------------------------------------------------------
+  -- P-IDX1: NORMALIZED INDEX FINGERPRINT  (added 2026-08-01)
+  --
+  -- Replaces a count-only check. 220 indexes could still differ in access
+  -- method, uniqueness, key ORDER, sort direction, NULLS placement, operator
+  -- class, collation, included columns, expression or partial predicate --
+  -- every one of which changes query semantics or correctness. Two of these
+  -- are load-bearing beyond performance:
+  --   * one_accountable_per_deliverable is a UNIQUE PARTIAL index enforcing
+  --     "at most one Accountable per deliverable" for letter IN ('A','A/R').
+  --     Lose the predicate and it over-constrains; lose UNIQUE and the RACI
+  --     integrity rule silently disappears. No CHECK constraint duplicates it.
+  --   * idx_workflow_events_project is the only EXPRESSION index
+  --     ((metadata ->> 'project_id')). A plain column index would not match
+  --     the query and would not error -- it would just never be used.
+  --
+  -- INDEX COUNTING RULE (canonical, one rule used for both sides):
+  --   * index relation in schema public
+  --   * every entry in pg_index (constraint-backed and explicit alike):
+  --     220 = 103 PRIMARY KEY + 36 UNIQUE constraint + 81 explicit CREATE INDEX
+  --   * extension-owned indexes excluded via pg_depend deptype='e' (none exist
+  --     today; the clause keeps a future extension from inflating the count)
+  --   * pg_indexes returns the same 220, so the rule is not view-dependent
+  --
+  -- INDEX FINGERPRINT FORMULA (md5 over lines joined by \n, sorted by line):
+  --   schema.table|indexname|access_method|isunique|isprimary|isexclusion|
+  --   isvalid|isready|islive|isclustered|isreplident|nkeyatts|natts|
+  --   normalized_indexdef|normalized_partial_predicate
+  --
+  --   normalized_indexdef is pg_get_indexdef() with runs of whitespace collapsed
+  --   to one space and the ends trimmed. pg_get_indexdef is the authoritative
+  --   deparse: it already renders key order, DESC, NULLS FIRST/LAST, INCLUDE
+  --   columns, non-default operator classes and non-default collations, so those
+  --   dimensions are covered by value rather than re-derived by hand. Only
+  --   deparser-only whitespace is normalized -- casts, predicates, expressions
+  --   and operator classes are deliberately NOT normalized away.
+  --   An absent predicate is written '-' so it cannot collide with a real one.
+  --   nkeyatts/natts are carried separately so an INCLUDE column moving into the
+  --   key (or vice versa) is caught even if the deparse were to render alike.
+  --
+  -- Hash computed read-only against production (project zmahjutrpvwjcmhkiibj,
+  -- PostgreSQL 17.6) on 2026-08-01 and reproduced exactly by a full local
+  -- bootstrap of canonical files 0000-0004: 220/220 exact, 0 missing, 0 extra.
+  ------------------------------------------------------------------
+
+  SELECT count(*) INTO v_n FROM pg_index i
+    JOIN pg_class c ON c.oid=i.indexrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public'
+      AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass
+                      AND d.objid=c.oid AND d.deptype='e');
+  IF v_n <> 220 THEN
+    v_fail := v_fail || format('indexes: expected 220 (103 PK + 36 UNIQUE constraint '
+              || '+ 81 explicit CREATE INDEX), got %s%s', v_n, E'\n');
+  END IF;
+
+  -- An invalid or not-ready index is silently ignored by the planner and by
+  -- UNIQUE enforcement, so a failed CREATE INDEX CONCURRENTLY must fail loudly
+  -- here rather than degrade correctness in the dark.
+  SELECT count(*) INTO v_n FROM pg_index i
+    JOIN pg_class c ON c.oid=i.indexrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND (NOT i.indisvalid OR NOT i.indisready OR NOT i.indislive);
+  IF v_n <> 0 THEN
+    v_fail := v_fail || format('invalid/not-ready/not-live indexes: expected 0, got %s. '
+              || 'Such an index is ignored by the planner AND by unique enforcement.%s',
+              v_n, E'\n');
+  END IF;
+
+  SELECT count(*) INTO v_n FROM pg_index i
+    JOIN pg_class c ON c.oid=i.indexrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND i.indpred IS NOT NULL;
+  IF v_n <> 5 THEN
+    v_fail := v_fail || format('partial (predicated) indexes: expected 5, got %s%s', v_n, E'\n');
+  END IF;
+
+  SELECT count(*) INTO v_n FROM pg_index i
+    JOIN pg_class c ON c.oid=i.indexrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND i.indexprs IS NOT NULL;
+  IF v_n <> 1 THEN
+    v_fail := v_fail || format('expression indexes: expected 1, got %s%s', v_n, E'\n');
+  END IF;
+
+  SELECT count(*) INTO v_n FROM pg_index i
+    JOIN pg_class c ON c.oid=i.indexrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND i.indnatts > i.indnkeyatts;
+  IF v_n <> 0 THEN
+    v_fail := v_fail || format('indexes with INCLUDE columns: expected 0, got %s%s', v_n, E'\n');
+  END IF;
+
+  SELECT md5(string_agg(line, E'\n' ORDER BY line)) INTO v_txt FROM (
+    SELECT n.nspname||'.'||t.relname||'|'||c.relname||'|'||am.amname
+           ||'|'||i.indisunique||'|'||i.indisprimary||'|'||i.indisexclusion
+           ||'|'||i.indisvalid||'|'||i.indisready||'|'||i.indislive
+           ||'|'||i.indisclustered||'|'||i.indisreplident
+           ||'|'||i.indnkeyatts||'|'||i.indnatts
+           ||'|'||btrim(regexp_replace(pg_get_indexdef(i.indexrelid), '\s+', ' ', 'g'))
+           ||'|'||COALESCE(btrim(regexp_replace(
+                    pg_get_expr(i.indpred, i.indrelid), '\s+', ' ', 'g')), '-') AS line
+    FROM pg_index i
+    JOIN pg_class c ON c.oid=i.indexrelid
+    JOIN pg_class t ON t.oid=i.indrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_am am ON am.oid=c.relam
+    WHERE n.nspname='public'
+      AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass
+                      AND d.objid=c.oid AND d.deptype='e')
+  ) s;
+  IF v_txt IS DISTINCT FROM 'ebb587d0be167dcda6f811ade14b98c1' THEN
+    v_fail := v_fail || format('Index fingerprint drift: expected '
+              || 'ebb587d0be167dcda6f811ade14b98c1 (production, 2026-08-01), got %s. '
+              || 'Access method, uniqueness, key order, sort direction, NULLS placement, '
+              || 'operator class, collation, INCLUDE columns, expression or partial '
+              || 'predicate differs on at least one of the 220 indexes.%s',
+              v_txt, E'\n');
+  END IF;
 
   ------------------------------------------------------------------
   -- 3. ROW LEVEL SECURITY
@@ -1003,7 +1125,7 @@ BEGIN
     RAISE EXCEPTION E'CANONICAL BASELINE POSTCONDITIONS FAILED\n%\n(%; %)', v_fail, PROCEDURE_NOTE, FUNCTION_NOTE;
   END IF;
 
-  RAISE NOTICE 'Canonical baseline postconditions PASSED: 103 tables, 6 views, 18 enums, 28 functions, 24 triggers, 144 policies, 220 indexes, 153 foreign keys, 1177 columns, FK fingerprint f061c43fcdf08eccae779b7bcabe6ac6, column fingerprint 0b1a44c861bb61cc6ca26dee3f63db02.';
+  RAISE NOTICE 'Canonical baseline postconditions PASSED: 103 tables, 6 views, 18 enums, 28 functions, 24 triggers, 144 policies, 220 indexes, 153 foreign keys, 1177 columns, FK fingerprint f061c43fcdf08eccae779b7bcabe6ac6, column fingerprint 0b1a44c861bb61cc6ca26dee3f63db02, index fingerprint ebb587d0be167dcda6f811ade14b98c1 (5 partial, 1 expression, 0 INCLUDE, 0 invalid).';
 END $$;
 
 COMMIT;

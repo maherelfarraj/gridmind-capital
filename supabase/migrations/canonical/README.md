@@ -169,6 +169,89 @@ platform actions.
 
 ---
 
+## 0-C. Index fingerprint pass — 2026-08-01 (P-IDX1)
+
+Indexes were the **last dimension validated by count alone**. The shipped check
+was `count(*) = 220`, which passes while access method, key order, sort
+direction, `NULLS` placement, operator class, collation, `INCLUDE` columns,
+expression or partial predicate have all drifted.
+
+**No index SQL was changed — none needed changing.** Production reconciles
+against the canonical baseline exactly:
+
+| | |
+|---|---|
+| production / canonical / exact | **220 / 220 / 220** |
+| missing · extra · definition mismatches | 0 · 0 · 0 |
+| partial-predicate · expression · INCLUDE mismatches | 0 · 0 · 0 |
+| access methods | `btree=220` (nothing else) |
+| unique · exclusion | 141 · 0 |
+| partial · expression · INCLUDE | 5 · 1 · 0 |
+| invalid · not-ready · not-live | 0 · 0 · 0 |
+
+**Index fingerprint `ebb587d0be167dcda6f811ade14b98c1`**, corroborated by an
+independent per-table hash `1f4b6ef49e6d4e5233f47e8cdaf0531d` (103 tables) — set
+equality established two ways rather than resting on a single digest.
+
+Canonical figures came from bootstrapping files `…0000`–`…0004` onto a disposable
+PG 17.6 container and running the **identical** query used against production.
+
+### Formula
+
+```
+schema.table|indexname|access_method|isunique|isprimary|isexclusion|
+isvalid|isready|islive|isclustered|isreplident|nkeyatts|natts|
+normalized_indexdef|normalized_partial_predicate
+```
+
+`normalized_indexdef` is `pg_get_indexdef()` with whitespace runs collapsed and
+ends trimmed. That deparse already renders key order, `DESC`, `NULLS
+FIRST/LAST`, `INCLUDE` columns and non-default opclass/collation, so those are
+compared **by value** instead of re-derived by hand. Only harmless whitespace is
+normalized — casts, predicates, expressions and operator classes are **not**
+normalized away. An absent predicate is written `-` so it cannot collide with a
+real one. `nkeyatts`/`natts` are carried separately so an `INCLUDE` column moving
+into the key is caught even if the deparse rendered alike.
+
+**Counting rule** (stated beside the count, per the FK lesson): public-schema
+entries in `pg_index`, constraint-backed and explicit alike —
+**220 = 103 PK + 36 UNIQUE constraint + 81 explicit `CREATE INDEX`**.
+Extension-owned indexes excluded via `pg_depend deptype='e'` (none today).
+`pg_indexes` returns the same 220, so the count is not view-dependent.
+
+### Two of these indexes are correctness features, not performance tuning
+
+- **`one_accountable_per_deliverable`** — a `UNIQUE` **partial** index on
+  `raci_assignments (deliverable_id) WHERE letter IN ('A','A/R')`. This is the
+  *only* enforcement of "at most one Accountable party per deliverable"; no
+  `CHECK` or trigger duplicates it. Lose the predicate and it over-constrains;
+  lose `UNIQUE` and the integrity rule vanishes **silently, with no error**.
+- **`idx_workflow_events_project`** — the only expression index,
+  `((metadata ->> 'project_id'))`. Replacing it with a plain column index would
+  not raise an error; the planner would simply never use it.
+
+### Mutation test — 4 mutations, all detected, all reverted
+
+Run against a disposable container using a `/tmp` copy of the assertion file. No
+repository SQL was modified.
+
+| Mutation | Caught by |
+|---|---|
+| partial predicate removed | count (`expected 5, got 4`) **+** fingerprint |
+| expression index removed | count (`expected 1, got 0`) **+** fingerprint |
+| `INCLUDE` column added | count (`expected 0, got 1`) **+** fingerprint |
+| **sort direction `DESC` → `ASC`** | **fingerprint only** |
+
+> **The last row is the justification for this whole pass.** Under it every count
+> stayed nominal — 220 total, 5 partial, 1 expression, 0 INCLUDE — and **not one
+> count assertion fired**. The old check would have passed on a database whose
+> index ordering no longer matched production.
+
+The superseded count-only check was **removed**, not left beside `P-IDX1`: two
+assertions over one dimension is how non-comparable checks drift apart.
+
+---
+
 ## 0. Shape-correction pass — 2026-08-01
 
 A value-by-value reconciliation against production
@@ -647,8 +730,19 @@ and both have been **reproduced by execution**:
   (ON DELETE a=37 / c=106 / n=10).
 
 `P-FK1` was mutation-tested: dropping one FK makes it fail and report the changed
-hash. **Index predicates remain count-only** (220) — no index fingerprint exists,
-so that part of the original caveat still stands.
+hash.
+
+~~**Index predicates remain count-only** (220) — no index fingerprint exists.~~
+**Closed 2026-08-01.** A third fingerprint now covers indexes and has likewise
+been reproduced by execution:
+
+- **Index** `ebb587d0be167dcda6f811ade14b98c1` — access method, uniqueness,
+  primary/exclusion status, validity, key order, sort direction, NULLS
+  placement, operator classes, collations, INCLUDE columns, expressions and
+  partial predicates across all 220 indexes (220/220 exact, 0 missing, 0 extra).
+
+Every dimension the original caveat named — data types, nullability, defaults,
+FK actions **and index predicates** — is now asserted by value. See §0-C.
 
 ### 11.4 The demo tenant is a live production fact
 

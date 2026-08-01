@@ -204,6 +204,139 @@ STANDARDIZED COLUMN FINGERPRINT (section 8 of the correction task)
   here beside their values, and again in the postconditions beside each assertion.
 
 ================================================================================
+AMENDMENT 6 -- INDEX FINGERPRINT (2026-08-01)
+================================================================================
+Indexes were the LAST dimension still validated by count alone. Section 3 above
+claimed "[MATCH], 220/220, mismatches 0", but the only executable assertion was
+count(*) = 220 -- which passes while access method, key order, sort direction,
+NULLS placement, operator class, collation, INCLUDE columns, expression or
+partial predicate have all drifted. That gap is now closed by value.
+
+CANONICAL INDEX COUNTING RULE (one rule, used on both sides)
+  * index relation in schema public
+  * every entry in pg_index, constraint-backed and explicit alike
+      220 = 103 PRIMARY KEY + 36 UNIQUE constraint + 81 explicit CREATE INDEX
+  * extension-owned indexes excluded via pg_depend deptype='e'
+    (none exist today; the clause prevents a future extension inflating it)
+  * pg_indexes returns the same 220, so the count is not view-dependent
+  * the rule is stated here beside the number, per AMENDMENT 5's lesson that a
+    count compared against an unstated rule is unverifiable
+
+INDEX FINGERPRINT FORMULA (md5 over lines joined by newline, sorted by line)
+  schema.table|indexname|access_method|isunique|isprimary|isexclusion|
+  isvalid|isready|islive|isclustered|isreplident|nkeyatts|natts|
+  normalized_indexdef|normalized_partial_predicate
+
+  normalized_indexdef = pg_get_indexdef() with runs of whitespace collapsed to a
+  single space and the ends trimmed. pg_get_indexdef is the authoritative
+  deparse and already renders key order, DESC, NULLS FIRST/LAST, INCLUDE
+  columns, non-default operator classes and non-default collations, so those
+  dimensions are compared BY VALUE rather than re-derived by hand.
+
+  Normalized ONLY: harmless whitespace. Casts, predicates, expressions and
+  operator classes are deliberately NOT normalized away. An absent predicate is
+  written '-' so it cannot collide with a real one. nkeyatts and natts are
+  carried separately so an INCLUDE column moving into the key is caught even if
+  the deparse happened to render alike.
+
+    PRODUCTION INDEX FINGERPRINT   ebb587d0be167dcda6f811ade14b98c1
+    per-table index-name hash      1f4b6ef49e6d4e5233f47e8cdaf0531d (103 tables)
+
+RECONCILIATION -- PRODUCTION vs CANONICAL BASELINE
+  Production measured read-only (project zmahjutrpvwjcmhkiibj, PG 17.6).
+  Canonical measured by bootstrapping files 0000-0004 onto a disposable
+  PostgreSQL 17.6 container and running the IDENTICAL query.
+
+    production indexes ............. 220
+    canonical indexes .............. 220
+    exact matches .................. 220
+    missing ........................   0
+    extra ..........................   0
+    definition mismatches ..........   0
+    partial-predicate mismatches ...   0
+    expression-index mismatches ....   0
+    included-column mismatches .....   0
+
+    access methods ................. btree=220 (no gin/gist/hash/brin anywhere)
+    unique indexes ................. 141 (103 PK + 36 UNIQUE constraint + 2
+                                     standalone CREATE UNIQUE INDEX)
+    exclusion constraints ..........   0
+    partial (predicated) ...........   5
+    expression indexes .............   1
+    INCLUDE-column indexes .........   0
+    invalid / not-ready / not-live .   0
+    clustered ......................   0
+    replica-identity indexes .......   0
+
+  Both the whole-set md5 AND the independent per-table hash agree, so set
+  equality is established two ways rather than resting on a single digest.
+  NO INDEX SQL WAS MODIFIED -- no mismatch existed to justify a change.
+
+THE 6 SEMANTICALLY LOAD-BEARING INDEXES (verified byte-identical on both sides)
+  5 partial + 1 expression. Two of these are correctness features, not
+  performance tuning:
+
+  one_accountable_per_deliverable  (raci_assignments)
+    CREATE UNIQUE INDEX ... USING btree (deliverable_id)
+      WHERE (letter = ANY (ARRAY['A'::raci_letter, 'A/R'::raci_letter]))
+    This is the ONLY enforcement of "at most one Accountable party per
+    deliverable" -- no CHECK constraint or trigger duplicates it. Drop the
+    predicate and it wrongly forbids a second non-Accountable row; drop UNIQUE
+    and the RACI integrity rule vanishes silently with no error anywhere.
+
+  idx_workflow_events_project  (workflow_events)
+    CREATE INDEX ... USING btree (((metadata ->> 'project_id'::text)))
+    The only expression index. Replacing it with a plain column index would not
+    raise an error -- the planner would simply never use it, degrading to a
+    sequential scan under load with no failure signal.
+
+  idx_approvals_tenant_pending   btree (tenant_id) WHERE status = 'pending'
+  external_access_active_idx     btree (user_id, project_id) WHERE revoked_at IS NULL
+  idx_notifications_user_unread  btree (user_id, created_at DESC) WHERE is_read = false
+  idx_tasks_due                  btree (due_date) WHERE status <> 'done'
+
+  Note idx_notifications_user_unread carries DESC on created_at. Sort direction
+  is invisible to every count-based check; see the mutation test.
+
+ASSERTED BY POSTCONDITION P-IDX1
+  Count 220, the fingerprint above, zero invalid/not-ready/not-live indexes, and
+  exact partial (5) / expression (1) / INCLUDE (0) coverage.
+
+MUTATION-TESTED -- FOUR INDEPENDENT MUTATIONS, ALL DETECTED
+  Performed against a disposable container using a /tmp copy of the assertion
+  file. No repository SQL was modified. Each mutation was reverted and the
+  assertion confirmed to pass again.
+
+    1 partial predicate removed (idx_tasks_due)
+        -> "partial (predicated) indexes: expected 5, got 4"
+           + fingerprint drift, got b5a711ee5d6ffef5d939befe76b009cc
+    2 expression index replaced by a plain column index
+        -> "expression indexes: expected 1, got 0"
+           + fingerprint drift, got 7d82b1e2e8be2591246c195a2db7701c
+    3 INCLUDE column added (external_access_active_idx)
+        -> "indexes with INCLUDE columns: expected 0, got 1"
+           + fingerprint drift, got b065a4042f9c79962c88c00829d31459
+    4 sort direction flipped DESC -> ASC (idx_notifications_user_unread)
+        -> fingerprint drift ONLY, got 3db9e5dcd06142ec9943c60ac6fba110
+
+  MUTATION 4 IS THE ONE THAT JUSTIFIES THIS AMENDMENT. Under it every count
+  remained nominal -- total 220, partial 5, expression 1, INCLUDE 0 -- and NOT A
+  SINGLE count assertion fired. The old count-only check would have passed on a
+  database whose index ordering no longer matched production. Only the
+  fingerprint caught it.
+
+SUPERSEDED
+  The count-only index check formerly at section 2 of the postconditions
+  ("indexes: expected 220 (81 explicit + 139 constraint-backed)") was REMOVED,
+  not left in place beside P-IDX1. Two assertions over one dimension is how
+  non-comparable checks drift apart. P-IDX1 asserts the same 220 with the
+  counting rule stated.
+
+SCOPE
+  Repository only. Production was introspected read-only and never modified; no
+  migration applied, no paid branch created, no push.
+
+================================================================================
 0. NORMALIZATION RULES APPLIED
 ================================================================================
 These are the ONLY differences treated as harmless. Everything else was treated
@@ -318,11 +451,25 @@ compared indisunique / indisprimary / indisvalid / indisready.
   missing / extra      0 / 0
   invalid or not-ready indexes in production: 0
 
-  INDEXES sha256 a0cadda1260c000de4c3226609fd3b9f9d58737bad193abac87b60d99b7063a0
+  RETIRED: INDEXES sha256
+  a0cadda1260c000de4c3226609fd3b9f9d58737bad193abac87b60d99b7063a0
+  That value came from a static parse of the .sql files compared against a
+  catalog query, using a formula that was never written down. It is NOT
+  comparable to the canonical md5 below and must never be compared against it.
+  Superseded by AMENDMENT 6; one fingerprint per dimension, and this is the loser.
+
+  CANONICAL INDEX FINGERPRINT (md5)  ebb587d0be167dcda6f811ade14b98c1
+  See AMENDMENT 6 for the formula, the counting rule and the reconciliation.
 
 All 103 tables match on both count and definition fingerprint. Physical
 storage parameters (tablespace, fillfactor) were ignored per instruction; no
 index in production sets a non-default reloption.
+
+  NOTE ON THIS SECTION'S ORIGINAL CLAIM. Section 3 asserted "[MATCH] ... exact
+  matches 220, mismatches 0" and was correct, but it was a STATIC comparison and
+  the postconditions that shipped alongside it only ever checked count(*) = 220.
+  Indexes were therefore the last dimension whose claimed match was not enforced
+  by any executable assertion. AMENDMENT 6 closes that gap.
 
 ================================================================================
 4. FUNCTIONS                                                        [MISMATCH]

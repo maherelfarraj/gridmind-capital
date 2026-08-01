@@ -58,7 +58,19 @@ C. FINGERPRINTS  -- STANDARDIZED 2026-08-01
        153 FKs (145 public->public, 8 -> auth.users);
        ON DELETE a=37 / c=106 / n=10. Asserted by postcondition P-FK1.
 
-   C3. RETIRED -- 75f6236686b82ea3fbcab43debe8c619
+   C3. INDEX FINGERPRINT (canonical) -- added 2026-08-01
+       Formula -- md5 over lines joined by newline, sorted by line:
+         schema.table|indexname|access_method|isunique|isprimary|isexclusion|
+         isvalid|isready|islive|isclustered|isreplident|nkeyatts|natts|
+         normalized_indexdef|normalized_partial_predicate
+       normalized_indexdef = pg_get_indexdef() with whitespace runs collapsed
+       and ends trimmed; absent predicate written '-'.
+         production  ebb587d0be167dcda6f811ade14b98c1
+       220 indexes (103 PK + 36 UNIQUE constraint + 81 explicit) / btree=220 /
+       141 unique / 5 partial / 1 expression / 0 INCLUDE / 0 invalid / PG 17.6.
+       Asserted by postcondition P-IDX1. See the INDEX FINGERPRINT amendment.
+
+   C4. RETIRED -- 75f6236686b82ea3fbcab43debe8c619
        Covered column NAMES and ORDER only, so it was blind to type, typmod,
        nullability, default, identity, generated expression and collation.
        NOT comparable to C1 and must never be compared against it. Its
@@ -478,3 +490,90 @@ EXECUTION STATUS
 
 Executed only on a disposable local container. Production was not connected to,
 not modified, and no paid Supabase branch was created.
+
+================================================================================
+AMENDMENT -- 2026-08-01 -- P-IDX1: INDEX FINGERPRINT REPLACES COUNT-ONLY CHECK
+================================================================================
+Indexes were the LAST dimension validated by count alone. The shipped assertion
+was count(*) = 220, which passes while access method, key order, sort direction,
+NULLS placement, operator class, collation, INCLUDE columns, expression or
+partial predicate have all drifted.
+
+RECONCILIATION -- PRODUCTION vs CANONICAL BASELINE
+  Production read-only (zmahjutrpvwjcmhkiibj, PG 17.6). Canonical measured by
+  bootstrapping files 0000-0004 onto a disposable PG 17.6 container and running
+  the IDENTICAL query.
+
+    production indexes 220 | canonical 220 | exact matches 220
+    missing 0 | extra 0 | definition mismatches 0
+    partial-predicate 0 | expression-index 0 | included-column 0 mismatches
+
+    btree=220 (no other access method) | unique 141 | exclusion 0
+    partial 5 | expression 1 | INCLUDE 0
+    invalid 0 | not-ready 0 | not-live 0 | clustered 0 | replica-identity 0
+
+  INDEX FINGERPRINT  ebb587d0be167dcda6f811ade14b98c1
+  per-table hash     1f4b6ef49e6d4e5233f47e8cdaf0531d (103 tables)
+
+  Set equality is established TWO ways -- the whole-set md5 and an independent
+  per-table index-name hash both agree -- rather than resting on one digest.
+  NO INDEX SQL WAS MODIFIED; no mismatch existed to justify a change.
+
+FORMULA (md5 over lines joined by newline, sorted by line)
+  schema.table|indexname|access_method|isunique|isprimary|isexclusion|
+  isvalid|isready|islive|isclustered|isreplident|nkeyatts|natts|
+  normalized_indexdef|normalized_partial_predicate
+
+  normalized_indexdef = pg_get_indexdef() with whitespace runs collapsed and
+  ends trimmed. That deparse already renders key order, DESC, NULLS FIRST/LAST,
+  INCLUDE columns and non-default opclass/collation, so those are compared BY
+  VALUE rather than re-derived by hand. Normalized ONLY: harmless whitespace.
+  Casts, predicates, expressions and operator classes are NOT normalized away.
+  Absent predicate = '-' so it cannot collide with a real one. nkeyatts/natts
+  are carried separately so an INCLUDE column moving into the key is caught
+  even if the deparse rendered alike.
+
+COUNTING RULE (stated beside the count, per the AMENDMENT 5 lesson)
+  public-schema entries in pg_index, constraint-backed and explicit alike:
+  220 = 103 PK + 36 UNIQUE constraint + 81 explicit CREATE INDEX.
+  Extension-owned excluded via pg_depend deptype='e' (none today).
+  pg_indexes returns the same 220, so the count is not view-dependent.
+
+WHAT P-IDX1 ASSERTS
+  count 220 | the fingerprint | 0 invalid/not-ready/not-live | partial = 5 |
+  expression = 1 | INCLUDE = 0
+
+TWO INDEXES ARE CORRECTNESS FEATURES, NOT PERFORMANCE TUNING
+  one_accountable_per_deliverable -- UNIQUE PARTIAL on raci_assignments
+    (deliverable_id) WHERE letter IN ('A','A/R'). The ONLY enforcement of "at
+    most one Accountable per deliverable"; no CHECK or trigger duplicates it.
+    Lose the predicate and it over-constrains; lose UNIQUE and the integrity
+    rule vanishes silently with no error.
+  idx_workflow_events_project -- the only expression index,
+    ((metadata ->> 'project_id')). A plain column index would not error; the
+    planner would simply never use it.
+
+MUTATION-TESTED -- 4 MUTATIONS, ALL DETECTED, ALL REVERTED
+  Ran against a disposable container using a /tmp copy of the assertion file.
+  No repository SQL was modified.
+    1 partial predicate removed  -> "partial (predicated) indexes: expected 5,
+                                     got 4"  + drift b5a711ee5d6ffef5d939befe76b009cc
+    2 expression index removed   -> "expression indexes: expected 1, got 0"
+                                     + drift 7d82b1e2e8be2591246c195a2db7701c
+    3 INCLUDE column added       -> "indexes with INCLUDE columns: expected 0,
+                                     got 1"  + drift b065a4042f9c79962c88c00829d31459
+    4 sort direction DESC -> ASC -> fingerprint drift ONLY,
+                                     3db9e5dcd06142ec9943c60ac6fba110
+
+  MUTATION 4 IS THE JUSTIFICATION FOR THIS WHOLE AMENDMENT. Under it every count
+  stayed nominal -- total 220, partial 5, expression 1, INCLUDE 0 -- and NOT ONE
+  count assertion fired. The old count-only check would have passed on a
+  database whose index ordering no longer matched production. Only the
+  fingerprint caught it.
+
+SUPERSEDED, NOT DUPLICATED
+  The old count-only check was REMOVED rather than left in place beside P-IDX1.
+  Two assertions over one dimension is how non-comparable checks drift apart.
+
+Production was introspected READ-ONLY and never modified. No migration applied,
+no paid branch created, no push.
