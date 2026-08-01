@@ -640,6 +640,104 @@ BEGIN
   RAISE NOTICE 'OBSERVED explicit relation ACL fingerprint (all grantees): %', v_txt;
 
   ------------------------------------------------------------------
+  -- 16. auth.users SIGNUP TRIGGER  (on_auth_user_created)
+  --
+  --     Added 2026-08-01, when this trigger became executable in a normal
+  --     migration. The previous "the migration role cannot own auth.users"
+  --     blocker was DISPROVEN: CREATE TRIGGER requires the TRIGGER privilege
+  --     on the table plus EXECUTE on the function -- not table ownership.
+  --
+  --     The trigger lives in schema auth, so it is deliberately OUTSIDE the
+  --     "24 public triggers" count in section 1 and does not perturb it.
+  --
+  --     The role-assignment guards this trigger depends on (handle_new_user
+  --     must assign 'viewer' and must never reference 'project_manager') are
+  --     asserted in full at section 13 (P-F1a / P-F1b) and are deliberately
+  --     NOT duplicated here: one defect should produce one failure message,
+  --     not two. Section 13 is what makes enabling this trigger safe.
+  ------------------------------------------------------------------
+
+  -- 16.1 exactly one non-internal trigger of this name, on auth.users.
+  IF to_regclass('auth.users') IS NULL THEN
+    v_fail := v_fail || 'auth.users does not exist, so on_auth_user_created '
+                     || 'cannot be verified'||E'\n';
+  ELSE
+    SELECT count(*) INTO v_n
+    FROM pg_trigger t
+    WHERE t.tgname = 'on_auth_user_created'
+      AND NOT t.tgisinternal
+      AND t.tgrelid = 'auth.users'::regclass;
+    IF v_n <> 1 THEN
+      v_fail := v_fail || format('auth.users trigger on_auth_user_created: expected '
+                || 'exactly 1 non-internal, got %s%s', v_n, E'\n');
+    END IF;
+
+    -- 16.2 timing, event, row-level scope, function binding, enabled state.
+    --      tgtype bits: 1=ROW, 2=BEFORE (unset => AFTER), 4=INSERT, 8=DELETE,
+    --      16=UPDATE, 32=TRUNCATE, 64=INSTEAD OF. Asserted as bits rather than
+    --      by text-matching pg_get_triggerdef, which is a RENDERING and can
+    --      change formatting between server versions without the trigger
+    --      changing at all. tgenabled='O' is origin, i.e. enabled.
+    FOR v_txt IN
+      SELECT format('row=%s,before=%s,insert=%s,update=%s,delete=%s,truncate=%s,'
+                    || 'instead=%s,fn=%s,enabled=%s',
+                    (t.tgtype &  1) <> 0, (t.tgtype &  2) <> 0, (t.tgtype &  4) <> 0,
+                    (t.tgtype & 16) <> 0, (t.tgtype &  8) <> 0, (t.tgtype & 32) <> 0,
+                    (t.tgtype & 64) <> 0,
+                    p.proname, t.tgenabled)
+      FROM pg_trigger t
+      JOIN pg_proc p ON p.oid = t.tgfoid
+      JOIN pg_namespace pn ON pn.oid = p.pronamespace
+      WHERE t.tgname = 'on_auth_user_created'
+        AND NOT t.tgisinternal
+        AND t.tgrelid = 'auth.users'::regclass
+        AND pn.nspname = 'public'
+    LOOP
+      IF v_txt <> 'row=true,before=false,insert=true,update=false,delete=false,'
+                  || 'truncate=false,instead=false,fn=handle_new_user,enabled=O' THEN
+        v_fail := v_fail || format('on_auth_user_created shape drifted: expected AFTER '
+                  || 'INSERT FOR EACH ROW EXECUTE FUNCTION public.handle_new_user() '
+                  || 'enabled (tgenabled=O), got [%s]%s', v_txt, E'\n');
+      END IF;
+    END LOOP;
+
+    -- 16.3 the trigger function must resolve to public.handle_new_user, not a
+    --      same-named function in another schema.
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_trigger t
+      JOIN pg_proc p ON p.oid = t.tgfoid
+      JOIN pg_namespace pn ON pn.oid = p.pronamespace
+      WHERE t.tgname = 'on_auth_user_created'
+        AND NOT t.tgisinternal
+        AND t.tgrelid = 'auth.users'::regclass
+        AND pn.nspname = 'public' AND p.proname = 'handle_new_user'
+    ) THEN
+      v_fail := v_fail || 'on_auth_user_created does not bind public.handle_new_user()'||E'\n';
+    END IF;
+
+    -- 16.4 CAPABILITY: the two privileges the bootstrap role needed in order to
+    --      create the trigger above. Checked for CURRENT_USER rather than a
+    --      hardcoded 'postgres': a disposable target may bootstrap under a
+    --      different role, and hardcoding would make this a false failure there.
+    --      In production these resolve via auth.users relacl
+    --      "postgres=ar*wdDxtm/supabase_auth_admin" (the 't' is TRIGGER).
+    IF NOT has_table_privilege(current_user, 'auth.users', 'TRIGGER') THEN
+      v_fail := v_fail || format('bootstrap role %s lacks TRIGGER on auth.users, which '
+                || 'CREATE TRIGGER on_auth_user_created requires%s', current_user, E'\n');
+    END IF;
+  END IF;
+
+  SELECT count(*) INTO v_n
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'handle_new_user'
+    AND has_function_privilege(current_user, p.oid, 'EXECUTE');
+  IF v_n <> 1 THEN
+    v_fail := v_fail || format('bootstrap role %s lacks EXECUTE on '
+              || 'public.handle_new_user(), which CREATE TRIGGER '
+              || 'on_auth_user_created requires%s', current_user, E'\n');
+  END IF;
+
+  ------------------------------------------------------------------
   -- VERDICT
   ------------------------------------------------------------------
   IF v_fail <> '' THEN

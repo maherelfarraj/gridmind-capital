@@ -60,8 +60,14 @@ Two corrections to the process itself, both recorded so they are not repeated:
   owner-authorised platform step.
 - **One function's `EXECUTE` ACL is unaccounted for**: the reconciliation cites
   "2 exceptions" among 28 functions but names only `increment_copilot_usage`.
-- **`on_auth_user_created` stays commented out.** Correcting `handle_new_user()`
-  removes the known escalation; it is not proof the signup path works.
+- **`on_auth_user_created` is now EXECUTABLE** — corrected 2026-08-01, and this
+  entry is no longer a blocker. The previous reasoning ("`auth.users` is owned by
+  `supabase_auth_admin`, so the migration role cannot create the trigger") was
+  **wrong**: `CREATE TRIGGER` requires the `TRIGGER` privilege on the table plus
+  `EXECUTE` on the function, **not ownership**. Both were verified present for the
+  migration role. See §9.1. Correcting `handle_new_user()` removed the known
+  escalation, and this finding removes the false blocker — neither is proof that
+  the signup path works end to end, which still needs disposable-target execution.
 
 Broad `anon`/`authenticated` privileges are reproduced **as production facts to
 be matched, not as endorsed configuration.** RLS is the only control over them
@@ -270,9 +276,12 @@ for f in supabase/migrations/canonical/2026*.sql; do
 done
 ```
 
-File 6 aborts with a detailed diff if anything is off. Note that
-`public.handle_new_user()` is created but the `auth.users` trigger that calls it is
-**left commented out** (§9).
+File 6 aborts with a detailed diff if anything is off. Both
+`public.handle_new_user()` **and** the `auth.users` trigger that calls it
+(`on_auth_user_created`) are created by normal migration execution (§9.1). The
+disposable target must therefore have an `auth.users` table and grant the
+bootstrap role `TRIGGER` on it, mirroring production; file 6 asserts that
+capability explicitly rather than letting the trigger silently go missing.
 
 ### Fingerprint comparison
 
@@ -314,24 +323,56 @@ candidate for a **separate follow-up migration**, never an edit to these files.
    execute as their owner (`postgres`) and bypass RLS on their base tables.
 5. **26 of 28 functions grant `EXECUTE` to `anon`.**
 
-## 9. Operations requiring the schema owner
+## 9. Operations by required authority
+
+### 9.1 `auth.users` signup trigger — EXECUTABLE IN NORMAL MIGRATION (corrected)
+
+Production has
+`on_auth_user_created AFTER INSERT ON auth.users → public.handle_new_user()`.
+
+This was previously listed here as requiring the schema owner, on the grounds
+that `auth.users` is owned by `supabase_auth_admin`. **That reasoning was wrong.**
+`CREATE TRIGGER` requires the `TRIGGER` privilege on the target table plus
+`EXECUTE` on the trigger function; it does **not** require table ownership. The
+capability was verified by read-only catalog introspection on 2026-08-01:
+
+| Fact | Value |
+|---|---|
+| `auth.users` owner | `supabase_auth_admin` |
+| Migration role | `postgres` |
+| `auth.users` ACL entry | `postgres=ar*wdDxtm/supabase_auth_admin` — the `t` is `TRIGGER` |
+| `has_table_privilege(postgres,'auth.users','TRIGGER')` | **true** |
+| `has_function_privilege(postgres,'public.handle_new_user','EXECUTE')` | **true** |
+| Trigger present and enabled in production | **true** |
+
+The statement is therefore **executable and uncommented** in file 3
+(`…0002_functions_triggers.sql`), and file 6 asserts both its exact shape
+(`AFTER INSERT`, `FOR EACH ROW`, bound to `public.handle_new_user()`,
+`tgenabled = 'O'`) and the two privileges above.
+
+No ownership is altered, no `SET ROLE` is issued, and no new privilege on
+`auth.users` is granted by this baseline. **No trigger has been created or
+changed in production by this work** — production already had it.
+
+Execution against a disposable target is still required to validate the complete
+signup path end to end; a capability proof is not a behaviour proof.
+
+### 9.2 Operations still requiring the schema owner
 
 These cannot be performed by an ordinary migration role:
 
-1. **`auth.users` signup trigger.** Production has
-   `on_auth_user_created AFTER INSERT ON auth.users → public.handle_new_user()`.
-   `auth.users` is owned by `supabase_auth_admin`; creating a trigger on it
-   normally fails as the migration role. It is left **commented out** in file 3
-   with the exact statement to run. **Until it is created, signups do not create a
-   `profiles` row** and every new user is unprovisioned.
-2. **Object ownership.** All views, functions and the event trigger are owned by
+1. **Object ownership.** All views, functions and the event trigger are owned by
    `postgres` in production. A migration role that is not `postgres` will own what
    it creates. This is not cosmetic: `SECURITY DEFINER` functions execute as their
    owner, and non-`security_invoker` views read as their owner. Realign with
    `ALTER … OWNER TO postgres;`.
-3. **Extensions.** `pgcrypto` and `uuid-ossp` (schema `extensions`), `pg_net`
+2. **Extensions.** `pgcrypto` and `uuid-ossp` (schema `extensions`), `pg_net`
    (registered in `public`), `pg_cron`, `pg_stat_statements`, `supabase_vault`.
    Managed-platform extensions are assumed pre-installed and are not created here.
+3. **The three `supabase_admin`-owned default ACLs** — **PLATFORM ACTION
+   REQUIRED.** `ALTER DEFAULT PRIVILEGES` is per-grantor, `supabase_admin` has no
+   members, and the migration role is not one of them, so these cannot be issued
+   by any migration or by the SQL Editor. They remain commented in file 4.
 4. **Applying anything to production** — per `supabase/migrations/README.md`, only
    the schema owner applies migrations. v0 drafts; it does not apply.
 

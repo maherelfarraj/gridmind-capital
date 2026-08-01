@@ -374,4 +374,84 @@ FIDELITY IS REPORTED AS TWO NUMBERS AND MUST NOT BE COLLAPSED
 STILL UNRESOLVED
   - Implicit pg_database_owner membership for postgres: decides whether the A0
     schema grants execute at all. Not answerable by introspection.
+    [RETRACTED 2026-08-01 -- it WAS answerable. See the amendment below.]
   - The 3 platform-owned default ACLs (section 6, rows 4-6).
+    [CONFIRMED STILL BLOCKED -- PLATFORM ACTION REQUIRED. See below.]
+
+================================================================================
+AMENDMENT -- 2026-08-01 -- CAPABILITY INTROSPECTION
+================================================================================
+Method: read-only catalog SELECTs against production (pg_roles, pg_database,
+pg_namespace, pg_class, pg_proc, pg_trigger, pg_default_acl, pg_auth_members)
+plus pg_has_role/has_*_privilege capability predicates. No writes, no SET ROLE,
+no membership change, no SQL applied anywhere.
+
+1. IMPLICIT pg_database_owner MEMBERSHIP -- RESOLVED; THE OLD NOTE WAS WRONG
+   Section 7 above states this was "NOT verifiable by introspection and must be
+   confirmed at execution time". That was incorrect, and the retraction is
+   recorded rather than edited away.
+
+     current_user / session_user ................................ postgres
+     rolsuper(postgres) ......................................... FALSE
+     public schema owner ........................................ pg_database_owner
+     pg_database.datdba (database owner) ........................ postgres
+     explicit pg_auth_members rows postgres -> pg_database_owner  0
+     pg_has_role(postgres,'pg_database_owner','USAGE') .......... TRUE
+     has_schema_privilege(postgres,'public','CREATE') ........... TRUE
+
+   pg_database_owner is an implicit role whose sole member is the owner of the
+   CURRENT database. postgres owns this database, so it holds the role with no
+   membership row. The old note's method -- looking for a pg_auth_members row --
+   was the wrong test: it returns 0 precisely when the membership is implicit.
+   The right test is pg_has_role(), or equivalently datdba = current_user.
+
+   CONSEQUENCE: the 5 section-A0 schema USAGE grants ARE executable by the
+   migration role. Section 8's "grantor only" owner-action note stands, and
+   production's own nspacl already records grantor pg_database_owner on all five
+   entries, which is consistent with grantor selection preferring the owner.
+
+   CAVEAT KEPT: grantor provenance is EXPECTED, not proven. It cannot be
+   observed without executing a grant, and no grant was executed.
+
+2. THE 3 PLATFORM-OWNED DEFAULT ACLs -- CONFIRMED BLOCKED
+     pg_has_role(postgres,'supabase_admin','MEMBER') ............ FALSE
+     members of supabase_admin .................................. none
+     supabase_admin is the cluster's ONLY superuser ............. TRUE
+
+   ALTER DEFAULT PRIVILEGES is per-grantor and requires membership in the
+   grantor role. postgres is not a member, supabase_admin has no members at all,
+   and the SQL Editor confers nothing extra because it also connects as
+   postgres. Section 6 rows 4-6 stay commented. PLATFORM ACTION REQUIRED.
+
+   By contrast rows 1-3 are confirmed executable:
+     pg_has_role(postgres,'postgres','USAGE') ................... TRUE
+
+3. auth.users TRIGGER CAPABILITY -- A BLOCKER RECORDED ELSEWHERE WAS FALSE
+     auth.users owner ........................................... supabase_auth_admin
+     auth.users relacl .......................... postgres=ar*wdDxtm/supabase_auth_admin
+     has_table_privilege(postgres,'auth.users','TRIGGER') ....... TRUE
+     has_function_privilege(postgres,'handle_new_user','EXECUTE')  TRUE
+     trigger present and enabled in production .................. TRUE
+
+   The 't' privilege was granted to postgres BY supabase_auth_admin. CREATE
+   TRIGGER requires TRIGGER on the table plus EXECUTE on the function, NOT
+   ownership -- so on_auth_user_created is executable in a normal migration.
+   The ownership-based blocker recorded in README §9 and the shape
+   reconciliation report was false and has been retracted in both.
+
+   Same error class as item 1: a blocker inferred from an owner name instead of
+   from a privilege check.
+
+4. OWNERSHIP TRANSFERS (28 functions + 6 views -> postgres)
+   All 34 objects are ALREADY owned by postgres in production, and ALTER …
+   OWNER TO requires only membership in the target role, trivially satisfied for
+   self. Executable. On a clean bootstrap they are expected to be no-ops, but
+   they pin ownership if the bootstrap role ever differs, so they are kept.
+
+NET EFFECT ON THE TWO FIDELITY NUMBERS -- STILL NOT COLLAPSED
+  A. Executable-baseline fidelity: unchanged and still exact, with the A0 schema
+     grants now CONFIRMED executable rather than assumed.
+  B. Full production fidelity: unchanged. NOT reached, still blocked solely on
+     the 3 platform-owned default ACLs.
+
+Nothing in this amendment was executed against production.

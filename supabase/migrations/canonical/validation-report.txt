@@ -144,6 +144,9 @@ Still blocking, in order:
           cites 2 exceptions among 28 functions but names only one.
   3. on_auth_user_created remains commented out. Fixing handle_new_user()
      removes the known escalation but is not proof the signup path works.
+     [SUPERSEDED 2026-08-01 -- see AMENDMENT: AUTH TRIGGER CAPABILITY at the
+      end of this report. The trigger is now EXECUTABLE; the ownership-based
+      blocker that justified commenting it out was FALSE.]
 
 Correction to this report's own method: a scan anchored on statement-initial
 GRANT/REVOKE keywords reported "0 grants" in the canonical baseline. That was a
@@ -201,3 +204,65 @@ FIDELITY -- REPORTED SEPARATELY, NOT COLLAPSED
      full privilege fidelity.
 
 NOT EXECUTED. This remains a static review artifact.
+
+================================================================================
+AMENDMENT -- 2026-08-01 -- AUTH TRIGGER CAPABILITY
+================================================================================
+Blocker 3 above ("on_auth_user_created remains commented out") is RESOLVED. The
+reasoning that produced it was wrong, and the retraction is recorded rather than
+edited away.
+
+THE FALSE CLAIM
+  "auth.users is owned by supabase_auth_admin, so the migration role cannot
+   create a trigger on it."
+
+WHY IT WAS WRONG
+  CREATE TRIGGER requires the TRIGGER privilege on the target table plus EXECUTE
+  on the trigger function. Table ownership is NOT a requirement. The blocker was
+  inferred from an owner name rather than from a privilege check -- the object's
+  owner was never the governing condition.
+
+VERIFIED CAPABILITY (read-only catalog introspection, production, 2026-08-01)
+  auth.users owner ................................... supabase_auth_admin
+  migration role ..................................... postgres
+  auth.users relacl .................................. postgres=ar*wdDxtm/
+                                                       supabase_auth_admin
+                                                       ('t' = TRIGGER)
+  has_table_privilege(postgres,'auth.users','TRIGGER') ............... true
+  has_function_privilege(postgres,'public.handle_new_user','EXECUTE')  true
+  trigger present and enabled in production .......................... true
+
+CHANGE MADE TO THE BASELINE
+  ...0002_functions_triggers.sql -- the commented block was replaced with one
+  executable statement reproducing production exactly:
+
+    CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_new_user();
+
+  No ALTER TABLE auth.users OWNER, no SET ROLE, no new grant on auth.users, and
+  no role-membership change. tgenabled='O' is the default for a newly created
+  trigger, so it is asserted rather than set.
+
+  ...0005_postconditions.sql -- new section 16 asserts: exactly one non-internal
+  trigger of that name on auth.users; AFTER (not BEFORE); INSERT only; FOR EACH
+  ROW; bound to public.handle_new_user; tgenabled='O'; and the two privileges
+  above for CURRENT_USER. Shape is asserted from pg_trigger.tgtype bits rather
+  than by text-matching pg_get_triggerdef, which is a rendering and can change
+  format without the trigger changing.
+
+  The 'viewer' / not-'project_manager' guards are NOT duplicated in section 16;
+  section 13 (P-F1a/P-F1b) already asserts them fail-loud. One defect should
+  produce one failure message.
+
+SCOPE OF THIS AMENDMENT
+  Capability only. It does NOT establish that the signup path works end to end.
+  A disposable-target run is still mandatory, and the disposable target must
+  provide auth.users and grant the bootstrap role TRIGGER on it.
+
+Nothing was created or changed in production. Production already had this
+trigger; this pass only corrected the repository's description of it.
+
+The three supabase_admin-owned default ACLs remain PLATFORM ACTION REQUIRED and
+are unaffected by this amendment.

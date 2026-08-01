@@ -506,23 +506,42 @@ CREATE EVENT TRIGGER block_profiles_drop ON sql_drop
     EXECUTE FUNCTION public.prevent_profiles_drop();
 
 -- ---------------------------------------------------------------------
--- auth.users SIGNUP TRIGGER -- REQUIRES SCHEMA OWNER
+-- auth.users SIGNUP TRIGGER -- EXECUTABLE IN NORMAL MIGRATION
 -- ---------------------------------------------------------------------
 
--- Production has:
---   CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
---       FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
--- auth.users is owned by supabase_auth_admin. Creating a trigger on it requires
--- that owner (or a platform-managed step) and normally FAILS as the migration role.
--- Left commented deliberately: without it, signups do not create a profiles row.
+-- CORRECTED 2026-08-01. This statement was previously commented out on the
+-- stated grounds that "auth.users is owned by supabase_auth_admin, so creating
+-- a trigger on it requires that owner". THAT REASONING WAS WRONG and is now
+-- disproven by direct capability introspection against production.
 --
--- STILL BLOCKED AS OF 2026-08-01. Defect F1 (the 'project_manager' escalation)
--- has been corrected above, but that ALONE does not unblock this trigger. It
--- stays commented until execution against a disposable database proves the
--- complete signup path end to end. Correcting the function removes the known
--- escalation; it does not constitute proof that the path works.
+-- CREATE TRIGGER requires the TRIGGER privilege on the target table plus
+-- EXECUTE on the trigger function. It does NOT require table ownership.
+-- Verified production facts (read-only catalog introspection, 2026-08-01):
+--   auth.users owner .................. supabase_auth_admin
+--   migration role .................... postgres
+--   auth.users relacl ................. postgres=ar*wdDxtm/supabase_auth_admin
+--                                       (the 't' is the TRIGGER privilege,
+--                                        granted BY supabase_auth_admin)
+--   has_table_privilege(postgres,'auth.users','TRIGGER') ............. true
+--   has_function_privilege(postgres,'public.handle_new_user','EXECUTE') true
+--   trigger already present and enabled in production ................ true
 --
--- ACTION REQUIRED BY SCHEMA OWNER after bootstrap AND after that proof:
--- CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
---     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+-- So the bootstrap role holds exactly the two privileges the statement needs,
+-- and no ownership change, SET ROLE, or new grant on auth.users is required
+-- or performed here.
+--
+-- Timing, event, row-level scope, function binding and enabled state below
+-- reproduce production's pg_get_triggerdef output exactly. tgenabled = 'O'
+-- (origin, i.e. enabled) is the default for a freshly created trigger and is
+-- therefore not set explicitly; postconditions assert it.
+--
+-- Execution against a disposable target is still required to validate the
+-- complete signup path end to end. Defect F1 (the 'project_manager'
+-- escalation) is corrected above, so the known escalation is gone -- but that
+-- is not by itself proof that the path works.
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_new_user();
+
 COMMIT;

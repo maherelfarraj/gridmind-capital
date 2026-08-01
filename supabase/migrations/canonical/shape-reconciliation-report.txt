@@ -315,17 +315,46 @@ the UPDATE OF column list and the WHEN condition.
                                              trg_spawn_gate_signoffs, both
                                              `UPDATE OF status`, both MATCH
 
-  auth.users.on_auth_user_created     REQUIRES OWNER ACTION
+  auth.users.on_auth_user_created     MATCH -- EXECUTABLE IN NORMAL MIGRATION
     prod  CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
           FOR EACH ROW EXECUTE FUNCTION handle_new_user()
-    draft present but COMMENTED OUT, and otherwise textually identical.
-    This is deliberate and already documented: auth.users is owned by
-    supabase_auth_admin, so the migration role cannot create the trigger.
-    Consequence: on a bootstrapped database, signups create no profiles row
-    until the schema owner runs this statement manually.
-    NOTE: this trigger is what invokes the defective handle_new_user() from
-    F1. Fixing F1 before the owner enables this trigger is what keeps the
-    'project_manager' escalation from ever reaching a live signup path.
+    draft now EXECUTABLE and textually identical.
+
+    CORRECTED 2026-08-01. This entry previously read "REQUIRES OWNER ACTION"
+    and justified it as: "auth.users is owned by supabase_auth_admin, so the
+    migration role cannot create the trigger." THAT CLAIM WAS FALSE and is
+    retracted here rather than quietly edited away.
+
+    CREATE TRIGGER requires the TRIGGER privilege on the target table plus
+    EXECUTE on the trigger function. It does NOT require table ownership.
+    Ownership was never the governing condition, so inferring a blocker from
+    the owner name was the wrong test -- the same class of error as inferring
+    schema from the existence of code that reads it.
+
+    Capability verified by read-only catalog introspection 2026-08-01:
+      auth.users owner ............................ supabase_auth_admin
+      migration role .............................. postgres
+      auth.users relacl ........................... postgres=ar*wdDxtm/
+                                                    supabase_auth_admin
+                                                    ('t' = TRIGGER, granted
+                                                     BY supabase_auth_admin)
+      has_table_privilege(postgres,'auth.users','TRIGGER') ......... true
+      has_function_privilege(postgres,'handle_new_user','EXECUTE') . true
+      trigger present and enabled in production .................... true
+
+    Consequence of the correction: normal migration execution is expected to
+    create this trigger, so a bootstrapped database DOES provision profiles
+    rows on signup. No manual owner step is needed. Nothing was created or
+    changed in production by this correction -- production already had it.
+
+    Still required: execution against a disposable target to validate the
+    signup path end to end. A capability proof is not a behaviour proof.
+
+    NOTE: this trigger is what invokes handle_new_user(). Defect F1 (the
+    'project_manager' escalation) is fixed above, which is precisely what
+    makes enabling this trigger safe. Postconditions section 13 guards the
+    role assignment and section 16 guards this trigger's shape; if F1 ever
+    regresses, the baseline fails before the trigger can carry it.
 
   EVENT TRIGGER block_profiles_drop                          MATCH
     prod  ON sql_drop WHEN TAG IN ('DROP TABLE')
@@ -523,7 +552,7 @@ PER-OBJECT MISMATCHES
 | public.approval_steps / approval_steps_status_check | CHECK allowed values | 5 values incl. 'on_hold' | 4 values, 'on_hold' absent | MEDIUM-HIGH -- placing an approval step on hold fails 23514 | Add `'on_hold'::text` to the ARRAY |
 | public.handle_new_user() | function body | assigns role `'viewer'`; full_name falls back to `''` | assigns role `'project_manager'`; full_name falls back to email local-part | CRITICAL -- privilege escalation: every self-service signup becomes project_manager | Replace body with production prosrc verbatim |
 | public.handle_new_user() | search_path | `'public', 'pg_temp'` | `'public'` | MEDIUM -- SECURITY DEFINER fn not pinned against temp-object shadowing | Restore `SET search_path TO 'public', 'pg_temp'` |
-| auth.users / on_auth_user_created | trigger existence | present and enabled | present but commented out | EXPECTED -- migration role cannot own auth.users | Schema owner runs the statement post-bootstrap, AFTER fixing handle_new_user |
+| auth.users / on_auth_user_created | trigger existence | present and enabled | present and EXECUTABLE | RESOLVED 2026-08-01 -- the "migration role cannot own auth.users" blocker was FALSE; CREATE TRIGGER needs TRIGGER + EXECUTE, not ownership, and both are held | Created by normal migration execution; postconditions 16 assert shape and capability; disposable-target run still required |
 | all 109 relations + 2 sequences | grants | anon/authenticated hold full DML | no GRANT statements at all | HIGH for fidelity -- bootstrapped DB will not match production's privilege posture in either direction | Add a grants section, or document that grants are set out-of-band |
 | all 28 functions | owner + EXECUTE ACL | owner postgres; 26/28 EXECUTE to PUBLIC+anon; increment_copilot_usage restricted | none encoded | MEDIUM -- defaults give EXECUTE to PUBLIC, broader than production for increment_copilot_usage | Add ALTER FUNCTION OWNER + explicit GRANT/REVOKE |
 | 6 views | owner + grants | owner postgres; full DML to anon/authenticated | none encoded | MEDIUM | Add OWNER TO / GRANT statements |
