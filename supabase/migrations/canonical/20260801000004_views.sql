@@ -173,20 +173,61 @@ CREATE OR REPLACE VIEW public.v_role_workload AS
   GROUP BY r.id, r.code, r.title, d.name;
 
 -- ---------------------------------------------------------------------
--- VIEW GRANTS
--- Production grants ALL on every view to anon, authenticated and service_role.
--- These grants are applied by 20260801000003_rls_policies_grants.sql, which loops
--- over relkind IN ('r','v'). That file runs BEFORE this one, so the views do not
--- exist yet at that point -- the grants are therefore re-applied here.
+-- VIEW OWNERSHIP  [relocated here by the D2 correction, 2026-08-01]
 -- ---------------------------------------------------------------------
-DO $$
-DECLARE r record;
-BEGIN
-  FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-           WHERE n.nspname = 'public' AND c.relkind = 'v'
-  LOOP
-    EXECUTE format('GRANT ALL ON TABLE public.%I TO anon, authenticated, service_role', r.relname);
-  END LOOP;
-END $$;
+-- Ownership is set BEFORE the grants below, because the owner is recorded as the
+-- grantor in every resulting ACL entry. Production shows grantor=postgres on all
+-- view privileges; granting first and re-owning afterwards would leave the
+-- original creator as grantor and would not reproduce that.
+--
+-- These are no-ops when the baseline runs as postgres (the creator is already the
+-- owner) and fail loudly otherwise, which is the desired signal: these views are
+-- NOT security_invoker, so they execute with their owner's privileges and the
+-- owner determines which RLS they bypass.
+
+ALTER VIEW public.v_gate_progress OWNER TO postgres;
+ALTER VIEW public.v_inbox OWNER TO postgres;
+ALTER VIEW public.v_person_task_load OWNER TO postgres;
+ALTER VIEW public.v_person_workload OWNER TO postgres;
+ALTER VIEW public.v_project_staffing OWNER TO postgres;
+ALTER VIEW public.v_role_workload OWNER TO postgres;
+
+-- ---------------------------------------------------------------------
+-- VIEW GRANTS  [relocated here by the D2 correction, 2026-08-01]
+-- ---------------------------------------------------------------------
+-- D2: these statements previously lived in 20260801000003_rls_policies_grants.sql
+-- (sections A3 and A4b), which runs BEFORE this file. Local execution failed there
+-- with SQLSTATE 42P01 on public.v_gate_progress -- the views did not exist yet.
+-- They are now issued immediately after the views are created and owned.
+--
+-- The previous revision of THIS file also carried a dynamic DO-block that looped
+-- over pg_class WHERE relkind='v' and issued GRANT ALL via EXECUTE format(...).
+-- That block is DELETED, for two reasons beyond the ordering fix:
+--
+--   1. It was a RULE, not a reproduction. It granted to whatever views happened
+--      to exist at run time, so a missing or renamed view would be silently
+--      skipped instead of failing loudly. A canonical baseline must enumerate.
+--   2. Grants hidden inside a DO block are invisible to statement-level scanners
+--      anchored on a leading GRANT/REVOKE keyword -- the exact false negative
+--      that once let this file be reported as containing "0 grants".
+--
+-- Privilege list is written out in full rather than as GRANT ALL, so the file
+-- states the eight privileges production actually holds:
+-- SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN.
+-- (MAINTAIN is PostgreSQL 17+; production and the reference image are both 17.6.)
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_gate_progress TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_inbox TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_task_load TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_workload TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_project_staffing TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_role_workload TO anon, authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_gate_progress TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_inbox TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_task_load TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_workload TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_project_staffing TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_role_workload TO service_role;
 
 COMMIT;

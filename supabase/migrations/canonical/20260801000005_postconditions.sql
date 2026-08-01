@@ -24,6 +24,11 @@ DECLARE
   v_fail text := '';
   v_n    bigint;
   v_txt  text;
+  -- Loop variable for FOR ... IN SELECT. PL/pgSQL requires the target of a
+  -- query FOR loop to be declared; it is not auto-created the way an integer
+  -- FOR loop variable is. Used by section 16.2 (trigger shape, D5 correction)
+  -- and by the aclexplode-based privilege assertions in P-G1a / P-G5a.
+  rec    record;
 
   PROCEDURE_NOTE constant text := 'expected values captured from production 2026-08-01';
 
@@ -80,6 +85,91 @@ BEGIN
     JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public' AND c.contype='f';
   IF v_n <> 153 THEN v_fail := v_fail || format('foreign keys: expected 153, got %s%s', v_n, E'\n'); END IF;
 
+  ------------------------------------------------------------------
+  -- P-FK1 / P-COL1: NORMALIZED FINGERPRINTS  (added 2026-08-01)
+  --
+  -- Counts are weak: 153 constraints could still differ in target, ON DELETE
+  -- action or column order. These two assertions compare by VALUE.
+  --
+  -- FK COUNTING RULE (canonical, one rule used for both sides):
+  --   * source relation in schema public
+  --   * pg_constraint.contype = 'f' only
+  --   * target may be in ANY schema (8 of the 153 reference auth.users);
+  --     excluding cross-schema FKs is what produced the discredited 128
+  --   * partition children: none exist (conparentid = 0 for all 153), so no
+  --     de-duplication rule is required; if partitioning is ever introduced,
+  --     inherited copies must be excluded by conparentid = 0 and this comment
+  --     updated rather than the count silently drifting
+  --   * NOT VALID constraints are included and flagged by the validated field
+  --
+  -- FK FINGERPRINT FORMULA (md5 over lines joined by \n, sorted by line):
+  --   conname|src_table|src_cols|tgt_schema.tgt_table|tgt_cols|
+  --   confmatchtype|confupdtype|confdeltype|condeferrable|condeferred|convalidated
+  --   src_cols / tgt_cols are attribute names in KEY ORDER (conkey/confkey
+  --   ordinality), not alphabetical -- column order is semantic in a composite FK.
+  --
+  -- COLUMN FINGERPRINT FORMULA (md5 over lines joined by \n, sorted by line):
+  --   schema.table|attnum|attname|format_type|base_typname|atttypmod|attndims|
+  --   nullable|normalized_default|attidentity|attgenerated|collation
+  --   Defaults are whitespace-normalized; empty identity/generated/collation are
+  --   written as '-' so an absent value can never collide with a present one.
+  --
+  -- Both hashes below were computed read-only against production
+  -- (project zmahjutrpvwjcmhkiibj, PostgreSQL 17.6) on 2026-08-01 using exactly
+  -- these formulas. A hash is meaningless without its formula, so the formula is
+  -- recorded here beside the value and in shape-reconciliation-report.txt.
+  ------------------------------------------------------------------
+
+  SELECT md5(string_agg(line, E'\n' ORDER BY line)) INTO v_txt FROM (
+    SELECT co.conname||'|'||c.relname||'|'||
+           (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+              FROM unnest(co.conkey) WITH ORDINALITY k(attnum, ord)
+              JOIN pg_attribute a ON a.attrelid=co.conrelid AND a.attnum=k.attnum)
+           ||'|'||rn.nspname||'.'||rc.relname||'|'||
+           (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+              FROM unnest(co.confkey) WITH ORDINALITY k(attnum, ord)
+              JOIN pg_attribute a ON a.attrelid=co.confrelid AND a.attnum=k.attnum)
+           ||'|'||co.confmatchtype||'|'||co.confupdtype||'|'||co.confdeltype
+           ||'|'||co.condeferrable||'|'||co.condeferred||'|'||co.convalidated AS line
+    FROM pg_constraint co
+    JOIN pg_class c ON c.oid=co.conrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_class rc ON rc.oid=co.confrelid
+    JOIN pg_namespace rn ON rn.oid=rc.relnamespace
+    WHERE co.contype='f' AND n.nspname='public'
+  ) s;
+  IF v_txt IS DISTINCT FROM 'f061c43fcdf08eccae779b7bcabe6ac6' THEN
+    v_fail := v_fail || format('FK fingerprint drift: expected '
+              || 'f061c43fcdf08eccae779b7bcabe6ac6 (production, 2026-08-01), got %s. '
+              || 'Constraint name, column order, target, MATCH, ON UPDATE, ON DELETE, '
+              || 'deferrability or validity differs on at least one of the 153 FKs.%s',
+              v_txt, E'\n');
+  END IF;
+
+  SELECT md5(string_agg(line, E'\n' ORDER BY line)) INTO v_txt FROM (
+    SELECT n.nspname||'.'||c.relname||'|'||a.attnum||'|'||a.attname||'|'
+           ||format_type(a.atttypid, a.atttypmod)||'|'||t.typname||'|'||a.atttypmod
+           ||'|'||a.attndims||'|'||(NOT a.attnotnull)
+           ||'|'||COALESCE(regexp_replace(pg_get_expr(ad.adbin, ad.adrelid), '\s+', ' ', 'g'), '')
+           ||'|'||COALESCE(NULLIF(a.attidentity::text, ''), '-')
+           ||'|'||COALESCE(NULLIF(a.attgenerated::text, ''), '-')
+           ||'|'||COALESCE(cl.collname::text, '-') AS line
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid=a.attrelid
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_type t ON t.oid=a.atttypid
+    LEFT JOIN pg_attrdef ad ON ad.adrelid=a.attrelid AND ad.adnum=a.attnum
+    LEFT JOIN pg_collation cl ON cl.oid=a.attcollation
+    WHERE n.nspname='public' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped
+  ) s;
+  IF v_txt IS DISTINCT FROM '0b1a44c861bb61cc6ca26dee3f63db02' THEN
+    v_fail := v_fail || format('Column fingerprint drift: expected '
+              || '0b1a44c861bb61cc6ca26dee3f63db02 (production, 2026-08-01), got %s. '
+              || 'A type, typmod, nullability, default, identity, generated expression '
+              || 'or collation differs on at least one of the 1177 columns.%s',
+              v_txt, E'\n');
+  END IF;
+
   SELECT count(*) INTO v_n FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid
     JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public' AND c.contype='c';
   IF v_n <> 72 THEN v_fail := v_fail || format('check constraints: expected 72, got %s%s', v_n, E'\n'); END IF;
@@ -96,21 +186,29 @@ BEGIN
   IF v_n <> 0 THEN v_fail := v_fail || format('RLS-FORCED tables: expected 0, got %s%s', v_n, E'\n'); END IF;
 
   ------------------------------------------------------------------
-  -- 4. COLUMN-NAME FINGERPRINT ACROSS ALL 103 TABLES
-  -- This is the strongest single check: md5 over "table:col1,col2,..." for every
-  -- table in ordinal order. Matches production exactly as of 2026-08-01.
+  -- 4. COLUMN FINGERPRINT -- CONSOLIDATED INTO P-COL1 (2026-08-01)
+  --
+  -- This section previously computed a SECOND, different column fingerprint:
+  --     md5 over "table:col1,col2,..." (names in ordinal order only)
+  --     expected 75f6236686b82ea3fbcab43debe8c619
+  --
+  -- It has been REMOVED, not merely renamed, for two reasons:
+  --
+  --   1. Two fingerprints over the same dimension invite exactly the error this
+  --      correction pass was asked to eliminate -- comparing hashes produced by
+  --      different formulas. That hash is NOT comparable to the standardized one
+  --      and a reader seeing both would have no way to know which is canonical.
+  --   2. It was strictly weaker. It covered column NAMES and ORDER only, so it
+  --      was blind to a changed data type, typmod, nullability, default,
+  --      identity mode, generated expression or collation. A table could drift
+  --      materially and still hash identically.
+  --
+  -- The single canonical column fingerprint is P-COL1 (see section 1 above),
+  -- which covers all of those attributes and is production-verified as
+  -- 0b1a44c861bb61cc6ca26dee3f63db02. Its formula is documented beside it.
+  -- The name-and-order property this section used to check is fully contained
+  -- in P-COL1, so nothing is lost by removing it.
   ------------------------------------------------------------------
-  SELECT md5(string_agg(tbl||':'||sig, E'\n' ORDER BY tbl)) INTO v_txt
-  FROM (
-    SELECT c.relname AS tbl, string_agg(a.attname, ',' ORDER BY a.attnum) AS sig
-    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-    JOIN pg_attribute a ON a.attrelid=c.oid
-    WHERE n.nspname='public' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped
-    GROUP BY c.relname
-  ) s;
-  IF v_txt <> '75f6236686b82ea3fbcab43debe8c619' THEN
-    v_fail := v_fail || format('column fingerprint: expected 75f6236686b82ea3fbcab43debe8c619, got %s%s', v_txt, E'\n');
-  END IF;
 
   ------------------------------------------------------------------
   -- 5. profiles -- exact 14 columns, in order
@@ -358,6 +456,52 @@ BEGIN
     v_fail := v_fail || 'rate_limit_buckets must be withheld from anon and authenticated'||E'\n';
   END IF;
 
+  -- P-G1a: rate_limit_buckets STORED ACL, via aclexplode (D3 correction).
+  -- has_table_privilege above reports the EFFECTIVE answer. It is necessary but
+  -- not sufficient: it cannot distinguish "no ACL entry exists" from "an entry
+  -- exists granting nothing", and it silently follows role membership. This
+  -- check reads the stored relacl directly so the assertion is about the ACL the
+  -- baseline actually produced.
+  --
+  -- Why this matters here specifically: the Supabase image's ALTER DEFAULT
+  -- PRIVILEGES grants arwdDxtm on every new public table to anon and
+  -- authenticated, so this table is born leaked. Omitting a statement does not
+  -- withhold it. Only the explicit REVOKE in ...0003 section A2 removes it.
+  FOR rec IN
+    SELECT pg_get_userbyid(a.grantee)::text AS grantee,
+           count(*)                          AS n_privs,
+           string_agg(a.privilege_type, ',' ORDER BY a.privilege_type) AS privs
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL aclexplode(c.relacl) a
+    WHERE n.nspname = 'public' AND c.relname = 'rate_limit_buckets'
+    GROUP BY a.grantee
+  LOOP
+    IF rec.grantee IN ('anon', 'authenticated') THEN
+      v_fail := v_fail || format('SECURITY: rate_limit_buckets has a STORED ACL entry for '
+                || '%s granting [%s]. Production grants this table to service_role and the '
+                || 'owner ONLY. The image default ACL creates this entry at CREATE TABLE '
+                || 'time; an explicit REVOKE is required.%s', rec.grantee, rec.privs, E'\n');
+    ELSIF rec.grantee = 'service_role' AND rec.n_privs <> 8 THEN
+      v_fail := v_fail || format('rate_limit_buckets: service_role holds %s of 8 privileges '
+                || '[%s]; production holds all 8 (server-side rate limiting runs under the '
+                || 'service-role key)%s', rec.n_privs, rec.privs, E'\n');
+    END IF;
+  END LOOP;
+
+  -- service_role's entry must be PRESENT, not merely correct when present.
+  -- A missing entry produces no loop iteration and would otherwise pass silently.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL aclexplode(c.relacl) a
+    WHERE n.nspname='public' AND c.relname='rate_limit_buckets'
+      AND pg_get_userbyid(a.grantee) = 'service_role'
+  ) THEN
+    v_fail := v_fail || 'rate_limit_buckets has NO stored ACL entry for service_role; '
+                     || 'production grants it all 8 relation privileges'||E'\n';
+  END IF;
+
   -- P-G2: view privileges -- all 6.
   SELECT count(*) INTO v_n FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
    WHERE n.nspname='public' AND c.relkind='v'
@@ -415,6 +559,67 @@ BEGIN
   END IF;
   IF NOT has_function_privilege('authenticated','public.increment_copilot_usage(integer)','EXECUTE') THEN
     v_fail := v_fail || 'increment_copilot_usage(integer) must be EXECUTABLE BY authenticated'||E'\n';
+  END IF;
+
+  -- P-G5a: increment_copilot_usage STORED function ACL, via aclexplode
+  -- (D4 correction). Identity arguments are pinned by resolving the exact
+  -- signature increment_copilot_usage(integer) through ::regprocedure, so an
+  -- overload added later cannot make this assertion silently inspect a
+  -- different function.
+  --
+  -- Captured production ACL: authenticated=X, service_role=X, postgres=X
+  -- (owner-derived). No PUBLIC. No anon.
+  --
+  -- The has_function_privilege checks above were already present and did catch
+  -- the leak. This adds the stored-ACL view because the two failures had
+  -- DIFFERENT causes that the effective check cannot separate: PUBLIC's EXECUTE
+  -- comes from PostgreSQL's built-in default, while anon's comes from a distinct
+  -- explicit entry created by the image's ALTER DEFAULT PRIVILEGES. Seeing the
+  -- grantee list directly is what makes it obvious that REVOKE ... FROM PUBLIC
+  -- cannot remove the anon entry.
+  IF to_regprocedure('public.increment_copilot_usage(integer)') IS NULL THEN
+    v_fail := v_fail || 'increment_copilot_usage(integer) does not exist; its ACL cannot be verified'||E'\n';
+  ELSE
+    FOR rec IN
+      SELECT pg_get_userbyid(a.grantee)::text AS grantee,
+             string_agg(a.privilege_type, ',' ORDER BY a.privilege_type) AS privs
+      FROM pg_proc p
+      CROSS JOIN LATERAL aclexplode(p.proacl) a
+      WHERE p.oid = to_regprocedure('public.increment_copilot_usage(integer)')::oid
+      GROUP BY a.grantee
+    LOOP
+      -- aclexplode renders the PUBLIC pseudo-grantee (grantee OID 0) as an empty
+      -- string via pg_get_userbyid, so it is matched explicitly rather than by
+      -- name lookup.
+      IF rec.grantee = 'anon' THEN
+        v_fail := v_fail || format('SECURITY: increment_copilot_usage has a STORED ACL entry '
+                  || 'for anon granting [%s]. REVOKE ... FROM PUBLIC does NOT remove an '
+                  || 'explicit per-role grant; an explicit REVOKE ... FROM anon is required.%s',
+                  rec.privs, E'\n');
+      ELSIF rec.grantee = '' OR rec.grantee IS NULL THEN
+        v_fail := v_fail || format('SECURITY: increment_copilot_usage has a STORED ACL entry '
+                  || 'for PUBLIC granting [%s]; production has none%s', rec.privs, E'\n');
+      ELSIF rec.grantee NOT IN ('authenticated','service_role','postgres') THEN
+        v_fail := v_fail || format('increment_copilot_usage has an unexpected ACL grantee '
+                  || '%s [%s]; production grants only authenticated, service_role and the '
+                  || 'owner postgres%s', rec.grantee, rec.privs, E'\n');
+      END IF;
+    END LOOP;
+
+    -- Both required grantees must be PRESENT in the stored ACL.
+    FOR v_txt IN SELECT x FROM unnest(ARRAY['authenticated','service_role']) x
+    LOOP
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_proc p
+        CROSS JOIN LATERAL aclexplode(p.proacl) a
+        WHERE p.oid = to_regprocedure('public.increment_copilot_usage(integer)')::oid
+          AND pg_get_userbyid(a.grantee) = v_txt
+          AND a.privilege_type = 'EXECUTE'
+      ) THEN
+        v_fail := v_fail || format('increment_copilot_usage has NO stored EXECUTE entry for '
+                  || '%s; production grants it%s', v_txt, E'\n');
+      END IF;
+    END LOOP;
   END IF;
 
   -- P-G6: ownership -- all 28 functions and all 6 views owned by postgres.
@@ -678,13 +883,31 @@ BEGIN
     --      by text-matching pg_get_triggerdef, which is a RENDERING and can
     --      change formatting between server versions without the trigger
     --      changing at all. tgenabled='O' is origin, i.e. enabled.
-    FOR v_txt IN
-      SELECT format('row=%s,before=%s,insert=%s,update=%s,delete=%s,truncate=%s,'
-                    || 'instead=%s,fn=%s,enabled=%s',
-                    (t.tgtype &  1) <> 0, (t.tgtype &  2) <> 0, (t.tgtype &  4) <> 0,
-                    (t.tgtype & 16) <> 0, (t.tgtype &  8) <> 0, (t.tgtype & 32) <> 0,
-                    (t.tgtype & 64) <> 0,
-                    p.proname, t.tgenabled)
+    --
+    -- D5 CORRECTION (2026-08-01) -- THIS ASSERTION WAS ITSELF BROKEN.
+    -- It built a string with format('%s', <boolean>) and compared it against
+    -- 'row=true,before=false,...'. PostgreSQL renders a boolean in %s as 't' /
+    -- 'f', never 'true' / 'false', so the comparison could NEVER succeed. Local
+    -- execution reported the trigger as drifted when it was in fact correct in
+    -- every respect -- a FALSE FAILURE produced entirely by the check.
+    --
+    -- The bug class: hand-writing an expected literal for a value whose text
+    -- rendering was assumed rather than verified. The fix is to stop converting
+    -- booleans to text for the purpose of comparison at all. Each bit is now
+    -- tested as a boolean expression directly, so there is no rendering in the
+    -- decision path. Text is used ONLY to build the diagnostic message that is
+    -- emitted after a failure has already been decided.
+    FOR rec IN
+      SELECT (t.tgtype &  1) <> 0 AS is_row,
+             (t.tgtype &  2) <> 0 AS is_before,
+             (t.tgtype &  4) <> 0 AS on_insert,
+             (t.tgtype &  8) <> 0 AS on_delete,
+             (t.tgtype & 16) <> 0 AS on_update,
+             (t.tgtype & 32) <> 0 AS on_truncate,
+             (t.tgtype & 64) <> 0 AS is_instead,
+             p.proname::text       AS fn_name,
+             t.tgenabled           AS enabled,
+             t.tgtype              AS raw_tgtype
       FROM pg_trigger t
       JOIN pg_proc p ON p.oid = t.tgfoid
       JOIN pg_namespace pn ON pn.oid = p.pronamespace
@@ -693,11 +916,27 @@ BEGIN
         AND t.tgrelid = 'auth.users'::regclass
         AND pn.nspname = 'public'
     LOOP
-      IF v_txt <> 'row=true,before=false,insert=true,update=false,delete=false,'
-                  || 'truncate=false,instead=false,fn=handle_new_user,enabled=O' THEN
-        v_fail := v_fail || format('on_auth_user_created shape drifted: expected AFTER '
-                  || 'INSERT FOR EACH ROW EXECUTE FUNCTION public.handle_new_user() '
-                  || 'enabled (tgenabled=O), got [%s]%s', v_txt, E'\n');
+      -- Required shape: AFTER INSERT FOR EACH ROW EXECUTE public.handle_new_user(),
+      -- enabled. Every clause below is a boolean expression; none is stringified.
+      IF NOT (rec.is_row
+              AND NOT rec.is_before
+              AND rec.on_insert
+              AND NOT rec.on_delete
+              AND NOT rec.on_update
+              AND NOT rec.on_truncate
+              AND NOT rec.is_instead
+              AND rec.fn_name = 'handle_new_user'
+              AND rec.enabled = 'O') THEN
+        -- Diagnostic only. Booleans are rendered here purely for human reading,
+        -- after the failure decision has already been made above.
+        v_fail := v_fail || format(
+          'on_auth_user_created shape drifted: expected AFTER INSERT FOR EACH ROW '
+          || 'EXECUTE FUNCTION public.handle_new_user() enabled (tgenabled=O). '
+          || 'Observed: row=%s before=%s insert=%s delete=%s update=%s truncate=%s '
+          || 'instead=%s fn=%s enabled=%s tgtype=%s%s',
+          rec.is_row, rec.is_before, rec.on_insert, rec.on_delete, rec.on_update,
+          rec.on_truncate, rec.is_instead, rec.fn_name, rec.enabled, rec.raw_tgtype,
+          E'\n');
       END IF;
     END LOOP;
 
@@ -744,7 +983,103 @@ BEGIN
     RAISE EXCEPTION E'CANONICAL BASELINE POSTCONDITIONS FAILED\n%\n(%; %)', v_fail, PROCEDURE_NOTE, FUNCTION_NOTE;
   END IF;
 
-  RAISE NOTICE 'Canonical baseline postconditions PASSED: 103 tables, 6 views, 18 enums, 28 functions, 24 triggers, 144 policies, 220 indexes, column fingerprint 75f6236686b82ea3fbcab43debe8c619.';
+  RAISE NOTICE 'Canonical baseline postconditions PASSED: 103 tables, 6 views, 18 enums, 28 functions, 24 triggers, 144 policies, 220 indexes, 153 foreign keys, 1177 columns, FK fingerprint f061c43fcdf08eccae779b7bcabe6ac6, column fingerprint 0b1a44c861bb61cc6ca26dee3f63db02.';
 END $$;
 
 COMMIT;
+
+-- =====================================================================
+-- D6 -- SIGNUP TENANT PREREQUISITE  (documentation only, 2026-08-01)
+-- =====================================================================
+--
+-- NOTHING BELOW IS EXECUTABLE. There is no seed data in this baseline, by
+-- design: it is schema-only, and a tenant row is business data.
+--
+-- OBSERVED BEHAVIOUR (local execution, supabase/postgres 17.6.1.158):
+-- On a database bootstrapped from these six files, a signup FAILS:
+--
+--     INSERT INTO auth.users (...) VALUES (...);
+--     -> SQLSTATE 23503  foreign key violation on profiles_tenant_id_fkey
+--     -> auth.users rows after the attempt: 0
+--     -> profiles rows after the attempt:   0
+--
+-- MECHANISM:
+--   1. public.handle_new_user() inserts a profiles row with a HARDCODED
+--      tenant_id of 00000000-0000-0000-0000-000000000001.
+--   2. profiles.tenant_id carries a foreign key to tenants(id).
+--   3. This baseline creates zero tenant rows, so that UUID does not exist.
+--   4. on_auth_user_created is an AFTER INSERT trigger, so the trigger's failure
+--      propagates and ABORTS THE WHOLE auth.users INSERT. The result is not a
+--      user without a profile -- it is no user at all.
+--
+-- THIS IS PRE-EXISTING PRODUCTION BEHAVIOUR, NOT A DEFECT INTRODUCED HERE.
+-- handle_new_user() is reproduced verbatim from production prosrc, and
+-- production HAS that tenant row, so production signups succeed. The canonical
+-- draft did not invent the hardcoded UUID and does not change it: altering
+-- handle_new_user() would make the baseline stop describing production, which
+-- is the one thing it must never do. It is therefore recorded as an OPERATIONAL
+-- PREREQUISITE of the schema, not as a bug to patch in this correction pass.
+--
+-- ---------------------------------------------------------------------
+-- PRODUCTION DEPLOYMENT PREREQUISITE
+-- ---------------------------------------------------------------------
+-- Before self-service signup is enabled or relied upon on ANY database
+-- bootstrapped from this baseline, verify the bootstrap tenant exists:
+--
+--     SELECT id, slug FROM public.tenants
+--      WHERE id = '00000000-0000-0000-0000-000000000001';
+--
+-- If that returns zero rows, every signup will fail with 23503 until a tenant
+-- with exactly that id is created. Creating it is a deliberate business/data
+-- decision for the schema owner and is deliberately NOT automated here.
+--
+-- ---------------------------------------------------------------------
+-- DISPOSABLE SIGNUP TEST PROCEDURE  (disposable environments ONLY)
+-- ---------------------------------------------------------------------
+-- Never run against production. Every step is reversible and step 6 is
+-- mandatory, not optional.
+--
+--   1. Insert the disposable prerequisite tenant. It MUST use the UUID that
+--      handle_new_user() hardcodes, or the test proves nothing.
+--      NOTE: tenants.slug is NOT NULL -- omitting it fails with 23502.
+--
+--        INSERT INTO public.tenants (id, name, slug)
+--        VALUES ('00000000-0000-0000-0000-000000000001',
+--                '<disposable name>', '<disposable slug>')
+--        ON CONFLICT (id) DO NOTHING;
+--
+--   2. Insert a disposable auth user with a clearly disposable, non-routable
+--      address (an .invalid local part is recommended) and a randomly generated
+--      uuid. Supply raw_user_meta_data with full_name so the metadata path is
+--      exercised rather than only the fallback.
+--
+--   3. Verify profile creation. All of the following must hold:
+--        - exactly ONE public.profiles row exists for the new user id
+--        - profiles.id equals the auth.users id
+--        - role = 'viewer'            <- and specifically NOT 'project_manager'
+--        - email matches the auth user
+--        - full_name came from raw_user_meta_data
+--        - tenant_id = 00000000-0000-0000-0000-000000000001
+--        - an UPDATE to auth.users does NOT create a second profile
+--          (the trigger is AFTER INSERT, not AFTER INSERT OR UPDATE)
+--        - a conflicting INSERT into profiles neither duplicates the row nor
+--          escalates the stored role
+--
+--   4. Remove the disposable user. profiles.id references auth.users(id) ON
+--      DELETE CASCADE, so deleting the auth user removes the profile; assert
+--      that the cascade actually happened rather than assuming it.
+--
+--   5. Remove the prerequisite tenant inserted in step 1.
+--
+--   6. Confirm zero test rows remain:
+--        SELECT count(*) FROM auth.users      WHERE email LIKE '<disposable pattern>';
+--        SELECT count(*) FROM public.profiles WHERE email LIKE '<disposable pattern>';
+--        SELECT count(*) FROM public.tenants
+--         WHERE id = '00000000-0000-0000-0000-000000000001';
+--      All three must return 0. If any does not, the environment is no longer
+--      disposable-clean and must be destroyed rather than reused.
+--
+-- STATUS: this procedure was executed on 2026-08-01 against a disposable
+-- PostgreSQL 17.6 instance. With step 1 performed, all 11 assertions in step 3
+-- PASSED, including role='viewer', and step 6 returned 0/0/0. Without step 1,
+-- the signup fails as described above. That is the evidence for both claims.

@@ -22,10 +22,114 @@ SET row_security = off;
 SELECT pg_catalog.set_config('search_path', '', false);
 
 -- ---------------------------------------------------------------------
--- SCHEMA
+-- SCHEMA -- PRECONDITION ONLY. NOTHING IS CREATED HERE.
 -- ---------------------------------------------------------------------
+--
+-- D1 CORRECTION (2026-08-01, proven by local execution on supabase/postgres
+-- 17.6.1.158). This file previously began with an unconditional:
+--
+--     CREATE SCHEMA public;
+--
+-- That statement FAILED with SQLSTATE 42P06 (duplicate_schema) on statement 1
+-- of 1784, aborting the entire baseline. The premise behind it -- "the target is
+-- an EMPTY database, so public will not exist" -- is FALSE. An empty PostgreSQL
+-- database still contains schema public: initdb creates it in template1. Every
+-- Supabase project therefore has it before any migration runs. There is no
+-- reachable target on which that statement could have succeeded.
+--
+-- It is NOT replaced by CREATE SCHEMA IF NOT EXISTS, and NOT by a DROP/CREATE
+-- cycle. DROP SCHEMA public CASCADE would destroy every object in a live
+-- database, and the platform owns this schema's identity and ownership. The
+-- baseline consumes public; it does not create, drop or own it.
+--
+-- Instead the file now opens with a fail-loud precondition. This PRESERVES the
+-- safety property the original statement provided by accident -- running this
+-- baseline against a populated database must abort before it writes anything --
+-- and turns it into an explicit, diagnosable check rather than a duplicate-object
+-- error that says nothing about why the run was wrong.
+--
+-- Platform-managed schemas and roles are verified, never created: auth, anon,
+-- authenticated and service_role belong to Supabase's own bootstrap.
 
-CREATE SCHEMA public;
+DO $precondition$
+DECLARE
+  v_owner text;
+  v_missing text := '';
+  v_relcount bigint;
+BEGIN
+  -- P1. Schema public must already exist. It is not created by this baseline.
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'public') THEN
+    RAISE EXCEPTION 'PRECONDITION FAILED: schema "public" does not exist.'
+      USING HINT = 'This baseline consumes schema public; it does not create it. '
+                   'A database without public is not a Supabase-compatible target.';
+  END IF;
+
+  -- P2. Ownership. Supabase and stock PostgreSQL 15+ both leave public owned by
+  --     pg_database_owner. Verified identical on production (project
+  --     zmahjutrpvwjcmhkiibj) and on the disposable supabase/postgres 17.6.1.158
+  --     image. A different owner is a SEMANTIC difference, not a cosmetic one:
+  --     it changes who may create objects here and who default ACLs attach to,
+  --     so it is surfaced loudly rather than tolerated silently.
+  SELECT pg_catalog.pg_get_userbyid(nspowner) INTO v_owner
+    FROM pg_catalog.pg_namespace WHERE nspname = 'public';
+
+  IF v_owner <> 'pg_database_owner' THEN
+    RAISE EXCEPTION 'PRECONDITION FAILED: schema "public" is owned by "%", expected "pg_database_owner".', v_owner
+      USING HINT = 'Production and the reference supabase/postgres image both use '
+                   'pg_database_owner. If this target legitimately differs, record the '
+                   'semantic owner difference in canonical/validation-report.txt and '
+                   'state explicitly which privileges and default ACLs it changes '
+                   'before overriding this check.';
+  END IF;
+
+  -- P3. Platform roles. Every GRANT in file ...0003 targets these. Missing roles
+  --     would surface 1000+ statements later as an unrelated-looking failure.
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
+    v_missing := v_missing || ' anon';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
+    v_missing := v_missing || ' authenticated';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'service_role') THEN
+    v_missing := v_missing || ' service_role';
+  END IF;
+  IF v_missing <> '' THEN
+    RAISE EXCEPTION 'PRECONDITION FAILED: required Supabase role(s) missing:%', v_missing
+      USING HINT = 'These roles are created by the Supabase platform bootstrap. '
+                   'This baseline verifies them and must never CREATE ROLE.';
+  END IF;
+
+  -- P4. Schema auth must exist: ...0002 attaches on_auth_user_created to
+  --     auth.users, and 8 foreign keys reference auth.users.
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'auth') THEN
+    RAISE EXCEPTION 'PRECONDITION FAILED: schema "auth" does not exist.'
+      USING HINT = 'Supabase GoTrue owns schema auth. 8 foreign keys and the '
+                   'on_auth_user_created trigger depend on auth.users.';
+  END IF;
+
+  IF pg_catalog.to_regclass('auth.users') IS NULL THEN
+    RAISE EXCEPTION 'PRECONDITION FAILED: relation "auth.users" does not exist.'
+      USING HINT = '8 foreign keys in this baseline reference auth.users.';
+  END IF;
+
+  -- P5. The target must be an EMPTY bootstrap database. This is what makes the
+  --     baseline safe to hand to an operator: it aborts against production
+  --     BEFORE creating anything, with a message that names the real reason.
+  SELECT pg_catalog.count(*) INTO v_relcount
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v', 'm', 'p');
+
+  IF v_relcount <> 0 THEN
+    RAISE EXCEPTION 'PRECONDITION FAILED: schema "public" already contains % relation(s).', v_relcount
+      USING HINT = 'This baseline targets an EMPTY bootstrap database and is deliberately '
+                   'NOT idempotent. It must never be run against production or any '
+                   'populated database. Use a disposable environment.';
+  END IF;
+
+  RAISE NOTICE 'Preconditions OK: public exists (owner=%), auth.users present, anon/authenticated/service_role present, public is empty.', v_owner;
+END
+$precondition$;
 
 -- ---------------------------------------------------------------------
 -- ENUM TYPES (18)

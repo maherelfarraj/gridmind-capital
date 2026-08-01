@@ -102,6 +102,89 @@ SCOPE OF THIS AMENDMENT
   created, no production change, no push. The corrections are unexecuted SQL.
 
 ================================================================================
+AMENDMENT 5 -- FOREIGN KEY COUNT WAS WRONG (2026-08-01)
+================================================================================
+THIS REPORT'S FOREIGN KEY COUNT OF 128 WAS INCORRECT. The authoritative
+production count is 153. Every "128" above has been corrected in place and
+annotated; this amendment records why the wrong number arose.
+
+HOW THE DISCREPANCY SURFACED
+  A local bootstrap of the canonical baseline onto a disposable PostgreSQL 17.6
+  instance produced 153 foreign keys while this report claimed production had
+  128 and "all match". Both could not be true. Rather than assume the local
+  figure was wrong -- the baseline was the thing under suspicion -- the
+  production catalog was re-queried read-only under several counting rules.
+
+PRODUCTION MEASUREMENT (project zmahjutrpvwjcmhkiibj, read-only, 2026-08-01)
+  R1  contype='f', source relation in public ....................... 153
+  R2  ... and target ALSO in public ................................ 145
+  R3  ... target NOT in public (all 8 reference auth.users) ........   8
+  R4  information_schema.table_constraints FOREIGN KEY .............. 153
+  R5  distinct constraint names ..................................... 153
+  R6  partition-child copies (conparentid <> 0) .....................   0
+  R7  NOT VALID constraints .........................................   0
+  R8  distinct source tables carrying >= 1 FK .......................  88
+
+  R1 == R4 == R5 == 153, and the local bootstrap independently produced 153
+  under the same rule. THE BASELINE WAS NEVER WRONG; THIS REPORT WAS.
+
+WHY 128 WAS WRONG
+  128 corresponds to no rule that was actually run: it is neither the
+  public-to-public subset (145) nor the total (153). It is a stale figure that
+  was carried forward and then blessed with "all match" -- and that is the real
+  defect. A count compared against an unstated rule cannot be verified by anyone
+  reading the report, and "all match" gave it false authority. The FK dimension
+  had in fact never been compared by VALUE at all, only by this number.
+
+CANONICAL FK COUNTING RULE (now used on both sides, without exception)
+  * source relation in schema public
+  * pg_constraint.contype = 'f' only
+  * target may be in ANY schema -- the 8 auth.users references are real foreign
+    keys and excluding them is precisely the kind of silent filter that produced
+    this error
+  * extension-owned and platform schemas are never sources (none exist in public)
+  * partition children: none today (R6 = 0), so no de-duplication is applied. If
+    partitioning is introduced, inherited copies must be excluded via
+    conparentid = 0 and this rule updated deliberately, not silently.
+  * NOT VALID constraints are counted and flagged by the validated field
+
+NORMALIZED FK FINGERPRINT (replaces counting as the primary check)
+  Formula -- md5 over lines joined by newline, sorted by line:
+    conname|src_table|src_cols|tgt_schema.tgt_table|tgt_cols|
+    confmatchtype|confupdtype|confdeltype|condeferrable|condeferred|convalidated
+  src_cols / tgt_cols are attribute names in KEY ORDER (conkey / confkey
+  ordinality), never alphabetical: column order is semantic in a composite FK.
+
+    PRODUCTION FK FINGERPRINT   f061c43fcdf08eccae779b7bcabe6ac6
+    ON DELETE breakdown         a=37 (NO ACTION), c=106 (CASCADE), n=10 (SET NULL)
+
+  Asserted by postcondition P-FK1. A count can no longer pass while a target,
+  column order or ON DELETE action has drifted.
+
+STANDARDIZED COLUMN FINGERPRINT (section 8 of the correction task)
+  Two different column fingerprints previously existed, which is exactly how
+  non-comparable hashes get compared. There is now ONE.
+
+  Formula -- md5 over lines joined by newline, sorted by line:
+    schema.table|attnum|attname|format_type|base_typname|atttypmod|attndims|
+    nullable|normalized_default|attidentity|attgenerated|collation
+  Defaults are whitespace-normalized; absent identity/generated/collation are
+  written as '-' so an absent value can never collide with a present one.
+  Scope: relkind='r' in schema public, attnum>0, NOT attisdropped.
+
+    PRODUCTION COLUMN FINGERPRINT  0b1a44c861bb61cc6ca26dee3f63db02
+    columns 1177 | identity columns 2 | generated columns 0 | server 17.6
+
+  RETIRED: 75f6236686b82ea3fbcab43debe8c619. That hash covered column NAMES and
+  ORDER only, so it was blind to type, typmod, nullability, default, identity,
+  generated expression and collation. It is NOT comparable to the value above
+  and must never be compared against it. Its assertion has been deleted from the
+  postconditions rather than renamed, so no reader can mistake it for canonical.
+
+  A hash without its formula is worthless -- both formulas are therefore recorded
+  here beside their values, and again in the postconditions beside each assertion.
+
+================================================================================
 0. NORMALIZATION RULES APPLIED
 ================================================================================
 These are the ONLY differences treated as harmless. Everything else was treated
@@ -168,7 +251,9 @@ pg_get_constraintdef and were compared literally.
   missing / extra      0 / 0
   PRIMARY KEY        103   all match
   UNIQUE              36   all match
-  FOREIGN KEY        128   all match (incl. every ON DELETE action)
+  FOREIGN KEY        153   all match (incl. every ON DELETE action)
+                           [CORRECTED 2026-08-01 -- previously read 128, which
+                            was WRONG. See AMENDMENT 5 at the end of this report.]
   CHECK               97   95 match, 2 differ
   EXCLUDE              0
   deferrable           0   every constraint is NOT DEFERRABLE + VALIDATED on
@@ -524,7 +609,7 @@ section. Normalization rules N1-N5 applied. Production values:
 | Constraints (all)  |  364 |   364 |   362 |        2 | MISMATCH            |
 |   PRIMARY KEY      |  103 |   103 |   103 |        0 | MATCH               |
 |   UNIQUE           |   36 |    36 |    36 |        0 | MATCH               |
-|   FOREIGN KEY      |  128 |   128 |   128 |        0 | MATCH               |
+|   FOREIGN KEY      |  153 |   153 |   153 |        0 | MATCH (was "128")   |
 |   CHECK            |   97 |    97 |    95 |        2 | MISMATCH            |
 |   EXCLUDE          |    0 |     0 |     0 |        0 | MATCH               |
 | Indexes            |  220 |   220 |   220 |        0 | MATCH               |
@@ -573,7 +658,8 @@ CORRECTED FALSE POSITIVES FROM EARLIER PASSES OF THIS RUN
 CANONICAL SHAPE CORRECTIONS REQUIRED
 
 The structural skeleton is sound: columns (1177), indexes (220), foreign keys
-(128), primary keys (103), views (6), public triggers (24), the event trigger,
+(153 -- see AMENDMENT 5; this figure read 128 before correction), primary keys
+(103), views (6), public triggers (24), the event trigger,
 RLS state (103 enabled / 0 forced) and all 144 policies reproduce production
 exactly. Four defects block adoption, one of them severe:
 

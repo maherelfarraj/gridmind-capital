@@ -27,11 +27,37 @@ B. OBJECT COUNTS vs PRODUCTION
    foreign keys                153         153   OK
    PK / UNIQUE                 139         139   OK
 
-C. COLUMN-LEVEL FINGERPRINT  -- EXACT MATCH
-   md5 over every table's column names in ordinal order:
-     production 75f6236686b82ea3fbcab43debe8c619
-     canonical  75f6236686b82ea3fbcab43debe8c619
-   103 tables / 1177 columns.
+C. FINGERPRINTS  -- STANDARDIZED 2026-08-01
+   ONE formula per dimension, used identically for production and for any
+   disposable target. A hash is recorded only together with its formula.
+
+   C1. COLUMN FINGERPRINT (canonical)
+       Formula -- md5 over lines joined by newline, sorted by line:
+         schema.table|attnum|attname|format_type|base_typname|atttypmod|
+         attndims|nullable|normalized_default|attidentity|attgenerated|collation
+       Scope: relkind='r' in public, attnum>0, NOT attisdropped.
+       Defaults whitespace-normalized; absent identity/generated/collation
+       written as '-' so absent can never collide with present.
+         production  0b1a44c861bb61cc6ca26dee3f63db02
+       103 tables / 1177 columns / 2 identity columns / 0 generated / PG 17.6.
+       Asserted by postcondition P-COL1.
+
+   C2. FK FINGERPRINT (canonical)
+       Formula -- md5 over lines joined by newline, sorted by line:
+         conname|src_table|src_cols|tgt_schema.tgt_table|tgt_cols|confmatchtype|
+         confupdtype|confdeltype|condeferrable|condeferred|convalidated
+       Columns in KEY ORDER, never alphabetical.
+         production  f061c43fcdf08eccae779b7bcabe6ac6
+       153 FKs (145 public->public, 8 -> auth.users);
+       ON DELETE a=37 / c=106 / n=10. Asserted by postcondition P-FK1.
+
+   C3. RETIRED -- 75f6236686b82ea3fbcab43debe8c619
+       Covered column NAMES and ORDER only, so it was blind to type, typmod,
+       nullability, default, identity, generated expression and collation.
+       NOT comparable to C1 and must never be compared against it. Its
+       assertion was DELETED from the postconditions (not renamed) so it cannot
+       be mistaken for canonical.
+
    Includes the one genuine drift repaired: +approval_steps.decision_note.
 
 D. POLICY RECONCILIATION  -- FULLY RECONCILED, 0 BLOCKERS

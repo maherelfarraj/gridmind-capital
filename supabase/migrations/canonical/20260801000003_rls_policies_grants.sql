@@ -758,24 +758,70 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON
 -- would have broken server-side rate limiting, which runs exclusively under the
 -- service-role key.
 --
--- This section stays declarative on purpose. The service_role grant for this
--- table is NOT duplicated here -- it is one of the 103 enumerated in A4b, so
--- there is exactly one statement per (relation, grantee) pair in this file.
+-- The service_role grant for this table is NOT duplicated here -- it is one of
+-- the 103 enumerated in A4b, so there is exactly one statement per
+-- (relation, grantee) pair in this file.
 --
--- Still deliberately NO REVOKE for anon/authenticated: the bootstrap target is
--- empty, so there is no grant to revoke and a REVOKE would CREATE an ACL entry
--- production does not have. Absence is the faithful reproduction for those two.
+-- ---------------------------------------------------------------------
+-- D3 CORRECTION (2026-08-01) -- SECURITY. ABSENCE IS NOT DENIAL.
+-- ---------------------------------------------------------------------
+-- The previous revision of this section deliberately emitted NO statement for
+-- anon/authenticated, on the reasoning that "the bootstrap target is empty, so
+-- there is no grant to revoke and a REVOKE would CREATE an ACL entry production
+-- does not have".
+--
+-- THAT REASONING IS DISPROVEN BY EXECUTION. On supabase/postgres 17.6.1.158 the
+-- table came out as:
+--
+--     anon=arwdDxtm/postgres  authenticated=arwdDxtm/postgres
+--
+-- i.e. FULL DML for both roles, granted by nobody in this baseline.
+--
+-- Cause: the Supabase image ships its own ALTER DEFAULT PRIVILEGES records for
+-- schema public (granting ALL ON TABLES to anon, authenticated and service_role)
+-- and those defaults are ALREADY ACTIVE when file ...0000 runs. Any table created
+-- in public therefore receives that ACL automatically at CREATE time. Emitting no
+-- statement does not yield "no privileges" -- it yields whatever the default ACL
+-- decides, which here is everything.
+--
+-- The empty-target premise was the flaw: the target is empty of TABLES, not empty
+-- of DEFAULT PRIVILEGES. An explicit REVOKE is therefore REQUIRED to reproduce
+-- production, and it removes an inherited entry rather than creating one.
+--
+-- Detected by postcondition P-G1 (103 tables granted to anon vs 102 expected) and
+-- P-G5 (9760 column-privilege rows vs 9720 expected; the surplus 40 = 5 columns
+-- x 2 roles x 4 column-level privileges, which is exactly this table).
+--
+-- Ordering: this runs in ...0003, long after the table exists in ...0000, so the
+-- inherited ACL is present and there is something real to revoke. Nothing later
+-- in the sequence re-grants this table to anon or authenticated -- A4b grants it
+-- to service_role only, and the A8 default ACLs govern FUTURE objects exclusively.
+--
+-- Owner privileges are untouched: postgres holds its 8 privileges by ownership,
+-- which REVOKE ... FROM anon, authenticated cannot affect.
 
--- A3. VIEW PRIVILEGES -- all 6 views, same privilege set as the tables.
--- Views are not RLS-protected and run as their owner (postgres). v_inbox in
--- particular is a UNION ALL with no tenant predicate of its own.
+REVOKE ALL PRIVILEGES ON TABLE public.rate_limit_buckets FROM anon, authenticated;
 
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_gate_progress TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_inbox TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_task_load TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_workload TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_project_staffing TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_role_workload TO anon, authenticated;
+-- A3. VIEW PRIVILEGES -- RELOCATED TO ...0004_views.sql BY THE D2 CORRECTION.
+--
+-- D2 CORRECTION (2026-08-01, proven by local execution). This section used to
+-- carry six GRANT statements naming the six views. It failed with SQLSTATE 42P01
+-- (undefined_table) on public.v_gate_progress, because the views are created by
+-- 20260801000004_views.sql, which runs AFTER this file. A privilege cannot be
+-- granted on a relation that does not exist yet.
+--
+-- The six view GRANTs for anon/authenticated, the six for service_role (formerly
+-- in A4b) and the six ALTER VIEW ... OWNER TO postgres statements (formerly in
+-- A7) now live in ...0004_views.sql, immediately after the view definitions.
+-- No file was renamed and no placeholder view was created: the dependency is
+-- satisfied by putting each statement after the object it needs, not by
+-- weakening the statement or reordering the files.
+--
+-- Privilege fidelity is unchanged -- the same 18 statements exist, with the same
+-- privilege lists and the same grantees, at a point in the sequence where they
+-- can actually execute. Postconditions still assert the same final ACL
+-- fingerprints (P-G2 / P-G3), so the relocation is validated by outcome rather
+-- than by inspection.
 
 -- A4. SEQUENCE PRIVILEGES -- 2 sequences, SELECT + UPDATE + USAGE.
 -- Production has exactly 2 sequences in schema public. Both are the implicit
@@ -906,14 +952,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_events TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_instances TO service_role;
 
--- 6 views, same privilege set.
-
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_gate_progress TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_inbox TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_task_load TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_workload TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_project_staffing TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_role_workload TO service_role;
+-- The 6 service_role view grants formerly here were RELOCATED to
+-- ...0004_views.sql by the D2 correction (same reason as A3: the views do not
+-- exist until that file runs).
 
 -- Both sequences. anon/authenticated already covered in A4; no privileges are
 -- added for them here beyond the capture.
@@ -943,7 +984,43 @@ GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.audit_log_id_seq TO service_role;
 -- PostgreSQL grants EXECUTE TO PUBLIC by default, so the REVOKE is mandatory:
 -- without it a bootstrapped database is MORE permissive than production.
 
+-- ---------------------------------------------------------------------
+-- D4 CORRECTION (2026-08-01) -- SECURITY. REVOKE FROM PUBLIC IS NOT ENOUGH.
+-- ---------------------------------------------------------------------
+-- Captured production ACL for this function (privilege-gap-report section 3):
+--     authenticated = X
+--     service_role  = X
+--     postgres      = X   (owner-derived)
+--     PUBLIC        = ABSENT
+--     anon          = ABSENT
+--
+-- The previous revision issued REVOKE ALL ... FROM PUBLIC and then granted
+-- authenticated + service_role. Local execution proved anon RETAINED EXECUTE:
+--
+--     has_function_privilege('anon', 'public.increment_copilot_usage(integer)',
+--                            'EXECUTE')  =>  true
+--
+-- Two independent mechanisms were at work and only one was handled:
+--
+--   1. PostgreSQL grants EXECUTE to PUBLIC by default on every new function.
+--      The existing REVOKE ... FROM PUBLIC correctly removes that.
+--   2. The Supabase image ALSO ships ALTER DEFAULT PRIVILEGES granting EXECUTE
+--      ON FUNCTIONS to anon, authenticated and service_role. That produces a
+--      SEPARATE, EXPLICIT anon=X entry in proacl.
+--
+-- REVOKE ... FROM PUBLIC does NOT remove an explicit per-role grant. PUBLIC is
+-- its own pseudo-grantee, not a superset that sweeps up named roles. The explicit
+-- anon entry therefore survived, leaving the bootstrap BROADER than production on
+-- the one function production deliberately restricts.
+--
+-- Both revokes are issued below, before the grants, so the resulting ACL contains
+-- exactly the captured production grantees and nothing inherited.
+--
+-- The other 27 functions need no revoke: production grants them to PUBLIC, anon,
+-- authenticated and service_role, which is what the defaults already produce.
+
 REVOKE ALL ON FUNCTION public.increment_copilot_usage(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.increment_copilot_usage(integer) FROM anon;
 GRANT EXECUTE ON FUNCTION public.increment_copilot_usage(integer) TO authenticated, service_role;
 
 -- The remaining 27 signatures keep EXECUTE TO PUBLIC and are granted explicitly
@@ -1011,12 +1088,9 @@ ALTER FUNCTION public.set_vo_number() OWNER TO postgres;
 ALTER FUNCTION public.spawn_gate_signoffs() OWNER TO postgres;
 ALTER FUNCTION public.touch_updated_at() OWNER TO postgres;
 
-ALTER VIEW public.v_gate_progress OWNER TO postgres;
-ALTER VIEW public.v_inbox OWNER TO postgres;
-ALTER VIEW public.v_person_task_load OWNER TO postgres;
-ALTER VIEW public.v_person_workload OWNER TO postgres;
-ALTER VIEW public.v_project_staffing OWNER TO postgres;
-ALTER VIEW public.v_role_workload OWNER TO postgres;
+-- The 6 ALTER VIEW ... OWNER TO postgres statements formerly here were
+-- RELOCATED to ...0004_views.sql by the D2 correction: the views do not exist
+-- until that file runs, so ownership cannot be set from here either.
 
 -- =====================================================================
 -- SECTION A8 -- DEFAULT ACLs (EXECUTABLE PORTION)
