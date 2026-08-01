@@ -28,6 +28,15 @@ export interface SelectProps {
   id?: string
 }
 
+/**
+ * Stacking layer for the portalled dropdown.
+ *
+ * Dialogs/modals in this app use `z-50`. The dropdown is portalled to
+ * document.body, so it does not inherit the dialog's stacking context and must
+ * explicitly outrank it — otherwise it renders behind the modal panel.
+ */
+const SELECT_POPUP_Z = 'z-[60]'
+
 /* ── Chevron icon ───────────────────────────── */
 function ChevronIcon({ open }: { open?: boolean }) {
   return (
@@ -163,10 +172,20 @@ function Select({
 
         {/* Popup */}
         <SelectPrimitive.Portal>
-          <SelectPrimitive.Positioner sideOffset={6}>
+          {/*
+            The z-index MUST live on the Positioner, not on the Popup.
+            Base UI renders the Popup `position: static`, and `z-index` has no
+            effect on a statically-positioned element — so a `z-50` class here
+            is inert and the whole portalled subtree paints at `z-index: auto`.
+            Any `position: fixed; z-index: 50` dialog then covers the open
+            dropdown: the listbox is present and expanded, it is simply painted
+            underneath. The Positioner IS positioned, so the layer applies.
+            SELECT_POPUP_Z sits above the z-50 dialog layer.
+          */}
+          <SelectPrimitive.Positioner sideOffset={6} className={SELECT_POPUP_Z}>
             <SelectPrimitive.Popup
               className={cn(
-                'z-50 min-w-[var(--anchor-width)] rounded-xl border border-border bg-popover',
+                'min-w-[var(--anchor-width)] rounded-xl border border-border bg-popover',
                 'p-1 shadow-[0_8px_30px_rgba(0,0,0,0.18)] outline-none',
                 'data-[ending-style]:opacity-0 data-[ending-style]:scale-[0.98]',
                 'data-[starting-style]:opacity-0 data-[starting-style]:translate-y-1',
@@ -300,10 +319,11 @@ const SelectContent = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, children, ...props }, _ref) => (
   <SelectPrimitive.Portal>
-    <SelectPrimitive.Positioner sideOffset={6}>
+    {/* z-index belongs on the Positioner — see SELECT_POPUP_Z. */}
+    <SelectPrimitive.Positioner sideOffset={6} className={SELECT_POPUP_Z}>
       <SelectPrimitive.Popup
         className={cn(
-          'z-50 min-w-[var(--anchor-width)] rounded-xl border border-border bg-popover',
+          'min-w-[var(--anchor-width)] rounded-xl border border-border bg-popover',
           'p-1 shadow-[0_8px_30px_rgba(0,0,0,0.18)] outline-none',
           'data-[ending-style]:opacity-0 data-[ending-style]:scale-[0.98]',
           'data-[starting-style]:opacity-0 data-[starting-style]:translate-y-1',
