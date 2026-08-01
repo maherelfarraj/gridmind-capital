@@ -8,6 +8,7 @@ import { UsersRolesPage } from '@/components/admin/users-roles-page'
 import { ExternalAccessTab } from '@/components/admin/external-access-tab'
 import { getUsers, updateUserRole, inviteInternalUser } from '@/app/actions/admin'
 import { isDbUserRole } from '@/lib/auth/roles'
+import { useSession } from '@/lib/session-context'
 import { useToast } from '@/components/ui/toast'
 import type { UserProfile, UserRole } from '@/components/admin/users-roles-page'
 
@@ -34,6 +35,10 @@ export default function Page() {
   const [activeTab, setActiveTab] = React.useState<'internal' | 'external'>('internal')
   const { data: rawUsers, isLoading, mutate } = useSWR('admin-users', getUsers)
   const { toast } = useToast()
+  const session = useSession()
+  // Drives which roles the invite modal offers. Server-side authority still
+  // lives in lib/auth/provisioning.ts — this only shapes what is on screen.
+  const currentUserRole = session.roles[0] ?? null
 
   // Map DB profile shape → UsersRolesPage UserProfile shape
   const users: UserProfile[] = React.useMemo(() => (rawUsers ?? []).map((u) => ({
@@ -126,6 +131,7 @@ export default function Page() {
           isLoading={false}
           onInvite={handleInvite}
           onUpdateRole={handleUpdateRole}
+          currentUserRole={currentUserRole}
         />
       )}
 

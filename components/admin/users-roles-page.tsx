@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/toast'
 import {
   DB_ADMIN_ROLES,
   DB_ROLE_META,
-  DB_ROLE_OPTIONS,
+  assignableRoleOptionsFor,
   dbRoleMeta,
   type DbUserRole,
   type DbRoleMeta,
@@ -54,6 +54,8 @@ export interface UsersRolesProps {
   onToggleStatus?: (userId: string, isActive: boolean) => Promise<void>
   onDelete?: (userId: string) => Promise<void>
   isLoading?: boolean
+  /** Role of the signed-in admin — gates which roles the invite modal offers. */
+  currentUserRole?: string | null
 }
 
 /* ─────────────────────────────────────────────
@@ -612,17 +614,17 @@ function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }: P
 
 /* ─────────────────────────────────────────────
    INVITE MODAL
-──────────────────────────────��────────────── */
-
-const ROLE_OPTIONS = DB_ROLE_OPTIONS
+──────────────────────────────���────────────── */
 
 interface InviteModalProps {
   open: boolean
   onClose: () => void
   onInvite: (data: { email: string; full_name: string; role: UserRole; department?: string }) => Promise<void>
+  /** Role of the signed-in admin — determines which roles may be assigned. */
+  currentUserRole?: string | null
 }
 
-function InviteModal({ open, onClose, onInvite }: InviteModalProps) {
+function InviteModal({ open, onClose, onInvite, currentUserRole }: InviteModalProps) {
   const [email,   setEmail]   = React.useState('')
   const [name,    setName]    = React.useState('')
   const [role,    setRole]    = React.useState('')
@@ -631,6 +633,17 @@ function InviteModal({ open, onClose, onInvite }: InviteModalProps) {
   const [errors,  setErrors]  = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(false)
   const [sent,    setSent]    = React.useState(false)
+
+  // Only roles this admin is actually permitted to grant. A tenant_admin never
+  // sees system_admin; the server rejects it regardless (provisioning.ts), so
+  // this keeps the UI from offering an action that can only fail.
+  const roleOptions = React.useMemo(
+    () => assignableRoleOptionsFor(currentUserRole),
+    [currentUserRole],
+  )
+
+  // Guard against a stale selection if the actor's permissions narrow.
+  const roleIsAssignable = roleOptions.some(o => o.value === role)
 
   React.useEffect(() => {
     if (open) {
@@ -653,6 +666,7 @@ function InviteModal({ open, onClose, onInvite }: InviteModalProps) {
     if (!name.trim())                         errs.name = 'Full name is required'
     else if (name.trim().length < 2)          errs.name = 'Name must be at least 2 characters'
     if (!role)                                errs.role = 'Please select a role'
+    else if (!roleIsAssignable)               errs.role = 'You are not permitted to assign that role'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -717,7 +731,7 @@ function InviteModal({ open, onClose, onInvite }: InviteModalProps) {
             <Select
               label="Role"
               placeholder="Select a role…"
-              options={ROLE_OPTIONS}
+              options={roleOptions}
               value={role}
               onValueChange={v => { setRole(v ?? ''); if (errors.role) setErrors(p => ({ ...p, role: '' })) }}
               error={errors.role}
@@ -755,7 +769,8 @@ function InviteModal({ open, onClose, onInvite }: InviteModalProps) {
             </Button>
             <button
               type="submit"
-              disabled={loading || sent}
+              data-testid="send-invite"
+              disabled={loading || sent || !roleIsAssignable}
               className={cn(
                 'flex items-center gap-2 rounded-lg bg-[#0a192f] px-4 py-2 text-sm font-medium text-white',
                 'hover:bg-slate-800 transition-colors',
@@ -898,6 +913,7 @@ export function UsersRolesPage({
   onToggleStatus,
   onDelete,
   isLoading: externalLoading = false,
+  currentUserRole,
 }: UsersRolesProps = {}) {
   const [users, setUsers]           = React.useState<UserProfile[]>([])
   const [modalOpen, setModalOpen]   = React.useState(false)
@@ -1206,6 +1222,7 @@ export function UsersRolesPage({
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onInvite={handleInvite}
+        currentUserRole={currentUserRole}
       />
 
       {/* ── Role detail panel ── */}
