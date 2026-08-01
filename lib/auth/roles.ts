@@ -202,6 +202,39 @@ export const DB_ROLE_OPTIONS: { value: DbUserRole; label: string }[] = DB_USER_R
 )
 
 /**
+ * Which roles an actor may ASSIGN when inviting or re-roling another user.
+ *
+ * This mirrors the server-side authority enforced in `lib/auth/provisioning.ts`
+ * (`assertCanProvision` / `assertRoleChangeAllowed`), which is the real
+ * boundary. This helper exists so the UI never OFFERS a role the server would
+ * reject — a presentation concern, not a substitute for the server check.
+ * `tests/unit/invite-role-options.test.ts` asserts the two stay in agreement.
+ *
+ *   system_admin — may assign every canonical role, including system_admin.
+ *   tenant_admin — may assign every role EXCEPT system_admin.
+ *   everyone else — may not provision at all, so assigns nothing.
+ */
+export function assignableRolesFor(
+  actorRole: string | null | undefined,
+): readonly DbUserRole[] {
+  if (actorRole === 'system_admin') return DB_USER_ROLES
+  if (actorRole === 'tenant_admin') {
+    return DB_USER_ROLES.filter((role) => role !== 'system_admin')
+  }
+  return []
+}
+
+/** `assignableRolesFor` as `<Select>` options, preserving DB_USER_ROLES order. */
+export function assignableRoleOptionsFor(
+  actorRole: string | null | undefined,
+): { value: DbUserRole; label: string }[] {
+  return assignableRolesFor(actorRole).map((value) => ({
+    value,
+    label: DB_ROLE_META[value].label,
+  }))
+}
+
+/**
  * Metadata for any role string, including unknown/legacy values, so the UI
  * degrades to a readable label instead of silently mislabelling the row.
  */
