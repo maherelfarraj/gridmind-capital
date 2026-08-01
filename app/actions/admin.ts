@@ -3,9 +3,14 @@
 import { revalidatePath } from 'next/cache'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireAdmin } from '@/lib/auth/guard'
-import { isDbUserRole } from '@/lib/auth/roles'
-
+import { requireInternalRole, isDbUserRole } from '@/lib/auth/guard'
+import {
+  activateUser as activateUserAuthority,
+  changeUserRole,
+  deactivateUser as deactivateUserAuthority,
+  provisionInternalUser,
+  provisionInvitedUser,
+} from '@/lib/auth/provisioning'
 import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─────────────────────────────────────────────────────────────
@@ -54,9 +59,12 @@ export async function getTenant(): Promise<TenantData | null> {
 }
 
 export async function updateTenant(payload: Partial<Pick<TenantData, 'name' | 'settings'>>): Promise<{ error?: string }> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
   const tenantId = await getCurrentTenantId()
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
 
   const supabase = createAdminClient()
 
@@ -97,26 +105,26 @@ export async function getUsers(): Promise<UserProfile[]> {
   })) satisfies UserProfile[]
 }
 
+/**
+ * Change a user's role.
+ *
+ * Delegates entirely to the canonical provisioning service. The previous
+ * implementation duplicated the authorization matrix inline AND wrote its audit
+ * row with the wrong contract (`actor_id`/`resource_type`/`resource_id`/
+ * `details`/`timestamp`, and a non-DML `action`), so every one of those audit
+ * inserts was rejected by PostgREST and the CHECK constraint. The error was
+ * swallowed by a try/catch that could never fire, because supabase-js returns
+ * errors rather than throwing — the role change looked audited and was not.
+ */
 export async function updateUserRole(userId: string, role: string): Promise<{ error?: string }> {
-  const tenantId = await getCurrentTenantId()
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
-
-  // `profiles.role` is a Postgres enum. Writing a value outside the enum
-  // raises 22P02, so reject unknown roles up front with a clear message.
   if (!isDbUserRole(role)) {
     return { error: `"${role}" is not a valid role.` }
   }
 
-  const supabase = createAdminClient()
+  const res = await changeUserRole({ userId, role })
+  if ('error' in res) return { error: res.error }
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({ role })
-    .eq('id', userId)
-    .eq('tenant_id', tenantId)
-
-  if (error) return { error: error.message }
+  revalidatePath('/admin/users')
   return {}
 }
 
@@ -158,8 +166,11 @@ export interface InviteInternalUserResult {
 export async function inviteInternalUser(
   args: InviteInternalUserArgs,
 ): Promise<InviteInternalUserResult> {
-  const gate = await requireAdmin()
-  if ('error' in gate) return { error: gate.error }
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
 
   const email = args.email.trim().toLowerCase()
   const fullName = args.fullName.trim()
@@ -170,6 +181,9 @@ export async function inviteInternalUser(
   if (!isDbUserRole(args.role)) {
     return { error: `"${args.role}" is not a valid role.` }
   }
+  // Captured after narrowing: the guard above does not survive into the async
+  // closure below, where args.role would widen back to string.
+  const role = args.role
 
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
@@ -183,25 +197,18 @@ export async function inviteInternalUser(
     .maybeSingle()
 
   let userId: string
+  // Must describe THIS operation: it decides whether a failure below cancels a
+  // brand-new invitation or deletes a pre-existing colleague's account.
+  let wasNewlyInvited = false
 
   if (existing) {
     userId = existing.id
-    const { error: updErr } = await admin
-      .from('profiles')
-      .update({
-        role: args.role,
-        full_name: fullName || undefined,
-        department: args.department?.trim() || null,
-        user_type: 'internal',
-        ...(args.homeRoleId ? { home_role_id: args.homeRoleId } : {}),
-        is_active: true,
-      })
-      .eq('id', userId)
-    if (updErr) return { error: updErr.message }
   } else {
+    // P0: Do NOT store role/tenant in auth.users.user_metadata
+    // The P0 migration hardened handle_new_user trigger to NOT use metadata as authority
     // Step 2 — create the auth user. Sends the invite email when SMTP is set.
     const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { role: args.role, tenant_id: tenantId, full_name: fullName },
+      data: { full_name: fullName },
       redirectTo: `${args.siteUrl}/auth/callback?next=/`,
     })
 
@@ -209,25 +216,41 @@ export async function inviteInternalUser(
       return { error: inviteErr?.message ?? 'Failed to invite user.' }
     }
     userId = invited.user.id
-
-    // The handle_new_user trigger creates the profile row, but it may not have
-    // fired yet for an invite, so upsert to guarantee correct tenant/role.
-    const { error: upsertErr } = await admin.from('profiles').upsert(
-      {
-        id: userId,
-        tenant_id: tenantId,
-        email,
-        full_name: fullName,
-        role: args.role,
-        department: args.department?.trim() || null,
-        user_type: 'internal',
-        ...(args.homeRoleId ? { home_role_id: args.homeRoleId } : {}),
-        is_active: true,
-      },
-      { onConflict: 'id', ignoreDuplicates: false },
-    )
-    if (upsertErr) return { error: upsertErr.message }
+    wasNewlyInvited = true
   }
+
+  // Step 2b — write the display row, then apply authority. Both run under
+  // compensation: if either fails for a user we just created, the pending Auth
+  // identity is removed rather than left able to sign in with no provisioning.
+  const provisioned = await provisionInvitedUser({
+    userId,
+    wasNewlyInvited,
+    provision: async () => {
+      // Non-authority display fields only. The handle_new_user trigger creates
+      // the row; this fills in the name without touching any protected field.
+      // Authority is applied by the canonical service, which is what enforces
+      // "tenant_admin may not invite a system_admin".
+      const { error: nameErr } = await admin
+        .from('profiles')
+        .upsert({ id: userId, email, full_name: fullName }, { onConflict: 'id' })
+      if (nameErr) return { error: nameErr.message }
+
+      return provisionInternalUser({
+        userId,
+        role,
+        tenantId,
+        department: args.department?.trim() || null,
+        homeRoleId: args.homeRoleId ?? null,
+        isActive: true,
+        reason: existing ? 'reinvite_existing_profile' : 'invite_new_user',
+      })
+    },
+  })
+  if ('error' in provisioned) return { error: provisioned.error }
+
+  // Everything below is DELIVERY, not provisioning. A failure to mint a link
+  // must not delete a correctly provisioned user — the account is valid and the
+  // link can be regenerated.
 
   // Step 3 — always produce a shareable link as an SMTP-independent fallback.
   //
@@ -251,21 +274,30 @@ export async function inviteInternalUser(
   return { userId, inviteLink, isExisting: !!existing }
 }
 
+/**
+ * Deactivate a user.
+ *
+ * This used to "soft-delete" by setting role='viewer' and
+ * department='Deactivated'. That was not deactivation: `is_active` stayed true
+ * so the account could still sign in, the user's real role was destroyed (so
+ * reactivation could not restore it), and a free-text department string is not
+ * an authorization state. It now delegates to the canonical operation, which
+ * sets is_active = false and nothing else.
+ */
 export async function deactivateUser(userId: string): Promise<{ error?: string }> {
-  const tenantId = await getCurrentTenantId()
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
+  const res = await deactivateUserAuthority({ userId })
+  if ('error' in res) return { error: res.error }
 
-  const supabase = createAdminClient()
+  revalidatePath('/admin/users')
+  return {}
+}
 
-  // Soft-delete: set role to 'viewer' and clear department
-  const { error } = await supabase
-    .from('profiles')
-    .update({ role: 'viewer', department: 'Deactivated' })
-    .eq('id', userId)
-    .eq('tenant_id', tenantId)
+/** Reactivate a previously deactivated user. */
+export async function activateUser(userId: string): Promise<{ error?: string }> {
+  const res = await activateUserAuthority({ userId })
+  if ('error' in res) return { error: res.error }
 
-  if (error) return { error: error.message }
+  revalidatePath('/admin/users')
   return {}
 }
 
@@ -311,9 +343,11 @@ export interface PlatformHealth {
  * Restricted to system_admin / tenant_admin — returns { error } otherwise.
  */
 export async function getPlatformHealth(): Promise<PlatformHealth | { error: string }> {
-  const gate = await requireAdmin()
-  if ('error' in gate) return gate
-
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
   const tenantId = await getCurrentTenantId()
   const admin = createAdminClient()
 

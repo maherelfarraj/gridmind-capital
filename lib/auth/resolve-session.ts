@@ -1,50 +1,99 @@
-import { createClient } from '@/lib/supabase/server'
+import 'server-only'
+import {
+  resolveActorState,
+  type ActorFailureReason,
+} from '@/lib/auth/actor'
 import {
   type AppSession,
   type AppRole,
-  type AppPermission,
   type AppDigitStyle,
 } from '@/lib/session'
-import { isDbUserRole } from '@/lib/auth/roles'
 
 /**
- * Resolve the current authenticated user's app session from Supabase auth +
- * their profile row. Returns null when unauthenticated OR authenticated but
- * unprovisioned (no profile). Never falls back to a mock identity.
+ * Session resolution for layouts and pages.
+ *
+ * `resolveSession()` collapses every failure into `null`, which forced callers
+ * to treat "not signed in" and "signed in but not provisioned" identically —
+ * so an authenticated user with no profile got bounced to the login page they
+ * had already completed. `resolveSessionState()` distinguishes the two.
+ *
+ * Identity validation itself is NOT reimplemented here; it delegates to the
+ * canonical resolver in lib/auth/actor.ts.
  */
-export async function resolveSession(): Promise<AppSession | null> {
-  const supabase = await createClient()
 
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user) return null
+/** Why an authenticated user is not yet usable. Mirrors the resolver's reasons. */
+export type UnprovisionedReason = Exclude<ActorFailureReason, 'not_authenticated'>
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, full_name, email, role, tenant_id, locale, digit_style')
-    .eq('id', user.id)
-    .single()
+export type SessionResolution =
+  | { kind: 'unauthenticated' }
+  | {
+      kind: 'unprovisioned'
+      email: string
+      reason: UnprovisionedReason
+    }
+  | {
+      kind: 'active'
+      session: AppSession
+    }
 
-  if (!profile) return null
+/**
+ * Resolve the caller into one of three mutually exclusive states.
+ *
+ *   no user                → unauthenticated
+ *   profile query error    → unprovisioned / profile_lookup_failed
+ *   no profile row         → unprovisioned / profile_missing
+ *   is_active false        → unprovisioned / profile_inactive
+ *   null tenant_id         → unprovisioned / tenant_missing
+ *   non-canonical role     → unprovisioned / role_invalid
+ *   otherwise              → active
+ *
+ * No Supabase or Postgres error text is ever included in the result.
+ */
+export async function resolveSessionState(): Promise<SessionResolution> {
+  const state = await resolveActorState()
 
-  // Validate role is canonical; fall back to 'viewer' if not recognized
-  const appRole: AppRole = isDbUserRole(profile.role) ? profile.role : 'viewer'
-  const isSuperAdmin = appRole === 'system_admin'
+  if (state.kind === 'invalid') {
+    if (state.reason === 'not_authenticated') return { kind: 'unauthenticated' }
 
-  const locale: string = (profile as Record<string, unknown>).locale as string | null ?? 'en'
+    return {
+      kind: 'unprovisioned',
+      email: state.email ?? '',
+      reason: state.reason,
+    }
+  }
+
+  const { actor, profile, email } = state
+
+  const appRole: AppRole = actor.role
   const digitStyle: AppDigitStyle =
-    ((profile as Record<string, unknown>).digit_style as string | null) === 'arabic_indic'
-      ? 'arabic_indic'
-      : 'western'
+    profile.digitStyle === 'arabic_indic' ? 'arabic_indic' : 'western'
 
   return {
-    userId:      profile.id,
-    tenantId:    profile.tenant_id,
-    roles:       [appRole],
-    permissions: [], // Permissions are now evaluated via requireRole/requireInternalRole guards
-    fullName:    profile.full_name || user.email?.split('@')[0] || 'User',
-    email:       profile.email || user.email || '',
-    isSuperAdmin,
-    locale,
-    digitStyle,
+    kind: 'active',
+    session: {
+      userId: actor.userId,
+      tenantId: actor.tenantId,
+      roles: [appRole],
+      // Permissions are evaluated via requireRole/requireInternalRole guards.
+      permissions: [],
+      fullName: profile.fullName || email.split('@')[0] || 'User',
+      email,
+      isSuperAdmin: appRole === 'system_admin',
+      locale: profile.locale ?? 'en',
+      digitStyle,
+    },
   }
+}
+
+/**
+ * Compatibility wrapper for call sites that still expect `AppSession | null`.
+ *
+ * This does NOT weaken authorization: it returns a session only for the
+ * `active` state, exactly as before. It merely discards the distinction
+ * between unauthenticated and unprovisioned. Prefer resolveSessionState() in
+ * new code so the unprovisioned case can be rendered instead of redirected.
+ */
+export async function resolveSession(): Promise<AppSession | null> {
+  const state = await resolveSessionState()
+  return state.kind === 'active' ? state.session : null
 }

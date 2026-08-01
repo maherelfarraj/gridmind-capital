@@ -569,7 +569,9 @@ async function applyApprovalLifecycle(
 
 /** Resolved visibility scope for one actor. */
 interface ApprovalScope {
-  tenantId: string | null
+  /** Never null: a successful actor always carries a tenant, so every query
+   *  below is unconditionally tenant-filtered. */
+  tenantId: string
   dbRole: string
   isAdmin: boolean
   /** `null` = no object_type restriction (admin). `[]` = routes to nothing. */
@@ -596,8 +598,12 @@ async function resolveApprovalScope(
   if ('error' in auth) return { error: auth.error }
 
   const dbRole = auth.actor.role
-  // `actor.tenantId` is nullable; fall back to the documented tenant resolver.
-  const tenantId = auth.actor.tenantId ?? (await getCurrentTenantId())
+  // `actor.tenantId` is a guaranteed non-null string — getAuthActor() returns
+  // { error } rather than an actor when the tenant is missing. The old
+  // `?? getCurrentTenantId()` fallback was dead code that reintroduced a second
+  // tenant-resolution algorithm, and it allowed a null tenantId, which made the
+  // tenant filter in getApprovals() conditional — i.e. a cross-tenant read.
+  const tenantId: string = auth.actor.tenantId
   const isAdmin = (DB_ADMIN_ROLES as readonly string[]).includes(dbRole)
 
   // Admins are intentionally tenant-wide (still tenant-filtered, never global).
@@ -608,7 +614,9 @@ async function resolveApprovalScope(
     .select('object_type')
     .eq('is_active', true)
     .overlaps('required_roles', [dbRole])
-  if (tenantId) rulesQuery = rulesQuery.eq('tenant_id', tenantId)
+  // Unconditional: tenantId is non-null, so this can no longer degrade into an
+  // unfiltered cross-tenant read.
+  rulesQuery = rulesQuery.eq('tenant_id', tenantId)
 
   const { data: rules, error: rulesError } = await rulesQuery
   if (rulesError) {
@@ -648,7 +656,9 @@ export async function getPendingApprovalCount(): Promise<number> {
     .from('approvals')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'pending')
-  if (scope.tenantId) query = query.eq('tenant_id', scope.tenantId)
+  // Unconditional: scope.tenantId is non-null, so the inbox is always
+  // tenant-scoped rather than silently falling back to every tenant's rows.
+  query = query.eq('tenant_id', scope.tenantId)
   if (scope.allowedObjectTypes !== null) query = query.in('object_type', scope.allowedObjectTypes)
 
   const { count, error } = await query
@@ -703,7 +713,10 @@ export async function getApprovals(approverRole?: string): Promise<ApprovalRecor
     .order('created_at', { ascending: false })
     .limit(100)
 
-  if (tenantId) query = query.eq('tenant_id', tenantId)
+  // Unconditional: getCurrentTenantId() returns a non-null string or throws,
+  // so this guard could only ever be skipped by a future regression — and
+  // skipping it returns every tenant's approvals.
+  query = query.eq('tenant_id', tenantId)
 
   // Scope to the approver's object types. If the role has no rules, it sees nothing.
   if (allowedObjectTypes !== null) {
@@ -1171,7 +1184,9 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
     .from('approvals')
     .select('id, object_type, status, priority, created_at')
     .order('created_at', { ascending: false })
-  if (tenantId) approvalsQuery = approvalsQuery.eq('tenant_id', tenantId)
+  // Unconditional — see getApprovals(): a skipped tenant filter is a
+  // cross-tenant read, not a harmless wider query.
+  approvalsQuery = approvalsQuery.eq('tenant_id', tenantId)
   if (allowedObjectTypes !== null) {
     // `.in()` with an empty list yields zero rows, which is the correct answer
     // for a role that routes to nothing.
@@ -1186,7 +1201,7 @@ export async function loadApprovalsDashboard(): Promise<ApprovalsDashboard> {
     .from('approval_rules')
     .select('object_type, approval_levels, required_roles')
     .order('approval_levels')
-  if (tenantId) rulesQuery = rulesQuery.eq('tenant_id', tenantId)
+  rulesQuery = rulesQuery.eq('tenant_id', tenantId)
   if (allowedObjectTypes !== null) rulesQuery = rulesQuery.in('object_type', allowedObjectTypes)
 
   const [appRes, rulesRes] = await Promise.all([approvalsQuery, rulesQuery])

@@ -1,13 +1,21 @@
 // ─────────────────────────────────────────────────────────────
 // Session types
-// AppRole is aliased from canonical DB role list (lib/auth/roles.ts).
-// Replace mockSession with a real auth call (e.g. Better Auth /
-// Supabase) when wiring up the backend.
+//
+// Sessions are produced ONLY by lib/auth/resolve-session.ts from a verified
+// Supabase user plus their profile row. This module intentionally exports no
+// sample, default, or fallback identity: a fabricated session shipped in
+// production runtime code can be picked up by a real render path and grant a
+// role, tenant and permissions to an unauthenticated visitor.
+//
+// Test/story fixtures live in tests/fixtures/session.ts.
 // ─────────────────────────────────────────────────────────────
 
 import { type DbUserRole } from '@/lib/auth/roles'
 
-/** Application role — aliased from canonical DB roles. */
+/**
+ * Application role. This is a plain alias of `DbUserRole` — the app has ONE
+ * role vocabulary. It is not a wider or independent presentation vocabulary.
+ */
 export type AppRole = DbUserRole
 
 export type AppPermission =
@@ -42,23 +50,6 @@ export interface AppSession {
   locale: string
   /** Digit style read from profiles.digit_style. Defaults to 'western'. */
   digitStyle: AppDigitStyle
-}
-
-// ─────────────────────────────────────────────────────────────
-// Mock session — matches the pasted shape exactly.
-// Swap this for a real session fetch when auth is wired up.
-// ─────────────────────────────────────────────────────────────
-
-export const mockSession: AppSession = {
-  userId: '123',
-  tenantId: '456',
-  roles: ['project_manager'],
-  permissions: ['project.read', 'project.create', 'approval.decide'],
-  fullName: 'John Doe',
-  email: 'john@example.com',
-  isSuperAdmin: false,
-  locale: 'en',
-  digitStyle: 'western',
 }
 
 // ─────────────────────────────────────────────────────────────

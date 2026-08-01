@@ -1,20 +1,20 @@
 /**
  * The DATABASE role vocabulary — single source of truth for `profiles.role`.
  *
- * These values mirror the Postgres `public.user_role` enum EXACTLY. A value
- * outside this list cannot be stored; writing one raises Postgres 22P02
- * (invalid input value for enum).
+ * In the currently deployed schema `profiles.role` is a TEXT column constrained
+ * by the canonical `profiles_role_check` CHECK constraint, not a PostgreSQL
+ * enum type. A value outside this list is rejected by that constraint (Postgres
+ * 23514, check_violation) rather than by enum input parsing.
  *
- * ── Do not confuse this with `AppRole` in `lib/session.ts` ──
- * The app deliberately runs TWO role vocabularies:
- *   • DbUserRole (here)         — what is persisted on `profiles.role`.
- *   • AppRole (lib/session.ts)  — the wider presentation/permission vocabulary
- *                                 that `lib/auth/resolve-session.ts` maps onto.
- * Screens that READ permissions use AppRole. Screens that WRITE `profiles.role`
- * (i.e. admin user management, invites) MUST use DbUserRole, or the write fails.
+ * ── Relationship to `AppRole` in `lib/session.ts` ──
+ * `AppRole` is currently a plain alias of `DbUserRole` — there is ONE role
+ * vocabulary, not two. The alias exists so presentation code can express intent
+ * ("this is the role on the session") without re-declaring the list. Any value
+ * written to `profiles.role` must still be a `DbUserRole`.
  *
  * To re-verify against the live database:
- *   SELECT unnest(enum_range(NULL::public.user_role));
+ *   SELECT pg_get_constraintdef(oid) FROM pg_constraint
+ *   WHERE conname = 'profiles_role_check';
  *
  * NOTE: imported by client components — keep free of server-only imports.
  */
@@ -39,6 +39,57 @@ export type DbUserRole = (typeof DB_USER_ROLES)[number]
 /** Runtime guard — use before writing any caller-supplied role to the DB. */
 export function isDbUserRole(value: unknown): value is DbUserRole {
   return typeof value === 'string' && (DB_USER_ROLES as readonly string[]).includes(value)
+}
+
+/**
+ * EXHAUSTIVE write-capability classification — the single authority on which
+ * roles may mutate data.
+ *
+ * This is a `Record<DbUserRole, boolean>` on purpose. Deriving writers by
+ * excluding a hand-maintained read-only list is fail-OPEN: a role added to
+ * DB_USER_ROLES and forgotten would silently gain write access. With this map,
+ * adding a role to DB_USER_ROLES makes TypeScript fail to compile until the new
+ * role is explicitly classified here.
+ *
+ * Do not replace this with a filter over an exclusion list.
+ */
+export const WRITE_ACCESS_BY_ROLE: Record<DbUserRole, boolean> = {
+  // Internal staff — may write.
+  system_admin: true,
+  tenant_admin: true,
+  project_director: true,
+  project_manager: true,
+  engineer: true,
+  hse_manager: true,
+  commissioning_manager: true,
+  finance_manager: true,
+  commercial_manager: true,
+  // Read-only / external — must never write.
+  viewer: false,
+  subcontractor: false,
+  client_viewer: false,
+}
+
+/** Roles with write authority, derived from the exhaustive classification. */
+export const WRITER_ROLES: readonly DbUserRole[] = DB_USER_ROLES.filter(
+  (role) => WRITE_ACCESS_BY_ROLE[role],
+)
+
+/** True only for a canonical role explicitly classified as a writer. */
+export function isWriterRole(value: unknown): value is DbUserRole {
+  return isDbUserRole(value) && WRITE_ACCESS_BY_ROLE[value]
+}
+
+/**
+ * Platform roles that unlock the /admin console. This is the canonical admin
+ * capability group — layouts and guards must import it rather than declaring
+ * their own local copy.
+ */
+export const PLATFORM_ADMIN_ROLES: readonly DbUserRole[] = ['system_admin', 'tenant_admin']
+
+/** True only for a canonical role with platform-admin authority. */
+export function isPlatformAdminRole(value: unknown): value is DbUserRole {
+  return isDbUserRole(value) && PLATFORM_ADMIN_ROLES.includes(value)
 }
 
 /** Roles that carry tenant-wide administrative authority. */

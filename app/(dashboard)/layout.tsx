@@ -5,23 +5,12 @@ import { SessionProvider } from '@/lib/session-context'
 import { getUnreadCountAction } from '@/app/actions/notifications'
 import { getPendingApprovalCount } from '@/app/actions/approvals'
 import { signOutAction } from '@/app/actions/auth'
-import { type AppSession } from '@/lib/session'
-import { resolveSession } from '@/lib/auth/resolve-session'
+import { resolveSessionState } from '@/lib/auth/resolve-session'
+import { dashboardDecision } from '@/lib/auth/routing'
 
-import { cache } from 'react'
-
-// Returns the resolved session, or null when the authenticated user has no
-// profile row. We NEVER fall back to a mock/default identity here — doing so
-// would silently grant a real role, permissions and tenant to an account that
-// has not been provisioned.
-//
-// Wrapped in React cache() to dedupe per HTTP request.
-const getSession = cache(async (): Promise<AppSession | null> => {
-  return await resolveSession()
-})
-
-// Shown when a user is authenticated but has no provisioned profile row.
-// We deliberately do NOT grant any role, permission, or tenant in this state.
+// Shown when a user is authenticated but has no usable profile row.
+// We deliberately do NOT grant any role, permission, or tenant in this state,
+// and we render no dashboard data — the component below is a terminal screen.
 function AccountSetupIncomplete({ email }: { email: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -55,18 +44,30 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const session = await getSession()
+  // resolveSessionState() is cached via React cache() inside the canonical
+  // actor resolver, so repeated calls within this request are deduplicated.
+  const state = await resolveSessionState()
 
-  // getSession() is cached via React cache(), so it deduplicates multiple calls
-  // within this request. If auth failed, session is null.
-  if (!session) {
-    // Not authenticated — redirect to login
-    redirect('/auth/login')
+  // The whole routing matrix lives in lib/auth/routing.ts so the unit tests
+  // exercise this exact decision instead of a test-local copy of it.
+  const decision = dashboardDecision(state)
+
+  if (decision.action === 'redirect') {
+    redirect(decision.to)
   }
 
-  // External roles never see the internal dashboard — bounce to their portal.
-  if (session.roles.includes('client_viewer')) redirect('/client')
-  if (session.roles.includes('subcontractor')) redirect('/portal')
+  // Signed in, but the profile is missing/inactive/tenant-less/role-invalid.
+  // Redirecting to /auth/login here would loop: the user IS authenticated, so
+  // logging in again cannot fix it. Render a terminal screen with no dashboard
+  // data and no session context instead — note this returns BEFORE any data
+  // fetch below.
+  if (decision.action === 'render-setup-incomplete') {
+    return <AccountSetupIncomplete email={decision.email} />
+  }
+
+  // Only an `active` state reaches here; narrow for the session.
+  if (state.kind !== 'active') redirect('/auth/login')
+  const { session } = state
 
   // Fetch pending approvals and notifications in parallel
   const [approvalCount, notificationCount] = await Promise.all([

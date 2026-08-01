@@ -1,42 +1,32 @@
+import 'server-only'
+import { resolveActorState, actorFailureMessage } from '@/lib/auth/actor'
+
 /**
  * Tenant resolution helper for server actions.
  *
- * getCurrentTenantId() requires an authenticated session. It throws an error
- * when no session exists or when profile lookup fails. Pages that legitimately
- * render unauthenticated must redirect to login instead of catching this error.
- *
- * Wrapped in React cache() to dedupe per HTTP request. Multiple calls within
- * the same request will return the same result without additional network calls.
+ * Delegates to the canonical resolver in lib/auth/actor.ts rather than running
+ * a third independent identity algorithm. Caching is inherited from that
+ * resolver, so repeated calls within one request share a single lookup.
  */
-
-import { cache } from 'react'
-import { createClient }      from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
- * Resolves the calling user's tenant_id from their session profile.
+ * Resolves the calling user's tenant_id.
  *
- * Throws 'Unauthorized' when no authenticated session exists.
- * Throws 'Profile lookup failed' when profile lookup errors occur.
- * Throws 'No tenant configured' when profile has no tenant_id set.
+ * FAIL-CLOSED: throws when the caller is unauthenticated, the profile lookup
+ * fails, the profile is missing, the profile is inactive, the tenant is null,
+ * or the role is not canonical.
  *
- * Callers MUST handle these errors explicitly. Do not fall back to demo-tenant.
+ * The tenant is ALWAYS derived from the authenticated session. It is never
+ * accepted from caller input, and there is no demo/default tenant fallback.
+ * Callers must handle the throw explicitly; pages that legitimately render
+ * unauthenticated must redirect to login instead of catching it.
  */
-export const getCurrentTenantId = cache(async (): Promise<string> => {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export async function getCurrentTenantId(): Promise<string> {
+  const state = await resolveActorState()
 
-  if (!user) throw new Error('Unauthorized: No authenticated session')
+  if (state.kind === 'invalid') {
+    throw new Error(actorFailureMessage(state.reason))
+  }
 
-  const admin = createAdminClient()
-  const { data: profile, error } = await admin
-    .from('profiles')
-    .select('tenant_id')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (error) throw new Error(`Profile lookup failed: ${error.message}`)
-  if (!profile?.tenant_id) throw new Error('No tenant configured for user')
-
-  return profile.tenant_id
-})
+  return state.actor.tenantId
+}

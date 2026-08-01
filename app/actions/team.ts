@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getActor, getTaskComments, getStaffingRadar } from '@/lib/db/queries'
 import type { StaffingRadar } from '@/lib/db/queries'
 import { requireUser, requireInternalRole } from '@/lib/auth/guard'
+import { assignHomeRole } from '@/lib/auth/provisioning'
 
 type ActionResult<T = void> = { data?: T; error?: string }
 
@@ -795,41 +796,24 @@ async function logAdminEvent(
   })
 }
 
-/** Change a user's home role (Tab 1) with an audit_log old/new record. */
+/**
+ * Change a user's home role (Tab 1).
+ *
+ * home_role_id is a protected authority field, so this delegates to the
+ * canonical provisioning service. The previous implementation required only
+ * requireUser() — any authenticated identity, including an external
+ * subcontractor, could rewrite any user's org-catalogue seat, in any tenant,
+ * with no tenant confinement and no validation that the role id even existed.
+ */
 export async function changeUserHomeRole(input: {
   userId: string
   roleId: string | null
 }): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch (e: any) {
-    return { error: e.message }
-  }
-  
   const { userId, roleId } = input
   if (!userId) return { error: 'Missing user.' }
 
-  const actor = await getActor()
-  const admin = createAdminClient()
-
-  const { data: prior } = await admin
-    .from('profiles')
-    .select('home_role_id')
-    .eq('id', userId)
-    .maybeSingle()
-
-  const { error } = await admin.from('profiles').update({ home_role_id: roleId }).eq('id', userId)
-  if (error) return { error: error.message }
-
-  await logAudit(admin, {
-    tenantId: actor.tenantId,
-    tableName: 'profiles',
-    recordId: userId,
-    action: 'update',
-    actorId: actor.userId,
-    oldValues: { home_role_id: prior?.home_role_id ?? null },
-    newValues: { home_role_id: roleId },
-  })
+  const res = await assignHomeRole({ userId, homeRoleId: roleId })
+  if ('error' in res) return { error: res.error }
 
   revalidatePath('/admin/roles-flow')
   return {}

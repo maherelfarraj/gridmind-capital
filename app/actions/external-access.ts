@@ -5,7 +5,12 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser, requireInternalRole, validateExternalRole } from '@/lib/auth/guard'
+import { requireInternalRole, validateExternalRole } from '@/lib/auth/guard'
+import {
+  deactivateUser,
+  provisionExternalUser,
+  provisionInvitedUser,
+} from '@/lib/auth/provisioning'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -163,19 +168,21 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
     .maybeSingle()
 
   let userId: string
+  let wasNewlyInvited = false
 
   if (existing) {
-    // User already exists — update their role and re-grant projects.
+    // User already exists — re-grant projects. The role/tenant/user_type write
+    // is applied by the canonical service below; the previous inline update
+    // discarded its error and bypassed every tenant and role check.
     userId = existing.id
-    await admin.from('profiles').update({ role: args.role }).eq('id', userId)
   } else {
+    // P0: Do NOT store role/tenant in auth.users.user_metadata
+    // The P0 migration hardened handle_new_user trigger to NOT use metadata as authority
     // Step 2 — invite via Supabase Auth (sends magic link if SMTP configured).
     const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
       args.email,
       {
         data: {
-          role: args.role,
-          tenant_id: tenantId,
           organization_name: args.organizationName,
           full_name: '',
         },
@@ -187,22 +194,43 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
       return { error: inviteErr?.message ?? 'Failed to invite user' }
     }
     userId = inviteData.user.id
-
-    // Ensure the profile row exists (the handle_new_user trigger creates it,
-    // but it may not have fired yet for an invite flow).
-    await admin.from('profiles').upsert({
-      id:               userId,
-      tenant_id:        tenantId,
-      email:            args.email,
-      full_name:        '',
-      role:             args.role,
-      is_active:        true,
-    }, { onConflict: 'id', ignoreDuplicates: false })
+    wasNewlyInvited = true
   }
+
+  // Step 3 — apply external authority through the single canonical writer,
+  // under compensation. This validates that every project belongs to the tenant
+  // BEFORE granting anything, so a cross-tenant project id cannot be attached.
+  //
+  // organizationName is passed explicitly. It is NOT read back from the auth
+  // metadata set above: metadata is attacker-influenceable and is never an
+  // authority source.
+  const provisioned = await provisionInvitedUser({
+    userId,
+    wasNewlyInvited,
+    provision: async () => {
+      // Non-authority columns only — the canonical service applies role,
+      // tenant, user_type, external_org and active state.
+      const { error: rowErr } = await admin
+        .from('profiles')
+        .upsert({ id: userId, email: args.email }, { onConflict: 'id' })
+      if (rowErr) return { error: rowErr.message }
+
+      return provisionExternalUser({
+        userId,
+        role: args.role,
+        tenantId,
+        projectIds: args.projectIds,
+        externalOrg: args.organizationName,
+        isActive: true,
+        reason: existing ? 'reinvite_existing_external' : 'invite_new_external',
+      })
+    },
+  })
+  if ('error' in provisioned) return { error: provisioned.error }
 
   // Step 4 — grant project access (upsert, revived if previously revoked).
   if (args.projectIds.length > 0) {
-    await admin.from('external_access').upsert(
+    const { error: grantErr } = await admin.from('external_access').upsert(
       args.projectIds.map((pid) => ({
         tenant_id:         tenantId,
         user_id:           userId,
@@ -212,6 +240,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
       })),
       { onConflict: 'user_id,project_id', ignoreDuplicates: false },
     )
+    if (grantErr) return { error: grantErr.message }
   }
 
   revalidatePath('/admin/users')
@@ -227,8 +256,11 @@ export async function assignProjectAccess(args: {
   projectId: string
   organizationName: string
 }): Promise<{ error?: string }> {
+  // requireUser() admitted ANY authenticated identity, including the external
+  // users this table governs — a subcontractor could grant themselves access
+  // to another project. Granting external access is an internal capability.
   try {
-    await requireUser()
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
   } catch (e: any) {
     return { error: e.message }
   }
@@ -253,7 +285,7 @@ export async function revokeProjectAccess(args: {
   projectId: string
 }): Promise<{ error?: string }> {
   try {
-    await requireUser()
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
   } catch (e: any) {
     return { error: e.message }
   }
@@ -274,7 +306,7 @@ export async function revokeProjectAccess(args: {
 
 export async function revokeAllAccess(userId: string): Promise<{ error?: string }> {
   try {
-    await requireUser()
+    await requireInternalRole(['system_admin', 'tenant_admin', 'project_director'])
   } catch (e: any) {
     return { error: e.message }
   }
@@ -290,12 +322,12 @@ export async function revokeAllAccess(userId: string): Promise<{ error?: string 
     .is('revoked_at', null)
 
   if (error) return { error: error.message }
-  // Also deactivate the profile role so the user can't log in to internal pages.
-  await admin
-    .from('profiles')
-    .update({ role: 'viewer', is_active: false })
-    .eq('id', userId)
-    .eq('tenant_id', tenantId)
+
+  // Deactivate through the canonical operation. The old inline write also
+  // demoted the role to 'viewer', which destroyed the record of what the user
+  // had been and is not what deactivation means.
+  const deactivated = await deactivateUser({ userId, reason: 'revoke_all_access' })
+  if ('error' in deactivated) return { error: deactivated.error }
 
   revalidatePath('/admin/users')
   return {}
