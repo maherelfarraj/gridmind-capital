@@ -142,6 +142,49 @@ const AUTHORITY_COLUMNS =
   'id, tenant_id, role, is_active, user_type, external_org, home_role_id, department'
 
 /**
+ * Does this profile look EXACTLY like one the `handle_new_user` trigger just
+ * created for a brand-new invite, and nothing else?
+ *
+ * After P0, the trigger is fail-closed: it inserts `role='viewer'`,
+ * `tenant_id=NULL`, `is_active=FALSE`, and leaves `user_type` on its column
+ * default `'internal'` and `external_org` NULL. Verified against the live
+ * function source and column defaults, not inferred.
+ *
+ * A tenantless profile therefore has two very different meanings, and this
+ * predicate is what separates them:
+ *
+ *   - the shell the invite we are currently running just produced, which has
+ *     no tenant yet precisely BECAUSE the trigger refuses to guess one; and
+ *   - a pre-existing tenantless account (a self-signup that was never
+ *     provisioned), which a tenant_admin must NOT be able to silently adopt.
+ *
+ * Every field is pinned, so a profile that has been touched in any way — given
+ * a role, activated, converted to external, attributed to an organisation —
+ * fails and falls back to the ordinary cross-tenant rejection. Note this is
+ * SHAPE only: it cannot prove provenance on its own and must always be paired
+ * with the caller's `adoptNewlyInvited` flag, which carries the ownership.
+ *
+ * The same shape applies to an external invite: the trigger always writes
+ * `user_type='internal'`, so a freshly invited subcontractor starts internal
+ * and is converted by the provisioning call itself.
+ */
+export function isAdoptableInviteProfile(target: {
+  tenant_id: string | null
+  role: string | null
+  is_active: boolean | null
+  user_type: string | null
+  external_org: string | null
+}): boolean {
+  return (
+    target.tenant_id === null &&
+    target.role === 'viewer' &&
+    target.is_active === false &&
+    target.user_type === 'internal' &&
+    target.external_org === null
+  )
+}
+
+/**
  * Enforce the authorization matrix against a concrete target.
  *
  * system_admin  — may act across tenants and may assign or modify system_admin.
@@ -159,8 +202,14 @@ function authorizeTargetMutation(args: {
   nextRole?: DbUserRole
   nextTenantId?: string
   nextActive?: boolean
+  /**
+   * True only when THIS operation created the auth user being provisioned.
+   * It is the same provenance that authorizes compensation to delete that user,
+   * so it can never be true for an account the operation merely found.
+   */
+  adoptNewlyInvited?: boolean
 }): { error: string } | null {
-  const { actor, target, nextRole, nextTenantId, nextActive } = args
+  const { actor, target, nextRole, nextTenantId, nextActive, adoptNewlyInvited } = args
 
   const roleChanges = nextRole !== undefined && nextRole !== target.role
   const activeChanges = nextActive !== undefined && nextActive !== target.is_active
@@ -173,7 +222,20 @@ function authorizeTargetMutation(args: {
 
   // ── tenant_admin ───────────────────────────────────────────
   if (target.tenant_id !== actor.tenantId) {
-    return { error: 'Cannot modify users outside your tenant' }
+    // A tenantless profile is not automatically foreign. The one permitted
+    // exception is adopting the fail-closed shell this very invite created:
+    // provenance (adoptNewlyInvited) AND shape (isAdoptableInviteProfile) must
+    // BOTH hold, and the user must land in the actor's own tenant. Either half
+    // alone is insufficient — the flag without the shape would let an admin
+    // adopt any account, and the shape without the flag would let them adopt an
+    // unprovisioned self-signup they did not create.
+    const adopting = adoptNewlyInvited === true && isAdoptableInviteProfile(target)
+    if (!adopting) {
+      return { error: 'Cannot modify users outside your tenant' }
+    }
+    if (nextTenantId !== actor.tenantId) {
+      return { error: 'An invited user must be provisioned into your own tenant' }
+    }
   }
   if (nextTenantId !== undefined && nextTenantId !== actor.tenantId) {
     return { error: 'Cannot move users to another tenant' }
@@ -187,7 +249,7 @@ function authorizeTargetMutation(args: {
   return null
 }
 
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────���─────────────────────
 // Validation helpers
 // ─────────────────────────────────────────────────────────────
 
@@ -424,6 +486,13 @@ export interface ProvisionInternalUserArgs {
   department?: string | null
   homeRoleId?: string | null
   isActive?: boolean
+  /**
+   * Set ONLY by an invite flow that created this auth user in the same
+   * operation. Permits adopting the tenantless, viewer, inactive shell the
+   * `handle_new_user` trigger just created. Never set it for a user the caller
+   * merely looked up.
+   */
+  adoptNewlyInvited?: boolean
   reason?: string
   correlationId?: string
 }
@@ -456,6 +525,7 @@ export async function provisionInternalUser(
     nextRole: args.role,
     nextTenantId: tenantId,
     nextActive: args.isActive,
+    adoptNewlyInvited: args.adoptNewlyInvited,
   })
   if (authErr) return authErr
 
@@ -503,6 +573,8 @@ export interface ProvisionExternalUserArgs {
    */
   externalOrg?: string | null
   isActive?: boolean
+  /** See ProvisionInternalUserArgs.adoptNewlyInvited. */
+  adoptNewlyInvited?: boolean
   reason?: string
   correlationId?: string
 }
@@ -539,6 +611,7 @@ export async function provisionExternalUser(
     nextRole: args.role,
     nextTenantId: tenantId,
     nextActive: args.isActive,
+    adoptNewlyInvited: args.adoptNewlyInvited,
   })
   if (authErr) return authErr
 

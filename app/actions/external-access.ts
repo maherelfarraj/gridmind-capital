@@ -222,6 +222,11 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
         projectIds: args.projectIds,
         externalOrg: args.organizationName,
         isActive: true,
+        // Same provenance that authorizes compensation to delete this auth
+        // user. The trigger writes user_type='internal', so a freshly invited
+        // external identity starts as the internal fail-closed shell and is
+        // converted here — which is why externalOrg is mandatory above.
+        adoptNewlyInvited: wasNewlyInvited,
         reason: existing ? 'reinvite_existing_external' : 'invite_new_external',
       })
     },

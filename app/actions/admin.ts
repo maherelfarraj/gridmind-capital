@@ -242,6 +242,10 @@ export async function inviteInternalUser(
         department: args.department?.trim() || null,
         homeRoleId: args.homeRoleId ?? null,
         isActive: true,
+        // Same provenance that authorizes compensation to delete this auth
+        // user: true only when the invite above created it. Lets the service
+        // adopt the tenantless fail-closed shell handle_new_user just wrote.
+        adoptNewlyInvited: wasNewlyInvited,
         reason: existing ? 'reinvite_existing_profile' : 'invite_new_user',
       })
     },
