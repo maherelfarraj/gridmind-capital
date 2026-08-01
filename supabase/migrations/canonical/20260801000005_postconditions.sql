@@ -429,27 +429,14 @@ BEGIN
     v_fail := v_fail || format('%s views are not owned by postgres%s', v_n, E'\n');
   END IF;
 
-  -- P-G7: DEFAULT ACLs. Production has 6 in schema public; their CONTENTS were
-  -- never captured, so the baseline emits none. This is a KNOWN GAP and is
-  -- reported as a warning -- asserting 6 here would demand statements that do
-  -- not exist, and asserting 0 would silently bless the gap forever.
-  SELECT count(*) INTO v_n FROM pg_default_acl d JOIN pg_namespace n ON n.oid=d.defaclnamespace
-   WHERE n.nspname='public';
-  IF v_n <> 6 THEN
-    RAISE WARNING 'DEFAULT ACL GAP: production has 6 default ACLs in schema public, this '
-                  'database has %. Their contents were never captured and cannot be '
-                  'reproduced without an owner-authorised capture step. See section B3 of '
-                  '20260801000003_rls_policies_grants.sql.', v_n;
-  END IF;
+  -- P-G7: DEFAULT ACLs. SUPERSEDED by section 15.9/15.10 below -- the contents
+  -- WERE captured on 2026-08-01. Production has 6 in schema public: 3 owned by
+  -- postgres (now emitted by the baseline) and 3 owned by a platform superuser
+  -- role that no migration role can create. Split-asserted below rather than
+  -- warned about as a single undifferentiated gap.
 
-  -- P-G8: schema USAGE. Section B1: never captured. Without it none of the
-  -- table grants above are usable, so surface it loudly rather than passing.
-  IF NOT has_schema_privilege('anon','public','USAGE')
-     OR NOT has_schema_privilege('authenticated','public','USAGE') THEN
-    RAISE WARNING 'SCHEMA PRIVILEGE GAP: anon and/or authenticated lack USAGE on schema '
-                  'public, so every table grant in section A is unusable. Production''s '
-                  'schema ACL was never captured. See section B1.';
-  END IF;
+  -- P-G8: schema USAGE. SUPERSEDED by section 15.1 -- the schema ACL WAS
+  -- captured and is now asserted, not merely warned about.
 
   -- Emit the observed privilege fingerprints so a future pass can pin them. The
   -- reconciliation captured NO production-side grant fingerprint, so there is
@@ -468,6 +455,189 @@ BEGIN
       AND has_table_privilege(r.grantee, c.oid, p.priv)
   ) t;
   RAISE NOTICE 'OBSERVED table/view privilege fingerprint (anon+authenticated): %', v_txt;
+
+  ------------------------------------------------------------------
+  -- 15. EXPLICIT-ACL POSTCONDITIONS (added 2026-08-01)
+  --
+  -- Everything above in section 14 uses has_table_privilege() and friends, which
+  -- report EFFECTIVE privilege. Effective checks cannot tell an explicit grant
+  -- apart from one inherited via PUBLIC or role membership, so they could not
+  -- have detected the defects this pass corrected: the missing service_role
+  -- grants were invisible to them, and a spurious per-column grant would still
+  -- have reported "privilege present". The checks below read the STORED ACL
+  -- arrays via aclexplode() and are authoritative for the explicit dimension.
+  ------------------------------------------------------------------
+
+  -- 15.1 schema public: USAGE for exactly the 5 captured grantees; CREATE for
+  --       none of them (production grants CREATE only to the schema owner).
+  --       GRANTOR IS DELIBERATELY NOT ASSERTED: production records
+  --       pg_database_owner, a baseline run as postgres records postgres.
+  --       Asserting it would be a guaranteed permanent false failure.
+  SELECT count(*) INTO v_n
+  FROM pg_namespace n, LATERAL aclexplode(n.nspacl) a
+  WHERE n.nspname='public' AND a.privilege_type='USAGE'
+    AND COALESCE(pg_get_userbyid(NULLIF(a.grantee,0)),'PUBLIC')
+        IN ('PUBLIC','anon','authenticated','service_role','postgres');
+  IF v_n <> 5 THEN
+    v_fail := v_fail || format('schema public USAGE grantees: expected 5, got %s%s', v_n, E'\n');
+  END IF;
+
+  SELECT count(*) INTO v_n
+  FROM pg_namespace n, LATERAL aclexplode(n.nspacl) a
+  WHERE n.nspname='public' AND a.privilege_type='CREATE'
+    AND COALESCE(pg_get_userbyid(NULLIF(a.grantee,0)),'PUBLIC')
+        IN ('PUBLIC','anon','authenticated','service_role');
+  IF v_n <> 0 THEN
+    v_fail := v_fail || format('schema public CREATE leaked to %s non-owner role(s)%s', v_n, E'\n');
+  END IF;
+
+  -- 15.2 anon and authenticated each hold explicit ACLs on exactly 108
+  --       relations (102 tables + 6 views). rate_limit_buckets is excluded.
+  FOR v_txt IN SELECT x FROM unnest(ARRAY['anon','authenticated']) x
+  LOOP
+    SELECT count(DISTINCT c.oid) INTO v_n
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace,
+         LATERAL aclexplode(c.relacl) a
+    WHERE n.nspname='public' AND c.relkind IN ('r','v')
+      AND pg_get_userbyid(NULLIF(a.grantee,0)) = v_txt;
+    IF v_n <> 108 THEN
+      v_fail := v_fail || format('%s explicit relation ACLs: expected 108, got %s%s', v_txt, v_n, E'\n');
+    END IF;
+  END LOOP;
+
+  -- 15.3 service_role holds explicit ACLs on ALL 109 relations (103 tables +
+  --       6 views). This is the single largest gap the draft had: zero.
+  SELECT count(DISTINCT c.oid) INTO v_n
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace,
+       LATERAL aclexplode(c.relacl) a
+  WHERE n.nspname='public' AND c.relkind IN ('r','v')
+    AND pg_get_userbyid(NULLIF(a.grantee,0))='service_role';
+  IF v_n <> 109 THEN
+    v_fail := v_fail || format('service_role explicit relation ACLs: expected 109, got %s%s', v_n, E'\n');
+  END IF;
+
+  -- 15.4 rate_limit_buckets -- the asymmetry that was previously wrong. It must
+  --       carry all 8 privileges for service_role and NONE for anon or
+  --       authenticated. Asserted from the stored ACL, in both directions.
+  SELECT count(*) INTO v_n
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace,
+       LATERAL aclexplode(c.relacl) a
+  WHERE n.nspname='public' AND c.relname='rate_limit_buckets'
+    AND pg_get_userbyid(NULLIF(a.grantee,0))='service_role';
+  IF v_n <> 8 THEN
+    v_fail := v_fail || format('rate_limit_buckets service_role privileges: expected 8, got %s%s', v_n, E'\n');
+  END IF;
+
+  SELECT count(*) INTO v_n
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace,
+       LATERAL aclexplode(c.relacl) a
+  WHERE n.nspname='public' AND c.relname='rate_limit_buckets'
+    AND pg_get_userbyid(NULLIF(a.grantee,0)) IN ('anon','authenticated');
+  IF v_n <> 0 THEN
+    v_fail := v_fail || format('rate_limit_buckets leaked %s privilege(s) to anon/authenticated%s', v_n, E'\n');
+  END IF;
+
+  -- 15.5 no administrative role holds ANY privilege on ANY public relation.
+  --       Production grants them nothing; inventing such a grant would be a
+  --       silent privilege expansion that no effective-privilege check catches.
+  SELECT count(*) INTO v_n
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace,
+       LATERAL aclexplode(c.relacl) a
+  WHERE n.nspname='public' AND c.relkind IN ('r','v','S')
+    AND pg_get_userbyid(NULLIF(a.grantee,0))
+        IN ('supabase_admin','supabase_auth_admin','dashboard_user');
+  IF v_n <> 0 THEN
+    v_fail := v_fail || format('%s administrative-role privilege(s) invented on public relations%s', v_n, E'\n');
+  END IF;
+
+  -- 15.6 sequences: SELECT+UPDATE+USAGE for anon, authenticated AND
+  --       service_role = 3 privileges x 3 roles x 2 sequences = 18.
+  SELECT count(*) INTO v_n
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace,
+       LATERAL aclexplode(c.relacl) a
+  WHERE n.nspname='public' AND c.relkind='S'
+    AND pg_get_userbyid(NULLIF(a.grantee,0)) IN ('anon','authenticated','service_role')
+    AND a.privilege_type IN ('SELECT','UPDATE','USAGE');
+  IF v_n <> 18 THEN
+    v_fail := v_fail || format('sequence explicit privileges: expected 18, got %s%s', v_n, E'\n');
+  END IF;
+
+  -- 15.7 function EXECUTE: exactly 27 of 28 carry PUBLIC EXECUTE. 27 + 1 = 28.
+  --       The "second exception" the earlier report claimed never existed.
+  SELECT count(*) INTO v_n
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace,
+       LATERAL aclexplode(p.proacl) a
+  WHERE n.nspname='public' AND a.privilege_type='EXECUTE' AND a.grantee=0;
+  IF v_n <> 27 THEN
+    v_fail := v_fail || format('functions with PUBLIC EXECUTE: expected 27, got %s%s', v_n, E'\n');
+  END IF;
+
+  SELECT count(*) INTO v_n
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace,
+       LATERAL aclexplode(p.proacl) a
+  WHERE n.nspname='public' AND a.privilege_type='EXECUTE'
+    AND pg_get_userbyid(NULLIF(a.grantee,0))='service_role';
+  IF v_n <> 28 THEN
+    v_fail := v_fail || format('functions with service_role EXECUTE: expected 28, got %s%s', v_n, E'\n');
+  END IF;
+
+  -- 15.8 zero explicit column ACLs. Production has 0 non-null attacl rows: all
+  --       9720 information_schema rows are expansions of table grants. Any
+  --       value above 0 means someone "reproduced" the expanded rows and
+  --       created narrower ACLs than production has.
+  SELECT count(*) INTO v_n
+  FROM pg_attribute att
+  JOIN pg_class c ON c.oid=att.attrelid
+  JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='public' AND att.attacl IS NOT NULL;
+  IF v_n <> 0 THEN
+    v_fail := v_fail || format('explicit column ACLs: expected 0, got %s%s', v_n, E'\n');
+  END IF;
+
+  -- 15.9 postgres-owned default ACLs in public: exactly 3.
+  SELECT count(*) INTO v_n
+  FROM pg_default_acl d JOIN pg_namespace n ON n.oid=d.defaclnamespace
+  WHERE n.nspname='public' AND pg_get_userbyid(d.defaclrole)='postgres';
+  IF v_n <> 3 THEN
+    v_fail := v_fail || format('postgres-owned default ACLs: expected 3, got %s%s', v_n, E'\n');
+  END IF;
+
+  -- 15.10 DEFERRED -- platform-owned default ACLs. Production has 3 more, owned
+  --        by a superuser role this baseline cannot act as. They are absent by
+  --        design after a bare bootstrap, so asserting them unconditionally
+  --        would be a permanent false failure. Report-only unless the operator
+  --        declares the platform action complete:
+  --            SET canonical.platform_actions_applied = 'on';
+  SELECT count(*) INTO v_n
+  FROM pg_default_acl d JOIN pg_namespace n ON n.oid=d.defaclnamespace
+  WHERE n.nspname='public' AND pg_get_userbyid(d.defaclrole) <> 'postgres';
+
+  IF current_setting('canonical.platform_actions_applied', true) = 'on' THEN
+    IF v_n <> 3 THEN
+      v_fail := v_fail || format('platform-owned default ACLs: declared applied, '
+                || 'expected 3, got %s%s', v_n, E'\n');
+    END IF;
+  ELSE
+    RAISE NOTICE 'DEFERRED: platform-owned default ACLs found = % (expected 3 only after '
+                 'the platform action of section B3). Privilege fidelity is '
+                 'EXECUTABLE-BASELINE ONLY until they are applied.', v_n;
+  END IF;
+
+  -- 15.11 observed explicit-ACL fingerprint, emitted for a future pass to pin.
+  --        No expected hash is asserted: none was ever computed against
+  --        production, and inventing one guarantees either a permanent false
+  --        failure or a meaningless constant.
+  SELECT md5(string_agg(t.rel||'|'||t.grantee||'|'||t.priv, E'\n'
+             ORDER BY t.rel, t.grantee, t.priv)) INTO v_txt
+  FROM (
+    SELECT c.relname AS rel,
+           COALESCE(pg_get_userbyid(NULLIF(a.grantee,0)),'PUBLIC') AS grantee,
+           a.privilege_type AS priv
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace,
+         LATERAL aclexplode(c.relacl) a
+    WHERE n.nspname='public' AND c.relkind IN ('r','v','S')
+  ) t;
+  RAISE NOTICE 'OBSERVED explicit relation ACL fingerprint (all grantees): %', v_txt;
 
   ------------------------------------------------------------------
   -- VERDICT

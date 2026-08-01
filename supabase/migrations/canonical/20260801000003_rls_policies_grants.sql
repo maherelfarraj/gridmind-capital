@@ -603,6 +603,37 @@ CREATE POLICY projects_select_tenant ON public.projects AS PERMISSIVE FOR SELECT
 -- SECTION A -- VERIFIED AGAINST PRODUCTION. EXECUTABLE.
 -- =====================================================================
 
+-- A0. SCHEMA PRIVILEGES on public -- ADDED 2026-08-01.
+-- Captured (privilege-gap-report section 1): USAGE held explicitly by PUBLIC,
+-- anon, authenticated, service_role and postgres. CREATE held ONLY by
+-- pg_database_owner, which also owns the schema.
+--
+-- STATUS: SEMANTICALLY REPRODUCIBLE, GRANTOR PROVENANCE REQUIRES VALIDATION.
+-- Production records grantor = pg_database_owner on all five entries. A GRANT
+-- issued by the migration role records grantor = postgres instead, so the ACL is
+-- semantically equivalent but NOT byte-identical. That difference is accepted and
+-- documented rather than papered over: reproducing the grantor would require
+-- impersonating the owner or re-owning the schema, both out of scope and NOT
+-- attempted here.
+--
+-- Schema ownership is deliberately left untouched. On a fresh Supabase project
+-- the schema already exists with the correct owner, and re-owning a
+-- platform-managed object would be destructive.
+--
+-- Whether the migration role may issue these at all depends on implicit
+-- pg_database_owner membership (true only if postgres owns the database).
+-- pg_auth_members does not record implicit membership, so this could NOT be
+-- settled by introspection and must be confirmed on the disposable database.
+--
+-- CREATE is deliberately NOT granted: production grants it only to the schema
+-- owner, which needs no statement.
+
+GRANT USAGE ON SCHEMA public TO PUBLIC;
+GRANT USAGE ON SCHEMA public TO anon;
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT USAGE ON SCHEMA public TO service_role;
+GRANT USAGE ON SCHEMA public TO postgres;
+
 -- A1. TABLE PRIVILEGES -- 102 of 103 tables to anon + authenticated.
 -- Verified: anon and authenticated each hold DELETE, INSERT, MAINTAIN,
 -- REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE. That set is identical to
@@ -714,11 +745,26 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_events TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_instances TO anon, authenticated;
 
--- A2. rate_limit_buckets -- THE SINGLE EXCEPTION.
--- Verified: withheld from BOTH anon and authenticated in production.
--- Deliberately no statement. On an empty bootstrap target there is no grant to
--- revoke, so emitting a REVOKE would create an ACL entry production does not
--- have. Absence is the faithful reproduction.
+-- A2. rate_limit_buckets -- PARTIAL EXCEPTION, CORRECTED 2026-08-01.
+-- Captured ACL (privilege-gap-report section 2):
+--     postgres     = all 8   (owner-derived, no statement needed)
+--     service_role = all 8   (EXPLICIT -- granted in A4b with the other 102)
+--     anon         = ABSENT
+--     authenticated= ABSENT
+--
+-- The earlier draft emitted NO statement at all here, reasoning that production
+-- withholds this table. That was only half right: it is withheld from anon and
+-- authenticated, NOT from service_role. Withholding it from service_role too
+-- would have broken server-side rate limiting, which runs exclusively under the
+-- service-role key.
+--
+-- This section stays declarative on purpose. The service_role grant for this
+-- table is NOT duplicated here -- it is one of the 103 enumerated in A4b, so
+-- there is exactly one statement per (relation, grantee) pair in this file.
+--
+-- Still deliberately NO REVOKE for anon/authenticated: the bootstrap target is
+-- empty, so there is no grant to revoke and a REVOKE would CREATE an ACL entry
+-- production does not have. Absence is the faithful reproduction for those two.
 
 -- A3. VIEW PRIVILEGES -- all 6 views, same privilege set as the tables.
 -- Views are not RLS-protected and run as their owner (postgres). v_inbox in
@@ -740,6 +786,140 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON
 
 GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.approval_events_id_seq TO anon, authenticated;
 GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.audit_log_id_seq TO anon, authenticated;
+
+-- A4b. SERVICE_ROLE PRIVILEGES -- ADDED 2026-08-01 (largest gap in the draft).
+-- Captured: service_role holds the identical 8-privilege set on ALL 103 tables
+-- and ALL 6 views, plus SELECT+UPDATE+USAGE on both sequences. Grantor postgres,
+-- no grant options. The previous pass had ZERO service_role grants: it deleted an
+-- unverified service_role grant rather than carry it forward on faith. Right
+-- method, wrong outcome -- the grant is real, and is reinstated here on evidence
+-- rather than on assumption.
+--
+-- Without these the service-role key is rejected on every table, and inserts into
+-- approval_events / audit_log fail on the sequence.
+--
+-- This list is 103, not the 102 of A1, because rate_limit_buckets IS granted to
+-- service_role (see A2). Enumerated one per line, never discovered at run time,
+-- so a drifted relation set fails loudly instead of being silently skipped.
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.activity_dependencies TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ai_insights TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_conditions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_events TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_items TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_matrix TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_rules TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approval_steps TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.approvals TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.assets TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.audit_log TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bess_metrics TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.cash_flow_records TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.claims TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.client_announcements TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.client_information_requests TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.client_reports TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.comments TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.commissioning_tests TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.contract_milestones TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.contracts TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_audit_trail TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_conversations TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_intent_log TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_messages TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.copilot_tenant_budget TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.cost_entries TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.daily_reports TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.delivery_documents TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.departments TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.document_files TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.documents TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.email_log TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.energy_production TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.engineering_packages TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.external_access TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.field_photos TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.finance_records TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_approver_defaults TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_certificates TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_role_requirements TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_signoff_templates TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_signoffs TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_submissions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gate_templates TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.gates TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.grid_compliance_tests TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.guarantees TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.handover_records TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.help_articles TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.help_topics TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.hse_incidents TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.hse_permits TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.inspections TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.itp_activities TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.itp_plans TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.lender_facilities TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.lender_reports TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.maintenance_plans TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.marketplace_providers TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ncrs TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.notification_prefs TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.notifications TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.opportunities TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.payment_certificates TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.payment_milestones TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.phase_gates TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.portal_invoices TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.profiles TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.progress_updates TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.project_gate_approvers TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.project_members TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.project_team TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.projects TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.purchase_order_lines TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.purchase_orders TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.raci_assignments TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.raci_deliverables TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.rate_limit_buckets TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.resource_plan TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.retention_entries TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.rfq_responses TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.rfqs TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.risks TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.roles TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.schedule_activities TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.schedule_baselines TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.schedule_milestones TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.securities TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.signatures TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.task_comments TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.tasks TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.tenants TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.tickets TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.transmittal_items TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.transmittals TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.variation_orders TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.variations TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.work_packages TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.work_permits TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_definitions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_events TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.workflow_instances TO service_role;
+
+-- 6 views, same privilege set.
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_gate_progress TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_inbox TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_task_load TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_person_workload TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_project_staffing TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.v_role_workload TO service_role;
+
+-- Both sequences. anon/authenticated already covered in A4; no privileges are
+-- added for them here beyond the capture.
+
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.approval_events_id_seq TO service_role;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.audit_log_id_seq TO service_role;
 
 -- A5. COLUMN-LEVEL PRIVILEGES -- ZERO STATEMENTS, AND THAT IS EXACT.
 -- Production reports 9720 column-privilege rows. Every one is INHERITED from a
@@ -839,47 +1019,78 @@ ALTER VIEW public.v_project_staffing OWNER TO postgres;
 ALTER VIEW public.v_role_workload OWNER TO postgres;
 
 -- =====================================================================
--- SECTION B -- NOT VERIFIED. BLOCKED. DO NOT UNCOMMENT WITHOUT CAPTURE.
+-- SECTION A8 -- DEFAULT ACLs (EXECUTABLE PORTION)
 -- =====================================================================
 --
--- These dimensions were NEVER captured from production. The reconciliation
--- recorded aggregate facts about them but not their contents, and this pass is
--- forbidden from connecting to Supabase. They are left non-executable on
--- purpose. Writing Supabase's usual defaults here would be INFERENCE presented
--- as verified fact -- exactly the failure mode this baseline exists to prevent.
+-- Production has EXACTLY 6 default-ACL records in schema public: 3 owned by
+-- postgres, 3 by a platform superuser role. The 3 postgres-owned records are
+-- reproduced verbatim below; run as postgres with no FOR ROLE clause they record
+-- grantor = postgres and match production exactly.
 --
--- B1. SCHEMA PRIVILEGES on public (USAGE / CREATE, and to which roles).
---     Not captured. anon and authenticated cannot use ANY of the grants in
---     section A without USAGE on the schema, so a bootstrap is INCOMPLETE until
---     this is captured and added. HIGHEST-PRIORITY GAP.
+-- These govern FUTURE objects only. They do not affect anything created earlier
+-- in this baseline, which is why the explicit grants above remain required.
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT, UPDATE, USAGE ON SEQUENCES TO postgres, anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT EXECUTE ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+
+-- =====================================================================
+-- SECTION B -- PLATFORM ACTION REQUIRED. NOT EXECUTABLE BY THIS BASELINE.
+-- =====================================================================
 --
--- B2. TABLE / VIEW / SEQUENCE privileges for service_role, postgres,
---     supabase_admin, supabase_auth_admin and dashboard_user.
---     Not captured -- only anon and authenticated were enumerated. The previous
---     draft granted service_role unconditionally; that grant was NOT evidence-
---     backed and has been removed rather than carried forward. This very likely
---     means a bootstrapped database will NOT accept the service-role key until
---     the real ACLs are captured. OWNER ACTION REQUIRED.
+-- Everything previously blocked here has been CAPTURED and resolved (see
+-- privilege-gap-report.txt). What remains is not a knowledge gap but an
+-- AUTHORITY gap: the statements are known exactly and still cannot be issued by
+-- the migration role.
 --
--- B3. DEFAULT ACLs -- production has exactly 6 in schema public; their contents
---     (grantor, grantee, object type, privileges) were not captured.
---     ALTER DEFAULT PRIVILEGES is per-GRANTOR: it can only be written by, or FOR
---     ROLE, the owning role. It is therefore an owner-authorised platform step
---     and may not be executable by the migration role at all.
---     Shape only, values unknown:
---       ALTER DEFAULT PRIVILEGES FOR ROLE <grantor> IN SCHEMA public
---           GRANT <privs> ON <TABLES|SEQUENCES|FUNCTIONS|TYPES> TO <grantee>;
+-- RESOLVED, no longer blocked:
+--   B1 schema USAGE ......... captured; reproduced in A0 (grantor caveat).
+--   B2 service_role ACLs .... captured; reproduced in A2/A4b. The three
+--                             administrative platform roles hold NOTHING on any
+--                             public relation, so no statement exists to write.
+--                             Their absence IS the correct reproduction.
+--   B4 'second' function ACL  NEVER EXISTED. Exactly ONE exception
+--                             (increment_copilot_usage): 27 + 1 = 28. The
+--                             '2 exceptions' claim was a miscount.
+--   B5 table ownership ...... all 103 tables, 6 views, 2 sequences and 28
+--                             functions are owned by postgres, reproduced
+--                             implicitly by executing this baseline as postgres.
 --
--- B4. THE SECOND FUNCTION EXECUTE EXCEPTION. The reconciliation says '2
---     exceptions' among the 28 functions but names only ONE
---     (increment_copilot_usage). 26 verified + 1 named exception = 27, not 28,
---     so exactly one function's EXECUTE ACL is UNACCOUNTED FOR. Section A6
---     grants all 27 non-increment_copilot_usage functions to PUBLIC, which is
---     correct for 26 of them and possibly TOO BROAD for one. Must be resolved
---     by capture before this baseline is trusted.
+-- ---------------------------------------------------------------------
+-- B3. PLATFORM-OWNED DEFAULT ACLs -- PLATFORM ACTION REQUIRED
+-- ---------------------------------------------------------------------
+-- The remaining 3 of the 6 default-ACL records are owned by a platform superuser
+-- role. ALTER DEFAULT PRIVILEGES is per-GRANTOR: only the owning role, a member
+-- of it, or a superuser may issue them. postgres is NOT a member of that role, so
+-- the migration role cannot issue these under any circumstance. Impersonating the
+-- owner is NOT attempted and role membership is NOT altered -- either would be a
+-- privilege escalation performed by a migration.
 --
--- B5. TABLE OWNERSHIP. Verified for functions and views (postgres); never
---     captured for the 103 tables. Executing the baseline as postgres makes them
---     postgres-owned implicitly, so no statement is emitted.
+-- On a fresh Supabase project these are created by the platform's own bootstrap,
+-- so a new project will normally already have them.
+--
+-- EXACT STATEMENTS, for execution by the platform role or an authorised platform
+-- mechanism ONLY. <platform_superuser> is the administrative role identified in
+-- privilege-gap-report.txt section 6; it is written as a placeholder so that no
+-- statement in this file names an administrative role directly:
+--
+--   ALTER DEFAULT PRIVILEGES FOR ROLE <platform_superuser> IN SCHEMA public
+--       GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+--
+--   ALTER DEFAULT PRIVILEGES FOR ROLE <platform_superuser> IN SCHEMA public
+--       GRANT SELECT, UPDATE, USAGE ON SEQUENCES TO postgres, anon, authenticated, service_role;
+--
+--   ALTER DEFAULT PRIVILEGES FOR ROLE <platform_superuser> IN SCHEMA public
+--       GRANT EXECUTE ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+--
+-- UNTIL THESE THREE ARE EXECUTED THE DEFAULT-ACL DIMENSION IS NOT EXACT, and
+-- future-object privilege inheritance does not fully match production. This
+-- baseline must NOT be described as achieving full privilege fidelity until they
+-- have been applied and verified in a disposable environment.
 
 COMMIT;

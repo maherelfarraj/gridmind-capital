@@ -420,3 +420,56 @@ Worth a follow-up decision, separate from this baseline.
 *Generated 2026-08-01 from read-only introspection of `zmahjutrpvwjcmhkiibj`.
 Production was not modified. Migration history was not modified. No Supabase
 branch was created.*
+
+---
+
+## AMENDMENT — 2026-08-01 — PRIVILEGE GAPS CLOSED (repository only, unexecuted)
+
+The blocked privilege dimensions described above were captured by read-only
+metadata introspection of production. Full evidence:
+[`privilege-gap-report.txt`](./privilege-gap-report.txt). Nothing was executed;
+production is unchanged.
+
+### What changed in `…0003_rls_policies_grants.sql`
+
+| Was | Now |
+|---|---|
+| No schema-level statement (B1 blocked) | **A0** — `GRANT USAGE ON SCHEMA public` to the 5 captured grantees |
+| Zero `service_role` grants (B2 blocked) | **A4b** — 103 tables + 6 views + 2 sequences, enumerated one per line |
+| `rate_limit_buckets`: no statement at all | **A2/A4b** — granted to `service_role`; still withheld from `anon`/`authenticated` |
+| No default ACLs (B3 blocked) | **A8** — the 3 `postgres`-owned records; the 3 platform-owned ones documented as commented, non-executable |
+| B4 "second function ACL exception" | **Withdrawn — it never existed.** 27 + 1 = 28 |
+
+### Two fidelity numbers, deliberately not merged
+
+- **Executable-baseline fidelity: exact on every dimension the migration role can
+  reach** — schema USAGE (semantics), all relation/sequence/function ACLs, zero
+  column ACLs, 3 of 6 default ACLs.
+- **Full production fidelity: NOT yet reached.** It requires the 3
+  platform-owned default ACLs (section B3), which no migration role can create.
+
+Collapsing these into a single percentage would hide the fact that the remaining
+gap is an *authority* gap, not a knowledge gap.
+
+### Corrections this forced on earlier claims in this file
+
+1. **Removing the unverified `service_role` grant was right in method and wrong
+   in outcome.** The grant is real, on 109 relations and both sequences. Refusing
+   to carry it forward on faith is what forced this capture; it is now reinstated
+   on evidence. The lesson is *verify*, not *guess next time*.
+2. **The schema-USAGE gap was real but already satisfied in production** — with a
+   caveat the original note missed entirely: the grantor is `pg_database_owner`,
+   so a baseline run as `postgres` is semantically equivalent but **not**
+   byte-identical. Marked SEMANTICALLY REPRODUCIBLE, GRANTOR PROVENANCE REQUIRES
+   VALIDATION.
+3. **B4 was a miscount in my own report,** not a finding.
+4. `supabase_admin`, `supabase_auth_admin` and `dashboard_user` hold **nothing**
+   on any public relation. Their absence is the correct reproduction.
+
+### Unresolved
+
+- Whether `postgres` holds implicit `pg_database_owner` membership decides
+  whether A0 executes at all. `pg_auth_members` does not record implicit
+  membership, so this is **not** answerable by introspection — confirm on the
+  disposable database.
+- The 3 platform-owned default ACLs remain outstanding.

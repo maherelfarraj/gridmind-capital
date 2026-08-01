@@ -152,3 +152,52 @@ scanners must look inside DO blocks and function bodies.
 
 Not established by this report: statement validity, runtime behaviour, RLS
 effectiveness, or byte-identity with production.
+
+================================================================================
+AMENDMENT -- 2026-08-01 -- PRIVILEGE GAP CLOSURE
+================================================================================
+Item 2 above ("PRIVILEGE GAPS -- the grants rewrite is incomplete by design") is
+now SUPERSEDED for 4 of its 5 sub-items. Evidence: privilege-gap-report.txt.
+Method: read-only catalog introspection. No SQL executed; production unchanged.
+
+  2a schema USAGE ......... CLOSED. Captured: PUBLIC, anon, authenticated,
+                            service_role, postgres all hold USAGE; CREATE is
+                            owner-only. Reproduced in section A0.
+                            CAVEAT: grantor is pg_database_owner, not postgres,
+                            so the reproduction is semantic, not byte-identical.
+  2b service_role ACLs .... CLOSED. service_role holds all 8 privileges on 103
+                            tables + 6 views and SELECT/UPDATE/USAGE on both
+                            sequences. Reproduced in A4b.
+                            supabase_admin / supabase_auth_admin / dashboard_user
+                            hold NOTHING -- their absence is correct, and no
+                            statement was invented for them.
+  2c default ACLs ......... PARTIALLY CLOSED. 6 exist: 3 postgres-owned (now
+                            emitted in A8) and 3 platform-owned (documented as
+                            non-executable in section B3).
+  2d second function ACL .. WITHDRAWN. Never existed; 27 + 1 = 28.
+  2e column ACLs .......... CONFIRMED EXACT by direct evidence: production has
+                            ZERO non-null pg_attribute.attacl rows. The draft's
+                            zero statements were right, and are now proven
+                            structurally rather than by row-count inference.
+
+STATIC VALIDATION OF THE AMENDED FILE
+  transaction blocks ....................... 1 BEGIN / 1 COMMIT
+  dynamic DO-block grants .................. 0 (all statements are literal)
+  GRANT USAGE ON SCHEMA statements ......... 5
+  service_role table/view GRANTs ........... 109  (103 tables + 6 views)
+  service_role sequence GRANTs ............. 2
+  ALTER DEFAULT PRIVILEGES (executable) .... 3
+  ALTER DEFAULT PRIVILEGES (commented) ..... 3
+  explicit column GRANTs ................... 0
+  GRANTs naming an administrative role ..... 0
+  rate_limit_buckets -> service_role ....... 1 statement
+  rate_limit_buckets -> anon/authenticated . 0 statements
+
+FIDELITY -- REPORTED SEPARATELY, NOT COLLAPSED
+  A. Executable-baseline fidelity: exact on every dimension reachable by the
+     migration role.
+  B. Full production fidelity: NOT reached. Requires the 3 platform-owned
+     default ACLs. Until then the baseline must not be described as achieving
+     full privilege fidelity.
+
+NOT EXECUTED. This remains a static review artifact.

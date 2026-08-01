@@ -341,3 +341,37 @@ CONFIRMATIONS
   - PR #68 unchanged ..................... yes
   - production unmodified ................ yes
 ================================================================================
+
+================================================================================
+10. CORRECTION APPLIED -- 2026-08-01 (repository only, unexecuted)
+================================================================================
+This capture has been applied to the canonical baseline. Files changed:
+  20260801000003_rls_policies_grants.sql  (A0, A2, A4b, A8, section B rewritten)
+  20260801000005_postconditions.sql       (section 15; P-G7/P-G8 superseded)
+  README.md, validation-report.txt, shape-reconciliation-report.txt (amendments)
+
+Statement counts now in the grants file:
+  GRANT USAGE ON SCHEMA public ............ 5
+  service_role table/view GRANTs .......... 109   (103 tables + 6 views)
+  service_role sequence GRANTs ............ 2
+  ALTER DEFAULT PRIVILEGES executable ..... 3     (postgres-owned)
+  ALTER DEFAULT PRIVILEGES commented ...... 3     (platform-owned, section B3)
+  explicit column GRANTs .................. 0     (matches production exactly)
+  GRANTs naming an administrative role .... 0
+
+rate_limit_buckets final matrix:
+  service_role  = all 8   (1 GRANT, emitted in A4b)
+  anon          = none    (0 statements -- absence, not REVOKE)
+  authenticated = none    (0 statements -- absence, not REVOKE)
+  postgres      = all 8   (owner-derived, no statement)
+
+FIDELITY IS REPORTED AS TWO NUMBERS AND MUST NOT BE COLLAPSED
+  A. Executable-baseline fidelity -- exact on every dimension the migration role
+     can reach, with one documented semantic-not-byte difference (schema grantor).
+  B. Full production fidelity -- NOT reached. Blocked on the 3 platform-owned
+     default ACLs, which no migration role can create.
+
+STILL UNRESOLVED
+  - Implicit pg_database_owner membership for postgres: decides whether the A0
+    schema grants execute at all. Not answerable by introspection.
+  - The 3 platform-owned default ACLs (section 6, rows 4-6).
