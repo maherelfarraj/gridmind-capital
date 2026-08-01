@@ -87,9 +87,85 @@ scanner (comment- and dollar-quote-aware) confirms no `CREATE SCHEMA public`, no
 view reference before creation, no executable DML, and balanced transactions in
 all six files.
 
-**Still not done: a full clean re-run of all six corrected files end-to-end.** The
-six defects were found and fixed against a run of the *previous* revision. This
-revision has not been executed. Do not treat it as bootstrap-proven.
+**Superseded 2026-08-01 — the clean re-run has now happened.** It found two more
+defects (**D7**, **D8**), both in `…0005_postconditions.sql`; see §0-B. With those
+fixed, **all six files execute end-to-end and COMMIT** on a disposable
+`supabase/postgres:17.6.1.158` container. D1–D6 are execution-proven fixed.
+
+---
+
+## 0-B. Postcondition-correction pass — 2026-08-01 (D7, D8)
+
+The clean re-run proved files `…0000`–`…0004` all COMMIT and D1–D6 fixed.
+`…0005_postconditions.sql` was the **only** remaining failure, for two reasons.
+
+| # | Defect | Severity | Status |
+|---|--------|----------|--------|
+| D7 | FK fingerprint assertion raised `42725 operator is not unique: text \|\| "char"`. `confmatchtype` / `confupdtype` / `confdeltype` are pg_catalog's internal `"char"` type. The parse-time error aborted the whole file, so **the assertion had never executed once**. | blocker | fixed |
+| D8 | `SET client_min_messages = warning` silenced every `RAISE NOTICE`. Since no production grant fingerprint exists, those notices are the *only* output for the privilege dimension — a passing run printed nothing but `BEGIN/SET/SET/DO/COMMIT`. | usability | fixed |
+
+**D7 fix — three casts, nothing else:**
+
+```sql
+-- before
+||'|'||co.confmatchtype||'|'||co.confupdtype||'|'||co.confdeltype
+-- after
+||'|'||co.confmatchtype::text||'|'||co.confupdtype::text||'|'||co.confdeltype::text
+```
+
+The formula, field order and expected hash are unchanged — a cast changes
+operator resolution, not the rendered value. Confirmed: the hash reproduces the
+production value exactly.
+
+**D8 fix:** `SET LOCAL client_min_messages = notice` (and `SET LOCAL
+statement_timeout = 0`). `notice` is *below* `warning`, so this can only reveal
+more — no error or warning behaviour is weakened. `SET LOCAL` additionally keeps
+both settings inside the transaction; the previous statements were session-level
+and leaked past `COMMIT`.
+
+### Why D7 survived the previous pass
+
+The earlier scan used a **hand-written list** of `"char"` columns that happened to
+omit the `conf*` family, so it returned a confident, false "0 found". The list is
+now derived from the catalog itself:
+
+```sql
+SELECT c.relname||'.'||a.attname FROM pg_attribute a
+JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='pg_catalog' AND a.atttypid='"char"'::regtype
+  AND a.attnum>0 AND NOT a.attisdropped;
+```
+
+45 such columns exist in PG 17.6. Scanning all six files against that list found
+**3 unsafe** (the three now fixed) and **26 safe** — `relkind` (17), `contype` (5),
+`attidentity`, `attgenerated`, `typtype`, `tgenabled`. The safe ones are
+comparisons against a `"char"` literal (`relkind='r'`), which resolve
+unambiguously and **must not** be cast.
+
+> **Scanner trap, recorded because it nearly hid the defect again:** the first
+> version of this audit stripped dollar-quoted bodies before scanning — and this
+> file is one large `DO $$ … $$` block, so stripping removed essentially the whole
+> file and reported "0 unsafe". *A scan whose match count collapses to near zero
+> is reporting a broken parser, not a clean file.* Run it on raw text with only
+> line comments removed.
+
+### Execution result
+
+All six files COMMIT. 103 tables, 6 views, 18 enums, 28 functions, 24 triggers,
+144 policies, 220 indexes, **153 FKs**, **1177 columns**; FK fingerprint
+`f061c43f…6ac6` and column fingerprint `0b1a44c8…db02` both match production.
+Signup passed 13/13 plus cleanup. `P-FK1` was **mutation-tested** — dropping
+`profiles_tenant_id_fkey` makes it fail and report the changed hash, proving it is
+live rather than merely silent.
+
+Diagnostics now visible: **4**, not the 6 anticipated. The relation ACL
+fingerprint covers `relkind IN ('r','v','S')`, so sequences are included in it
+rather than hashed separately, and no schema- or function-level ACL hash was ever
+written. Nothing is suppressed — the expected count was wrong, not the file. No
+fingerprint was invented to reach six.
+
+P0 was correctly **not** applied. The three `supabase_admin` default ACLs remain
+platform actions.
 
 ---
 
@@ -541,18 +617,38 @@ rendering-only; Postgres reproduces them when it re-deparses the written SQL.
 > Reconciliation covers the RLS policy layer **only**. It does not make the
 > overall canonical baseline ready for execution — see 11.2 through 11.4.
 
-### 11.2 Never executed
+### 11.2 Never executed — RESOLVED 2026-08-01
 
-No statement here has been run anywhere. Static analysis cannot prove a single
-`CREATE` succeeds. §7 (disposable database) is mandatory before adoption.
+~~No statement here has been run anywhere.~~ All six files have now been executed
+on a disposable PostgreSQL 17.6 container and **all six COMMIT**. The warning was
+justified: the mandatory run found **eight** defects static analysis had missed
+(D1–D6, then D7–D8), two of them security defects (D3, D4) that no file-reading
+method could have found, because they were caused by default privileges the files
+never mention.
+
+Still true, and the reason this section is not deleted: execution on a disposable
+container proves the baseline *bootstraps*, not that it is byte-identical to
+production. The three platform-owned default ACLs (§9.2) remain outside its reach.
 
 ### 11.3 Not covered by the fingerprints
 
 Verified: table/column names and order, object counts, policy expressions,
-view definitions. **Not** verified column-by-column: data types, nullability,
-defaults, `ON DELETE`/`ON UPDATE` FK actions, and index predicates — these come
-from the dump and are only known to be *count*-correct. The postcondition file
-checks counts, not shapes.
+view definitions. ~~**Not** verified column-by-column: data types, nullability,
+defaults, `ON DELETE`/`ON UPDATE` FK actions, and index predicates.~~
+
+**Superseded 2026-08-01.** Two normalized fingerprints now cover most of that gap
+and both have been **reproduced by execution**:
+
+- **Column** `0b1a44c861bb61cc6ca26dee3f63db02` — type, typmod, ndims,
+  nullability, normalized default, identity, generated and collation for all
+  1177 columns.
+- **FK** `f061c43fcdf08eccae779b7bcabe6ac6` — target, key-order columns, MATCH,
+  ON UPDATE, ON DELETE, deferrability and validity for all 153 FKs
+  (ON DELETE a=37 / c=106 / n=10).
+
+`P-FK1` was mutation-tested: dropping one FK makes it fail and report the changed
+hash. **Index predicates remain count-only** (220) — no index fingerprint exists,
+so that part of the original caveat still stands.
 
 ### 11.4 The demo tenant is a live production fact
 

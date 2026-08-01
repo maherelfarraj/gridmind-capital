@@ -128,6 +128,11 @@ PRODUCTION MEASUREMENT (project zmahjutrpvwjcmhkiibj, read-only, 2026-08-01)
   R1 == R4 == R5 == 153, and the local bootstrap independently produced 153
   under the same rule. THE BASELINE WAS NEVER WRONG; THIS REPORT WAS.
 
+  CONFIRMED BY EXECUTION (2026-08-01). A full six-file bootstrap on a disposable
+  PostgreSQL 17.6 container yields exactly 153 foreign keys -- 145 public-source
+  and 8 auth-source -- with ON DELETE a=37 / c=106 / n=10, and the FK fingerprint
+  f061c43fcdf08eccae779b7bcabe6ac6 matching production. 128 is dead.
+
 WHY 128 WAS WRONG
   128 corresponds to no rule that was actually run: it is neither the
   public-to-public subset (145) nor the total (153). It is a stale figure that
@@ -160,6 +165,20 @@ NORMALIZED FK FINGERPRINT (replaces counting as the primary check)
 
   Asserted by postcondition P-FK1. A count can no longer pass while a target,
   column order or ON DELETE action has drifted.
+
+  D7 NOTE (2026-08-01) -- P-FK1 WAS NOT EXECUTABLE WHEN THIS SECTION WAS WRITTEN.
+  confmatchtype, confupdtype and confdeltype are pg_catalog's internal "char"
+  type. Concatenating them with text raised SQLSTATE 42725 (operator is not
+  unique: text || "char") at parse time, aborting the whole postcondition file, so
+  this assertion had never run. Fixed by casting all three to ::text. The formula
+  above, the field order and the expected hash are UNCHANGED -- a cast alters
+  operator resolution, not the rendered value.
+
+  Both the fingerprint and the ON DELETE breakdown have since been REPRODUCED BY
+  EXECUTION on a disposable PostgreSQL 17.6 bootstrap: f061c43f...6ac6, with
+  a=37 / c=106 / n=10 and 153 FKs (145 public-source + 8 auth-source). P-FK1 was
+  additionally mutation-tested -- dropping one FK makes it fail and report the
+  changed hash -- so it is now known to be live rather than merely silent.
 
 STANDARDIZED COLUMN FINGERPRINT (section 8 of the correction task)
   Two different column fingerprints previously existed, which is exactly how

@@ -16,8 +16,21 @@
 
 BEGIN;
 
-SET statement_timeout = 0;
-SET client_min_messages = warning;
+-- D8 (2026-08-01): this file previously ran with
+--   SET client_min_messages = warning;
+-- which silenced every RAISE NOTICE it emits. That is not cosmetic: no grant
+-- fingerprint was ever captured from production, so the observed schema /
+-- relation / function / sequence / default ACL hashes are reported by NOTICE and
+-- by nothing else. A passing run printed only BEGIN/SET/SET/DO/COMMIT and the
+-- operator had no evidence of what had actually been verified.
+--
+-- Now set to notice so the diagnostics are visible. Errors and warnings are
+-- unaffected -- notice is BELOW warning in severity, so lowering the threshold
+-- can only reveal more, never suppress anything. SET LOCAL scopes both settings
+-- to this transaction, so nothing leaks into the operator's session after COMMIT
+-- (the previous statements were session-level and did persist).
+SET LOCAL statement_timeout = 0;
+SET LOCAL client_min_messages = notice;
 
 DO $$
 DECLARE
@@ -129,7 +142,14 @@ BEGIN
            (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
               FROM unnest(co.confkey) WITH ORDINALITY k(attnum, ord)
               JOIN pg_attribute a ON a.attrelid=co.confrelid AND a.attnum=k.attnum)
-           ||'|'||co.confmatchtype||'|'||co.confupdtype||'|'||co.confdeltype
+           -- D7 (2026-08-01): confmatchtype / confupdtype / confdeltype are
+           -- pg_catalog's internal "char" type, NOT text. Concatenating them
+           -- directly raised SQLSTATE 42725 (operator is not unique: text ||
+           -- "char") and aborted this entire file, so this assertion had never
+           -- executed. The ::text casts below are the whole fix; the normalization
+           -- formula, field order and expected hash are deliberately unchanged.
+           ||'|'||co.confmatchtype::text||'|'||co.confupdtype::text
+           ||'|'||co.confdeltype::text
            ||'|'||co.condeferrable||'|'||co.condeferred||'|'||co.convalidated AS line
     FROM pg_constraint co
     JOIN pg_class c ON c.oid=co.conrelid

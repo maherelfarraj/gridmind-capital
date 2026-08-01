@@ -1,6 +1,13 @@
 CANONICAL BASELINE -- VALIDATION REPORT
-generated 2026-08-01 | STATIC ANALYSIS ONLY | NO SQL WAS EXECUTED ANYWHERE
+generated 2026-08-01
 source of truth: read-only introspection of project zmahjutrpvwjcmhkiibj
+======================================================================
+HEADER CORRECTED 2026-08-01. This previously read "STATIC ANALYSIS ONLY | NO SQL
+WAS EXECUTED ANYWHERE". That is no longer true: all six canonical files have now
+been executed end to end on a disposable local supabase/postgres 17.6.1.158
+container, and all six COMMIT. Sections A-F below remain static-analysis results;
+the execution evidence is in the D7/D8 amendment at the end of this report.
+Production was never connected to and remains unmodified.
 ======================================================================
 
 A. STRUCTURAL CHECKS
@@ -154,6 +161,12 @@ Still blocking, in order:
   1. Nothing here has ever been executed. Static analysis cannot prove that a
      single CREATE statement succeeds. A disposable-database run is mandatory
      before adoption. (README 7)
+     [RESOLVED 2026-08-01 -- and the warning was justified. The mandatory run
+      happened and found EIGHT defects that static analysis had not: D1-D6 in the
+      first run, then D7-D8 in the postcondition file. Two were security defects
+      (D3, D4) invisible to any file-reading method, because they were caused by
+      privileges the files never mention. All six files now COMMIT. See the D7/D8
+      amendment at the end of this report.]
   2. PRIVILEGE GAPS -- the grants rewrite is incomplete by design, because the
      underlying metadata was never captured and this pass was not permitted to
      connect to Supabase:
@@ -292,3 +305,176 @@ trigger; this pass only corrected the repository's description of it.
 
 The three supabase_admin-owned default ACLs remain PLATFORM ACTION REQUIRED and
 are unaffected by this amendment.
+
+================================================================================
+AMENDMENT -- 2026-08-01 -- D7 / D8: POSTCONDITION FILE MADE EXECUTABLE
+================================================================================
+The clean local re-run established that files 0000-0004 all COMMIT and that
+D1-D6 are execution-proven fixed. File 0005 was the ONLY remaining failure. Two
+defects were responsible. Both are fixed, and the six-file sequence has now been
+executed end to end with every file committing.
+
+--------------------------------------------------------------------------------
+D7 -- THE FK FINGERPRINT ASSERTION HAD NEVER EXECUTED
+--------------------------------------------------------------------------------
+SQLSTATE:  42725
+Message:   operator is not unique: text || "char"
+Location:  20260801000005_postconditions.sql, FK fingerprint SELECT
+
+ROOT CAUSE
+  pg_constraint.confmatchtype, .confupdtype and .confdeltype are PostgreSQL's
+  internal "char" type -- a 1-byte type distinct from char(1), bpchar and text.
+  Several candidate || operators exist for text || "char" and none is an
+  unambiguous best match, so the parser raises 42725.
+
+  The error is raised at PARSE time inside the single DO block, so it aborted the
+  whole file and nothing downstream ran. The FK fingerprint assertion --
+  canonicalized in the previous pass and treated as authoritative -- had
+  therefore NEVER executed even once.
+
+CORRECTION (the entire fix: three casts)
+  before:  ||'|'||co.confmatchtype||'|'||co.confupdtype||'|'||co.confdeltype
+  after:   ||'|'||co.confmatchtype::text||'|'||co.confupdtype::text
+           ||'|'||co.confdeltype::text
+
+  Formula, field order, separators, sort order and expected hash are UNCHANGED.
+  A cast changes operator resolution, not the rendered value -- confirmed by the
+  hash reproducing the production value exactly.
+
+VERIFIED AFTER CORRECTION
+  FK fingerprint      f061c43fcdf08eccae779b7bcabe6ac6   MATCHES production
+  FK count            153  (145 public-source + 8 auth-source)
+  ON DELETE actions   a = 37,  c = 106,  n = 10
+  Column fingerprint  0b1a44c861bb61cc6ca26dee3f63db02   MATCHES production
+
+MUTATION-TESTED -- THE ASSERTION IS LIVE, NOT MERELY SILENT
+  Dropping profiles_tenant_id_fkey and re-running produced a non-zero exit and
+  "FK fingerprint drift: expected f061c43f... got 9aaa62b3...". An assertion that
+  has never failed is indistinguishable from one that CANNOT fail; this one has
+  now been shown to do both.
+
+--------------------------------------------------------------------------------
+D8 -- VALIDATION DIAGNOSTICS WERE SUPPRESSED
+--------------------------------------------------------------------------------
+ROOT CAUSE
+  The file opened with SET client_min_messages = warning, silencing NOTICE. Every
+  diagnostic this suite emits is a RAISE NOTICE, so a passing run printed only
+  BEGIN / SET / SET / DO / COMMIT. This is not cosmetic: no grant fingerprint was
+  ever captured from production, so for the privilege dimension these emitted
+  hashes are the ONLY output the design produces. Suppressed, a "successful" run
+  proved nothing to the operator.
+
+CORRECTION
+  SET LOCAL statement_timeout   = 0;
+  SET LOCAL client_min_messages = notice;
+
+  notice is BELOW warning in severity, so lowering the threshold can only reveal
+  more -- no warning or error behaviour is weakened. SET LOCAL also scopes both
+  settings to the transaction; the previous statements were session-level and
+  persisted past COMMIT. Proven by execution: SET LOCAL client_min_messages =
+  warning inside a transaction reverts to the server default (notice) in the same
+  session after COMMIT.
+
+DIAGNOSTICS NOW VISIBLE -- 4 of the 4 that exist
+  1. OBSERVED table/view privilege fingerprint (anon+authenticated):
+     c9508fb5b35ba3abc417d3ed36339224
+  2. DEFERRED: platform-owned default ACLs found = 3
+  3. OBSERVED explicit relation ACL fingerprint (all grantees):
+     ba04746df439fa9a3e5d4efcf68bb053
+  4. Canonical baseline postconditions PASSED (full count + fingerprint summary)
+
+  DEVIATION FROM THE CORRECTION BRIEF, DELIBERATE: the brief anticipated six
+  diagnostics, naming separate schema, function, sequence and default ACL
+  fingerprints. Only the four above exist in the file. The relation fingerprint
+  (#3) covers relkind IN ('r','v','S'), so sequences are included in it rather
+  than hashed separately, and no schema-level or function-level ACL hash was ever
+  written. Nothing is missing or suppressed -- the expected count was wrong, not
+  the file. No new fingerprints were invented to reach six.
+
+  Both observed hashes are REPORTED, never asserted: no production grant
+  fingerprint exists to compare against, and inventing an expected value would
+  produce either a permanent false failure or a meaningless constant.
+
+--------------------------------------------------------------------------------
+CHAR-TYPE AUDIT -- DERIVED FROM CATALOG METADATA, NOT FROM MEMORY
+--------------------------------------------------------------------------------
+The previous pass missed D7 because the scan used a hand-written list of "char"
+columns that happened to omit the conf* family. An incomplete allowlist returned
+a confident, false "0 found". The list is now derived from the catalog:
+
+  SELECT c.relname||'.'||a.attname FROM pg_attribute a
+  JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='pg_catalog' AND a.atttypid='"char"'::regtype
+    AND a.attnum>0 AND NOT a.attisdropped;
+
+45 such columns exist in PostgreSQL 17.6 (42 distinct names). All six canonical
+files were scanned against that derived list.
+
+  UNSAFE (concatenated without ::text) ... 3, all on one line, all now fixed:
+      confmatchtype, confupdtype, confdeltype
+  SAFE ..................................... 26 occurrences
+      relkind (17), contype (5), attidentity (1), attgenerated (1),
+      typtype (1), tgenabled (1)
+
+  Safe occurrences are either comparisons against a "char" literal (relkind='r',
+  contype='f', tgenabled='O'), which resolve unambiguously and must NOT be cast,
+  or already carry ::text inside COALESCE/NULLIF. One further apparent hit -- the
+  string 'tgenabled=O' in a diagnostic message -- is literal message text, not a
+  column reference, and was correctly left alone.
+
+  SCANNER DEFECT WORTH RECORDING: the first version of this audit reported
+  "0 unsafe" because it stripped dollar-quoted bodies before scanning -- and this
+  file is one large DO $$ ... $$ block, so stripping removed essentially the whole
+  file, including the known defect. A scan whose total match count collapses to
+  near zero is reporting a broken parser, not a clean file. This audit must run on
+  raw text with only line comments removed. Same false-negative family as the
+  earlier "0 grants" error recorded above.
+
+--------------------------------------------------------------------------------
+POSTCONDITION RUNTIME-SAFETY REVIEW
+--------------------------------------------------------------------------------
+  Deterministic ordering ..... PASS. All 4 md5(string_agg(...)) fingerprints carry
+                               an explicit ORDER BY (lines 136, 169, 670, 855).
+  NULL into fingerprints ..... PASS. Nullable inputs wrapped in COALESCE/NULLIF;
+                               absent identity/generated/collation render as '-'
+                               so absence cannot collide with a present value.
+  Boolean vs text ............ PASS. The D5 fix removed the only boolean-to-text
+                               comparison; tgtype bits are tested as booleans and
+                               stringified only in the post-failure diagnostic.
+  format() placeholders ...... PASS. Only %s is used, and %s accepts any type,
+                               including "char".
+  Division by zero ........... PASS. No division in the file.
+  Array indexing ............. PASS. No positional indexing; conkey/confkey are
+                               expanded via unnest WITH ORDINALITY.
+  Empty aggregates ........... PASS. Counts use count(*), which returns 0 not
+                               NULL; fingerprint comparisons use IS DISTINCT FROM,
+                               which is NULL-safe.
+  Collation-dependent order .. ACCEPTED RISK, documented. string_agg ORDER BY on
+                               text is collation-sensitive in principle. Both
+                               hashes reproduced their production values exactly
+                               on a container whose collation matches production,
+                               which is the environment this baseline targets.
+  Duplicate rows ............. PASS. Every fingerprint source is keyed on catalog
+                               identity, and counts are asserted alongside the
+                               hashes, so duplication would surface.
+  Version-dependent catalog .. PASS for the target. Every field used exists in
+                               PostgreSQL 17.6, production's version.
+
+  No verified fingerprint formula was changed. The only edits were the three
+  casts and the two SET LOCAL statements.
+
+--------------------------------------------------------------------------------
+EXECUTION STATUS
+--------------------------------------------------------------------------------
+  Files 0000-0004 ......... COMMIT (unchanged in this pass)
+  File  0005 .............. COMMIT (was ROLLBACK / 42725)
+  Counts .................. 103 tables, 6 views, 18 enums, 28 functions,
+                            24 triggers, 144 policies, 220 indexes,
+                            153 foreign keys, 1177 columns
+  D1-D6 ................... remain execution-proven fixed
+  Signup .................. 13/13 assertions + 3 cleanup checks passed
+  P0 ...................... correctly NOT applied
+  Platform gap ............ 3 supabase_admin default ACLs remain a platform action
+
+Executed only on a disposable local container. Production was not connected to,
+not modified, and no paid Supabase branch was created.
