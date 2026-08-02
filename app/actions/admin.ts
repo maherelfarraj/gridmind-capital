@@ -13,6 +13,7 @@ import {
 } from '@/lib/auth/provisioning'
 import { getCurrentTenantId } from '@/lib/tenant'
 import { isInternalIdentity } from '@/lib/admin/external-identity'
+import { revertExternalConversion } from '@/lib/admin/revert-conversion-service'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -151,6 +152,45 @@ export async function updateUserRole(userId: string, role: string): Promise<{ er
 
   revalidatePath('/admin/users')
   return {}
+}
+
+// ─────────────────────────────────────────────────────────────
+// Repair: reverse an unintended internal → external conversion
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Restore an account that the external invite flow converted into an external
+ * identity by mistake.
+ *
+ * Admin-gated and audited. The values restored are read out of the conversion's
+ * own audit row, so this cannot be used to set an arbitrary role: if the audit
+ * trail does not prove what the account was, or the account has changed since,
+ * the reversal is refused.
+ */
+export async function revertUnintendedExternalConversion(
+  email: string,
+  opts?: { dryRun?: boolean },
+): Promise<{ error?: string; restoredTo?: { role: string; user_type: string }; revokedGrants?: number }> {
+  let actorId: string
+  try {
+    const { userId } = await requireInternalRole(['tenant_admin', 'system_admin'])
+    actorId = userId
+  } catch (e: any) {
+    return { error: e.message }
+  }
+
+  const res = await revertExternalConversion(createAdminClient(), {
+    email,
+    actorId,
+    dryRun: opts?.dryRun,
+  })
+  if ('error' in res) return { error: res.error }
+
+  revalidatePath('/admin/users')
+  return {
+    restoredTo: { role: res.plan.patch.role, user_type: res.plan.patch.user_type },
+    revokedGrants: res.revokedGrants,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
