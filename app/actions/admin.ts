@@ -12,6 +12,7 @@ import {
   provisionInvitedUser,
 } from '@/lib/auth/provisioning'
 import { getCurrentTenantId } from '@/lib/tenant'
+import { isInternalIdentity } from '@/lib/admin/external-identity'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -98,25 +99,35 @@ export async function getUsers(): Promise<UserProfile[]> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, email, role, department, avatar_url, created_at, last_active, is_active')
+    .select('id, full_name, email, role, user_type, department, avatar_url, created_at, last_active, is_active')
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
 
   if (error || !data) return []
 
-  return data.map((u) => ({
-    id: u.id,
-    full_name: u.full_name ?? '',
-    email: u.email ?? '',
-    role: u.role ?? 'viewer',
-    department: u.department ?? null,
-    avatar_url: u.avatar_url ?? null,
-    created_at: u.created_at ?? '',
-    last_seen_at: u.last_active ?? null,
-    // Default to false, not true: an unreadable flag must not render a
-    // deactivated account as Active.
-    is_active: u.is_active === true,
-  })) satisfies UserProfile[]
+  return data
+    // The Internal users tab lists internal identities only. External users are
+    // governed by the External access tab, which also shows their organisation
+    // and project grants. Listing them here presented a subcontractor as a
+    // colleague and offered internal-only actions on them.
+    //
+    // Filtered on role OR user_type, matching the canonical containment
+    // predicate (which keys off role). Production holds a profile that is
+    // external by role and internal by column, and it must not appear here.
+    .filter((u) => isInternalIdentity({ role: u.role, user_type: u.user_type }))
+    .map((u): UserProfile => ({
+      id: u.id,
+      full_name: u.full_name ?? '',
+      email: u.email ?? '',
+      role: u.role ?? 'viewer',
+      department: u.department ?? null,
+      avatar_url: u.avatar_url ?? null,
+      created_at: u.created_at ?? '',
+      last_seen_at: u.last_active ?? null,
+      // Default to false, not true: an unreadable flag must not render a
+      // deactivated account as Active.
+      is_active: u.is_active === true,
+    }))
 }
 
 /**
