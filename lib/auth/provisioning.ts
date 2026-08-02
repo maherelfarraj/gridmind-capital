@@ -28,6 +28,9 @@ import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveActorState, actorFailureMessage, type ResolvedActor } from '@/lib/auth/actor'
 import { DB_USER_ROLES, isDbUserRole, type DbUserRole } from '@/lib/auth/roles'
+// Same classification the admin surfaces use, so the writer and the UI cannot
+// disagree about who counts as internal.
+import { isInternalIdentity as isInternalIdentityProfile } from '@/lib/admin/external-identity'
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -614,6 +617,33 @@ export async function provisionExternalUser(
     adoptNewlyInvited: args.adoptNewlyInvited,
   })
   if (authErr) return authErr
+
+  // An existing INTERNAL colleague must never be converted to an external
+  // identity by a provisioning call. Doing so rewrites role, user_type and
+  // external_org on an account the caller did not intend to touch, and every
+  // authorization check above still passes (same tenant, assignable role), so
+  // nothing else here would stop it.
+  //
+  // This lives in the canonical writer, not only in the calling action,
+  // because it is the single place every caller must pass through. A guard in
+  // one action shell protects one entry point; a guard here protects all of
+  // them, and cannot be bypassed by a stale or alternative caller.
+  //
+  // `adoptNewlyInvited` is the exception, and the only legitimate conversion:
+  // handle_new_user writes a fail-closed INTERNAL shell (role='viewer',
+  // user_type='internal') for every fresh invite, which this call then turns
+  // into the external identity. That flag is provenance, not a preference —
+  // it is the same signal that authorizes compensation to delete the auth
+  // user, so it cannot be true for a user who was merely looked up.
+  if (!args.adoptNewlyInvited && isInternalIdentityProfile(target)) {
+    return {
+      error:
+        `That account is an internal user (role "${target.role ?? 'unknown'}"). ` +
+        'Converting an internal account into an external one is not done through ' +
+        'an invite. Remove or deactivate the internal account first, or use a ' +
+        'different address.',
+    }
+  }
 
   const org = resolveExternalOrg({
     role: args.role,
