@@ -38,6 +38,17 @@ export interface UserProfile {
   avatar_url: string | null
   created_at: string
   last_seen_at: string | null
+  /**
+   * The real authorization state, straight from `profiles.is_active`.
+   *
+   * This used to be absent from the projection entirely, and the UI inferred
+   * status from `department === 'Deactivated'` — a leftover from the old
+   * lossy soft-delete that `deactivateUser` no longer performs. No row in
+   * production carries that marker, so every user rendered as Active
+   * regardless of `is_active`, and a deactivation appeared to revert on
+   * refresh even when the write had succeeded.
+   */
+  is_active: boolean
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -87,7 +98,7 @@ export async function getUsers(): Promise<UserProfile[]> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, email, role, department, avatar_url, created_at, last_active')
+    .select('id, full_name, email, role, department, avatar_url, created_at, last_active, is_active')
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
 
@@ -102,6 +113,9 @@ export async function getUsers(): Promise<UserProfile[]> {
     avatar_url: u.avatar_url ?? null,
     created_at: u.created_at ?? '',
     last_seen_at: u.last_active ?? null,
+    // Default to false, not true: an unreadable flag must not render a
+    // deactivated account as Active.
+    is_active: u.is_active === true,
   })) satisfies UserProfile[]
 }
 
