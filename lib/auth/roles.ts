@@ -235,6 +235,66 @@ export function assignableRoleOptionsFor(
 }
 
 /**
+ * Client-safe mirror of the identity classification owned by
+ * `lib/auth/provisioning.ts` (`USER_TYPE_BY_ROLE`).
+ *
+ * That module is `import 'server-only'`, so a client component cannot read the
+ * canonical map directly. This duplicate exists ONLY so the UI can avoid
+ * offering a role the server is guaranteed to reject.
+ *
+ * It is not a second source of truth: the server remains the boundary, and
+ * `tests/unit/internal-invite-roles.test.ts` asserts this list is exactly
+ * `EXTERNAL_ROLES` from the canonical service, so any drift fails CI.
+ *
+ * Listed explicitly rather than derived by exclusion. Derivation is fail-open:
+ * a new external role added to DB_USER_ROLES and forgotten here would silently
+ * classify as internal and reappear in the internal invite dropdown — which is
+ * exactly the defect this guards.
+ */
+export const DB_EXTERNAL_ROLES: readonly DbUserRole[] = ['subcontractor', 'client_viewer']
+
+/** Roles an INTERNAL identity may hold — the complement of DB_EXTERNAL_ROLES. */
+export const DB_INTERNAL_ROLES: readonly DbUserRole[] = DB_USER_ROLES.filter(
+  (role) => !DB_EXTERNAL_ROLES.includes(role),
+)
+
+/** True when the role belongs to an external identity (subcontractor/client). */
+export function isDbExternalRole(value: unknown): boolean {
+  return isDbUserRole(value) && DB_EXTERNAL_ROLES.includes(value)
+}
+
+/**
+ * Roles assignable through the INTERNAL provisioning path.
+ *
+ * `assignableRolesFor` answers "who outranks whom" and deliberately spans every
+ * canonical role. It is the right answer for authority and the wrong answer for
+ * the internal Invite User form, which posts to `provisionInternalUser` — that
+ * service rejects any external role outright:
+ *
+ *     "subcontractor" is not a valid internal role.
+ *
+ * Offering an option the server must refuse is not a cosmetic problem; it is a
+ * guaranteed error path. External identities are provisioned through the
+ * External access workflow, which also captures the organisation that
+ * `provisionExternalUser` requires and writes to `profiles.external_org`.
+ */
+export function internalAssignableRolesFor(
+  actorRole: string | null | undefined,
+): readonly DbUserRole[] {
+  return assignableRolesFor(actorRole).filter((role) => !DB_EXTERNAL_ROLES.includes(role))
+}
+
+/** `internalAssignableRolesFor` as `<Select>` options, in DB_USER_ROLES order. */
+export function internalAssignableRoleOptionsFor(
+  actorRole: string | null | undefined,
+): { value: DbUserRole; label: string }[] {
+  return internalAssignableRolesFor(actorRole).map((value) => ({
+    value,
+    label: DB_ROLE_META[value].label,
+  }))
+}
+
+/**
  * Metadata for any role string, including unknown/legacy values, so the UI
  * degrades to a readable label instead of silently mislabelling the row.
  */
