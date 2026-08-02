@@ -11,6 +11,10 @@ import {
   provisionExternalUser,
   provisionInvitedUser,
 } from '@/lib/auth/provisioning'
+import {
+  externalInviteConflict,
+  verifyPersistedExternalState,
+} from '@/lib/admin/external-identity'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -121,6 +125,12 @@ export async function getExternalAccessGrants(userId: string): Promise<ExternalA
 
 export interface InviteExternalUserArgs {
   email: string
+  /**
+   * Display name only. Written to auth user metadata, which the signup trigger
+   * copies into profiles.full_name. Never an authority field: role, tenant,
+   * user_type and external_org all come from the canonical service below.
+   */
+  fullName?: string
   role: ExternalRole
   organizationName: string
   projectIds: string[]
@@ -162,18 +172,26 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
   // Step 1 — check for existing profile.
   const { data: existing } = await admin
     .from('profiles')
-    .select('id, email, role')
+    .select('id, email, role, user_type')
     .eq('email', args.email)
     .eq('tenant_id', tenantId)
     .maybeSingle()
+
+  // Step 1b — an internal colleague must never be silently converted into an
+  // external identity by an invite. The canonical service would happily apply
+  // the change (same tenant, assignable role), rewriting role, user_type and
+  // external_org on an account the admin did not intend to touch, and the UI
+  // would report "Access updated". Refuse before anything is written.
+  const conflict = externalInviteConflict(existing)
+  if (conflict) return { error: conflict }
 
   let userId: string
   let wasNewlyInvited = false
 
   if (existing) {
-    // User already exists — re-grant projects. The role/tenant/user_type write
-    // is applied by the canonical service below; the previous inline update
-    // discarded its error and bypassed every tenant and role check.
+    // Existing EXTERNAL user — re-grant projects. The role/tenant/user_type
+    // write is applied by the canonical service below; the previous inline
+    // update discarded its error and bypassed every tenant and role check.
     userId = existing.id
   } else {
     // P0: Do NOT store role/tenant in auth.users.user_metadata
@@ -184,7 +202,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
       {
         data: {
           organization_name: args.organizationName,
-          full_name: '',
+          full_name: args.fullName?.trim() || '',
         },
         redirectTo: `${args.siteUrl}/auth/callback?next=/portal`,
       },
@@ -232,6 +250,28 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
     },
   })
   if ('error' in provisioned) return { error: provisioned.error }
+
+  // Step 3b — read the row back and prove it persisted as external.
+  //
+  // Until now "success" meant only "no error was returned". A silent partial
+  // write is then indistinguishable from a correct one, which is precisely the
+  // failure mode reported for this flow. Assert the persisted shape before the
+  // UI is allowed to claim the invite worked.
+  const { data: persisted, error: verifyErr } = await admin
+    .from('profiles')
+    .select('role, user_type, external_org, tenant_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (verifyErr) {
+    return { error: `Invite could not be verified: ${verifyErr.message}` }
+  }
+  const mismatch = verifyPersistedExternalState(persisted, {
+    role: args.role,
+    externalOrg: args.organizationName.trim(),
+    tenantId,
+  })
+  if (mismatch) return { error: mismatch }
 
   // Step 4 — grant project access (upsert, revived if previously revoked).
   if (args.projectIds.length > 0) {

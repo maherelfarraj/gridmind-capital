@@ -6,7 +6,7 @@ import {
   User, Send, CheckCircle2, X, Search,
   SlidersHorizontal, Filter, ArrowUpDown,
   MoreVertical, CheckCircle, XCircle, Trash2,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import { Select } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
 import {
   DB_ROLE_META,
-  assignableRoleOptionsFor,
+  internalAssignableRoleOptionsFor,
   dbRoleMeta,
   type DbUserRole,
   type DbRoleMeta,
@@ -66,6 +66,12 @@ export interface UsersRolesProps {
    * is guaranteed to fail.
    */
   currentUserId?: string | null
+  /**
+   * Switch to the External access workflow. External identities cannot be
+   * created here: provisionInternalUser rejects their roles, and they need an
+   * organisation for profiles.external_org that this form does not collect.
+   */
+  onInviteExternal?: () => void
 }
 
 /* ─────────────────────────────────────────────
@@ -648,9 +654,14 @@ interface InviteModalProps {
   onInvite: (data: { email: string; full_name: string; role: UserRole; department?: string }) => Promise<void>
   /** Role of the signed-in admin — determines which roles may be assigned. */
   currentUserRole?: string | null
+  /**
+   * Hand off to the External access workflow. Optional: when absent the action
+   * is not rendered, so this modal never advertises a route that does not exist.
+   */
+  onInviteExternal?: () => void
 }
 
-function InviteModal({ open, onClose, onInvite, currentUserRole }: InviteModalProps) {
+function InviteModal({ open, onClose, onInvite, currentUserRole, onInviteExternal }: InviteModalProps) {
   const [email,   setEmail]   = React.useState('')
   const [name,    setName]    = React.useState('')
   const [role,    setRole]    = React.useState('')
@@ -660,11 +671,17 @@ function InviteModal({ open, onClose, onInvite, currentUserRole }: InviteModalPr
   const [loading, setLoading] = React.useState(false)
   const [sent,    setSent]    = React.useState(false)
 
-  // Only roles this admin is actually permitted to grant. A tenant_admin never
-  // sees system_admin; the server rejects it regardless (provisioning.ts), so
-  // this keeps the UI from offering an action that can only fail.
+  // Only roles this admin is permitted to grant, narrowed to those the INTERNAL
+  // provisioning path accepts. Two separate limits apply:
+  //
+  //   authority — a tenant_admin never sees system_admin.
+  //   identity  — this form posts to provisionInternalUser, which rejects every
+  //               external role ('"subcontractor" is not a valid internal
+  //               role.'). External identities also need an organisation for
+  //               profiles.external_org, which this form has no field for, so
+  //               they are provisioned through the External access workflow.
   const roleOptions = React.useMemo(
-    () => assignableRoleOptionsFor(currentUserRole),
+    () => internalAssignableRoleOptionsFor(currentUserRole),
     [currentUserRole],
   )
 
@@ -788,11 +805,35 @@ function InviteModal({ open, onClose, onInvite, currentUserRole }: InviteModalPr
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={loading}>
-              Cancel
-            </Button>
+            {/* Footer */}
+            <div className="flex flex-wrap items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+              {/*
+                Subcontractors and client viewers are deliberately absent from
+                the role list above, so this is the signposted way to reach
+                them rather than a dead end. It hands off to the External
+                access workflow, which collects the organisation that
+                profiles.external_org requires.
+              */}
+              {onInviteExternal && (
+                <button
+                  type="button"
+                  data-testid="invite-external-user"
+                  onClick={() => { onClose(); onInviteExternal() }}
+                  disabled={loading}
+                  className={cn(
+                    'mr-auto flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
+                    'text-slate-700 underline-offset-2 hover:underline hover:text-slate-900',
+                    'disabled:opacity-60 disabled:cursor-not-allowed',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a192f]/50',
+                  )}
+                >
+                  <ExternalLink className="size-4" aria-hidden="true" />
+                  Invite External User
+                </button>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={loading}>
+                Cancel
+              </Button>
             <button
               type="submit"
               data-testid="send-invite"
@@ -855,9 +896,13 @@ function ChangeRoleModal({
   const open = user !== null
   const isSelf = user != null && currentUserId != null && user.id === currentUserId
 
-  // Same authority mirror the invite modal uses. The server re-checks it.
+  // Same narrowing as the invite modal, for the same reason. updateUserRole
+  // routes to provisionInternalUser and never supplies an externalOrg, so
+  // picking an external role here could only ever return an error. Converting
+  // someone to an external identity is done through External access, which
+  // captures the organisation that conversion requires.
   const roleOptions = React.useMemo(
-    () => assignableRoleOptionsFor(currentUserRole),
+    () => internalAssignableRoleOptionsFor(currentUserRole),
     [currentUserRole],
   )
 
@@ -1094,6 +1139,7 @@ export function UsersRolesPage({
   isLoading: externalLoading = false,
   currentUserRole,
   currentUserId,
+  onInviteExternal,
 }: UsersRolesProps = {}) {
   const [users, setUsers]           = React.useState<UserProfile[]>([])
   const [modalOpen, setModalOpen]   = React.useState(false)
@@ -1556,6 +1602,7 @@ export function UsersRolesPage({
         onClose={() => setModalOpen(false)}
         onInvite={handleInvite}
         currentUserRole={currentUserRole}
+        onInviteExternal={onInviteExternal}
       />
 
       {/* ── Change role modal ── */}

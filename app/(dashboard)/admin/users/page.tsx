@@ -155,6 +155,7 @@ export default function Page() {
           onToggleStatus={handleToggleStatus}
           currentUserRole={currentUserRole}
           currentUserId={session.userId}
+          onInviteExternal={() => setActiveTab('external')}
         />
       )}
 

@@ -61,6 +61,7 @@ function InviteDialog({
 }) {
   const { toast } = useToast()
   const [email, setEmail] = React.useState('')
+  const [fullName, setFullName] = React.useState('')
   const [role, setRole] = React.useState<ExternalRole>('subcontractor')
   const [org, setOrg] = React.useState('')
   const [selectedProjects, setSelectedProjects] = React.useState<string[]>([])
@@ -69,7 +70,7 @@ function InviteDialog({
   const [copied, setCopied] = React.useState(false)
 
   const reset = () => {
-    setEmail(''); setRole('subcontractor'); setOrg('')
+    setEmail(''); setFullName(''); setRole('subcontractor'); setOrg('')
     setSelectedProjects([]); setInviteLink(null); setCopied(false)
   }
 
@@ -87,6 +88,7 @@ function InviteDialog({
     setLoading(true)
     const result = await inviteExternalUser({
       email,
+      fullName: fullName.trim(),
       role,
       organizationName: org,
       projectIds: selectedProjects,
@@ -131,6 +133,20 @@ function InviteDialog({
               <Label htmlFor="ext-email">Email address</Label>
               <Input id="ext-email" type="email" placeholder="name@company.com"
                 value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="ext-name">
+                Full name <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input id="ext-name" placeholder="Jane Smith"
+                value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              {/*
+                Goes to auth user metadata, which the signup trigger copies into
+                profiles.full_name. It is NOT an authority field and is never
+                read back as one — role, tenant and external_org all come from
+                the canonical service.
+              */}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
