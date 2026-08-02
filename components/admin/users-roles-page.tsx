@@ -14,13 +14,17 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
 import {
-  DB_ADMIN_ROLES,
   DB_ROLE_META,
   assignableRoleOptionsFor,
   dbRoleMeta,
   type DbUserRole,
   type DbRoleMeta,
 } from '@/lib/auth/roles'
+import {
+  adminRoleCountsFromUsers,
+  totalAdministrators,
+  formatAdministratorSummary,
+} from '@/lib/admin/admin-summary'
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -141,7 +145,12 @@ function StatsBar({ users }: { users: UserProfile[] }) {
   const total    = users.length
   const active   = users.filter(u => u.status === 'active').length
   const inactive = users.filter(u => u.status === 'inactive').length
-  const admins   = users.filter(u => (DB_ADMIN_ROLES as readonly string[]).includes(u.role)).length
+  // Same definition of "administrator" as before (DB_ADMIN_ROLES), but tallied
+  // per role so the subtitle can describe the total instead of asserting a
+  // hardcoded one. `totalAdministrators` sums exactly these counts, so the
+  // number and its subtitle cannot drift apart.
+  const adminCounts = adminRoleCountsFromUsers(users)
+  const admins      = totalAdministrators(adminCounts)
   const pending  = 2 // mock pending invites
 
   const cards = [
@@ -164,7 +173,7 @@ function StatsBar({ users }: { users: UserProfile[] }) {
     {
       label: 'Administrators',
       value: admins,
-      trend: 'Tenant + 2 PMO',
+      trend: formatAdministratorSummary(adminCounts),
       trendColor: 'text-slate-500',
       icon: <Shield className="size-5" aria-hidden="true" />,
       iconBg: 'bg-purple-100 text-purple-600',
@@ -193,7 +202,13 @@ function StatsBar({ users }: { users: UserProfile[] }) {
             </span>
           </div>
           <p className="text-2xl font-bold text-slate-900 tabular-nums">{c.value}</p>
-          <p className={cn('text-xs', c.trendColor)}>{c.trend}</p>
+          {/*
+            dir="auto" lets the browser derive direction from the content, so
+            the "·" separator stays between the categories under an RTL page
+            instead of being reordered. text-pretty/break-words keep a longer
+            multi-category subtitle inside the card on narrow screens.
+          */}
+          <p dir="auto" className={cn('text-xs text-pretty break-words', c.trendColor)}>{c.trend}</p>
         </div>
       ))}
     </div>
