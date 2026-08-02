@@ -121,6 +121,12 @@ export async function getExternalAccessGrants(userId: string): Promise<ExternalA
 
 export interface InviteExternalUserArgs {
   email: string
+  /**
+   * Display name only. Written to auth user metadata, which the signup trigger
+   * copies into profiles.full_name. Never an authority field: role, tenant,
+   * user_type and external_org all come from the canonical service below.
+   */
+  fullName?: string
   role: ExternalRole
   organizationName: string
   projectIds: string[]
@@ -184,7 +190,7 @@ export async function inviteExternalUser(args: InviteExternalUserArgs): Promise<
       {
         data: {
           organization_name: args.organizationName,
-          full_name: '',
+          full_name: args.fullName?.trim() || '',
         },
         redirectTo: `${args.siteUrl}/auth/callback?next=/portal`,
       },
