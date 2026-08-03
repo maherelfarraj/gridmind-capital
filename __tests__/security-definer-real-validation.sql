@@ -1,7 +1,7 @@
 -- Security DEFINER Execute Privilege Validation - Real SQL Tests
 -- Execute in isolated PostgreSQL environment matching production schema
 --
--- BEFORE applying migration: 20260801000000_security_definer_execute_lockdown.sql
+-- BEFORE applying migration: 20260801100000_security_definer_execute_lockdown.sql
 -- Run: psql -h localhost -U postgres -d gridmind_test -f __tests__/security-definer-real-validation.sql
 
 -- ============================================================================

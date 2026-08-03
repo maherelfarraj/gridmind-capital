@@ -159,7 +159,7 @@
 
 ## Migration Details
 
-**File:** `supabase/migrations/20260801000000_security_definer_execute_lockdown.sql`
+**File:** `supabase/migrations/20260801100000_security_definer_execute_lockdown.sql`
 
 **Strategy:**
 1. Begin SERIALIZABLE transaction for isolation
@@ -228,7 +228,7 @@ ORDER BY p.proname;
 
 ## Rollback
 
-**File:** `supabase/migrations/20260801000000_security_definer_execute_lockdown_rollback.sql`
+**File:** `supabase/migrations/20260801100000_security_definer_execute_lockdown_rollback.sql`
 
 ```sql
 BEGIN;
