@@ -191,7 +191,7 @@ describe('Migration Order Validation', () => {
 
         // Find function references in CREATE POLICY
         if (migration.content.includes('CREATE POLICY')) {
-          const policyMatches = migration.content.matchAll(/CREATE\s+POLICY\s+\w+.*?(?:FOR\s+\w+)?(.*?)(?=;)/gis)
+          const policyMatches = migration.content.matchAll(/CREATE\s+POLICY\s+\w+.*?(?:FOR\s+\w+)?([\s\S]*?)(?=;)/gm)
           for (const match of policyMatches) {
             const policyBody = match[1]
             // Extract function calls (simple heuristic: word followed by parenthesis)

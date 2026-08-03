@@ -225,21 +225,21 @@ CREATE TABLE public.variation_orders (
 -- 2. Apply all 7 repository migrations in sequence
 -- 3. Verify:
 
-SELECT table_name FROM information_schema.tables 
-WHERE table_schema = 'public' AND table_name IN 
+SELECT table_name FROM information_schema.tables
+WHERE table_schema = 'public' AND table_name IN
   ('variation_orders', 'profiles', 'projects', 'tenants')
 -- Expected: 4 rows (all tables exist)
 
-SELECT COUNT(*) FROM information_schema.triggers 
+SELECT COUNT(*) FROM information_schema.triggers
 WHERE trigger_schema = 'public' AND trigger_name LIKE '%variation%'
 -- Expected: 2 (triggers exist)
 
 SELECT COUNT(*) FROM information_schema.routines
-WHERE routine_schema = 'public' AND routine_name IN 
+WHERE routine_schema = 'public' AND routine_name IN
   ('is_external_role', 'current_user_role', 'has_external_access')
 -- Expected: 3 (helper functions exist)
 
-SELECT COUNT(*) FROM pg_enum 
+SELECT COUNT(*) FROM pg_enum
 WHERE enumname IN ('vo_status', 'vo_origin')
 -- Expected: 2 (enums exist)
 ```
