@@ -315,4 +315,3 @@ PROD_STATE_AFTER=$(psql $PROD_URL -c "SELECT COUNT(*) FROM audit_log")
   - [ ] `pnpm build` (success)
   - [ ] `git diff --check` (no whitespace issues)
 - [ ] Verification Statement: "Production database not modified"
-
