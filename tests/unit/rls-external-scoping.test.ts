@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 const MIGRATION = join(
   process.cwd(),
-  'supabase/migrations/20260731010000_p0_identity_and_dml_lockdown.sql',
+  'supabase/migrations/20260801095527_p0_identity_and_dml_lockdown.sql',
 )
 
 const sql = readFileSync(MIGRATION, 'utf8')
