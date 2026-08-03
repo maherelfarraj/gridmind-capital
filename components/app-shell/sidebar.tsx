@@ -9,8 +9,10 @@ import {
   PanelLeftOpen,
   X,
   Zap,
+  Edit2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ProfileEditModal } from '@/components/profile/profile-edit-modal'
 import {
   NAV_SECTIONS,
   NAV_BOTTOM,
@@ -268,6 +270,7 @@ function SidebarContent({
   showCloseButton,
   onClose,
 }: SidebarProps & { onItemClick?: () => void; showCloseButton?: boolean; onClose?: () => void }) {
+  const [profileModalOpen, setProfileModalOpen] = React.useState(false)
   const isExternalRole = EXTERNAL_ROLES.includes(user.role)
   const baseSections = isExternalRole ? EXTERNAL_NAV_SECTIONS : NAV_SECTIONS
   const sections = filterSectionsByRole(baseSections, user.role).map((section) => ({
@@ -402,6 +405,15 @@ function SidebarContent({
           </div>
         )}
 
+        <button
+          onClick={() => setProfileModalOpen(true)}
+          aria-label="Edit profile"
+          title="Edit profile"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors duration-150"
+        >
+          <Edit2 size={13} />
+        </button>
+
         <form action={signOutAction}>
           <button
             type="submit"
@@ -413,6 +425,12 @@ function SidebarContent({
           </button>
         </form>
       </div>
+
+      {/* ── Profile Edit Modal ── */}
+      <ProfileEditModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+      />
 
       {/* ── Expand toggle (collapsed state) ── */}
       {collapsed && !showCloseButton && (
@@ -434,7 +452,7 @@ function SidebarContent({
 
 // ─────────────────────────────────────────────────────────────
 // Main Sidebar component
-// ─────────────────────────────────────────────────────────────
+// ─────────��───────────────────────────────────────────────────
 
 export function Sidebar(props: SidebarProps) {
   const { collapsed, mobileOpen, onMobileClose } = props
