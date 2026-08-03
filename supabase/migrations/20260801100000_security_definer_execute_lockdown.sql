@@ -5,8 +5,10 @@
 -- Analysis Summary:
 -- - audit_trigger_fn: Trigger-only, never called directly. Revoke PUBLIC/anon/authenticated.
 -- - consume_rate_limit: Rate limiting helper. Revoke PUBLIC/anon, keep authenticated if needed.
--- - current_user_org: RLS policy helper (reads external_access). Revoke direct EXECUTE.
--- - current_user_role: RLS policy helper. Revoke direct EXECUTE.
+-- - current_user_org: RLS policy helper. Revoke PUBLIC/anon ONLY. MUST keep authenticated
+--   (invoked by authenticated RLS policies pol_read, po_external_read, po_external_ack, rfq_external_read).
+-- - current_user_role: RLS policy helper. Revoke PUBLIC/anon ONLY. MUST keep authenticated
+--   (invoked by authenticated RLS policies cr_external_read, pm_external_read, vo_external_read).
 -- - gm_rule_b1 through gm_rule_b10: Metadata references only. Revoke PUBLIC/anon/authenticated.
 --
 -- All functions already have correct search_path = 'public'. No function body changes.
@@ -43,28 +45,36 @@ REVOKE EXECUTE ON FUNCTION public.consume_rate_limit(text, integer, numeric) FRO
 GRANT EXECUTE ON FUNCTION public.consume_rate_limit(text, integer, numeric) TO service_role;
 
 -- 3. current_user_org() - RLS policy helper
--- Current: PUBLIC EXECUTE (inherited)
--- Action: Revoke all client-facing roles
--- Justification: This function is called by RLS policies and internal functions.
---                Direct client calls are not needed; RLS policies execute with proper context.
+-- Current: =X (PUBLIC) | anon=X | authenticated=X | service_role=X
+-- Action: Revoke PUBLIC and anon ONLY. KEEP authenticated. KEEP service_role.
+-- Justification: This function is invoked INSIDE RLS policy USING clauses that are declared
+--                TO authenticated (pol_read on purchase_order_lines; po_external_read and
+--                po_external_ack on purchase_orders; rfq_external_read on rfqs). In PostgreSQL,
+--                a function called by an RLS policy is executed AS THE QUERYING ROLE, so
+--                authenticated MUST retain EXECUTE or every such query fails with
+--                "permission denied for function current_user_org" (verified empirically).
+--                anon is never subject to these policies (they are TO authenticated) and no
+--                app code calls the function via RPC, so removing PUBLIC + anon is safe hardening.
 
 REVOKE EXECUTE ON FUNCTION public.current_user_org() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.current_user_org() FROM anon;
-REVOKE EXECUTE ON FUNCTION public.current_user_org() FROM authenticated;
 
--- Grant to supabase_admin (for any direct introspection if needed)
+-- Explicitly (re)assert the grants RLS depends on; idempotent and self-documenting.
+GRANT EXECUTE ON FUNCTION public.current_user_org() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_user_org() TO supabase_admin;
 
 -- 4. current_user_role() - RLS policy helper
--- Current: PUBLIC EXECUTE
--- Action: Revoke all client-facing roles (same as current_user_org)
--- Justification: Same as current_user_org
+-- Current: =X (PUBLIC) | anon=X | authenticated=X | service_role=X
+-- Action: Revoke PUBLIC and anon ONLY. KEEP authenticated. KEEP service_role.
+-- Justification: Same as current_user_org. Invoked by authenticated RLS policies
+--                cr_external_read (client_reports), pm_external_read (payment_milestones),
+--                and vo_external_read (variation_orders). Revoking authenticated would break
+--                SELECT on all three tables for external/authenticated users.
 
 REVOKE EXECUTE ON FUNCTION public.current_user_role() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.current_user_role() FROM anon;
-REVOKE EXECUTE ON FUNCTION public.current_user_role() FROM authenticated;
 
--- Grant to supabase_admin
+GRANT EXECUTE ON FUNCTION public.current_user_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_user_role() TO supabase_admin;
 
 -- 5. gm_rule_b1 through gm_rule_b10 - Governance rules (metadata/reporting)
@@ -141,15 +151,15 @@ GRANT EXECUTE ON FUNCTION public.gm_rule_b10() TO service_role;
 -- WHERE p.proname = 'consume_rate_limit' AND p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public');
 -- -- Expected: {service_role=X/postgres,postgres=X/postgres} (no PUBLIC, anon, authenticated)
 --
--- -- 3. Verify current_user_org has no PUBLIC EXECUTE
+-- -- 3. Verify current_user_org: no PUBLIC, no anon, but authenticated RETAINED
 -- SELECT p.proacl FROM pg_proc p
 -- WHERE p.proname = 'current_user_org' AND p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public');
--- -- Expected: {supabase_admin=X/postgres,postgres=X/postgres}
+-- -- Expected: postgres=X, authenticated=X, service_role=X, supabase_admin=X (NO bare "=X" PUBLIC, NO anon)
 --
--- -- 4. Verify current_user_role has no PUBLIC EXECUTE
+-- -- 4. Verify current_user_role: no PUBLIC, no anon, but authenticated RETAINED
 -- SELECT p.proacl FROM pg_proc p
 -- WHERE p.proname = 'current_user_role' AND p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public');
--- -- Expected: {supabase_admin=X/postgres,postgres=X/postgres}
+-- -- Expected: postgres=X, authenticated=X, service_role=X, supabase_admin=X (NO bare "=X" PUBLIC, NO anon)
 --
 -- -- 5. Verify gm_rule_b1 through gm_rule_b10 have no PUBLIC EXECUTE
 -- SELECT p.proname, p.proacl FROM pg_proc p

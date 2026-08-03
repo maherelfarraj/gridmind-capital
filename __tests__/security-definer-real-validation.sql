@@ -133,39 +133,89 @@ ORDER BY p.proname;
 -- PHASE 8: Post-Migration Verification (run AFTER applying migration)
 -- ============================================================================
 
-\echo '=== PHASE 8: POST-MIGRATION ACL COMPARISON ==='
-\echo 'Run this section AFTER applying migration'
+\echo '=== PHASE 8: POST-MIGRATION VERIFICATION (run AFTER applying migration) ==='
 
--- SELECT p.proname, 
---        (aclexplode(p.proacl)).grantee::regrole AS grantee,
---        (aclexplode(p.proacl)).privilege_type AS privilege
--- FROM pg_proc p
--- WHERE p.proname IN ('audit_trigger_fn', 'consume_rate_limit', 'current_user_org', 
---                     'current_user_role', 'gm_rule_b1', 'gm_rule_b2', 'gm_rule_b3',
---                     'gm_rule_b4', 'gm_rule_b5', 'gm_rule_b6', 'gm_rule_b7', 
---                     'gm_rule_b8', 'gm_rule_b9', 'gm_rule_b10')
--- ORDER BY p.proname, grantee;
+-- 8a. ACL shape for the two RLS helpers: PUBLIC and anon removed, authenticated RETAINED.
+--     These assertions ACTIVELY RUN and RAISE on failure (no commented-out postconditions).
+DO $$
+DECLARE
+  r record;
+  auth_ok boolean;
+  anon_present boolean;
+  public_present boolean;
+BEGIN
+  FOR r IN
+    SELECT p.oid, p.proname
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname IN ('current_user_role','current_user_org')
+  LOOP
+    auth_ok := has_function_privilege('authenticated', r.oid, 'EXECUTE');
+    anon_present := has_function_privilege('anon', r.oid, 'EXECUTE');
+    -- PUBLIC grant shows as a bare "=X/..." entry in proacl.
+    SELECT EXISTS (
+      SELECT 1 FROM pg_proc p
+      WHERE p.oid = r.oid AND array_to_string(p.proacl, ',') LIKE '=X%'
+    ) INTO public_present;
 
--- Count PUBLIC EXECUTE after migration (should be 0)
--- SELECT COUNT(*) AS public_execute_count
--- FROM pg_proc p
--- WHERE p.proname IN ('audit_trigger_fn', 'consume_rate_limit', 'current_user_org', 
---                     'current_user_role', 'gm_rule_b1', 'gm_rule_b2', 'gm_rule_b3',
---                     'gm_rule_b4', 'gm_rule_b5', 'gm_rule_b6', 'gm_rule_b7', 
---                     'gm_rule_b8', 'gm_rule_b9', 'gm_rule_b10')
--- AND proacl::text LIKE '%=x%';
+    IF NOT auth_ok THEN
+      RAISE EXCEPTION 'FAIL: authenticated lost EXECUTE on %() — this breaks its dependent RLS policies', r.proname;
+    END IF;
+    IF anon_present THEN
+      RAISE EXCEPTION 'FAIL: anon still has EXECUTE on %()', r.proname;
+    END IF;
+    IF public_present THEN
+      RAISE EXCEPTION 'FAIL: PUBLIC still has EXECUTE on %()', r.proname;
+    END IF;
+    RAISE NOTICE 'OK: %() -> authenticated=EXECUTE, anon=denied, PUBLIC=denied', r.proname;
+  END LOOP;
+END $$;
 
--- Test RLS policies still work
--- SET LOCAL ROLE authenticated;
--- SET LOCAL request.jwt.claims.sub = '00000000-0000-0000-0000-000000000001';
--- SELECT COUNT(*) FROM public.projects;  -- Should succeed
--- SELECT COUNT(*) FROM public.approvals;  -- Should succeed
+-- 8b. Fully-locked-down functions: authenticated must NOT have EXECUTE.
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT p.oid, p.proname
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname='public'
+      AND ( p.proname IN ('audit_trigger_fn','consume_rate_limit')
+            OR p.proname LIKE 'gm_rule_b%' )
+  LOOP
+    IF has_function_privilege('authenticated', r.oid, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % still executable by authenticated', r.proname;
+    END IF;
+  END LOOP;
+  RAISE NOTICE 'OK: audit_trigger_fn / consume_rate_limit / gm_rule_b* denied to authenticated';
+END $$;
 
--- Test audit trigger still fires
--- INSERT INTO public.profiles (id, email, created_at, full_name, role, tenant_id, is_active, user_type)
--- VALUES ('trigger-test-2', 'trigger-test2@example.com', NOW(), 'Test User 2', 'viewer', NULL, false, 'internal')
--- ON CONFLICT (id) DO NOTHING;
--- SELECT COUNT(*) FROM public.audit_log WHERE record_id = 'trigger-test-2';
+-- 8c. DECISIVE read-through: as authenticated, every table whose RLS policy calls a
+--     revoked helper must still be queryable (no "permission denied for function").
+--     A failure here is the exact production outage this carve-out prevents.
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claims.sub = '00000000-0000-0000-0000-000000000001';
+DO $$
+DECLARE
+  tables text[] := ARRAY['client_reports','payment_milestones','variation_orders',
+                         'purchase_order_lines','purchase_orders','rfqs'];
+  t text;
+  n bigint;
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    BEGIN
+      EXECUTE format('SELECT count(*) FROM public.%I', t) INTO n;
+      RAISE NOTICE 'OK: SELECT on % succeeded (% rows visible)', t, n;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE EXCEPTION 'FAIL: SELECT on % raised permission-denied (RLS helper not executable)', t;
+    END;
+  END LOOP;
+END $$;
+RESET ROLE;
+
+-- 8d. Audit trigger still fires after the lockdown.
+INSERT INTO public.profiles (id, email, created_at, full_name, role, tenant_id, is_active, user_type)
+VALUES ('trigger-test-2', 'trigger-test2@example.com', NOW(), 'Test User 2', 'viewer', NULL, false, 'internal')
+ON CONFLICT (id) DO NOTHING;
+SELECT COUNT(*) AS audit_rows_after FROM public.audit_log WHERE record_id = 'trigger-test-2';
 
 -- ============================================================================
 -- VERIFICATION QUERIES

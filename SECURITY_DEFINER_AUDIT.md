@@ -47,8 +47,8 @@
 |----------|------|---------|------------------|---|---|---|---|---|
 | audit_trigger_fn() | trigger | trigger | YES | NO | NO | NO | NO | YES |
 | consume_rate_limit(...) | infra | boolean | YES | NO | NO | NO | YES | YES |
-| current_user_org() | helper | text | YES | NO | NO | NO | NO | YES |
-| current_user_role() | helper | text | YES | NO | NO | NO | NO | YES |
+| current_user_org() | helper | text | YES | NO | NO | **YES (required by RLS)** | YES | YES |
+| current_user_role() | helper | text | YES | NO | NO | **YES (required by RLS)** | YES | YES |
 | gm_rule_b1() | metadata | jsonb | YES | NO | NO | NO | YES | YES |
 | gm_rule_b2() | metadata | jsonb | YES | NO | NO | NO | YES | YES |
 | gm_rule_b3() | metadata | jsonb | YES | NO | NO | NO | YES | YES |
@@ -106,16 +106,26 @@
 - RLS policies (called by policy engine during policy evaluation)
 - Internal functions (if any call it)
 
-**Direct EXECUTE calls in code:** 0
+**Direct EXECUTE calls in code:** 0 (never called as a PostgREST RPC)
 
-**Why no EXECUTE needed for RLS:**
-- When a policy is evaluated, it runs as the table owner (postgres) with elevated privileges
-- The policy engine can invoke functions within the policy context without per-user EXECUTE grants
-- User does NOT need EXECUTE privilege on functions called by the policy they're subject to
+**Invoked by these RLS policies (all `TO authenticated`):**
+- `pol_read` on `purchase_order_lines`
+- `po_external_read` and `po_external_ack` on `purchase_orders`
+- `rfq_external_read` on `rfqs`
 
-**Remediation:** Revoke PUBLIC/anon/authenticated. Grant supabase_admin.
+**CORRECTION — authenticated MUST retain EXECUTE:**
+An earlier draft claimed "a policy runs as the table owner, so the user does not need EXECUTE on
+functions the policy calls." **That is false and was empirically disproven** on a disposable branch:
+a function invoked inside an RLS policy's `USING`/`WITH CHECK` clause is executed **as the querying
+role**, not the table owner. SECURITY DEFINER governs what happens *inside* the function body, not
+whether the caller may invoke it. Revoking EXECUTE from `authenticated` therefore makes every
+dependent query fail with `permission denied for function current_user_org`.
 
-**Risk if not revoked:** Authenticated users could query external_access data outside the scope of RLS policies (reading organizations of other users).
+**Remediation:** Revoke PUBLIC and anon ONLY. **Keep authenticated and service_role.**
+
+**Risk if authenticated were revoked:** total read (and, for `po_external_ack`, update) outage on
+`purchase_orders`, `purchase_order_lines`, and `rfqs` for all external/authenticated users.
+**Hardening achieved:** anon (and inherited PUBLIC) can no longer call the function directly.
 
 ---
 
@@ -127,13 +137,22 @@
 - RLS policies (policy engine context)
 - Internal functions (if any)
 
-**Direct EXECUTE calls in code:** 0
+**Direct EXECUTE calls in code:** 0 (never called as a PostgREST RPC)
 
-**Why no EXECUTE needed for RLS:** Same as current_user_org().
+**Invoked by these RLS policies (all `TO authenticated`):**
+- `cr_external_read` on `client_reports`
+- `pm_external_read` on `payment_milestones`
+- `vo_external_read` on `variation_orders`
 
-**Remediation:** Revoke PUBLIC/anon/authenticated. Grant supabase_admin.
+**CORRECTION — authenticated MUST retain EXECUTE:** same PostgreSQL semantic as
+`current_user_org()` above — an RLS-invoked function runs as the querying role, so `authenticated`
+must keep EXECUTE or SELECT on all three tables fails with `permission denied for function
+current_user_role`.
 
-**Risk if not revoked:** Authenticated users could query other users' roles outside the scope of RLS policies.
+**Remediation:** Revoke PUBLIC and anon ONLY. **Keep authenticated and service_role.**
+
+**Risk if authenticated were revoked:** total SELECT outage on `client_reports`,
+`payment_milestones`, and `variation_orders` for all external/authenticated users.
 
 ---
 
