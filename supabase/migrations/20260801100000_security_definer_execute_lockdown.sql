@@ -4,7 +4,8 @@
 --
 -- Analysis Summary:
 -- - audit_trigger_fn: Trigger-only, never called directly. Revoke PUBLIC/anon/authenticated.
--- - consume_rate_limit: Rate limiting helper. Revoke PUBLIC/anon, keep authenticated if needed.
+-- - consume_rate_limit: Rate limiting helper. Revoke PUBLIC/anon/authenticated; grant service_role only
+--   (infrastructure concern; no RLS policy or app RPC calls it).
 -- - current_user_org: RLS policy helper. Revoke PUBLIC/anon ONLY. MUST keep authenticated
 --   (invoked by authenticated RLS policies pol_read, po_external_read, po_external_ack, rfq_external_read).
 -- - current_user_role: RLS policy helper. Revoke PUBLIC/anon ONLY. MUST keep authenticated
