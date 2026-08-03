@@ -76,7 +76,6 @@ export async function getProfileSettings(): Promise<ProfileSettings> {
 export async function updateProfileSettings(
   payload: UpdateProfilePayload,
 ): Promise<{ error?: string }> {
-  const tenantId = await getCurrentTenantId()
   const gate = await requireWriter()
   if ('error' in gate) return gate
 
@@ -86,40 +85,28 @@ export async function updateProfileSettings(
 
   const admin = createAdminClient()
 
-  // Read current tenant settings to perform a safe merge
-  const { data: tenantRow } = await admin
-    .from('tenants')
-    .select('settings')
-    .eq('id', tenantId)
-    .single()
+  // Build updates for profiles table - only update full_name, phone, timezone
+  // (these are the only fields editable from the profile modal)
+  const profileUpdate: Record<string, unknown> = {}
+  if (payload.fullName !== undefined) profileUpdate.full_name = payload.fullName
+  if (payload.phone    !== undefined) profileUpdate.phone     = payload.phone
+  if (payload.timezone !== undefined) profileUpdate.timezone  = payload.timezone
 
-  const currentSettings = (tenantRow?.settings as Record<string, unknown> | null) ?? {}
-  const currentExtra    = (currentSettings.profile_extra as Record<string, unknown> | null) ?? {}
+  // Only attempt update if there are fields to update
+  if (Object.keys(profileUpdate).length === 0) {
+    return {}
+  }
 
-  // Build updated extra — only include keys that were supplied
-  const updatedExtra: Record<string, unknown> = { ...currentExtra }
-  if (payload.title    !== undefined) updatedExtra.title    = payload.title
-  if (payload.dept     !== undefined) updatedExtra.dept     = payload.dept
-  if (payload.phone    !== undefined) updatedExtra.phone    = payload.phone
-  if (payload.timezone !== undefined) updatedExtra.timezone = payload.timezone
-  if (payload.bio      !== undefined) updatedExtra.bio      = payload.bio
-  if (payload.skills   !== undefined) updatedExtra.skills   = payload.skills
-  if (payload.linkedin !== undefined) updatedExtra.linkedin = payload.linkedin
-  if (payload.slack    !== undefined) updatedExtra.slack    = payload.slack
+  const { error: profileError } = await admin
+    .from('profiles')
+    .update(profileUpdate)
+    .eq('id', user.id)
 
-  const newSettings = { ...currentSettings, profile_extra: updatedExtra }
+  if (profileError) {
+    return { error: (profileError as { message: string }).message }
+  }
 
-  // Run both writes in parallel
-  const [profileRes, tenantRes] = await Promise.all([
-    payload.fullName !== undefined
-      ? admin.from('profiles').update({ full_name: payload.fullName }).eq('id', user.id)
-      : Promise.resolve({ error: null }),
-    admin.from('tenants').update({ settings: newSettings }).eq('id', tenantId),
-  ])
-
-  if (profileRes.error) return { error: (profileRes.error as { message: string }).message }
-  if (tenantRes.error)  return { error: (tenantRes.error  as { message: string }).message }
-
+  revalidatePath('/dashboard')
   revalidatePath('/settings')
   return {}
 }

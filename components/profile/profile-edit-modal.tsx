@@ -17,8 +17,6 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
   const [saving, setSaving] = React.useState(false)
   const [formData, setFormData] = React.useState({
     fullName: '',
-    phone: '',
-    timezone: 'UTC',
   })
 
   // Load profile on mount
@@ -31,8 +29,6 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
         const profile = await getProfileSettings()
         setFormData({
           fullName: profile.fullName,
-          phone: profile.phone,
-          timezone: profile.timezone,
         })
       } catch (err) {
         toast({
@@ -62,8 +58,6 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
       setSaving(true)
       const result = await updateProfileSettings({
         fullName: formData.fullName,
-        phone: formData.phone,
-        timezone: formData.timezone,
       })
 
       if (result?.error) {
@@ -140,48 +134,6 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
                     placeholder="Enter your full name"
                     disabled={saving}
                   />
-                </div>
-
-                {/* Phone */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-1 focus:ring-ring/50"
-                    placeholder="Enter your phone number"
-                    disabled={saving}
-                  />
-                </div>
-
-                {/* Timezone */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    Timezone
-                  </label>
-                  <select
-                    value={formData.timezone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, timezone: e.target.value })
-                    }
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring/50"
-                    disabled={saving}
-                  >
-                    <option>UTC</option>
-                    <option>Asia/Riyadh</option>
-                    <option>Asia/Dubai</option>
-                    <option>Asia/Singapore</option>
-                    <option>Europe/London</option>
-                    <option>Europe/Paris</option>
-                    <option>America/New_York</option>
-                    <option>America/Chicago</option>
-                    <option>America/Los_Angeles</option>
-                  </select>
                 </div>
 
                 {/* Info text */}
