@@ -38,8 +38,10 @@ describe('resetUserPassword', () => {
     const mockAdmin = {
       auth: {
         admin: {
-          getUserById: vi.fn().mockResolvedValue({ data: null, error: new Error('Not found') }),
-        },
+getUserById: vi.fn().mockResolvedValue({
+  data: { user: null },
+  error: new Error('Not found'),
+}),        },
       },
     }
     vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
@@ -60,8 +62,9 @@ describe('resetUserPassword', () => {
       auth: {
         admin: {
           getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: '' },
-            error: null,
+data: {
+  user: { id: 'user-456', email: '' },
+},            error: null,
           }),
         },
       },
@@ -87,8 +90,9 @@ describe('resetUserPassword', () => {
     auth: {
   admin: {
     getUserById: vi.fn().mockResolvedValue({
-      data: { id: 'user-456', email: 'user@example.com' },
-      error: null,
+data: {
+  user: { id: 'user-456', email: 'user@example.com' },
+},      error: null,
     }),
   },
   resetPasswordForEmail: mockResetPasswordForEmail,
@@ -118,8 +122,9 @@ describe('resetUserPassword', () => {
       auth: {
   admin: {
     getUserById: vi.fn().mockResolvedValue({
-      data: { id: 'user-456', email: 'user@example.com' },
-      error: null,
+data: {
+  user: { id: 'user-456', email: 'user@example.com' },
+},      error: null,
     }),
   },
   resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
@@ -150,8 +155,9 @@ describe('resetUserPassword', () => {
       auth: {
         admin: {
           getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: 'user@example.com' },
-            error: null,
+data: {
+  user: { id: 'user-456', email: 'user@example.com' },
+},            error: null,
           }),
         },
       },
@@ -186,8 +192,9 @@ describe('resetUserPassword', () => {
      auth: {
   admin: {
     getUserById: vi.fn().mockResolvedValue({
-      data: { id: 'user-456', email: 'user@example.com' },
-      error: null,
+data: {
+  user: { id: 'user-456', email: 'user@example.com' },
+},      error: null,
     }),
   },
   resetPasswordForEmail: mockResetPasswordForEmail,
@@ -227,8 +234,9 @@ describe('resetUserPassword', () => {
       auth: {
   admin: {
     getUserById: vi.fn().mockResolvedValue({
-      data: { id: 'user-456', email: 'user@example.com' },
-      error: null,
+data: {
+  user: { id: 'user-456', email: 'user@example.com' },
+},      error: null,
     }),
   },
   resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
@@ -262,8 +270,9 @@ describe('resetUserPassword', () => {
      auth: {
   admin: {
     getUserById: vi.fn().mockResolvedValue({
-      data: { id: 'user-456', email: 'user@example.com' },
-      error: null,
+data: {
+  user: { id: 'user-456', email: 'user@example.com' },
+},      error: null,
     }),
   },
   resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
@@ -291,7 +300,9 @@ describe('resetUserPassword', () => {
      auth: {
   admin: {
     getUserById: vi.fn().mockResolvedValue({
-      data: { id: 'user-456', email: 'user@example.com' },
+     data: {
+  user: { id: 'user-456', email: 'user@example.com' },
+},
       error: null,
     }),
   },
