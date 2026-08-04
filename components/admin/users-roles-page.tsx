@@ -57,6 +57,7 @@ export interface UsersRolesProps {
   onUpdateRole?: (userId: string, role: UserRole) => Promise<void>
   onToggleStatus?: (userId: string, isActive: boolean) => Promise<void>
   onDelete?: (userId: string) => Promise<void>
+  onResetPassword?: (userId: string) => Promise<void>
   isLoading?: boolean
   /** Role of the signed-in admin — gates which roles the invite modal offers. */
   currentUserRole?: string | null
@@ -348,11 +349,12 @@ interface RowActionsProps {
   onToggleStatus: (user: UserProfile) => void
   onDelete: (user: UserProfile) => void
   onEditRole: (user: UserProfile) => void
+  onResetPassword?: (userId: string) => Promise<void>
   /** True while a status mutation for this row is in flight. */
   pending?: boolean
 }
 
-function RowActions({ user, onToggleStatus, onDelete, onEditRole, pending = false }: RowActionsProps) {
+function RowActions({ user, onToggleStatus, onDelete, onEditRole, onResetPassword, pending = false }: RowActionsProps) {
   const [open, setOpen] = React.useState(false)
   const ref = React.useRef<HTMLDivElement>(null)
 
@@ -395,7 +397,10 @@ function RowActions({ user, onToggleStatus, onDelete, onEditRole, pending = fals
           </button>
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-50 transition-colors"
-            onClick={() => { setOpen(false) }}
+            onClick={() => {
+              onResetPassword?.(user.id)
+              setOpen(false)
+            }}
           >
             <Mail className="size-3.5 text-slate-400" />
             Reset Password
@@ -1136,6 +1141,7 @@ export function UsersRolesPage({
   onUpdateRole,
   onToggleStatus,
   onDelete,
+  onResetPassword,
   isLoading: externalLoading = false,
   currentUserRole,
   currentUserId,
@@ -1573,6 +1579,7 @@ export function UsersRolesPage({
                           // panel, which is why "Edit Role" never edited
                           // anything. It now opens the real editor.
                           onEditRole={setRoleUser}
+                          onResetPassword={onResetPassword}
                           pending={pendingIds.has(user.id)}
                         />
                       </td>

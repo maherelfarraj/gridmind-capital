@@ -12,6 +12,7 @@ import {
   inviteInternalUser,
   deactivateUser,
   activateUser,
+  resetUserPassword,
 } from '@/app/actions/admin'
 import { isDbUserRole } from '@/lib/auth/roles'
 import { statusFromProfile } from '@/lib/admin/user-status'
@@ -116,6 +117,11 @@ export default function Page() {
     }
   }
 
+  const handleResetPassword = async (userId: string) => {
+    const res = await resetUserPassword({ userId })
+    if (res?.error) throw new Error(res.error)
+  }
+
   // Wait for data before rendering so the component initialises with real rows
   if (isLoading || !rawUsers) {
     return (
@@ -153,6 +159,7 @@ export default function Page() {
           onInvite={handleInvite}
           onUpdateRole={handleUpdateRole}
           onToggleStatus={handleToggleStatus}
+          onResetPassword={handleResetPassword}
           currentUserRole={currentUserRole}
           currentUserId={session.userId}
           onInviteExternal={() => setActiveTab('external')}
