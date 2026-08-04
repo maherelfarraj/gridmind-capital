@@ -195,7 +195,7 @@ export async function revertUnintendedExternalConversion(
 
 // ─────────────────────────────────────────────────────────────
 // Invite (internal staff)
-// ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────���────────────
 
 export interface InviteInternalUserArgs {
   email: string
@@ -375,7 +375,7 @@ export async function activateUser(userId: string): Promise<{ error?: string }> 
 // ─────────────────────────────────────────────────────────────
 
 export interface ResetPasswordArgs {
-  email: string
+  userId: string
 }
 
 export interface ResetPasswordResult {
@@ -403,6 +403,72 @@ export async function resetUserPassword(
   } catch (e: any) {
     return { error: e.message }
   }
+
+  const admin = createAdminClient()
+  const actorRole = actor.profile.role
+  const actorTenantId = actor.profile.tenantId
+  const actorUserId = actor.userId
+
+  // Verify user exists and enforce tenant isolation for tenant_admin
+  try {
+    const { data: user, error: userError } = await admin.auth.admin.getUserById(args.userId)
+    if (userError || !user) {
+      return { error: 'User not found.' }
+    }
+
+    const targetEmail = (user as any).email
+    if (!targetEmail) {
+      return { error: 'User has no email address.' }
+    }
+
+    // tenant_admin: can only reset passwords for users in the same tenant
+    if (actorRole === 'tenant_admin') {
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', args.userId)
+        .maybeSingle()
+
+      if (!profile || profile.tenant_id !== actorTenantId) {
+        return { error: 'Unauthorized: cannot reset password for users outside your tenant.' }
+      }
+    }
+
+    // Generate recovery link and send password reset email via Supabase Auth
+    const { error: resetError } = await (admin.auth.admin as any).generateLink({
+      type: 'recovery',
+      email: targetEmail,
+      options: {
+        redirectTo: 'https://www.gridmindepc.com/auth/update-password',
+      },
+    })
+
+    if (resetError) {
+      return { error: resetError.message ?? 'Failed to send password reset email.' }
+    }
+
+    // Record audit event after successful email send
+    try {
+      const auditTenantId = actorRole === 'system_admin' ? null : actorTenantId
+      await admin.from('audit_log').insert({
+        tenant_id: auditTenantId,
+        table_name: 'auth.users',
+        record_id: args.userId,
+        action: 'update',
+        op: 'password_reset_initiated',
+        old_values: null,
+        new_values: null,
+        changed_by: actorUserId,
+      })
+    } catch {
+      // Audit failure should not block the reset
+    }
+
+    return { success: true }
+  } catch (e: any) {
+    return { error: `Password reset failed: ${e.message}` }
+  }
+}
 
   const admin = createAdminClient()
   const email = args.email.toLowerCase().trim()
