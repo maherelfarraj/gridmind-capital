@@ -434,13 +434,14 @@ export async function resetUserPassword(
       }
     }
 
-    // Send password reset email via Supabase Auth Admin API
-    // resetPasswordForEmail() sends email without returning tokens
-    const { error: resetError } = await (admin.auth.admin as any).resetPasswordForEmail(
+        // Send password reset email via Supabase Auth
+    const { error: resetError } = await admin.auth.resetPasswordForEmail(
       targetEmail,
       {
-        redirectTo: 'https://www.gridmindepc.com/auth/update-password',
-      }
+        redirectTo:
+          process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL ||
+          'https://www.gridmindepc.com/auth/update-password',
+      },
     )
 
     if (resetError) {
