@@ -7,6 +7,10 @@ import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 import { createSignature, type SignatureDraft } from '@/app/actions/signatures'
+import {
+  mapOpportunityApprovalDetail,
+  type OpportunityApprovalView,
+} from '@/lib/approvals/opportunity-detail'
 
 // profiles.role enum values that action approvals (used to resolve email recipients).
 const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
@@ -709,7 +713,7 @@ export async function getApprovals(approverRole?: string): Promise<ApprovalRecor
 
   let query = supabase
     .from('approvals')
-    .select('id, object_type, title, status, priority, created_at, description, amount')
+    .select('id, object_type, object_id, title, status, priority, created_at, description, amount')
     .order('created_at', { ascending: false })
     .limit(100)
 
@@ -727,10 +731,37 @@ export async function getApprovals(approverRole?: string): Promise<ApprovalRecor
   const { data, error } = await query
   if (error || !data) return []
 
+  // Resolve linked project names for opportunity approvals so the inbox is
+  // searchable by the real project name (not just the title/code). object_id is
+  // polymorphic (no FK), so this is a separate tenant-scoped batch lookup rather
+  // than a PostgREST join.
+  const opportunityObjectIds = Array.from(
+    new Set(
+      data
+        .filter((a) => a.object_type === 'opportunity' && a.object_id)
+        .map((a) => a.object_id as string),
+    ),
+  )
+  const projectNameById = new Map<string, string>()
+  if (opportunityObjectIds.length > 0) {
+    const { data: projects } = await supabase
+      .from('projects')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .in('id', opportunityObjectIds)
+    for (const p of projects ?? []) {
+      if (p.name) projectNameById.set(p.id, p.name)
+    }
+  }
+
   return data.map((a) => ({
     id: a.id,
     object_type: a.object_type ?? 'Approval',
     object_code: a.title ?? a.id.slice(0, 8).toUpperCase(),
+    project_name:
+      a.object_type === 'opportunity' && a.object_id
+        ? projectNameById.get(a.object_id) ?? null
+        : null,
     status: (a.status as ApprovalRecord['status']) ?? 'pending',
     level: 1,
     approver_role: approverRole ?? 'Project Manager',
@@ -1141,6 +1172,88 @@ export async function getApprovalById(id: string) {
     .single()
   if (error || !data) return null
   return data
+}
+
+/**
+ * Detail payload for the approval review page.
+ *
+ * Resolves an opportunity approval's `object_id` to the REAL linked project and
+ * the REAL requester profile — all tenant-scoped — then maps them through the
+ * pure `mapOpportunityApprovalDetail`. Returns `null` when the approval itself
+ * is not visible to this actor (not found / wrong tenant), so the page renders
+ * its "not found" state. Never fabricates business data: a missing project is
+ * surfaced as an explicit unavailable state by the mapper.
+ */
+export interface OpportunityApprovalDetail extends OpportunityApprovalView {
+  approval: {
+    id: string
+    title: string
+    status: 'pending' | 'approved' | 'rejected' | 'delegated'
+    priority: string
+    object_type: string
+    object_id: string | null
+    created_at: string
+    description: string | null
+  }
+}
+
+export async function getOpportunityApprovalDetail(
+  id: string,
+): Promise<OpportunityApprovalDetail | null> {
+  const res = await getAuthActor()
+  if ('error' in res) return null
+  const { actor } = res
+  const supabase = createAdminClient()
+
+  // Load the approval, tenant-scoped. A row in another tenant is invisible.
+  const { data: approval, error } = await supabase
+    .from('approvals')
+    .select('id, tenant_id, object_type, object_id, title, status, priority, created_at, description, requester_id, amount')
+    .eq('id', id)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (error || !approval) return null
+
+  // Resolve the linked project — tenant-scoped, so a stale/forged object_id
+  // pointing at another tenant's project simply returns no row.
+  let project = null
+  if (approval.object_type === 'opportunity' && approval.object_id) {
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('id, tenant_id, name, code, technology, capacity_mw, location, country, target_completion, status')
+      .eq('id', approval.object_id)
+      .eq('tenant_id', actor.tenantId)
+      .maybeSingle()
+    project = proj ?? null
+  }
+
+  // Resolve the requester profile — tenant-scoped.
+  let requester = null
+  if (approval.requester_id) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('id, tenant_id, full_name, email, role')
+      .eq('id', approval.requester_id)
+      .eq('tenant_id', actor.tenantId)
+      .maybeSingle()
+    requester = prof ?? null
+  }
+
+  const view = mapOpportunityApprovalDetail({ approval, project, requester })
+
+  return {
+    ...view,
+    approval: {
+      id: approval.id,
+      title: approval.title ?? 'G0 Approval',
+      status: (approval.status ?? 'pending') as 'pending' | 'approved' | 'rejected' | 'delegated',
+      priority: approval.priority ?? 'normal',
+      object_type: approval.object_type ?? 'opportunity',
+      object_id: approval.object_id ?? null,
+      created_at: approval.created_at ?? new Date().toISOString(),
+      description: approval.description ?? null,
+    },
+  }
 }
 
 export interface ApprovalsDashboard {
