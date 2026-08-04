@@ -434,14 +434,14 @@ export async function resetUserPassword(
       }
     }
 
-    // Generate recovery link and send password reset email via Supabase Auth
-    const { error: resetError } = await (admin.auth.admin as any).generateLink({
-      type: 'recovery',
-      email: targetEmail,
-      options: {
+    // Send password reset email via Supabase Auth Admin API
+    // resetPasswordForEmail() sends email without returning tokens
+    const { error: resetError } = await (admin.auth.admin as any).resetPasswordForEmail(
+      targetEmail,
+      {
         redirectTo: 'https://www.gridmindepc.com/auth/update-password',
-      },
-    })
+      }
+    )
 
     if (resetError) {
       return { error: resetError.message ?? 'Failed to send password reset email.' }
@@ -459,75 +459,6 @@ export async function resetUserPassword(
         old_values: null,
         new_values: null,
         changed_by: actorUserId,
-      })
-    } catch {
-      // Audit failure should not block the reset
-    }
-
-    return { success: true }
-  } catch (e: any) {
-    return { error: `Password reset failed: ${e.message}` }
-  }
-}
-
-  const admin = createAdminClient()
-  const email = args.email.toLowerCase().trim()
-
-  // Verify user exists and enforce tenant isolation for tenant_admin
-  try {
-    // Find user by email by listing auth users (Supabase Admin API limitation)
-    const { data: authUsers, error: listError } = await admin.auth.admin.listUsers()
-    if (listError || !authUsers?.users) {
-      return { error: 'Failed to look up user.' }
-    }
-
-    const user = authUsers.users.find((u) => u.email?.toLowerCase() === email)
-    if (!user) {
-      return { error: 'User not found.' }
-    }
-
-    // tenant_admin: can only reset passwords for users in the same tenant
-    if (actor.role === 'tenant_admin') {
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (!profile || profile.tenant_id !== actor.tenantId) {
-        return { error: 'Unauthorized: cannot reset password for users outside your tenant.' }
-      }
-    }
-  } catch (e: any) {
-    return { error: `Failed to verify user: ${e.message}` }
-  }
-
-  // Generate and send password recovery link via Supabase Auth
-  try {
-    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: {
-        redirectTo: process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL || 'https://www.gridmindepc.com/auth/update-password',
-      },
-    })
-
-    if (linkError || !linkData) {
-      return { error: linkError?.message ?? 'Failed to send password reset email.' }
-    }
-
-    // Record audit event after successful email send
-    try {
-      const auditTenantId = actor.role === 'system_admin' ? null : actor.tenantId
-      await admin.from('audit_log').insert({
-        tenant_id: auditTenantId,
-        table_name: 'auth.users',
-        record_id: email,
-        action: 'update',
-        op: 'password_reset_initiated',
-        old_values: null,
-        new_values: null,
-        changed_by: actor.userId,
       })
     } catch {
       // Audit failure should not block the reset

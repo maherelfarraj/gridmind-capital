@@ -83,8 +83,8 @@ export default function Page() {
     await mutate()
   }
 
-  const handleResetPassword = async (email: string) => {
-    const res = await resetUserPassword({ email })
+  const handleResetPassword = async (userId: string) => {
+    const res = await resetUserPassword({ userId })
     if (res?.error) throw new Error(res.error)
   }
 
