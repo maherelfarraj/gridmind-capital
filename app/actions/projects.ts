@@ -9,7 +9,7 @@ import type { ProjectData } from '@/components/project/project-command-center'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 import { numOrNull } from '@/lib/format-nullable'
-import { CANONICAL_PHASE_NAMES, seedPhaseGatesRows } from '@/lib/gates/phase-model'
+import { CANONICAL_PHASE_NAMES, seedPhaseGatesRows, activeGatePhaseNumber, TOTAL_PHASES } from '@/lib/gates/phase-model'
 
 const PHASE_MAP: Record<number, string> = {
   0: 'intake', 1: 'commercial', 2: 'engineering', 3: 'engineering',
@@ -32,7 +32,13 @@ const GATE_NAMES: Record<number, string> = {
 
 export interface GetProjectsOptions {
   phase?: string | null
-  /** Filter by exact `projects.current_phase` (G0 → 0, G1 → 1, …). */
+  /**
+   * Filter by the project's CURRENT ACTIVE gate (G1 → 1, G2 → 2, …), derived
+   * from phase_gates — NOT from `projects.current_phase`. A project matches
+   * `gate=N` only when its first non-approved phase_gate is phase_number N.
+   * Approved (historical) and pending-behind-an-earlier-gate (future) gates do
+   * not match. G0 (0) has no phase_gates row and matches nothing.
+   */
   gate?: number | null
   search?: string | null
   status?: string | null
@@ -76,13 +82,59 @@ export async function getProjects(opts?: GetProjectsOptions & { paginated?: bool
     if (phaseNums.length > 0) query = query.in('current_phase', phaseNums)
   }
 
-  // Gate filter: `gate` is the raw `projects.current_phase` value (G0 → 0, G1 → 1, …).
-  // This is distinct from `phase`, which maps several phases onto one workstream key.
+  // Gate filter: `gate` is the CURRENT ACTIVE gate (G1 → 1, …), derived from
+  // phase_gates — NOT `projects.current_phase`. current_phase counts APPROVED
+  // gates, so a project with G1 approved + G2 in_review has current_phase=1 yet
+  // is actively sitting on G2; matching current_phase exactly hid it from both
+  // G1 (historical) and G2 (its real active gate).
+  //
+  // We resolve the set of project IDs whose active gate == `gate` from the
+  // tenant's phase_gates, then constrain the projects query to that set. Tenant
+  // isolation is preserved: phase_gates has no tenant_id column, so we scope by
+  // the tenant's own project IDs (fetched under the tenant filter) before ever
+  // touching phase_gates.
   if (gate !== null && gate !== undefined) {
-    // current_phase can exceed the governed G1–G8 range and those clamp to G8 for display.
-    // Use >= at the top gate so the filter matches what the UI actually shows instead of hiding them.
-    if (gate >= 8) query = query.gte('current_phase', gate)
-    else query = query.eq('current_phase', gate)
+    // G0 is pre-gate intake: no phase_gates row exists for it, so nothing has an
+    // active gate of 0. Return empty rather than silently matching everything.
+    if (gate < 1 || gate > TOTAL_PHASES) {
+      return paginated ? { projects: [], totalCount: 0 } : []
+    }
+
+    // 1) This tenant's project IDs (tenant-scoped).
+    const { data: tenantProjects } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('tenant_id', tenantId)
+    const tenantProjectIds = (tenantProjects ?? []).map((p) => p.id)
+
+    if (tenantProjectIds.length === 0) {
+      return paginated ? { projects: [], totalCount: 0 } : []
+    }
+
+    // 2) All phase_gates for those projects, then compute each project's active
+    //    gate purely (activeGatePhaseNumber = first non-approved phase_number).
+    const { data: gateRows } = await supabase
+      .from('phase_gates')
+      .select('project_id, phase_number, status')
+      .in('project_id', tenantProjectIds)
+
+    const gatesByProject = new Map<string, { phase_number: number; status: string }[]>()
+    for (const row of gateRows ?? []) {
+      const list = gatesByProject.get(row.project_id) ?? []
+      list.push({ phase_number: row.phase_number, status: row.status })
+      gatesByProject.set(row.project_id, list)
+    }
+
+    const matchingIds = tenantProjectIds.filter(
+      (id) => activeGatePhaseNumber(gatesByProject.get(id)) === gate,
+    )
+
+    // No project is active at this gate → honest empty result (no fallback).
+    if (matchingIds.length === 0) {
+      return paginated ? { projects: [], totalCount: 0 } : []
+    }
+
+    query = query.in('id', matchingIds)
   }
 
   if (status && status !== 'all') {
