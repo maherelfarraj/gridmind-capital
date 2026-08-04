@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getInitials } from '@/lib/session'
+import { approvalMatchesQuery } from '@/lib/approvals/inbox-search'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -39,6 +40,8 @@ export interface ApprovalRecord {
   id: string
   object_type: string
   object_code: string
+  /** Linked project name for opportunity approvals; null otherwise. Searchable. */
+  project_name?: string | null
   status: ApprovalStatus
   level: number
   approver_role: string
@@ -186,14 +189,9 @@ function applyFilter(items: ApprovalRecord[], filter: FilterOption, query: strin
   let result = items
 
   if (query.trim()) {
-    const q = query.toLowerCase()
-    result = result.filter(
-      (a) =>
-        a.object_code.toLowerCase().includes(q) ||
-        a.object_type.toLowerCase().includes(q) ||
-        a.requested_by_name.toLowerCase().includes(q) ||
-        a.approver_role.toLowerCase().includes(q),
-    )
+    // Matches object_code (title/project code), object_type, requester,
+    // approver role, AND the linked project name — see approvalMatchesQuery.
+    result = result.filter((a) => approvalMatchesQuery(a, query))
   }
 
   switch (filter) {
@@ -532,7 +530,7 @@ export const ApprovalInbox = React.memo(function ApprovalInbox({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search approvals by object type, code, or requester..."
+            placeholder="Search by code, project name, type, or requester..."
             aria-label="Search approvals"
             className={cn(
               'w-full rounded-lg border border-border bg-background pl-9 pr-9 py-2',

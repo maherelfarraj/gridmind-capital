@@ -8,6 +8,7 @@ import {
   Flame, Mail, Download, Gavel, X, PenLine,
 } from 'lucide-react'
 import type { G0FormData, G0RiskRow, G0StakeholderRow } from '@/app/actions/gate-submissions'
+import type { LinkedProjectView } from '@/lib/approvals/opportunity-detail'
 import { SignaturePad } from '@/components/signatures/signature-pad'
 import { SignatureDisplay } from '@/components/signatures/signature-display'
 import type { SignatureDraft, SignatureRecord } from '@/app/actions/signatures'
@@ -51,6 +52,11 @@ interface G0ApprovalReviewProps {
   /** Project context for the signature consent statement + linkage. */
   projectId?:     string | null
   projectName?:   string
+  /**
+   * The REAL linked project resolved from approvals.object_id, or an explicit
+   * unavailable marker. When omitted the panel is not rendered.
+   */
+  linkedProject?: LinkedProjectView | null
   /** Signatures already recorded against this approval. */
   existingSignatures?: SignatureRecord[]
 }
@@ -296,6 +302,78 @@ function RequestInfoPanel({ onSend, onClose, isLoading }: {
   )
 }
 
+// ─── Linked Project Card ──────────────────────────────────────
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/**
+ * Renders the REAL linked project for an opportunity approval. When the project
+ * could not be resolved (missing / cross-tenant / stale object_id) it shows an
+ * explicit unavailable state — never plausible placeholder values.
+ */
+function LinkedProjectCard({ project }: { project: LinkedProjectView }) {
+  if (!project.available) {
+    return (
+      <Card>
+        <CardHeader icon={<AlertCircle className="w-5 h-5" />} title="Linked Project" />
+        <div className="p-5">
+          <div className="flex items-start gap-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10 p-4">
+            <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" aria-hidden />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Linked project data is unavailable
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                {project.attemptedId
+                  ? 'The project referenced by this approval could not be loaded for your tenant. It may have been removed or is not accessible.'
+                  : 'This approval is not linked to a project.'}
+              </p>
+              {project.attemptedId && (
+                <p className="text-xs font-mono text-amber-600 dark:text-amber-500 break-all">
+                  Reference: {project.attemptedId}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader icon={<FileText className="w-5 h-5" />} title="Linked Project" />
+      <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="Project Name">
+          <span className="font-medium">{project.name || '—'}</span>
+        </Field>
+        <Field label="Code">
+          <span className="font-mono text-slate-600 dark:text-slate-300 text-xs">{project.code || '—'}</span>
+        </Field>
+        <Field label="Technology">
+          <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+            {project.technology || '—'}
+          </Badge>
+        </Field>
+        <Field label="Capacity">
+          <span className="font-medium">{project.capacityMw ? `${project.capacityMw} MW` : '—'}</span>
+        </Field>
+        <Field label="Location">
+          {[project.location, project.country].filter(Boolean).join(', ') || '—'}
+        </Field>
+        <Field label="Target Completion">
+          {formatDate(project.targetCompletion)}
+        </Field>
+      </div>
+    </Card>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────
 
 export function G0ApprovalReview({
@@ -303,6 +381,7 @@ export function G0ApprovalReview({
   onDecide, onDelegate, onRequestInfo,
   isSubmitting = false,
   projectId, projectName,
+  linkedProject = null,
   existingSignatures = [],
 }: G0ApprovalReviewProps) {
   const [decision, setDecision]         = React.useState<Decision>('proceed')
@@ -444,6 +523,9 @@ export function G0ApprovalReview({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ── Left column (2/3) ──────────────────────────────── */}
         <div className="lg:col-span-2 space-y-6">
+
+          {/* Linked Project — real project data resolved from object_id */}
+          {linkedProject && <LinkedProjectCard project={linkedProject} />}
 
           {/* Opportunity Summary */}
           <Card>
