@@ -84,15 +84,15 @@ describe('resetUserPassword', () => {
     const mockResetPasswordForEmail = vi.fn().mockResolvedValue({ error: null })
     const mockInsert = vi.fn().mockResolvedValue({ error: null })
     const mockAdmin = {
-      auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: 'user@example.com' },
-            error: null,
-          }),
-          resetPasswordForEmail: mockResetPasswordForEmail,
-        },
-      },
+    auth: {
+  admin: {
+    getUserById: vi.fn().mockResolvedValue({
+      data: { id: 'user-456', email: 'user@example.com' },
+      error: null,
+    }),
+  },
+  resetPasswordForEmail: mockResetPasswordForEmail,
+},
       from: vi.fn().mockReturnValue({
         insert: mockInsert,
       }),
@@ -116,14 +116,14 @@ describe('resetUserPassword', () => {
 
     const mockAdmin = {
       auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: 'user@example.com' },
-            error: null,
-          }),
-          resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
-        },
-      },
+  admin: {
+    getUserById: vi.fn().mockResolvedValue({
+      data: { id: 'user-456', email: 'user@example.com' },
+      error: null,
+    }),
+  },
+  resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
+},
       from: vi.fn().mockReturnValue({
         insert: vi.fn().mockResolvedValue({ error: null }),
       }),
@@ -183,15 +183,15 @@ describe('resetUserPassword', () => {
     const mockResetPasswordForEmail = vi.fn().mockResolvedValue({ error: null })
     const mockInsert = vi.fn().mockResolvedValue({ error: null })
     const mockAdmin = {
-      auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: 'user@example.com' },
-            error: null,
-          }),
-          resetPasswordForEmail: mockResetPasswordForEmail,
-        },
-      },
+     auth: {
+  admin: {
+    getUserById: vi.fn().mockResolvedValue({
+      data: { id: 'user-456', email: 'user@example.com' },
+      error: null,
+    }),
+  },
+  resetPasswordForEmail: mockResetPasswordForEmail,
+},
       from: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
@@ -225,14 +225,14 @@ describe('resetUserPassword', () => {
     const mockInsert = vi.fn().mockResolvedValue({ error: null })
     const mockAdmin = {
       auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: 'user@example.com' },
-            error: null,
-          }),
-          resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
-        },
-      },
+  admin: {
+    getUserById: vi.fn().mockResolvedValue({
+      data: { id: 'user-456', email: 'user@example.com' },
+      error: null,
+    }),
+  },
+  resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
+},
       from: vi.fn().mockReturnValue({
         insert: mockInsert,
       }),
@@ -259,15 +259,15 @@ describe('resetUserPassword', () => {
     } as any)
 
     const mockAdmin = {
-      auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: 'user@example.com' },
-            error: null,
-          }),
-          resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
-        },
-      },
+     auth: {
+  admin: {
+    getUserById: vi.fn().mockResolvedValue({
+      data: { id: 'user-456', email: 'user@example.com' },
+      error: null,
+    }),
+  },
+  resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
+},
       from: vi.fn().mockReturnValue({
         insert: vi.fn().mockRejectedValue(new Error('Audit DB write failed')),
       }),
@@ -288,15 +288,15 @@ describe('resetUserPassword', () => {
     vi.mocked(requireInternalRole).mockImplementation(mockRequireInternalRole)
 
     const mockAdmin = {
-      auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValue({
-            data: { id: 'user-456', email: 'user@example.com' },
-            error: null,
-          }),
-          resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
-        },
-      },
+     auth: {
+  admin: {
+    getUserById: vi.fn().mockResolvedValue({
+      data: { id: 'user-456', email: 'user@example.com' },
+      error: null,
+    }),
+  },
+  resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
+},
       from: vi.fn().mockReturnValue({
         insert: vi.fn().mockResolvedValue({ error: null }),
       }),
