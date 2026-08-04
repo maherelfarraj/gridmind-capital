@@ -1322,12 +1322,12 @@ export function UsersRolesPage({
     }
   }
 
-  async function handleResetPasswordRow(user: UserProfile) {
+      async function handleResetPasswordRow(user: UserProfile) {
     if (!onResetPassword) return
 
     try {
-await onResetPassword(user.id)
-  toast({
+      await onResetPassword(user.id)
+      toast({
         variant: 'success',
         title: 'Password Reset Sent',
         description: `Reset email has been sent to ${user.email}.`,
