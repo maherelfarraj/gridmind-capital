@@ -375,83 +375,99 @@ export async function activateUser(userId: string): Promise<{ error?: string }> 
 // ─────────────────────────────────────────────────────────────
 
 export interface ResetPasswordArgs {
-  userId: string
-  redirectUrl: string
+  email: string
 }
 
 export interface ResetPasswordResult {
   success?: boolean
-  resetLink?: string
   error?: string
 }
 
 /**
  * Initiate a password reset for a user.
  *
- * Admin-gated: only tenant_admin or system_admin can reset another user's password.
- * Sends a Supabase password recovery email with a custom redirect URL.
- * Returns a copyable reset link as a fallback when SMTP is not configured.
- * Records an audit event without storing tokens or passwords.
+ * Admin-gated authorization:
+ * - system_admin: can reset any user's password
+ * - tenant_admin: can reset passwords for users in the same tenant only
+ *
+ * Sends a Supabase password recovery email (no tokens/links returned).
+ * Records an audit event.
  */
 export async function resetUserPassword(
   args: ResetPasswordArgs,
 ): Promise<ResetPasswordResult> {
+  // Verify authorization and capture actor once
+  let actor: any
   try {
-    await requireInternalRole(['system_admin', 'tenant_admin'])
+    actor = await requireInternalRole(['system_admin', 'tenant_admin'])
   } catch (e: any) {
     return { error: e.message }
   }
 
   const admin = createAdminClient()
+  const email = args.email.toLowerCase().trim()
 
-  // Verify the user exists
+  // Verify user exists and enforce tenant isolation for tenant_admin
   try {
-    const { data: user, error: userError } = await admin.auth.admin.getUserById(args.userId)
-    if (userError || !user) {
+    // Find user by email by listing auth users (Supabase Admin API limitation)
+    const { data: authUsers, error: listError } = await admin.auth.admin.listUsers()
+    if (listError || !authUsers?.users) {
+      return { error: 'Failed to look up user.' }
+    }
+
+    const user = authUsers.users.find((u) => u.email?.toLowerCase() === email)
+    if (!user) {
       return { error: 'User not found.' }
+    }
+
+    // tenant_admin: can only reset passwords for users in the same tenant
+    if (actor.role === 'tenant_admin') {
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!profile || profile.tenant_id !== actor.tenantId) {
+        return { error: 'Unauthorized: cannot reset password for users outside your tenant.' }
+      }
     }
   } catch (e: any) {
     return { error: `Failed to verify user: ${e.message}` }
   }
 
-  // Generate password recovery link
+  // Generate and send password recovery link via Supabase Auth
   try {
     const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
       type: 'recovery',
-      email: args.userId,
+      email,
       options: {
-        redirectTo: args.redirectUrl,
+        redirectTo: process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL || 'https://www.gridmindepc.com/auth/update-password',
       },
     })
 
     if (linkError || !linkData) {
-      return { error: linkError?.message ?? 'Failed to generate recovery link.' }
+      return { error: linkError?.message ?? 'Failed to send password reset email.' }
     }
 
-    const resetLink =
-      linkData.properties?.action_link ??
-      `${args.redirectUrl}?token_hash=${encodeURIComponent(linkData.properties?.hashed_token ?? '')}&type=recovery`
-
-    // Record audit event
+    // Record audit event after successful email send
     try {
-      const actorId = (await requireInternalRole(['system_admin', 'tenant_admin']).catch(() => ({ userId: 'unknown' }))).userId
-      await admin
-        .from('audit_log')
-        .insert({
-          tenant_id: await getCurrentTenantId(),
-          table_name: 'auth.users',
-          record_id: args.userId,
-          action: 'update',
-          op: 'password_reset_initiated',
-          old_values: null,
-          new_values: null,
-          changed_by: actorId,
-        })
+      const auditTenantId = actor.role === 'system_admin' ? null : actor.tenantId
+      await admin.from('audit_log').insert({
+        tenant_id: auditTenantId,
+        table_name: 'auth.users',
+        record_id: email,
+        action: 'update',
+        op: 'password_reset_initiated',
+        old_values: null,
+        new_values: null,
+        changed_by: actor.userId,
+      })
     } catch {
       // Audit failure should not block the reset
     }
 
-    return { success: true, resetLink }
+    return { success: true }
   } catch (e: any) {
     return { error: `Password reset failed: ${e.message}` }
   }

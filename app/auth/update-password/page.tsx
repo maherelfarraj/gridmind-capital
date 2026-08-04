@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
 import { Eye, EyeOff, Check, X } from 'lucide-react'
 
-const PASSWORD_MIN_LENGTH = 8
 const PASSWORD_REQUIREMENTS = [
   { id: 'length', label: 'At least 8 characters', regex: /.{8,}/ },
   { id: 'upper', label: 'Uppercase letter', regex: /[A-Z]/ },
@@ -18,16 +17,30 @@ const PASSWORD_REQUIREMENTS = [
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const supabase = createClient()
   const { toast } = useToast()
 
+  const [isReady, setIsReady] = useState(false)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Wait for PASSWORD_RECOVERY session before enabling form
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session || data.session.user.recovery_sent_at === null) {
+        setError('Invalid or expired password recovery link. Redirecting to login...')
+        setTimeout(() => router.push('/auth/login'), 2000)
+        return
+      }
+      setIsReady(true)
+    }
+    checkSession()
+  }, [router, supabase.auth])
 
   // Check password requirements
   const passwordMet = PASSWORD_REQUIREMENTS.map(req => ({
@@ -40,6 +53,11 @@ export default function UpdatePasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (!isReady) {
+      setError('Form is not ready. Please wait...')
+      return
+    }
 
     // Validate
     if (!allRequirementsMet) {
@@ -54,6 +72,7 @@ export default function UpdatePasswordPage() {
     setIsLoading(true)
 
     try {
+      // Update the password
       const { error: updateError } = await supabase.auth.updateUser({
         password,
       })
@@ -66,14 +85,17 @@ export default function UpdatePasswordPage() {
       toast({
         variant: 'success',
         title: 'Password Updated',
-        description: 'Your password has been successfully changed. Redirecting to login...',
-        duration: 3000,
+        description: 'Your password has been successfully changed. Signing out...',
+        duration: 2000,
       })
 
-      // Redirect to login after a brief delay
+      // Sign out to clear the recovery session and force re-login with new password
+      await supabase.auth.signOut()
+
+      // Redirect to login
       setTimeout(() => {
         router.push('/auth/login')
-      }, 2000)
+      }, 1500)
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred.')
     } finally {
@@ -90,6 +112,18 @@ export default function UpdatePasswordPage() {
             Choose a strong password to secure your account.
           </p>
 
+          {!isReady && error && (
+            <div className="bg-red-50 border border-red-200 rounded p-4 mb-6">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
+
+          {!isReady && !error && (
+            <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-6">
+              <p className="text-sm text-blue-800">Verifying your password recovery link...</p>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Password Input */}
             <div>
@@ -103,7 +137,7 @@ export default function UpdatePasswordPage() {
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="Enter new password"
-                  disabled={isLoading}
+                  disabled={isLoading || !isReady}
                   className="pr-10"
                   autoComplete="new-password"
                 />
@@ -111,7 +145,7 @@ export default function UpdatePasswordPage() {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
-                  disabled={isLoading}
+                  disabled={isLoading || !isReady}
                 >
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
@@ -146,7 +180,7 @@ export default function UpdatePasswordPage() {
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
-                  disabled={isLoading}
+                  disabled={isLoading || !isReady}
                   className="pr-10"
                   autoComplete="new-password"
                 />
@@ -154,7 +188,7 @@ export default function UpdatePasswordPage() {
                   type="button"
                   onClick={() => setShowConfirm(!showConfirm)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
-                  disabled={isLoading}
+                  disabled={isLoading || !isReady}
                 >
                   {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
@@ -174,10 +208,10 @@ export default function UpdatePasswordPage() {
             {/* Submit Button */}
             <Button
               type="submit"
-              disabled={isLoading || !allRequirementsMet || !passwordsMatch}
+              disabled={isLoading || !isReady || !allRequirementsMet || !passwordsMatch}
               className="w-full"
             >
-              {isLoading ? 'Updating...' : 'Update Password'}
+              {!isReady ? 'Verifying...' : isLoading ? 'Updating...' : 'Update Password'}
             </Button>
 
             <p className="text-center text-xs text-slate-600">

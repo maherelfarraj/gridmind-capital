@@ -1,256 +1,282 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { resetUserPassword } from '@/app/actions/admin'
 
-// Mock dependencies
-vi.mock('@/lib/auth/roles', () => ({
+vi.mock('@/lib/auth/guard', () => ({
   requireInternalRole: vi.fn(),
 }))
 
-vi.mock('@/lib/db/supabase', () => ({
+vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: vi.fn(),
 }))
 
-vi.mock('@/lib/db/current-user', () => ({
+vi.mock('@/lib/tenant', () => ({
   getCurrentTenantId: vi.fn(),
 }))
+
+import { requireInternalRole } from '@/lib/auth/guard'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getCurrentTenantId } from '@/lib/tenant'
 
 describe('resetUserPassword', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('rejects unauthorized users', async () => {
-    const { requireInternalRole } = await import('@/lib/auth/roles')
-    vi.mocked(requireInternalRole).mockRejectedValueOnce(new Error('Unauthorized'))
+  it('rejects unauthorized users with clear error message', async () => {
+    vi.mocked(requireInternalRole).mockRejectedValue(new Error('Unauthorized: require system_admin or tenant_admin'))
 
-    const result = await resetUserPassword({
-      userId: 'user-123',
-      redirectUrl: 'https://example.com/reset',
-    })
+    const result = await resetUserPassword({ email: 'user@example.com' })
 
-    expect(result.error).toBe('Unauthorized')
+    expect(result.error).toContain('Unauthorized')
     expect(result.success).toBeUndefined()
+    expect(result).not.toHaveProperty('resetLink')
   })
 
-  it('rejects if user not found', async () => {
-    const { requireInternalRole } = await import('@/lib/auth/roles')
-    const { createAdminClient } = await import('@/lib/db/supabase')
+  it('returns error when user email not found', async () => {
+    vi.mocked(requireInternalRole).mockResolvedValue({
+      userId: 'actor-123',
+      role: 'system_admin',
+      tenantId: 'tenant-001',
+    })
 
-    vi.mocked(requireInternalRole).mockResolvedValueOnce({} as any)
-    vi.mocked(createAdminClient).mockReturnValueOnce({
+    const mockAdmin = {
       auth: {
         admin: {
-          getUserById: vi.fn().mockResolvedValueOnce({ data: null, error: null }),
+          listUsers: vi.fn().mockResolvedValue({ data: { users: [] }, error: null }),
         },
       },
-    } as any)
+    }
+    vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
 
-    const result = await resetUserPassword({
-      userId: 'nonexistent',
-      redirectUrl: 'https://example.com/reset',
-    })
+    const result = await resetUserPassword({ email: 'nonexistent@example.com' })
 
     expect(result.error).toBe('User not found.')
     expect(result.success).toBeUndefined()
   })
 
-  it('generates recovery link for valid user', async () => {
-    const { requireInternalRole } = await import('@/lib/auth/roles')
-    const { createAdminClient } = await import('@/lib/db/supabase')
+  it('sends password reset email successfully for system_admin', async () => {
+    vi.mocked(requireInternalRole).mockResolvedValue({
+      userId: 'actor-123',
+      role: 'system_admin',
+      tenantId: 'tenant-001',
+    })
 
-    vi.mocked(requireInternalRole).mockResolvedValueOnce({} as any)
-    vi.mocked(createAdminClient).mockReturnValueOnce({
+    const mockGenerateLink = vi.fn().mockResolvedValue({
+      data: { properties: { action_link: 'https://example.com/link' } },
+      error: null,
+    })
+    const mockInsert = vi.fn().mockResolvedValue({ error: null })
+    const mockAdmin = {
       auth: {
         admin: {
-          getUserById: vi.fn().mockResolvedValueOnce({
-            data: { id: 'user-123', email: 'user@example.com' },
+          listUsers: vi.fn().mockResolvedValue({
+            data: { users: [{ id: 'user-456', email: 'user@example.com' }] },
             error: null,
           }),
-          generateLink: vi.fn().mockResolvedValueOnce({
-            data: {
-              properties: {
-                action_link: 'https://example.com/reset?token=abc123',
-                hashed_token: 'hash123',
-              },
-            },
-            error: null,
-          }),
+          generateLink: mockGenerateLink,
         },
       },
-      from: vi.fn().mockReturnValueOnce({
-        insert: vi.fn().mockResolvedValueOnce({ error: null }),
+      from: vi.fn().mockReturnValue({
+        insert: mockInsert,
       }),
-    } as any)
+    }
+    vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
 
-    const { getCurrentTenantId } = await import('@/lib/db/current-user')
-    vi.mocked(getCurrentTenantId).mockResolvedValueOnce('tenant-123')
-
-    const result = await resetUserPassword({
-      userId: 'user-123',
-      redirectUrl: 'https://example.com/reset',
-    })
+    const result = await resetUserPassword({ email: 'user@example.com' })
 
     expect(result.success).toBe(true)
-    expect(result.resetLink).toBe('https://example.com/reset?token=abc123')
     expect(result.error).toBeUndefined()
-  })
-
-  it('handles recovery link generation error', async () => {
-    const { requireInternalRole } = await import('@/lib/auth/roles')
-    const { createAdminClient } = await import('@/lib/db/supabase')
-
-    vi.mocked(requireInternalRole).mockResolvedValueOnce({} as any)
-    vi.mocked(createAdminClient).mockReturnValueOnce({
-      auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValueOnce({
-            data: { id: 'user-123', email: 'user@example.com' },
-            error: null,
-          }),
-          generateLink: vi.fn().mockResolvedValueOnce({
-            data: null,
-            error: { message: 'Failed to generate link' },
-          }),
-        },
-      },
-    } as any)
-
-    const result = await resetUserPassword({
-      userId: 'user-123',
-      redirectUrl: 'https://example.com/reset',
-    })
-
-    expect(result.error).toBe('Failed to generate link')
-    expect(result.success).toBeUndefined()
-  })
-
-  it('records audit event on successful reset', async () => {
-    const { requireInternalRole } = await import('@/lib/auth/roles')
-    const { createAdminClient } = await import('@/lib/db/supabase')
-    const { getCurrentTenantId } = await import('@/lib/db/current-user')
-
-    const mockInsert = vi.fn().mockResolvedValueOnce({ error: null })
-    const mockFrom = vi.fn().mockReturnValueOnce({ insert: mockInsert })
-
-    vi.mocked(requireInternalRole).mockResolvedValueOnce({ userId: 'admin-123' } as any)
-    vi.mocked(createAdminClient).mockReturnValueOnce({
-      auth: {
-        admin: {
-          getUserById: vi.fn().mockResolvedValueOnce({
-            data: { id: 'user-123', email: 'user@example.com' },
-            error: null,
-          }),
-          generateLink: vi.fn().mockResolvedValueOnce({
-            data: {
-              properties: {
-                action_link: 'https://example.com/reset?token=abc123',
-                hashed_token: 'hash123',
-              },
-            },
-            error: null,
-          }),
-        },
-      },
-      from: mockFrom,
-    } as any)
-    vi.mocked(getCurrentTenantId).mockResolvedValueOnce('tenant-123')
-
-    await resetUserPassword({
-      userId: 'user-123',
-      redirectUrl: 'https://example.com/reset',
-    })
-
-    expect(mockFrom).toHaveBeenCalledWith('audit_log')
-    expect(mockInsert).toHaveBeenCalledWith(
+    expect(result).not.toHaveProperty('resetLink')
+    expect(mockGenerateLink).toHaveBeenCalledWith(
       expect.objectContaining({
-        tenant_id: 'tenant-123',
-        table_name: 'auth.users',
-        record_id: 'user-123',
-        action: 'update',
-        op: 'password_reset_initiated',
-        changed_by: 'admin-123',
+        type: 'recovery',
+        email: 'user@example.com',
+        options: expect.objectContaining({
+          redirectTo: expect.stringContaining('/auth/update-password'),
+        }),
       })
     )
   })
 
-  it('continues on audit event failure', async () => {
-    const { requireInternalRole } = await import('@/lib/auth/roles')
-    const { createAdminClient } = await import('@/lib/db/supabase')
-    const { getCurrentTenantId } = await import('@/lib/db/current-user')
+  it('enforces tenant isolation for tenant_admin', async () => {
+    vi.mocked(requireInternalRole).mockResolvedValue({
+      userId: 'actor-123',
+      role: 'tenant_admin',
+      tenantId: 'tenant-001',
+    })
 
-    const mockInsert = vi.fn().mockRejectedValueOnce(new Error('Audit failed'))
-    const mockFrom = vi.fn().mockReturnValueOnce({ insert: mockInsert })
-
-    vi.mocked(requireInternalRole).mockResolvedValueOnce({ userId: 'admin-123' } as any)
-    vi.mocked(createAdminClient).mockReturnValueOnce({
+    const mockAdmin = {
       auth: {
         admin: {
-          getUserById: vi.fn().mockResolvedValueOnce({
-            data: { id: 'user-123', email: 'user@example.com' },
-            error: null,
-          }),
-          generateLink: vi.fn().mockResolvedValueOnce({
-            data: {
-              properties: {
-                action_link: 'https://example.com/reset?token=abc123',
-                hashed_token: 'hash123',
-              },
-            },
+          listUsers: vi.fn().mockResolvedValue({
+            data: { users: [{ id: 'user-456', email: 'user@example.com' }] },
             error: null,
           }),
         },
       },
-      from: mockFrom,
-    } as any)
-    vi.mocked(getCurrentTenantId).mockResolvedValueOnce('tenant-123')
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { tenant_id: 'tenant-999' },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    }
+    vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
 
-    const result = await resetUserPassword({
-      userId: 'user-123',
-      redirectUrl: 'https://example.com/reset',
+    const result = await resetUserPassword({ email: 'user@example.com' })
+
+    expect(result.error).toContain('Unauthorized')
+    expect(result.success).toBeUndefined()
+  })
+
+  it('allows tenant_admin to reset password for same-tenant user', async () => {
+    vi.mocked(requireInternalRole).mockResolvedValue({
+      userId: 'actor-123',
+      role: 'tenant_admin',
+      tenantId: 'tenant-001',
     })
 
-    // Should still succeed even if audit fails
+    const mockGenerateLink = vi.fn().mockResolvedValue({
+      data: { properties: { action_link: 'https://example.com/link' } },
+      error: null,
+    })
+    const mockInsert = vi.fn().mockResolvedValue({ error: null })
+    const mockAdmin = {
+      auth: {
+        admin: {
+          listUsers: vi.fn().mockResolvedValue({
+            data: { users: [{ id: 'user-456', email: 'user@example.com' }] },
+            error: null,
+          }),
+          generateLink: mockGenerateLink,
+        },
+      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { tenant_id: 'tenant-001' },
+              error: null,
+            }),
+          }),
+        }),
+        insert: mockInsert,
+      }),
+    }
+    vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
+
+    const result = await resetUserPassword({ email: 'user@example.com' })
+
     expect(result.success).toBe(true)
-    expect(result.resetLink).toBe('https://example.com/reset?token=abc123')
     expect(result.error).toBeUndefined()
   })
 
-  it('returns fallback link if action_link is missing', async () => {
-    const { requireInternalRole } = await import('@/lib/auth/roles')
-    const { createAdminClient } = await import('@/lib/db/supabase')
-    const { getCurrentTenantId } = await import('@/lib/db/current-user')
+  it('never returns tokens or links in response', async () => {
+    vi.mocked(requireInternalRole).mockResolvedValue({
+      userId: 'actor-123',
+      role: 'system_admin',
+      tenantId: 'tenant-001',
+    })
 
-    vi.mocked(requireInternalRole).mockResolvedValueOnce({} as any)
-    vi.mocked(createAdminClient).mockReturnValueOnce({
+    const mockAdmin = {
       auth: {
         admin: {
-          getUserById: vi.fn().mockResolvedValueOnce({
-            data: { id: 'user-123', email: 'user@example.com' },
+          listUsers: vi.fn().mockResolvedValue({
+            data: { users: [{ id: 'user-456', email: 'user@example.com' }] },
             error: null,
           }),
-          generateLink: vi.fn().mockResolvedValueOnce({
-            data: {
-              properties: {
-                hashed_token: 'hash123',
-              },
-            },
+          generateLink: vi.fn().mockResolvedValue({
+            data: { properties: { action_link: 'https://example.com/link' } },
             error: null,
           }),
         },
       },
-      from: vi.fn().mockReturnValueOnce({
-        insert: vi.fn().mockResolvedValueOnce({ error: null }),
+      from: vi.fn().mockReturnValue({
+        insert: vi.fn().mockResolvedValue({ error: null }),
       }),
-    } as any)
-    vi.mocked(getCurrentTenantId).mockResolvedValueOnce('tenant-123')
+    }
+    vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
 
-    const result = await resetUserPassword({
-      userId: 'user-123',
-      redirectUrl: 'https://example.com/reset',
+    const result = await resetUserPassword({ email: 'user@example.com' })
+
+    expect(result.resetLink).toBeUndefined()
+    expect(result.token).toBeUndefined()
+    expect(Object.keys(result).sort()).toEqual(['success'])
+  })
+
+  it('records audit event with email after successful reset', async () => {
+    vi.mocked(requireInternalRole).mockResolvedValue({
+      userId: 'actor-123',
+      role: 'system_admin',
+      tenantId: 'tenant-001',
     })
 
+    const mockInsert = vi.fn().mockResolvedValue({ error: null })
+    const mockAdmin = {
+      auth: {
+        admin: {
+          listUsers: vi.fn().mockResolvedValue({
+            data: { users: [{ id: 'user-456', email: 'user@example.com' }] },
+            error: null,
+          }),
+          generateLink: vi.fn().mockResolvedValue({
+            data: { properties: { action_link: 'https://example.com/link' } },
+            error: null,
+          }),
+        },
+      },
+      from: vi.fn().mockReturnValue({
+        insert: mockInsert,
+      }),
+    }
+    vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
+
+    await resetUserPassword({ email: 'user@example.com' })
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        table_name: 'auth.users',
+        record_id: 'user@example.com',
+        action: 'update',
+        op: 'password_reset_initiated',
+        changed_by: 'actor-123',
+      })
+    )
+  })
+
+  it('succeeds even if audit logging fails', async () => {
+    vi.mocked(requireInternalRole).mockResolvedValue({
+      userId: 'actor-123',
+      role: 'system_admin',
+      tenantId: 'tenant-001',
+    })
+
+    const mockAdmin = {
+      auth: {
+        admin: {
+          listUsers: vi.fn().mockResolvedValue({
+            data: { users: [{ id: 'user-456', email: 'user@example.com' }] },
+            error: null,
+          }),
+          generateLink: vi.fn().mockResolvedValue({
+            data: { properties: { action_link: 'https://example.com/link' } },
+            error: null,
+          }),
+        },
+      },
+      from: vi.fn().mockReturnValue({
+        insert: vi.fn().mockRejectedValue(new Error('Audit DB write failed')),
+      }),
+    }
+    vi.mocked(createAdminClient).mockReturnValue(mockAdmin as any)
+
+    const result = await resetUserPassword({ email: 'user@example.com' })
+
     expect(result.success).toBe(true)
-    expect(result.resetLink).toContain('https://example.com/reset')
-    expect(result.resetLink).toContain('token_hash=hash123')
+    expect(result.error).toBeUndefined()
   })
 })

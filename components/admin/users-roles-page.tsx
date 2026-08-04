@@ -1326,7 +1326,7 @@ export function UsersRolesPage({
     if (!onResetPassword) return
 
     try {
-      await onResetPassword(user.id)
+      await onResetPassword(user.email)
       toast({
         variant: 'success',
         title: 'Password Reset Sent',

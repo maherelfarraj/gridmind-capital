@@ -83,11 +83,8 @@ export default function Page() {
     await mutate()
   }
 
-  const handleResetPassword = async (userId: string) => {
-    const res = await resetUserPassword({
-      userId,
-      redirectUrl: `${window.location.origin}/auth/update-password`,
-    })
+  const handleResetPassword = async (email: string) => {
+    const res = await resetUserPassword({ email })
     if (res?.error) throw new Error(res.error)
   }
 
