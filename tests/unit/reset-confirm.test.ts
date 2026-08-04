@@ -1,252 +1,201 @@
 import { describe, it, expect } from 'vitest'
+import {
+  validateResetConfirmParams,
+  buildResetConfirmCallbackUrl,
+  getResetConfirmErrorMessage,
+} from '@/lib/auth/reset-confirm'
 
-describe('reset-confirm page parameter validation', () => {
-  describe('token_hash validation', () => {
+describe('reset-confirm production helpers', () => {
+  describe('validateResetConfirmParams', () => {
+    it('should validate correct parameters', () => {
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc123def456',
+        type: 'recovery',
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(true)
+    })
+
     it('should reject missing token_hash', () => {
-      const params = new URLSearchParams()
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
-
-      const tokenHash = params.get('token_hash')
-      expect(tokenHash).toBeNull()
+      const result = validateResetConfirmParams({
+        tokenHash: null,
+        type: 'recovery',
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(false)
     })
 
     it('should reject empty token_hash', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', '')
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
-
-      const tokenHash = params.get('token_hash')?.trim()
-      expect(tokenHash).toBe('')
+      const result = validateResetConfirmParams({
+        tokenHash: '',
+        type: 'recovery',
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(false)
     })
 
-    it('should accept valid token_hash', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123def456')
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
-
-      const tokenHash = params.get('token_hash')?.trim()
-      expect(tokenHash).toBe('abc123def456')
-      expect(tokenHash).not.toBe('')
+    it('should reject token_hash with only whitespace', () => {
+      const result = validateResetConfirmParams({
+        tokenHash: '   ',
+        type: 'recovery',
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(false)
     })
 
     it('should accept token_hash with special characters', () => {
-      const params = new URLSearchParams()
-      const tokenWithSpecial = 'abc+123/def==456'
-      params.set('token_hash', tokenWithSpecial)
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
-
-      const tokenHash = params.get('token_hash')
-      expect(tokenHash).toBe(tokenWithSpecial)
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc+123/def==456',
+        type: 'recovery',
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(true)
     })
-  })
 
-  describe('type validation', () => {
     it('should reject missing type', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('next', '/auth/update-password')
-
-      const type = params.get('type')
-      expect(type).toBeNull()
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc123',
+        type: null,
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(false)
     })
 
-    it('should only accept type=recovery', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
-
-      const type = params.get('type')
-      expect(type).toBe('recovery')
-    })
-
-    it('should reject type=signup', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'signup')
-      params.set('next', '/auth/update-password')
-
-      const type = params.get('type')
-      expect(type).not.toBe('recovery')
+    it('should reject wrong type', () => {
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc123',
+        type: 'signup',
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(false)
     })
 
     it('should reject type=magiclink', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'magiclink')
-      params.set('next', '/auth/update-password')
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc123',
+        type: 'magiclink',
+        next: '/auth/update-password',
+      })
+      expect(result).toBe(false)
+    })
 
-      const type = params.get('type')
-      expect(type).not.toBe('recovery')
+    it('should reject missing next', () => {
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc123',
+        type: 'recovery',
+        next: null,
+      })
+      expect(result).toBe(false)
+    })
+
+    it('should reject wrong next parameter', () => {
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc123',
+        type: 'recovery',
+        next: '/dashboard',
+      })
+      expect(result).toBe(false)
+    })
+
+    it('should reject arbitrary redirect attempts in next', () => {
+      const result = validateResetConfirmParams({
+        tokenHash: 'abc123',
+        type: 'recovery',
+        next: 'https://evil.com',
+      })
+      expect(result).toBe(false)
+    })
+
+    it('should reject all parameters missing', () => {
+      const result = validateResetConfirmParams({
+        tokenHash: null,
+        type: null,
+        next: null,
+      })
+      expect(result).toBe(false)
     })
   })
 
-  describe('next parameter validation', () => {
-    it('should reject missing next parameter', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'recovery')
-
-      const next = params.get('next')
-      expect(next).toBeNull()
+  describe('buildResetConfirmCallbackUrl', () => {
+    it('should build correct callback URL', () => {
+      const url = buildResetConfirmCallbackUrl('abc123def456')
+      expect(url).toBe('/auth/callback?token_hash=abc123def456&type=recovery&next=/auth/update-password')
     })
 
-    it('should only accept next=/auth/update-password', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
-
-      const next = params.get('next')
-      expect(next).toBe('/auth/update-password')
+    it('should encode token with special characters', () => {
+      const url = buildResetConfirmCallbackUrl('abc+123/def==456')
+      expect(url).toContain('token_hash=abc%2B123%2Fdef%3D%3D456')
+      expect(url).toContain('type=recovery')
+      expect(url).toContain('next=/auth/update-password')
     })
 
-    it('should reject next=/dashboard', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'recovery')
-      params.set('next', '/dashboard')
-
-      const next = params.get('next')
-      expect(next).not.toBe('/auth/update-password')
+    it('should always include correct type and next', () => {
+      const url = buildResetConfirmCallbackUrl('token123')
+      expect(url).toContain('type=recovery')
+      expect(url).toContain('next=/auth/update-password')
     })
 
-    it('should reject next=/auth/login', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'recovery')
-      params.set('next', '/auth/login')
-
-      const next = params.get('next')
-      expect(next).not.toBe('/auth/update-password')
-    })
-
-    it('should reject arbitrary redirect attempts', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'recovery')
-      params.set('next', 'https://evil.com')
-
-      const next = params.get('next')
-      expect(next).not.toBe('/auth/update-password')
+    it('should be URL-safe for routing', () => {
+      const url = buildResetConfirmCallbackUrl('sensitive+token/data==')
+      expect(url).toMatch(/^\/auth\/callback\?/)
+      expect(() => new URL(url, 'http://localhost')).not.toThrow()
     })
   })
 
-  describe('callback URL generation', () => {
-    it('should generate correct callback URL with valid params', () => {
-      const tokenHash = 'abc123def456'
-      const encodedToken = encodeURIComponent(tokenHash)
-      const callbackUrl = `/auth/callback?token_hash=${encodedToken}&type=recovery&next=/auth/update-password`
-
-      expect(callbackUrl).toBe('/auth/callback?token_hash=abc123def456&type=recovery&next=/auth/update-password')
+  describe('getResetConfirmErrorMessage', () => {
+    it('should return missing token error', () => {
+      const msg = getResetConfirmErrorMessage(null, 'recovery', '/auth/update-password')
+      expect(msg).toContain('missing token')
     })
 
-    it('should properly encode token_hash with special characters', () => {
-      const tokenHash = 'abc+123/def==456'
-      const encodedToken = encodeURIComponent(tokenHash)
-      const callbackUrl = `/auth/callback?token_hash=${encodedToken}&type=recovery&next=/auth/update-password`
-
-      expect(callbackUrl).toContain('token_hash=abc%2B123%2Fdef%3D%3D456')
-      expect(callbackUrl).toContain('type=recovery')
-      expect(callbackUrl).toContain('next=/auth/update-password')
+    it('should return empty token error', () => {
+      const msg = getResetConfirmErrorMessage('', 'recovery', '/auth/update-password')
+      expect(msg).toContain('missing token')
     })
 
-    it('should properly encode tokens with special characters', () => {
-      const tokenHash = 'sensitive+token/data==extra'
-      const encodedToken = encodeURIComponent(tokenHash)
-      const callbackUrl = `/auth/callback?token_hash=${encodedToken}&type=recovery&next=/auth/update-password`
-
-      // Token should be encoded (+ becomes %2B, / becomes %2F, = becomes %3D)
-      expect(encodedToken).toBe('sensitive%2Btoken%2Fdata%3D%3Dextra')
-      expect(callbackUrl).toContain('token_hash=sensitive%2Btoken%2Fdata%3D%3Dextra')
+    it('should return wrong type error', () => {
+      const msg = getResetConfirmErrorMessage('abc123', 'signup', '/auth/update-password')
+      expect(msg).toContain('unsupported recovery type')
     })
 
-    it('should maintain consistent parameter order', () => {
-      const tokenHash = 'abc123'
-      const encodedToken = encodeURIComponent(tokenHash)
-      const callbackUrl = `/auth/callback?token_hash=${encodedToken}&type=recovery&next=/auth/update-password`
+    it('should return wrong next error', () => {
+      const msg = getResetConfirmErrorMessage('abc123', 'recovery', '/dashboard')
+      expect(msg).toContain('unsupported redirect destination')
+    })
 
-      const url = new URL(callbackUrl, 'http://localhost')
-      expect(url.searchParams.get('token_hash')).toBe('abc123')
-      expect(url.searchParams.get('type')).toBe('recovery')
-      expect(url.searchParams.get('next')).toBe('/auth/update-password')
+    it('should return generic error for all missing', () => {
+      const msg = getResetConfirmErrorMessage(null, null, null)
+      expect(msg).toBeTruthy()
     })
   })
 
-  describe('complete parameter validation flow', () => {
-    it('should pass validation with all correct parameters', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123def456')
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
+  describe('integration: validation + URL building', () => {
+    it('should validate then build URL safely', () => {
+      const tokenHash = 'recovery+token/data=='
+      const type = 'recovery'
+      const next = '/auth/update-password'
 
-      const tokenHash = params.get('token_hash')?.trim()
-      const type = params.get('type')
-      const next = params.get('next')
-
-      const isValid = tokenHash && tokenHash !== '' && type === 'recovery' && next === '/auth/update-password'
-
+      const isValid = validateResetConfirmParams({ tokenHash, type, next })
       expect(isValid).toBe(true)
+
+      const url = buildResetConfirmCallbackUrl(tokenHash)
+      expect(url).toContain('token_hash=recovery%2Btoken%2Fdata%3D%3D')
+      expect(url).toContain('type=recovery')
+      expect(url).toContain('next=/auth/update-password')
+
+      // Verify URL can be parsed safely
+      const parsed = new URL(url, 'http://localhost')
+      expect(parsed.searchParams.get('token_hash')).toBe('recovery+token/data==')
     })
 
-    it('should fail validation with missing token_hash', () => {
-      const params = new URLSearchParams()
-      params.set('type', 'recovery')
-      params.set('next', '/auth/update-password')
-
-      const tokenHash = params.get('token_hash')?.trim()
-      const type = params.get('type')
-      const next = params.get('next')
-
-      const isValid = !!(tokenHash && tokenHash !== '' && type === 'recovery' && next === '/auth/update-password')
-
+    it('should catch validation errors before URL building', () => {
+      const isValid = validateResetConfirmParams({
+        tokenHash: null,
+        type: 'recovery',
+        next: '/auth/update-password',
+      })
       expect(isValid).toBe(false)
-    })
-
-    it('should fail validation with wrong type', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'signup')
-      params.set('next', '/auth/update-password')
-
-      const tokenHash = params.get('token_hash')?.trim()
-      const type = params.get('type')
-      const next = params.get('next')
-
-      const isValid = !!(tokenHash && tokenHash !== '' && type === 'recovery' && next === '/auth/update-password')
-
-      expect(isValid).toBe(false)
-    })
-
-    it('should fail validation with wrong next parameter', () => {
-      const params = new URLSearchParams()
-      params.set('token_hash', 'abc123')
-      params.set('type', 'recovery')
-      params.set('next', '/dashboard')
-
-      const tokenHash = params.get('token_hash')?.trim()
-      const type = params.get('type')
-      const next = params.get('next')
-
-      const isValid = !!(tokenHash && tokenHash !== '' && type === 'recovery' && next === '/auth/update-password')
-
-      expect(isValid).toBe(false)
-    })
-
-    it('should fail validation with all parameters missing', () => {
-      const params = new URLSearchParams()
-
-      const tokenHash = params.get('token_hash')?.trim()
-      const type = params.get('type')
-      const next = params.get('next')
-
-      const isValid = !!(tokenHash && tokenHash !== '' && type === 'recovery' && next === '/auth/update-password')
-
-      expect(isValid).toBe(false)
+      // In real code, we wouldn't call buildResetConfirmCallbackUrl after failed validation
     })
   })
 })

@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
+import { validateResetConfirmParams, buildResetConfirmCallbackUrl, getResetConfirmErrorMessage } from '@/lib/auth/reset-confirm'
 
 export default function ResetConfirmPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [isReady, setIsReady] = useState(false)
   const [isValid, setIsValid] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -18,37 +18,22 @@ export default function ResetConfirmPage() {
     const type = searchParams.get('type')
     const next = searchParams.get('next')
 
-    // Validate parameters
-    if (!tokenHash || tokenHash.trim() === '') {
-      setError('Invalid recovery link: missing token.')
-      setIsReady(true)
-      return
-    }
-
-    if (type !== 'recovery') {
-      setError('Invalid recovery link: unsupported recovery type.')
-      setIsReady(true)
-      return
-    }
-
-    if (next !== '/auth/update-password') {
-      setError('Invalid recovery link: unsupported redirect destination.')
-      setIsReady(true)
+    // Validate using helper
+    if (!validateResetConfirmParams({ tokenHash, type, next })) {
+      setError(getResetConfirmErrorMessage(tokenHash, type, next))
       return
     }
 
     // All validations passed
     setIsValid(true)
-    setIsReady(true)
   }, [searchParams])
 
   const handleContinue = () => {
     const tokenHash = searchParams.get('token_hash')
     if (!tokenHash) return
 
-    // Encode token_hash to handle special characters
-    const encodedToken = encodeURIComponent(tokenHash)
-    const callbackUrl = `/auth/callback?token_hash=${encodedToken}&type=recovery&next=/auth/update-password`
+    // Build callback URL using helper
+    const callbackUrl = buildResetConfirmCallbackUrl(tokenHash)
 
     // Navigate to callback route
     router.push(callbackUrl)
@@ -67,7 +52,7 @@ export default function ResetConfirmPage() {
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <p className="text-sm text-blue-800">
-                  Your recovery link has been verified. You're ready to set a new password.
+                  Your recovery link is ready to be verified. Click below to proceed.
                 </p>
               </div>
 
@@ -81,7 +66,7 @@ export default function ResetConfirmPage() {
               </Button>
 
               <p className="text-center text-xs text-slate-600 mt-4">
-                This link will expire after being used or after 24 hours.
+                This link will expire after being used.
               </p>
             </>
           ) : (

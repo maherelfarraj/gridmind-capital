@@ -46,15 +46,10 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient()
 
-  // Check if user is already authenticated (Supabase magic links set session before redirect)
-  const { data: { session } } = await supabase.auth.getSession()
+  // PRIORITY 1: Handle explicit authentication credentials
+  // Explicit credentials (token_hash, token, code) must be processed before the session shortcut
+  // This ensures recovery tokens are verified even if a session already exists
   
-  if (session) {
-    // Supabase already authenticated the user via /auth/v1/verify
-    // Just redirect to next page
-    return NextResponse.redirect(`${origin}${next}`)
-  }
-
   // Handle email links with explicit token: both token_hash (old format) and token (new Supabase format)
   const tokenValue = tokenHash || token
   if (tokenValue && type) {
@@ -68,12 +63,23 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  // Handle PKCE code exchange
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) return NextResponse.redirect(`${origin}${next}`)
     return NextResponse.redirect(
       `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
     )
+  }
+
+  // PRIORITY 2: Use existing session shortcut only if no explicit credentials
+  // Supabase magic links set session before redirect, so this handles those cases
+  const { data: { session } } = await supabase.auth.getSession()
+  
+  if (session) {
+    // Supabase already authenticated the user via /auth/v1/verify
+    // Just redirect to next page
+    return NextResponse.redirect(`${origin}${next}`)
   }
 
   return NextResponse.redirect(
