@@ -411,15 +411,17 @@ export async function resetUserPassword(
 
   // Verify user exists and enforce tenant isolation for tenant_admin
   try {
-    const { data: user, error: userError } = await admin.auth.admin.getUserById(args.userId)
-    if (userError || !user) {
-      return { error: 'User not found.' }
-    }
+   const { data, error: userError } = await admin.auth.admin.getUserById(args.userId)
+const user = data.user
 
-    const targetEmail = (user as any).email
-    if (!targetEmail) {
-      return { error: 'User has no email address.' }
-    }
+if (userError || !user) {
+  return { error: 'User not found.' }
+}
+
+const targetEmail = user.email
+if (!targetEmail) {
+  return { error: 'User has no email address.' }
+}
 
     // tenant_admin: can only reset passwords for users in the same tenant
     if (actorRole === 'tenant_admin') {
