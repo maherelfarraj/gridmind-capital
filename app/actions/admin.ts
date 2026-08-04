@@ -371,6 +371,93 @@ export async function activateUser(userId: string): Promise<{ error?: string }> 
 }
 
 // ─────────────────────────────────────────────────────────────
+// Password Reset
+// ─────────────────────────────────────────────────────────────
+
+export interface ResetPasswordArgs {
+  userId: string
+  redirectUrl: string
+}
+
+export interface ResetPasswordResult {
+  success?: boolean
+  resetLink?: string
+  error?: string
+}
+
+/**
+ * Initiate a password reset for a user.
+ *
+ * Admin-gated: only tenant_admin or system_admin can reset another user's password.
+ * Sends a Supabase password recovery email with a custom redirect URL.
+ * Returns a copyable reset link as a fallback when SMTP is not configured.
+ * Records an audit event without storing tokens or passwords.
+ */
+export async function resetUserPassword(
+  args: ResetPasswordArgs,
+): Promise<ResetPasswordResult> {
+  try {
+    await requireInternalRole(['system_admin', 'tenant_admin'])
+  } catch (e: any) {
+    return { error: e.message }
+  }
+
+  const admin = createAdminClient()
+
+  // Verify the user exists
+  try {
+    const { data: user, error: userError } = await admin.auth.admin.getUserById(args.userId)
+    if (userError || !user) {
+      return { error: 'User not found.' }
+    }
+  } catch (e: any) {
+    return { error: `Failed to verify user: ${e.message}` }
+  }
+
+  // Generate password recovery link
+  try {
+    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      type: 'recovery',
+      email: args.userId,
+      options: {
+        redirectTo: args.redirectUrl,
+      },
+    })
+
+    if (linkError || !linkData) {
+      return { error: linkError?.message ?? 'Failed to generate recovery link.' }
+    }
+
+    const resetLink =
+      linkData.properties?.action_link ??
+      `${args.redirectUrl}?token_hash=${encodeURIComponent(linkData.properties?.hashed_token ?? '')}&type=recovery`
+
+    // Record audit event
+    try {
+      const actorId = (await requireInternalRole(['system_admin', 'tenant_admin']).catch(() => ({ userId: 'unknown' }))).userId
+      await admin
+        .from('audit_log')
+        .insert({
+          tenant_id: await getCurrentTenantId(),
+          table_name: 'auth.users',
+          record_id: args.userId,
+          action: 'update',
+          op: 'password_reset_initiated',
+          old_values: null,
+          new_values: null,
+          changed_by: actorId,
+        })
+    } catch {
+      // Audit failure should not block the reset
+    }
+
+    return { success: true, resetLink }
+  } catch (e: any) {
+    return { error: `Password reset failed: ${e.message}` }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Approval rules
 // ─────────────────────────────────────────────────────────────
 

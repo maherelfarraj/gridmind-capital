@@ -12,6 +12,7 @@ import {
   inviteInternalUser,
   deactivateUser,
   activateUser,
+  resetUserPassword,
 } from '@/app/actions/admin'
 import { isDbUserRole } from '@/lib/auth/roles'
 import { statusFromProfile } from '@/lib/admin/user-status'
@@ -80,6 +81,14 @@ export default function Page() {
     const res = isActive ? await activateUser(userId) : await deactivateUser(userId)
     if (res?.error) throw new Error(res.error)
     await mutate()
+  }
+
+  const handleResetPassword = async (userId: string) => {
+    const res = await resetUserPassword({
+      userId,
+      redirectUrl: `${window.location.origin}/auth/update-password`,
+    })
+    if (res?.error) throw new Error(res.error)
   }
 
   const handleInvite = async (data: {
@@ -153,6 +162,7 @@ export default function Page() {
           onInvite={handleInvite}
           onUpdateRole={handleUpdateRole}
           onToggleStatus={handleToggleStatus}
+          onResetPassword={handleResetPassword}
           currentUserRole={currentUserRole}
           currentUserId={session.userId}
           onInviteExternal={() => setActiveTab('external')}

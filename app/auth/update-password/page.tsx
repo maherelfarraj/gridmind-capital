@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { toast } from '@/hooks/use-toast'
+import { useToast } from '@/components/ui/toast'
 import { Eye, EyeOff, Check, X } from 'lucide-react'
 
 const PASSWORD_MIN_LENGTH = 8
@@ -20,6 +20,7 @@ export default function UpdatePasswordPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
+  const { toast } = useToast()
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
