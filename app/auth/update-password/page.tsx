@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { evaluateRecoverySession } from '@/lib/auth/recovery-session'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
@@ -17,7 +18,10 @@ const PASSWORD_REQUIREMENTS = [
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
-  const supabase = createClient()
+  // Create the Supabase browser client exactly once. Calling createClient() on
+  // every render produced a new object each pass, which made the session-check
+  // effect's dependency unstable.
+  const [supabase] = useState(() => createClient())
   const { toast } = useToast()
 
   const [isReady, setIsReady] = useState(false)
@@ -28,19 +32,49 @@ export default function UpdatePasswordPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Wait for PASSWORD_RECOVERY session before enabling form
+  // Wait for a valid PASSWORD_RECOVERY session before enabling the form.
   useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!data.session || data.session.user.recovery_sent_at === null) {
-        setError('Invalid or expired password recovery link. Redirecting to login...')
-        setTimeout(() => router.push('/auth/login'), 2000)
-        return
-      }
-      setIsReady(true)
+    let cancelled = false
+
+    const rejectToLogin = () => {
+      if (cancelled) return
+      setError('Invalid or expired password recovery link. Redirecting to login...')
+      setTimeout(() => router.push('/auth/login'), 2000)
     }
+
+    const checkSession = async () => {
+      try {
+        const { data, error: sessionError } = await supabase.auth.getSession()
+        if (cancelled) return
+
+        // A valid session AND a truthy recovery_sent_at are both required.
+        // evaluateRecoverySession is the single source of truth for this rule,
+        // so a getSession() error is surfaced (never treated as "no session")
+        // and null/undefined/'' recovery_sent_at are all rejected.
+        const status = evaluateRecoverySession({
+          session: data?.session,
+          error: sessionError,
+        })
+
+        if (status !== 'valid') {
+          rejectToLogin()
+          return
+        }
+
+        setIsReady(true)
+      } catch {
+        // getSession threw (e.g. network/parse failure): fail closed to login
+        // rather than letting the error crash the page.
+        rejectToLogin()
+      }
+    }
+
     checkSession()
-  }, [router, supabase.auth])
+
+    return () => {
+      cancelled = true
+    }
+  }, [router, supabase])
 
   // Check password requirements
   const passwordMet = PASSWORD_REQUIREMENTS.map(req => ({
