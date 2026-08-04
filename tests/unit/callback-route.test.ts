@@ -1,232 +1,325 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { NextRequest } from 'next/server'
+import { GET } from '@/app/auth/callback/route'
+import * as supabaseServer from '@/lib/supabase/server'
 
-/**
- * Integration tests for password recovery callback flow.
- * These tests verify that:
- * 1. Recovery tokens are processed before the session shortcut
- * 2. Valid recovery tokens redirect to /auth/update-password
- * 3. Invalid tokens redirect to /auth/error
- * 4. Existing sessions with no credentials use the shortcut
- */
+// Mock the Supabase server module
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: vi.fn(),
+}))
 
-describe('callback route password recovery integration', () => {
-  describe('parameter priority: explicit credentials before session shortcut', () => {
-    it('should process recovery token even with existing session', () => {
-      // The callback route implementation must call verifyOtp BEFORE checking session
-      // This ensures recovery tokens are processed regardless of existing session
-      const hasToken = true
-      const hasSession = true
+describe('GET /auth/callback - recovery token priority', () => {
+  let mockVerifyOtp: ReturnType<typeof vi.fn>
+  let mockExchangeCodeForSession: ReturnType<typeof vi.fn>
+  let mockGetSession: ReturnType<typeof vi.fn>
+  let mockCreateClient: ReturnType<typeof vi.fn>
 
-      // Priority: token > session
-      // If both exist, token should be processed first
-      expect(hasToken).toBe(true)
-      expect(hasSession).toBe(true)
+  beforeEach(() => {
+    mockVerifyOtp = vi.fn()
+    mockExchangeCodeForSession = vi.fn()
+    mockGetSession = vi.fn()
+
+    mockCreateClient = vi.fn().mockResolvedValue({
+      auth: {
+        verifyOtp: mockVerifyOtp,
+        exchangeCodeForSession: mockExchangeCodeForSession,
+        getSession: mockGetSession,
+      },
     })
 
-    it('should process code exchange before session shortcut', () => {
-      // PKCE code exchange must run before session check
-      const hasCode = true
-      const hasSession = true
+    vi.mocked(supabaseServer.createClient).mockImplementation(mockCreateClient)
+  })
 
-      // Priority: code > session
-      expect(hasCode).toBe(true)
-      expect(hasSession).toBe(true)
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  describe('Recovery token priority over session shortcut', () => {
+    it('should verify recovery token and not use session shortcut when token_hash present', async () => {
+      mockVerifyOtp.mockResolvedValue({ error: null })
+      mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user123' } } } })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?token_hash=test_token_hash&type=recovery&next=/auth/update-password',
+      )
+
+      const response = await GET(request)
+
+      expect(mockVerifyOtp).toHaveBeenCalledOnce()
+      expect(mockVerifyOtp).toHaveBeenCalledWith({
+        type: 'recovery',
+        token_hash: 'test_token_hash',
+      })
+      expect(mockGetSession).not.toHaveBeenCalled()
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toBe('http://localhost:3000/auth/update-password')
     })
 
-    it('should use session shortcut only when no credentials present', () => {
-      // Session shortcut is only valid when no token_hash, token, or code exists
-      const hasToken = false
-      const hasCode = false
-      const hasSession = true
+    it('should verify OTP with correct token format', async () => {
+      mockVerifyOtp.mockResolvedValue({ error: null })
 
-      expect(!hasToken && !hasCode && hasSession).toBe(true)
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?token_hash=abc123def456&type=recovery&next=/auth/update-password',
+      )
+
+      await GET(request)
+
+      expect(mockVerifyOtp).toHaveBeenCalledWith({
+        type: 'recovery',
+        token_hash: 'abc123def456',
+      })
+    })
+
+    it('should redirect to error page when recovery token is invalid', async () => {
+      const errorMsg = 'Invalid token'
+      mockVerifyOtp.mockResolvedValue({ error: { message: errorMsg } })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?token_hash=invalid_token&type=recovery&next=/auth/update-password',
+      )
+
+      const response = await GET(request)
+
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toContain('/auth/error?reason=Invalid%20token')
+    })
+
+    it('should exchange code and not use session shortcut when code present', async () => {
+      mockExchangeCodeForSession.mockResolvedValue({ error: null })
+      mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user123' } } } })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?code=auth_code_123&next=/dashboard',
+      )
+
+      const response = await GET(request)
+
+      expect(mockExchangeCodeForSession).toHaveBeenCalledOnce()
+      expect(mockGetSession).not.toHaveBeenCalled()
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toBe('http://localhost:3000/dashboard')
+    })
+
+    it('should redirect to error page when code exchange fails', async () => {
+      const errorMsg = 'Invalid code'
+      mockExchangeCodeForSession.mockResolvedValue({ error: { message: errorMsg } })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?code=invalid_code&next=/dashboard',
+      )
+
+      const response = await GET(request)
+
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toContain('/auth/error?reason=Invalid%20code')
     })
   })
 
-  describe('recovery token validation patterns', () => {
-    it('should validate recovery type with token_hash', () => {
-      const tokenHash = 'abc123def456'
-      const type = 'recovery'
-      const next = '/auth/update-password'
+  describe('Session shortcut when no explicit credentials', () => {
+    it('should use session shortcut when no token_hash, token, or code present', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
 
-      const isRecoveryLink = type === 'recovery' && tokenHash && next === '/auth/update-password'
-      expect(isRecoveryLink).toBe(true)
+      const request = new NextRequest('http://localhost:3000/auth/callback?next=/dashboard')
+
+      const response = await GET(request)
+
+      expect(mockVerifyOtp).not.toHaveBeenCalled()
+      expect(mockExchangeCodeForSession).not.toHaveBeenCalled()
+      expect(mockGetSession).toHaveBeenCalledOnce()
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toBe('http://localhost:3000/dashboard')
     })
 
-    it('should validate recovery type with token param', () => {
-      const token = 'abc123def456'
-      const type = 'recovery'
-      const next = '/auth/update-password'
+    it('should redirect to error when no session and no credentials', async () => {
+      mockGetSession.mockResolvedValue({ data: { session: null } })
 
-      const isRecoveryLink = type === 'recovery' && token && next === '/auth/update-password'
-      expect(isRecoveryLink).toBe(true)
-    })
+      const request = new NextRequest('http://localhost:3000/auth/callback?next=/dashboard')
 
-    it('should accept either token_hash or token', () => {
-      // Supabase supports both old (token_hash) and new (token) formats
-      const tokenHashValue = 'abc123def456'
-      const tokenValue = null
-      const type = 'recovery'
+      const response = await GET(request)
 
-      const selectedToken = tokenHashValue || tokenValue
-      expect(selectedToken).toBe('abc123def456')
-      expect(type).toBe('recovery')
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toContain('/auth/error?reason=Missing%20authentication%20code')
     })
   })
 
-  describe('supported email link types', () => {
-    it('should support recovery type', () => {
-      const supportedTypes = ['recovery', 'signup', 'magiclink', 'email_change', 'invite']
-      expect(supportedTypes).toContain('recovery')
+  describe('Next path safety validation', () => {
+    it('should use safe next path when provided', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?next=/auth/update-password',
+      )
+
+      const response = await GET(request)
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/auth/update-password')
     })
 
-    it('should support signup type', () => {
-      const supportedTypes = ['recovery', 'signup', 'magiclink', 'email_change', 'invite']
-      expect(supportedTypes).toContain('signup')
+    it('should reject unsafe external URLs and fallback to /dashboard', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?next=https://evil.com/steal-data',
+      )
+
+      const response = await GET(request)
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/dashboard')
     })
 
-    it('should support magiclink type', () => {
-      const supportedTypes = ['recovery', 'signup', 'magiclink', 'email_change', 'invite']
-      expect(supportedTypes).toContain('magiclink')
+    it('should reject protocol-relative URLs and fallback to /dashboard', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?next=//evil.com/steal-data',
+      )
+
+      const response = await GET(request)
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/dashboard')
     })
 
-    it('should support email_change type', () => {
-      const supportedTypes = ['recovery', 'signup', 'magiclink', 'email_change', 'invite']
-      expect(supportedTypes).toContain('email_change')
-    })
+    it('should default to /dashboard when next is missing', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
 
-    it('should support invite type', () => {
-      const supportedTypes = ['recovery', 'signup', 'magiclink', 'email_change', 'invite']
-      expect(supportedTypes).toContain('invite')
-    })
-  })
+      const request = new NextRequest('http://localhost:3000/auth/callback')
 
-  describe('next path safety validation', () => {
-    it('should accept same-origin relative paths', () => {
-      const nextPath = '/dashboard'
-      const isSafeNext = nextPath.startsWith('/') && !nextPath.startsWith('//')
-      expect(isSafeNext).toBe(true)
-    })
+      const response = await GET(request)
 
-    it('should reject protocol-relative URLs', () => {
-      const nextPath = '//evil.com'
-      const isSafeNext = nextPath.startsWith('/') && !nextPath.startsWith('//')
-      expect(isSafeNext).toBe(false)
-    })
-
-    it('should reject absolute URLs', () => {
-      const nextPath = 'https://evil.com'
-      const isSafeNext = nextPath.startsWith('/') && !nextPath.startsWith('//')
-      expect(isSafeNext).toBe(false)
-    })
-
-    it('should default to /dashboard if next is unsafe', () => {
-      let nextPath = 'https://evil.com'
-      const isSafeNext = nextPath.startsWith('/') && !nextPath.startsWith('//')
-      if (!isSafeNext) {
-        nextPath = '/dashboard'
-      }
-      expect(nextPath).toBe('/dashboard')
-    })
-  })
-
-  describe('redirect_to parameter parsing for magic links', () => {
-    it('should extract next from redirect_to URL parameter', () => {
-      // Magic links encode next into redirect_to parameter
-      const redirectTo = 'http://localhost:3000/auth/callback?next=/auth/update-password&token_hash=abc123'
-      const redirectUrl = new URL(redirectTo)
-      const extractedNext = redirectUrl.searchParams.get('next')
-      expect(extractedNext).toBe('/auth/update-password')
-    })
-
-    it('should handle missing redirect_to gracefully', () => {
-      const redirectTo = null
-      let nextValue = '/dashboard'
-      if (redirectTo) {
-        try {
-          const redirectUrl = new URL(redirectTo)
-          const nextParam = redirectUrl.searchParams.get('next')
-          if (nextParam) nextValue = nextParam
-        } catch {
-          // Not a valid URL, ignore
-        }
-      }
-      expect(nextValue).toBe('/dashboard')
-    })
-
-    it('should handle invalid redirect_to URL gracefully', () => {
-      const redirectTo = 'not-a-valid-url'
-      let nextValue = '/dashboard'
-      try {
-        const redirectUrl = new URL(redirectTo)
-        const nextParam = redirectUrl.searchParams.get('next')
-        if (nextParam) nextValue = nextParam
-      } catch {
-        // Not a valid URL, ignore
-      }
-      expect(nextValue).toBe('/dashboard')
+      expect(response.headers.get('location')).toBe('http://localhost:3000/dashboard')
     })
   })
 
-  describe('error handling flow', () => {
-    it('should encode error messages in redirect', () => {
-      const errorMessage = 'Invalid recovery link: expired token'
-      const encoded = encodeURIComponent(errorMessage)
-      const errorUrl = `/auth/error?reason=${encoded}`
-      expect(errorUrl).toContain('reason=Invalid%20recovery%20link%3A%20expired%20token')
+  describe('Redirect to extraction from redirect_to param', () => {
+    it('should extract next from redirect_to URL parameter', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
+
+      const redirectTo = encodeURIComponent('http://localhost:3000/auth/callback?next=/settings')
+      const request = new NextRequest(
+        `http://localhost:3000/auth/callback?redirect_to=${redirectTo}`,
+      )
+
+      const response = await GET(request)
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/settings')
     })
 
-    it('should handle missing authentication gracefully', () => {
-      const hasCode = false
-      const hasToken = false
-      const hasSession = false
+    it('should extract from redirect_to when next is default /dashboard', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
 
-      if (!hasCode && !hasToken && !hasSession) {
-        const reason = 'Missing authentication code.'
-        expect(reason).toBeTruthy()
-      }
+      const redirectTo = encodeURIComponent('http://localhost:3000/auth/callback?next=/settings')
+      const request = new NextRequest(
+        `http://localhost:3000/auth/callback?next=/dashboard&redirect_to=${redirectTo}`,
+      )
+
+      const response = await GET(request)
+
+      // When next is default /dashboard and redirect_to has a next param, redirect_to wins
+      expect(response.headers.get('location')).toBe('http://localhost:3000/settings')
+    })
+
+    it('should not override explicit non-default next with redirect_to', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
+
+      const redirectTo = encodeURIComponent('http://localhost:3000/auth/callback?next=/settings')
+      const request = new NextRequest(
+        `http://localhost:3000/auth/callback?next=/profile&redirect_to=${redirectTo}`,
+      )
+
+      const response = await GET(request)
+
+      // When next is explicitly set to non-default, don't override it
+      expect(response.headers.get('location')).toBe('http://localhost:3000/profile')
+    })
+
+    it('should handle invalid redirect_to URL gracefully', async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { user: { id: 'user123' } } },
+      })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?redirect_to=not-a-valid-url',
+      )
+
+      const response = await GET(request)
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/dashboard')
     })
   })
 
-  describe('session shortcut only without credentials', () => {
-    it('should use session shortcut when session exists and no credentials', () => {
-      const tokenHash = null
-      const token = null
-      const code = null
-      const sessionExists = true
+  describe('Support for all Supabase email link types', () => {
+    const emailLinkTypes = [
+      { type: 'invite', token: 'invite_token_123' },
+      { type: 'magiclink', token: 'magiclink_token_123' },
+      { type: 'signup', token: 'signup_token_123' },
+      { type: 'email_change', token: 'email_change_token_123' },
+    ]
 
-      const shouldUseSessionShortcut = !tokenHash && !token && !code && sessionExists
-      expect(shouldUseSessionShortcut).toBe(true)
+    emailLinkTypes.forEach(({ type, token }) => {
+      it(`should verify ${type} email link type`, async () => {
+        mockVerifyOtp.mockResolvedValue({ error: null })
+
+        const request = new NextRequest(
+          `http://localhost:3000/auth/callback?token_hash=${token}&type=${type}&next=/dashboard`,
+        )
+
+        const response = await GET(request)
+
+        expect(mockVerifyOtp).toHaveBeenCalledWith({
+          type,
+          token_hash: token,
+        })
+        expect(response.status).toBe(307)
+      })
+    })
+  })
+
+  describe('Alternative token parameter format', () => {
+    it('should accept token parameter as alternative to token_hash', async () => {
+      mockVerifyOtp.mockResolvedValue({ error: null })
+
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?token=alt_format_token&type=recovery&next=/auth/update-password',
+      )
+
+      const response = await GET(request)
+
+      expect(mockVerifyOtp).toHaveBeenCalledWith({
+        type: 'recovery',
+        token_hash: 'alt_format_token',
+      })
+      expect(response.status).toBe(307)
     })
 
-    it('should not use session shortcut when token_hash exists', () => {
-      const tokenHash = 'abc123'
-      const token = null
-      const code = null
-      const sessionExists = true
+    it('should prefer token_hash over token when both present', async () => {
+      mockVerifyOtp.mockResolvedValue({ error: null })
 
-      const shouldUseSessionShortcut = !tokenHash && !token && !code && sessionExists
-      expect(shouldUseSessionShortcut).toBe(false)
-    })
+      const request = new NextRequest(
+        'http://localhost:3000/auth/callback?token_hash=primary_token&token=secondary_token&type=recovery&next=/auth/update-password',
+      )
 
-    it('should not use session shortcut when token exists', () => {
-      const tokenHash = null
-      const token = 'abc123'
-      const code = null
-      const sessionExists = true
+      const response = await GET(request)
 
-      const shouldUseSessionShortcut = !tokenHash && !token && !code && sessionExists
-      expect(shouldUseSessionShortcut).toBe(false)
-    })
-
-    it('should not use session shortcut when code exists', () => {
-      const tokenHash = null
-      const token = null
-      const code = 'auth_code_123'
-      const sessionExists = true
-
-      const shouldUseSessionShortcut = !tokenHash && !token && !code && sessionExists
-      expect(shouldUseSessionShortcut).toBe(false)
+      expect(mockVerifyOtp).toHaveBeenCalledWith({
+        type: 'recovery',
+        token_hash: 'primary_token',
+      })
     })
   })
 })

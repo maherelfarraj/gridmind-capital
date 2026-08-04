@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
@@ -9,27 +8,16 @@ import { validateResetConfirmParams, buildResetConfirmCallbackUrl, getResetConfi
 export default function ResetConfirmPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [isValid, setIsValid] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    // Extract parameters from URL
-    const tokenHash = searchParams.get('token_hash')
-    const type = searchParams.get('type')
-    const next = searchParams.get('next')
+  // Derive state directly from searchParams - no async flash
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type')
+  const next = searchParams.get('next')
 
-    // Validate using helper
-    if (!validateResetConfirmParams({ tokenHash, type, next })) {
-      setError(getResetConfirmErrorMessage(tokenHash, type, next))
-      return
-    }
-
-    // All validations passed
-    setIsValid(true)
-  }, [searchParams])
+  const isValid = validateResetConfirmParams({ tokenHash, type, next })
+  const error = isValid ? null : getResetConfirmErrorMessage(tokenHash, type, next)
 
   const handleContinue = () => {
-    const tokenHash = searchParams.get('token_hash')
     if (!tokenHash) return
 
     // Build callback URL using helper
