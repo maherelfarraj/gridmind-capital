@@ -228,34 +228,67 @@ export async function createApprovalWorkflow(
     // Insert approval_steps: fail atomically if this fails
     const { error: stepErr } = await supabase.from('approval_steps').insert(stepRows)
     if (stepErr) {
-      // Rollback: delete the approval and events before failing
-      await supabase.from('approvals').delete().eq('id', approval.id)
+      // Rollback: delete the approval before failing. Surface a failed cleanup
+      // rather than swallow it, so orphaned rows never go unnoticed.
+      const { error: cleanupErr } = await supabase.from('approvals').delete().eq('id', approval.id)
+      if (cleanupErr) {
+        return {
+          id: '',
+          error: `Approval steps creation failed: ${stepErr.message}; cleanup ALSO failed (orphaned approval ${approval.id}): ${cleanupErr.message}`,
+        }
+      }
       return { id: '', error: `Approval steps creation failed: ${stepErr.message}` }
     }
 
-    // Emit events: 'created' + 'assigned' per level
+    // Emit events using the REAL approval_events schema:
+    //   tenant_id, approval_id, event, actor_id, actor_role, from_status,
+    //   to_status, detail (jsonb), created_at.
+    // 'created' has no prior status (from_status null -> pending); each
+    // 'assigned' records the level and the resolved assignee.
     const eventRows = [
       {
+        tenant_id: tenantId,
         approval_id: approval.id,
+        event: 'created',
         actor_id: createdBy,
-        event_type: 'created',
-        metadata: { rule: rule?.id, levels: approvalLevels, amount },
+        from_status: null,
+        to_status: 'pending',
+        detail: {
+          rule_id: rule?.id ?? null,
+          levels: approvalLevels,
+          amount,
+          gate_number: gateNumber ?? null,
+        },
       },
       ...stepRows.map((s) => ({
+        tenant_id: tenantId,
         approval_id: approval.id,
+        event: 'assigned',
         actor_id: createdBy,
-        event_type: 'assigned',
-        metadata: { level: s.level, assigned_to: s.assigned_to },
+        from_status: 'pending',
+        to_status: 'pending',
+        detail: { level: s.level, assigned_to: s.assigned_to },
       })),
     ]
 
-    // Insert approval_events: fail atomically if this fails
+    // Insert approval_events: fail atomically if this fails. Any cleanup that
+    // itself fails is surfaced (orphaned rows must never be silently left).
     const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
     if (eventErr) {
-      // Rollback: delete approval, steps, and any inserted events
-      await supabase.from('approval_steps').delete().eq('approval_id', approval.id)
-      await supabase.from('approval_events').delete().eq('approval_id', approval.id)
-      await supabase.from('approvals').delete().eq('id', approval.id)
+      const { error: evCleanupErr } = await supabase.from('approval_events').delete().eq('approval_id', approval.id)
+      const { error: stepCleanupErr } = await supabase.from('approval_steps').delete().eq('approval_id', approval.id)
+      const { error: apprCleanupErr } = await supabase.from('approvals').delete().eq('id', approval.id)
+      const cleanupFailures = [
+        evCleanupErr && `events: ${evCleanupErr.message}`,
+        stepCleanupErr && `steps: ${stepCleanupErr.message}`,
+        apprCleanupErr && `approval: ${apprCleanupErr.message}`,
+      ].filter(Boolean)
+      if (cleanupFailures.length > 0) {
+        return {
+          id: '',
+          error: `Approval events creation failed: ${eventErr.message}; cleanup ALSO failed (orphaned rows for approval ${approval.id}): ${cleanupFailures.join('; ')}`,
+        }
+      }
       return { id: '', error: `Approval events creation failed: ${eventErr.message}` }
     }
 
@@ -934,10 +967,13 @@ export async function decideApproval(opts: {
     reject:              'rejected',
   } as const
 
+  // Tenant-scope the lookup: an approver may only act on approvals in their own
+  // tenant. gate.actor.tenantId is validated non-null by requireApprover().
   const { data: approval } = await supabase
     .from('approvals')
     .select('title, object_type, object_id, description, assignee_id, status, gate_number, tenant_id')
     .eq('id', opts.id)
+    .eq('tenant_id', gate.actor.tenantId)
     .single()
 
   if (!approval) return { error: 'Approval not found' }
@@ -947,6 +983,12 @@ export async function decideApproval(opts: {
   if (approval.status && FINAL_STATES.includes(approval.status)) {
     return { error: 'Cannot decide: this approval has already been decided' }
   }
+
+  // Gate approvals are routed to the atomic RPC, which is the SOLE source of
+  // truth for current-step assignment. We must NOT pre-authorize a gate decision
+  // with requireAssignedApprover(approval) here (that would double-check the
+  // stale approvals.assignee_id and could disagree with the locked current step).
+  const isGateApproval = shouldRouteGateDecisionToRpc(approval.object_type)
 
   // Step-aware from-state: verify caller is assigned to the CURRENT pending step
   const { data: currentStep } = await supabase
@@ -958,12 +1000,9 @@ export async function decideApproval(opts: {
     .limit(1)
     .maybeSingle()
 
-  // If a step workflow exists, verify the caller is assigned to the current step
-  if (currentStep && currentStep.assigned_to !== gate.actor.userId) {
-    const approverCheck = await requireAssignedApprover(approval)
-    if ('error' in approverCheck) return approverCheck
-  } else {
-    // No step workflow: verify caller is the assigned approver (or admin override)
+  // Non-gate approvals authorize here (assigned approver or admin override).
+  // Gate approvals defer entirely to decide_gate_approval's locked-step check.
+  if (!isGateApproval) {
     const approverCheck = await requireAssignedApprover(approval)
     if ('error' in approverCheck) return approverCheck
   }
@@ -1019,20 +1058,29 @@ export async function decideApproval(opts: {
   // object type with an EXPLICIT gate_number null/undefined check so a gate
   // numbered 0 still reaches this path.
   // ===========================================================================
-  if (shouldRouteGateDecisionToRpc(approval.object_type)) {
+  if (isGateApproval) {
     if (isGateNumberMissing('gate', approval.gate_number)) {
       return { error: 'This gate approval is missing a gate number and cannot be decided' }
     }
 
-    // Admin override: an admin deciding an approval they are not assigned to.
-    // Passed to the RPC so its assignment check can allow the override while
-    // still rejecting an unrelated, non-admin caller.
+    // Admin override: only for a VALIDATED system_admin/tenant_admin acting on an
+    // approval assigned to someone else. Passed to the RPC so its locked-step
+    // assignment check can allow the override while still rejecting an unrelated,
+    // non-admin caller.
     const adminOverride = isAdminOverride(
       gate.actor.role,
       gate.actor.userId,
       approval.assignee_id,
       ADMIN_ROLES as readonly string[],
     )
+
+    // Conditions travel INTO the RPC as JSONB so they are inserted inside the
+    // same transaction as the step/gate writes. A conditional_proceed with no
+    // valid condition RAISEs in the RPC and rolls the whole decision back.
+    const conditionsJson =
+      opts.decision === 'conditional_proceed'
+        ? (opts.conditions ?? []).map((c) => ({ title: c.title.trim(), due_date: c.due_date }))
+        : null
 
     const { data: rpcOutcome, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
       p_approval_id: opts.id,
@@ -1041,25 +1089,10 @@ export async function decideApproval(opts: {
       p_decision: opts.decision,
       p_rationale: opts.rationale,
       p_is_admin_override: adminOverride,
+      p_conditions: conditionsJson,
     })
 
     if (rpcErr) return { error: `Gate decision failed: ${rpcErr.message}` }
-
-    // Conditions are a supplementary artifact of a conditional approval, not part
-    // of the atomic gate transition. Record them (tenant-scoped) after the RPC
-    // commits. approval_conditions.tenant_id is NOT NULL, so it must be supplied.
-    if (opts.decision === 'conditional_proceed' && opts.conditions && opts.conditions.length > 0) {
-      const conditionRows = opts.conditions.map((c) => ({
-        tenant_id: approval.tenant_id,
-        approval_id: opts.id,
-        title: c.title.trim(),
-        due_date: c.due_date,
-        status: 'open',
-        created_by: gate.actor.userId,
-      }))
-      const { error: condErr } = await supabase.from('approval_conditions').insert(conditionRows)
-      if (condErr) console.log(`[v0] Approval conditions creation warning: ${condErr.message}`)
-    }
 
     // Best-effort notification only for a finalized decision.
     if (rpcOutcome === 'approved' || rpcOutcome === 'rejected') {
@@ -1250,28 +1283,59 @@ export async function delegateApproval(opts: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = gate.actor.tenantId
 
-  // Read the approval to verify authorization
+  // Read the approval to verify authorization. Tenant-scoped: an approver may
+  // only delegate approvals in their own tenant.
   const { data: current, error: readErr } = await supabase
     .from('approvals')
-    .select('description, assignee_id')
+    .select('description, assignee_id, object_type, gate_number')
     .eq('id', opts.id)
+    .eq('tenant_id', tenantId)
     .single()
 
   if (readErr) return { error: readErr.message }
-  
-  // Verify the session user is the current assignee (or admin)
-  const ADMIN_ROLES = ['system_admin', 'tenant_admin']
-  const isAdmin = gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as any)
-  const isAssignee = gate.actor.userId === current?.assignee_id
-  
+  if (!current) return { error: 'Approval not found' }
+
+  const isAdmin = gate.actor.role && (ADMIN_ROLES as readonly string[]).includes(gate.actor.role)
+
+  // -------------------------------------------------------------------------
+  // GATE workflows: delegation is a transactional hand-off of the CURRENT step,
+  // routed to delegate_gate_approval. The RPC locks the approval + current step,
+  // verifies tenant + current-assignee/admin authorization, moves BOTH the step
+  // and approvals.assignee_id to the delegate, marks the approval delegated,
+  // records the rationale, and writes event + audit rows -- all or nothing.
+  // -------------------------------------------------------------------------
+  if (shouldRouteGateDecisionToRpc(current.object_type)) {
+    const adminOverride = isAdminOverride(
+      gate.actor.role,
+      gate.actor.userId,
+      current.assignee_id,
+      ADMIN_ROLES as readonly string[],
+    )
+
+    const { error: rpcErr } = await supabase.rpc('delegate_gate_approval', {
+      p_approval_id: opts.id,
+      p_tenant_id: tenantId,
+      p_actor: gate.actor.userId,
+      p_delegate: opts.delegateId,
+      p_rationale: opts.reason,
+      p_is_admin_override: adminOverride,
+    })
+
+    if (rpcErr) return { error: `Gate delegation failed: ${rpcErr.message}` }
+    return { error: null }
+  }
+
+  // Non-gate approvals: verify the caller is the current assignee (or admin).
+  const isAssignee = gate.actor.userId === current.assignee_id
   if (!isAdmin && !isAssignee) {
     return { error: 'Only the assigned approver or admin can delegate this approval' }
   }
 
   // Append to the audit trail rather than overwriting it.
   const note = `[Delegated to ${opts.delegateId} at ${new Date().toISOString()}] Reason: ${opts.reason}`
-  const description = current?.description ? `${current.description}\n${note}` : note
+  const description = current.description ? `${current.description}\n${note}` : note
 
   const { error } = await supabase
     .from('approvals')
@@ -1284,6 +1348,7 @@ export async function delegateApproval(opts: {
       updated_at:  new Date().toISOString(),
     })
     .eq('id', opts.id)
+    .eq('tenant_id', tenantId)
   return { error: error?.message ?? null }
 }
 
