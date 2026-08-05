@@ -195,7 +195,11 @@ export async function createApprovalWorkflow(
     for (let level = 1; level <= approvalLevels; level++) {
       const role = requiredRoles[level - 1] ?? 'tenant_admin'
       const assigneeId = await resolveApproveeSeat(supabase, tenantId, role)
-      if (!assigneeId) return { id: '', error: `Failed to resolve approver for level ${level}` }
+      if (!assigneeId) {
+        // Rollback: delete the approval row before failing
+        await supabase.from('approvals').delete().eq('id', approval.id)
+        return { id: '', error: `Failed to resolve approver for level ${level}` }
+      }
       stepRows.push({
         approval_id: approval.id,
         level,
@@ -637,15 +641,18 @@ async function applyApprovalLifecycle(
         return `Next phase gate activation failed: ${nextGateErr.message}`
       }
 
-      // Compute project.current_phase as count of approved gates
-      const { data: approvedGates } = await supabase
+      // Compute project.current_phase as exact count of approved gates (tenant isolation via project verification)
+      const { count: approvedCount, error: countError } = await supabase
         .from('phase_gates')
-        .select('phase_number')
+        .select('id', { count: 'exact', head: true })
         .eq('project_id', approval.object_id)
-        .eq('tenant_id', approval.tenant_id)
         .eq('status', 'approved')
 
-      const currentPhase = (approvedGates?.length ?? 0) + 1
+      if (countError) {
+        return `Approved gate count failed: ${countError.message}`
+      }
+
+      const currentPhase = approvedCount ?? 0
 
       const { error: projErr } = await supabase
         .from('projects')

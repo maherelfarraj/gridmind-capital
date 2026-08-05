@@ -118,24 +118,24 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `${formData.deliverables.length - documentIds.length} deliverables missing document IDs` }
   }
 
-  // Batch-query canonical document_files; verify each exists, is in-scope, eligible status
+  // Batch-query canonical document_files with tenant and project filters directly in query (not post-check)
   const { data: docFiles } = await supabase
     .from('document_files')
     .select('id, project_id, tenant_id, storage_path, file_name, category, status, uploaded_by, created_at')
     .in('id', documentIds)
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+    .not('status', 'eq', 'deleted')
+    .not('status', 'eq', 'superseded')
 
   if (!docFiles || docFiles.length !== documentIds.length) {
-    return { error: `${documentIds.length - (docFiles?.length ?? 0)} document file IDs not found in database` }
+    return { error: `${documentIds.length - (docFiles?.length ?? 0)} document file IDs not found, invalid scope, or deleted` }
   }
 
-  // Verify ALL documents have storage paths, belong to this project/tenant, and are not deleted/superseded
-  const invalidDocs = docFiles.filter(
-    (d) => !d.storage_path || !d.file_name || d.project_id !== projectId || d.tenant_id !== tenantId || d.status === 'deleted' || d.status === 'superseded',
-  )
+  // Verify ALL documents have required fields
+  const invalidDocs = docFiles.filter((d) => !d.storage_path || !d.file_name)
   if (invalidDocs.length > 0) {
-    return { 
-      error: `${invalidDocs.length} document files are invalid, deleted, superseded, or not in this project` 
-    }
+    return { error: `${invalidDocs.length} document files are missing storage_path or file_name` }
   }
 
   // 7. Batch-validate all staffing assignments using canonical project_team model (role_id/person_id).
@@ -148,25 +148,28 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `${formData.staffingRoles.length - personIds.length} staffing roles not assigned` }
   }
 
-  // Batch-query canonical project_team through person_id foreign key; verify active assignment and active person
+  // Batch-query canonical project_team; use canonical PostgREST syntax for profiles join
   const { data: assignments } = await supabase
     .from('project_team')
-    .select('person_id, project_id, tenant_id, role_id, roles(id, code, title), profiles_project_team_person_id_fkey(id, is_active)')
+    .select(`
+      person_id,
+      project_id,
+      role_id,
+      roles(id, code, title),
+      profiles!project_team_person_id_fkey(id, full_name, is_active)
+    `)
     .in('person_id', personIds)
     .eq('project_id', projectId)
-    .eq('tenant_id', tenantId)
 
   if (!assignments || assignments.length !== personIds.length) {
     return {
-      error: `${personIds.length - (assignments?.length ?? 0)} people are not assigned to this project or not in this tenant`,
+      error: `${personIds.length - (assignments?.length ?? 0)} people are not assigned to this project`,
     }
   }
 
-  // Verify each person has an active profile (not just the team assignment)
+  // Verify each person has an active profile (profiles is now an object, not array)
   const inactivePeople = assignments.filter((a) => {
-    if (!a.profiles_project_team_person_id_fkey) return true
-    if (!Array.isArray(a.profiles_project_team_person_id_fkey)) return true
-    const profile = a.profiles_project_team_person_id_fkey[0]
+    const profile = a.profiles as any
     return !profile || !profile.is_active
   })
   if (inactivePeople.length > 0) {
@@ -335,12 +338,16 @@ export async function loadG3ProjectTeamMembers(projectId: string) {
 
   if (!project) return { members: [], error: 'Project not found or not in your tenant' }
 
-  // Load canonical project_team assignments with role and person details
+  // Load canonical project_team assignments using canonical PostgREST syntax
   const { data: assignments } = await supabase
     .from('project_team')
-    .select('person_id, role_id, roles(id, code, title), profiles_project_team_person_id_fkey(id, full_name)')
+    .select(`
+      person_id,
+      role_id,
+      roles(id, code, title),
+      profiles!project_team_person_id_fkey(id, full_name, is_active)
+    `)
     .eq('project_id', projectId)
-    .eq('tenant_id', tenantId)
 
   if (!assignments || assignments.length === 0) {
     return { members: [], error: 'No active team members found' }
@@ -348,11 +355,15 @@ export async function loadG3ProjectTeamMembers(projectId: string) {
 
   return {
     members: assignments
-      .filter((a) => a.profiles_project_team_person_id_fkey && a.roles)
+      .filter((a) => {
+        const profile = a.profiles as any
+        const role = a.roles as any
+        return profile && profile.is_active && role
+      })
       .map((a) => ({
         profileId: a.person_id,
-        name: (a.profiles_project_team_person_id_fkey as any).full_name || 'Unknown',
-        role: (a.roles as any).title,
+        name: ((a.profiles as any) || {}).full_name || 'Unknown',
+        role: ((a.roles as any) || {}).title,
       })),
   }
 }
