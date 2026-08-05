@@ -382,6 +382,27 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
         </Card>
       )}
 
+      {/* Locked explanation: make the prerequisite chain explicit */}
+      {isGateLocked && !isApproved && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader className="pb-3 flex-row items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600" />
+            <CardTitle className="text-sm">G3 is locked</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-amber-900">
+            <p>
+              This gate opens only after the earlier gates are approved. G3 (Commercial &amp; Financial
+              Close) requires <strong>G1 (Origination &amp; Feasibility)</strong> and{' '}
+              <strong>G2 (Permitting &amp; Grid Application)</strong> to be completed and approved first.
+            </p>
+            <p className="text-xs text-amber-800">
+              Current G3 status: <span className="font-mono">{gateStatus ?? 'not started'}</span>. The form
+              becomes editable once G3 reaches <span className="font-mono">in_review</span>.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Actions */}
       <div className="flex gap-3">
         {isGateLocked && !isApproved && (
