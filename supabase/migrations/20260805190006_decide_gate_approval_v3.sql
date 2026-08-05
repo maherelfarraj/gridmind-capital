@@ -209,29 +209,33 @@ BEGIN
   END IF;
 
   -- =========================================================================
-  -- SIGNATURE (proceed / conditional_proceed only): the endorsement is signed.
-  -- Insert BEFORE approving the step so a bad signature rolls the decision back.
-  -- Applies to both partial and final approvals (this block runs for every
-  -- endorsement). The PNG must already be staged in storage by the caller.
+  -- SIGNATURE (proceed / conditional_proceed only): the endorsement MUST be
+  -- signed. This block runs only for endorsements (reject/hold return earlier),
+  -- so a signature is REQUIRED here -- the RPC is the sole authority, and it will
+  -- not approve a step without one. Insert BEFORE approving the step so a bad or
+  -- missing signature rolls the whole decision back. Applies to both partial and
+  -- final approvals. The PNG must already be staged in storage by the caller.
   -- =========================================================================
-  IF p_signature IS NOT NULL THEN
-    v_sig_name      := nullif(btrim(coalesce(p_signature->>'signer_name', '')), '');
-    v_sig_role      := nullif(btrim(coalesce(p_signature->>'signer_role', '')), '');
-    v_sig_path      := nullif(btrim(coalesce(p_signature->>'image_path', '')), '');
-    v_sig_statement := nullif(btrim(coalesce(p_signature->>'statement', '')), '');
-
-    IF v_sig_name IS NULL OR v_sig_path IS NULL OR v_sig_statement IS NULL THEN
-      RAISE EXCEPTION 'decide_gate_approval: signature requires signer_name, image_path and statement';
-    END IF;
-
-    INSERT INTO public.signatures
-      (tenant_id, project_id, entity_type, entity_id, signer_id, signer_name, signer_role,
-       signature_image_path, signed_at, ip_address, statement)
-    VALUES
-      (p_tenant_id, v_project, 'gate_approval', p_approval_id, p_actor, v_sig_name,
-       COALESCE(v_sig_role, v_step.assigned_role), v_sig_path, v_now,
-       nullif(btrim(coalesce(p_signature->>'ip_address', '')), ''), v_sig_statement);
+  IF p_signature IS NULL THEN
+    RAISE EXCEPTION 'decide_gate_approval: a signature is required to endorse (% ) gate approval %', p_decision, p_approval_id;
   END IF;
+
+  v_sig_name      := nullif(btrim(coalesce(p_signature->>'signer_name', '')), '');
+  v_sig_role      := nullif(btrim(coalesce(p_signature->>'signer_role', '')), '');
+  v_sig_path      := nullif(btrim(coalesce(p_signature->>'image_path', '')), '');
+  v_sig_statement := nullif(btrim(coalesce(p_signature->>'statement', '')), '');
+
+  IF v_sig_name IS NULL OR v_sig_path IS NULL OR v_sig_statement IS NULL THEN
+    RAISE EXCEPTION 'decide_gate_approval: signature requires signer_name, image_path and statement';
+  END IF;
+
+  INSERT INTO public.signatures
+    (tenant_id, project_id, entity_type, entity_id, signer_id, signer_name, signer_role,
+     signature_image_path, signed_at, ip_address, statement)
+  VALUES
+    (p_tenant_id, v_project, 'gate_approval', p_approval_id, p_actor, v_sig_name,
+     COALESCE(v_sig_role, v_step.assigned_role), v_sig_path, v_now,
+     nullif(btrim(coalesce(p_signature->>'ip_address', '')), ''), v_sig_statement);
 
   -- =========================================================================
   -- PROCEED / CONDITIONAL_PROCEED: approve the current step.

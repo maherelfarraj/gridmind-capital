@@ -3,24 +3,33 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * Server-action tests for the REAL `createApprovalWorkflow` entry point.
  *
- * These prove the action writes approval_events using the ACTUAL production
- * schema (event / detail / from_status / to_status / tenant_id) and NOT the
- * phantom event_type / metadata columns it used to insert -- which silently
- * dropped every workflow-creation event. They also prove a gate workflow
- * produces exactly one approvals row and all approval_steps, and that a failed
- * event insert rolls everything back (no orphaned rows).
+ * createApprovalWorkflow no longer inserts approvals/steps/events itself with
+ * app-side compensation. It now:
+ *   1. resolves ONE seat per level via fail-closed resolveApproveeSeat
+ *      (an active same-tenant profile, or an active tenant_admin, or null), and
+ *   2. hands the whole write to the transactional RPC
+ *      `create_approval_workflow_tx`, which commits approvals + approval_steps
+ *      (with tenant_id) + approval_events atomically or not at all.
+ *
+ * These tests prove: the RPC is called exactly once with the right arguments and
+ * a fully-resolved step set (each carrying assigned_role); an RPC error is
+ * surfaced; and — the important safety property — if ANY level cannot be
+ * resolved to a real profile, the action ABORTS before calling the RPC (no
+ * workflow assigned to a non-person).
  *
  * Everything below the action is mocked at the module boundary; no Supabase
- * connection is opened. Writes are recorded so an insert is observable as a
- * CALL with its payload rather than as a database mutation.
+ * connection is opened.
  */
 
 type Write = { table: string; op: string; payload?: any }
 
 const state = vi.hoisted(() => ({
   writes: [] as Write[],
-  // Controls the approval_events insert result so a failure path is testable.
-  eventInsertError: null as { message: string } | null,
+  rpcCalls: [] as Array<{ fn: string; args: any }>,
+  rpcResult: { data: 'appr-1' as unknown, error: null as { message: string } | null },
+  // When false, the profiles seat lookups return null (no active profile),
+  // which must make resolveApproveeSeat fail closed.
+  seatResolves: true,
 }))
 
 function readResult(table: string) {
@@ -40,26 +49,14 @@ function readResult(table: string) {
         error: null,
       }
     case 'profiles':
-      return { data: { id: 'seat-1' }, error: null }
+      return { data: state.seatResolves ? { id: 'seat-1' } : null, error: null }
     default:
       return { data: null, error: null }
   }
 }
 
-function writeResult(table: string, op: string) {
-  if (table === 'approvals' && op === 'insert') {
-    return { data: { id: 'appr-1' }, error: null }
-  }
-  if (table === 'approval_events' && op === 'insert') {
-    return { data: null, error: state.eventInsertError }
-  }
-  // steps insert, all deletes
-  return { data: null, error: null }
-}
-
 function makeBuilder(table: string) {
   let writeOp: string | null = null
-  let writePayload: unknown
   const b: Record<string, any> = {
     select: () => b,
     eq: () => b,
@@ -76,19 +73,24 @@ function makeBuilder(table: string) {
   for (const op of ['insert', 'update', 'upsert', 'delete'] as const) {
     b[op] = (payload?: unknown) => {
       writeOp = op
-      writePayload = payload
       state.writes.push({ table, op, payload })
       return b
     }
   }
   function terminal() {
-    return writeOp ? writeResult(table, writeOp) : readResult(table)
+    return writeOp ? { data: null, error: null } : readResult(table)
   }
   return b
 }
 
 vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({ from: (table: string) => makeBuilder(table) }),
+  createAdminClient: () => ({
+    from: (table: string) => makeBuilder(table),
+    rpc: async (fn: string, args: any) => {
+      state.rpcCalls.push({ fn, args })
+      return state.rpcResult
+    },
+  }),
 }))
 vi.mock('@/lib/tenant', () => ({ getCurrentTenantId: async () => 'tenant-a' }))
 vi.mock('@/lib/auth/guard', () => ({
@@ -104,80 +106,76 @@ vi.mock('@/lib/email/send', () => ({
   sendApprovalRequestEmail: vi.fn(),
   sendApprovalDecisionEmail: vi.fn(),
 }))
-vi.mock('@/app/actions/signatures', () => ({ createSignature: vi.fn() }))
+vi.mock('@/app/actions/signatures', () => ({
+  createSignature: vi.fn(),
+  stageGateSignatureImage: vi.fn(),
+}))
 vi.mock('@/app/actions/phase-gates', () => ({ advanceProjectGate: vi.fn(async () => ({ error: null })) }))
 
 import { createApprovalWorkflow } from '@/app/actions/approvals'
 
 beforeEach(() => {
   state.writes.length = 0
-  state.eventInsertError = null
+  state.rpcCalls.length = 0
+  state.rpcResult = { data: 'appr-1', error: null }
+  state.seatResolves = true
 })
 
-const eventInserts = () => state.writes.filter((w) => w.table === 'approval_events' && w.op === 'insert')
-const flatEventRows = () => eventInserts().flatMap((w) => (Array.isArray(w.payload) ? w.payload : [w.payload]))
+const wfCalls = () => state.rpcCalls.filter((c) => c.fn === 'create_approval_workflow_tx')
 
-describe('createApprovalWorkflow — schema-correct events', () => {
-  it('creates one approval, all steps, and valid approval_events', async () => {
+describe('createApprovalWorkflow — transactional RPC', () => {
+  it('resolves seats and hands the whole workflow to create_approval_workflow_tx', async () => {
     const res = await createApprovalWorkflow('gate', 'project-1', 'G3 Gate', 500, 3)
     expect(res.error).toBeUndefined()
     expect(res.id).toBe('appr-1')
 
-    // exactly one approvals insert
-    const approvalInserts = state.writes.filter((w) => w.table === 'approvals' && w.op === 'insert')
-    expect(approvalInserts).toHaveLength(1)
-    expect(approvalInserts[0].payload).toMatchObject({
-      object_type: 'gate',
-      gate_number: 3,
-      tenant_id: 'tenant-a',
-      status: 'pending',
+    // exactly one transactional call — no app-side approvals/steps/events inserts
+    const calls = wfCalls()
+    expect(calls).toHaveLength(1)
+    expect(state.writes.some((w) => w.op === 'insert')).toBe(false)
+
+    const args = calls[0].args
+    expect(args).toMatchObject({
+      p_tenant_id: 'tenant-a',
+      p_object_type: 'gate',
+      p_object_id: 'project-1',
+      p_gate_number: 3,
+      p_amount: 500,
+      p_requester: 'actor-1',
     })
-
-    // all approval_steps inserted (2 levels -> 2 step rows, in one insert)
-    const stepInserts = state.writes.filter((w) => w.table === 'approval_steps' && w.op === 'insert')
-    expect(stepInserts).toHaveLength(1)
-    expect(stepInserts[0].payload).toHaveLength(2)
-
-    // approval_events use the REAL schema, never event_type / metadata
-    const rows = flatEventRows()
-    expect(rows.length).toBe(3) // 1 created + 2 assigned
-    for (const r of rows) {
-      expect(r).toHaveProperty('event')
-      expect(r).toHaveProperty('detail')
-      expect(r).toHaveProperty('tenant_id', 'tenant-a')
-      expect(r).not.toHaveProperty('event_type')
-      expect(r).not.toHaveProperty('metadata')
+    // one step per level, each with a resolved assignee AND its assigned_role
+    expect(args.p_steps).toHaveLength(2)
+    for (const s of args.p_steps) {
+      expect(s).toHaveProperty('level')
+      expect(s).toHaveProperty('assigned_to', 'seat-1')
+      expect(typeof s.assigned_role).toBe('string')
+      expect(s.assigned_role.length).toBeGreaterThan(0)
     }
-    const created = rows.find((r: any) => r.event === 'created')
-    expect(created).toMatchObject({ from_status: null, to_status: 'pending' })
-    expect(created.detail).toMatchObject({ levels: 2, amount: 500, gate_number: 3 })
-    const assigned = rows.filter((r: any) => r.event === 'assigned')
-    expect(assigned).toHaveLength(2)
-    for (const a of assigned) {
-      expect(a).toMatchObject({ from_status: 'pending', to_status: 'pending' })
-      expect(a.detail).toHaveProperty('level')
-      expect(a.detail).toHaveProperty('assigned_to')
-    }
+    expect(args.p_steps.map((s: any) => s.level)).toEqual([1, 2])
   })
 
-  it('rolls back (no surviving rows) when the event insert fails', async () => {
-    state.eventInsertError = { message: 'events boom' }
+  it('surfaces an RPC failure and never claims success', async () => {
+    state.rpcResult = { data: null, error: { message: 'tx boom' } }
     const res = await createApprovalWorkflow('gate', 'project-1', 'G3 Gate', 500, 3)
     expect(res.id).toBe('')
-    expect(res.error).toContain('Approval events creation failed')
-
-    // rollback must delete events, steps, and the approval row
-    const deletes = state.writes.filter((w) => w.op === 'delete')
-    const deletedTables = deletes.map((d) => d.table)
-    expect(deletedTables).toContain('approval_events')
-    expect(deletedTables).toContain('approval_steps')
-    expect(deletedTables).toContain('approvals')
+    expect(res.error).toContain('tx boom')
   })
 
-  it('rejects a gate workflow with no gate number before any write', async () => {
+  it('FAILS CLOSED: aborts before the RPC when a level has no resolvable seat', async () => {
+    // No active profile exists for the requested role or tenant_admin fallback.
+    state.seatResolves = false
+    const res = await createApprovalWorkflow('gate', 'project-1', 'G3 Gate', 500, 3)
+    expect(res.id).toBe('')
+    expect(res.error).toMatch(/no active .* exists to fill level/i)
+    // The safety property: no workflow was created (RPC never called).
+    expect(wfCalls()).toHaveLength(0)
+  })
+
+  it('rejects a gate workflow with no gate number before any work', async () => {
     const res = await createApprovalWorkflow('gate', 'project-1', 'G3 Gate', 500)
     expect(res.id).toBe('')
     expect(res.error).toBe('A gate workflow requires a gate number')
     expect(state.writes).toHaveLength(0)
+    expect(state.rpcCalls).toHaveLength(0)
   })
 })
