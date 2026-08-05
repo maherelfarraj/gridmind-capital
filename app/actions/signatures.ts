@@ -276,6 +276,59 @@ export async function createSignature(opts: {
   }
 }
 
+export interface StagedGateSignature {
+  imagePath: string
+  signerName: string
+  signerRole: string | null
+  ipAddress: string | null
+}
+
+/**
+ * Upload a gate-approval signature PNG to storage WITHOUT inserting the
+ * `signatures` DB row. The row is inserted inside `decide_gate_approval` so the
+ * signature and the endorsement commit atomically.
+ *
+ * Storage is not transactional with Postgres, so the blob is staged first and
+ * the RPC writes only the DB row keyed to the returned `imagePath`. If the
+ * decision rolls back, the blob is a harmless orphan (no row references it) —
+ * the important invariant (no signature ROW without a committed decision, and no
+ * committed endorsement without a signature row) is preserved by the RPC.
+ */
+export async function stageGateSignatureImage(opts: {
+  dataUrl: string
+  entityId: string
+  signerName?: string
+  signerRole?: string | null
+}): Promise<{ staged: StagedGateSignature } | { error: string }> {
+  await requireUser()
+  if (!opts.dataUrl?.startsWith('data:image/')) return { error: 'A signature is required' }
+
+  const supabase = createAdminClient()
+  const actor = await getActor()
+  const signer = await resolveSignerId(supabase, actor)
+  if (!signer) return { error: 'Could not resolve signer identity' }
+
+  const match = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(opts.dataUrl)
+  if (!match) return { error: 'Invalid signature image' }
+  const buffer = Buffer.from(match[2], 'base64')
+  if (buffer.byteLength > 2 * 1024 * 1024) return { error: 'Signature image too large' }
+
+  const storagePath = `signatures/${actor.tenantId}/gate_approval/${opts.entityId}-${Date.now()}.png`
+  const { error: upErr } = await supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, buffer, { contentType: 'image/png', upsert: false })
+  if (upErr) return { error: upErr.message }
+
+  return {
+    staged: {
+      imagePath: storagePath,
+      signerName: opts.signerName?.trim() || signer.name,
+      signerRole: opts.signerRole ?? signer.role,
+      ipAddress: await resolveIp(),
+    },
+  }
+}
+
 async function toRecords(
   supabase: ReturnType<typeof createAdminClient>,
   rows: Array<Record<string, unknown>>,

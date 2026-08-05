@@ -6,7 +6,7 @@ import { requireUser, requireInternalRole } from '@/lib/auth/guard'
 import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
-import { createSignature, type SignatureDraft } from '@/app/actions/signatures'
+import { createSignature, stageGateSignatureImage, type SignatureDraft } from '@/app/actions/signatures'
 import {
   mapOpportunityApprovalDetail,
   type OpportunityApprovalView,
@@ -180,119 +180,45 @@ export async function createApprovalWorkflow(
       requiredRoles = rule.required_roles ?? ['tenant_admin']
     }
 
-    // Resolve the first level approver (will be assigned_to on approvals.assignee_id)
-    const firstLevelRole = requiredRoles[0] ?? 'tenant_admin'
-    const firstLevelAssigneeId = await resolveApproveeSeat(supabase, tenantId, firstLevelRole)
-    if (!firstLevelAssigneeId) return { id: '', error: 'Failed to resolve approver for first level' }
-
-    // Create approvals row with initial assignee = first level approver
-    // For gate workflows, persist gate_number for lifecycle tracking and duplicate detection
-    const { data: approval, error: apprErr } = await supabase
-      .from('approvals')
-      .insert({
-        tenant_id: tenantId,
-        object_type: objectType,
-        object_id: objectId,
-        title,
-        status: 'pending',
-        priority: 'normal',
-        amount,
-        requester_id: createdBy,
-        assignee_id: firstLevelAssigneeId,
-        rule_id: rule?.id,
-        gate_number: gateNumber ?? null,
-      })
-      .select('id')
-      .single()
-
-    if (apprErr || !approval) return { id: '', error: `Approval creation failed: ${apprErr?.message}` }
-
-    // Create approval_steps (one per level)
-    const stepRows = []
+    // Resolve one seat per level (READ-ONLY). resolveApproveeSeat is fail-closed:
+    // if any level cannot be resolved to a REAL active same-tenant profile, we
+    // abort BEFORE writing anything -- no approval row is created without a full,
+    // valid set of assignees. This replaces the old "insert approval, then loop-
+    // insert steps, then compensate on failure" path.
+    const steps: Array<{ level: number; assigned_to: string; assigned_role: string }> = []
     for (let level = 1; level <= approvalLevels; level++) {
       const role = requiredRoles[level - 1] ?? 'tenant_admin'
-      const assigneeId = await resolveApproveeSeat(supabase, tenantId, role)
-      if (!assigneeId) {
-        // Rollback: delete the approval row before failing
-        await supabase.from('approvals').delete().eq('id', approval.id)
-        return { id: '', error: `Failed to resolve approver for level ${level}` }
-      }
-      stepRows.push({
-        approval_id: approval.id,
-        level,
-        assigned_to: assigneeId,
-        status: 'pending',
-      })
-    }
-
-    // Insert approval_steps: fail atomically if this fails
-    const { error: stepErr } = await supabase.from('approval_steps').insert(stepRows)
-    if (stepErr) {
-      // Rollback: delete the approval before failing. Surface a failed cleanup
-      // rather than swallow it, so orphaned rows never go unnoticed.
-      const { error: cleanupErr } = await supabase.from('approvals').delete().eq('id', approval.id)
-      if (cleanupErr) {
+      const seat = await resolveApproveeSeat(supabase, tenantId, role)
+      if (!seat) {
         return {
           id: '',
-          error: `Approval steps creation failed: ${stepErr.message}; cleanup ALSO failed (orphaned approval ${approval.id}): ${cleanupErr.message}`,
+          error: `Cannot create approval workflow: no active ${role} (or tenant_admin) exists to fill level ${level}`,
         }
       }
-      return { id: '', error: `Approval steps creation failed: ${stepErr.message}` }
+      steps.push({ level, assigned_to: seat.id, assigned_role: seat.resolvedRole })
     }
 
-    // Emit events using the REAL approval_events schema:
-    //   tenant_id, approval_id, event, actor_id, actor_role, from_status,
-    //   to_status, detail (jsonb), created_at.
-    // 'created' has no prior status (from_status null -> pending); each
-    // 'assigned' records the level and the resolved assignee.
-    const eventRows = [
-      {
-        tenant_id: tenantId,
-        approval_id: approval.id,
-        event: 'created',
-        actor_id: createdBy,
-        from_status: null,
-        to_status: 'pending',
-        detail: {
-          rule_id: rule?.id ?? null,
-          levels: approvalLevels,
-          amount,
-          gate_number: gateNumber ?? null,
-        },
-      },
-      ...stepRows.map((s) => ({
-        tenant_id: tenantId,
-        approval_id: approval.id,
-        event: 'assigned',
-        actor_id: createdBy,
-        from_status: 'pending',
-        to_status: 'pending',
-        detail: { level: s.level, assigned_to: s.assigned_to },
-      })),
-    ]
+    // Single atomic write: approvals + approval_steps (with tenant_id) + events
+    // all commit or roll back together inside create_approval_workflow_tx. No
+    // app-side compensation code, and no possibility of an orphaned approval.
+    const { data: newId, error: rpcErr } = await supabase.rpc('create_approval_workflow_tx', {
+      p_tenant_id: tenantId,
+      p_object_type: objectType,
+      p_object_id: objectId,
+      p_title: title,
+      p_amount: amount,
+      p_gate_number: gateNumber ?? null,
+      p_requester: createdBy,
+      p_rule_id: rule?.id ?? null,
+      p_priority: 'normal',
+      p_steps: steps,
+    })
 
-    // Insert approval_events: fail atomically if this fails. Any cleanup that
-    // itself fails is surfaced (orphaned rows must never be silently left).
-    const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
-    if (eventErr) {
-      const { error: evCleanupErr } = await supabase.from('approval_events').delete().eq('approval_id', approval.id)
-      const { error: stepCleanupErr } = await supabase.from('approval_steps').delete().eq('approval_id', approval.id)
-      const { error: apprCleanupErr } = await supabase.from('approvals').delete().eq('id', approval.id)
-      const cleanupFailures = [
-        evCleanupErr && `events: ${evCleanupErr.message}`,
-        stepCleanupErr && `steps: ${stepCleanupErr.message}`,
-        apprCleanupErr && `approval: ${apprCleanupErr.message}`,
-      ].filter(Boolean)
-      if (cleanupFailures.length > 0) {
-        return {
-          id: '',
-          error: `Approval events creation failed: ${eventErr.message}; cleanup ALSO failed (orphaned rows for approval ${approval.id}): ${cleanupFailures.join('; ')}`,
-        }
-      }
-      return { id: '', error: `Approval events creation failed: ${eventErr.message}` }
+    if (rpcErr || !newId) {
+      return { id: '', error: `Approval workflow creation failed: ${rpcErr?.message ?? 'no id returned'}` }
     }
 
-    return { id: approval.id }
+    return { id: newId as string }
   } catch (e: any) {
     return { id: '', error: e.message }
   }
@@ -1025,11 +951,13 @@ export async function decideApproval(opts: {
     }
   }
 
-  // Persist the signature only now that the caller is authorized AND the target
-  // approval exists. If it fails we abort without touching the decision, so we
-  // never record a decision whose signature is missing.
-  let signatureId: string | undefined
-  if (opts.signatureDraft) {
+  // NON-GATE approvals (e.g. opportunity) persist the signature here, only now
+  // that the caller is authorized AND the target approval exists. Gate approvals
+  // do NOT persist here: their signature row is written INSIDE
+  // decide_gate_approval so it commits atomically with the endorsement (see the
+  // gate branch below). Persisting a gate signature here would re-introduce the
+  // orphan-on-rollback bug.
+  if (opts.signatureDraft && !isGateApproval) {
     const sigRes = await createSignature({
       dataUrl:     opts.signatureDraft.dataUrl,
       entityType:  'gate_approval',
@@ -1042,7 +970,6 @@ export async function decideApproval(opts: {
       allowUndecided: true,
     })
     if ('error' in sigRes) return { error: `Could not record your signature: ${sigRes.error}` }
-    signatureId = sigRes.signature.id
   }
 
   const decisionStatus = statusMap[opts.decision]
@@ -1082,6 +1009,36 @@ export async function decideApproval(opts: {
         ? (opts.conditions ?? []).map((c) => ({ title: c.title.trim(), due_date: c.due_date }))
         : null
 
+    // Signatures are part of the governed endorsement. An approving decision
+    // (proceed / conditional_proceed) MUST be signed; hold / reject are not
+    // endorsements and are never signed. The PNG is STAGED to storage here, then
+    // the signature ROW is inserted INSIDE decide_gate_approval so it commits (or
+    // rolls back) atomically with the decision.
+    const isEndorsement = opts.decision === 'proceed' || opts.decision === 'conditional_proceed'
+    let signatureJson: {
+      signer_name: string; signer_role: string | null; image_path: string; statement: string; ip_address: string | null
+    } | null = null
+
+    if (isEndorsement) {
+      if (!opts.signatureDraft) {
+        return { error: 'A signature is required to endorse this gate decision' }
+      }
+      const staged = await stageGateSignatureImage({
+        dataUrl:    opts.signatureDraft.dataUrl,
+        entityId:   opts.id,
+        signerName: opts.signatureDraft.signerName,
+        signerRole: opts.signatureDraft.signerRole,
+      })
+      if ('error' in staged) return { error: `Could not record your signature: ${staged.error}` }
+      signatureJson = {
+        signer_name: staged.staged.signerName,
+        signer_role: staged.staged.signerRole,
+        image_path:  staged.staged.imagePath,
+        statement:   opts.signatureDraft.statement,
+        ip_address:  staged.staged.ipAddress,
+      }
+    }
+
     const { data: rpcOutcome, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
       p_approval_id: opts.id,
       p_tenant_id: approval.tenant_id,
@@ -1090,6 +1047,7 @@ export async function decideApproval(opts: {
       p_rationale: opts.rationale,
       p_is_admin_override: adminOverride,
       p_conditions: conditionsJson,
+      p_signature: signatureJson,
     })
 
     if (rpcErr) return { error: `Gate decision failed: ${rpcErr.message}` }
