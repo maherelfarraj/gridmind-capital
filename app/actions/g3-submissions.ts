@@ -108,19 +108,71 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `G3 is not ready: ${readiness.blockers.join('; ')}` }
   }
 
-  // 6. Verify all deliverables have real document IDs.
-  const missingDocuments = formData.deliverables.filter((d) => !d.documentId)
-  if (missingDocuments.length > 0) {
-    return { error: `${missingDocuments.length} deliverables missing document records` }
+  // 6. Batch-validate all deliverable documents exist and are in-scope.
+  // Do NOT rely on loadG3EligibleDocuments() for security — submitted form data is client-controlled.
+  const documentIds = formData.deliverables
+    .map((d) => d.documentId)
+    .filter(Boolean) as string[]
+
+  if (documentIds.length !== formData.deliverables.length) {
+    return { error: `${formData.deliverables.length - documentIds.length} deliverables missing document IDs` }
   }
 
-  // 7. Verify all staffing roles have real profile IDs.
-  const unassignedStaff = formData.staffingRoles.filter((r) => !r.assignedProfileId)
-  if (unassignedStaff.length > 0) {
-    return { error: `${unassignedStaff.length} staffing roles not assigned to project members` }
+  // Batch-query all documents; verify each exists, is in-scope, and not archived
+  const { data: documents } = await supabase
+    .from('documents')
+    .select('id, project_id, tenant_id, metadata')
+    .in('id', documentIds)
+
+  if (!documents || documents.length !== documentIds.length) {
+    return { error: `${documentIds.length - (documents?.length ?? 0)} document IDs not found in database` }
+  }
+
+  // Verify ALL documents belong to this project/tenant and are not archived
+  const invalidDocs = documents.filter(
+    (d) => d.project_id !== projectId || d.tenant_id !== tenantId || d.metadata?.status === 'archived',
+  )
+  if (invalidDocs.length > 0) {
+    return { 
+      error: `${invalidDocs.length} documents are invalid, archived, or not in this project` 
+    }
+  }
+
+  // 7. Batch-validate all staffing assignments are active project_team members.
+  // Do NOT rely on loadG3ProjectTeamMembers() for security — submitted form data is client-controlled.
+  const profileIds = formData.staffingRoles
+    .map((r) => r.assignedProfileId)
+    .filter(Boolean) as string[]
+
+  if (profileIds.length !== formData.staffingRoles.length) {
+    return { error: `${formData.staffingRoles.length - profileIds.length} staffing roles not assigned` }
+  }
+
+  // Batch-query all profiles through project_team; verify active membership
+  const { data: teamMembers } = await supabase
+    .from('project_team')
+    .select('profile_id, project_id, tenant_id, is_active, profiles(id, is_active)')
+    .in('profile_id', profileIds)
+    .eq('project_id', projectId)
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+
+  if (!teamMembers || teamMembers.length !== profileIds.length) {
+    return {
+      error: `${profileIds.length - (teamMembers?.length ?? 0)} team members are not found, inactive, or not on this project`,
+    }
+  }
+
+  // Verify each profile is also active (not just the team membership)
+  const inactiveProfiles = teamMembers.filter(
+    (m) => !m.profiles || (typeof m.profiles === 'object' && !('is_active' in m.profiles && m.profiles.is_active)),
+  )
+  if (inactiveProfiles.length > 0) {
+    return { error: `${inactiveProfiles.length} assigned team members have inactive profiles` }
   }
 
   // 8. Check for duplicate active approval workflow (pending or delegated) BEFORE changing gate_submissions.
+  // This must happen before the upsert to ensure atomicity.
   const { data: existingApproval } = await supabase
     .from('approvals')
     .select('id, status')
@@ -135,7 +187,15 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `G3 workflow already ${existingApproval.status} (distinct G2/G3 workflows)` }
   }
 
-  // 9. Upsert gate_submissions.
+  // Capture the exact previous gate_submissions row before upsert for rollback
+  const { data: previousSubmission } = await supabase
+    .from('gate_submissions')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('gate_number', 3)
+    .maybeSingle()
+
+  // 9. Upsert gate_submissions (safe - duplicate check passed).
   const { error: submitError } = await supabase
     .from('gate_submissions')
     .upsert(
@@ -152,21 +212,32 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
 
   if (submitError) return { error: `Failed to save G3 submission: ${submitError.message}` }
 
-  // 10. Create approval workflow via canonical engine.
+  // 10. Create approval workflow via canonical engine (gate-aware with gateNumber=3).
   const approvalResult = await createApprovalWorkflow(
     'gate',
     projectId,
     `G3 Commercial & Financial Close: ${project.name}`,
     0, // amount not applicable for gates
+    3, // gateNumber: G3 gate
   )
 
   if (approvalResult.error) {
-    // Rollback: delete the submission if workflow creation failed
-    await supabase
-      .from('gate_submissions')
-      .delete()
-      .eq('project_id', projectId)
-      .eq('gate_number', 3)
+    // Rollback: restore the exact previous submission or delete if this was the first submission
+    if (previousSubmission) {
+      // Restore to previous state
+      await supabase
+        .from('gate_submissions')
+        .update(previousSubmission)
+        .eq('project_id', projectId)
+        .eq('gate_number', 3)
+    } else {
+      // Delete the submission we just created
+      await supabase
+        .from('gate_submissions')
+        .delete()
+        .eq('project_id', projectId)
+        .eq('gate_number', 3)
+    }
     return { error: approvalResult.error }
   }
 

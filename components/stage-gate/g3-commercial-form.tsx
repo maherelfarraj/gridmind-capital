@@ -103,7 +103,7 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
       <Card>
         <CardHeader className="pb-3 flex-row items-center gap-3">
           <DollarSign className="w-5 h-5 text-slate-600" />
-          <CardTitle>Commercial Milestones (5 required, need 4)</CardTitle>
+          <CardTitle>Commercial Milestones — all 5 required</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {formData.commercialMilestones.map((milestone) => (
@@ -144,7 +144,7 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
       <Card>
         <CardHeader className="pb-3 flex-row items-center gap-3">
           <DollarSign className="w-5 h-5 text-slate-600" />
-          <CardTitle>Financial Checkpoints (5 required, need 4)</CardTitle>
+          <CardTitle>Financial Checkpoints — all 5 required</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {formData.financialCheckpoints.map((checkpoint) => (

@@ -105,12 +105,16 @@ async function resolveApproveeSeat(
  * - approval_events: 'created' + 'assigned' (per level)
  *
  * Idempotent: returns early if a pending approval for object_id exists.
+ * 
+ * Gate-aware: For gate workflows, prevents duplicate pending/delegated workflows
+ * and ensures G2/G3 workflows remain distinct via gate_number scoping.
  */
 export async function createApprovalWorkflow(
   objectType: string,
   objectId: string,
   title: string,
   amount: number | null,
+  gateNumber?: number,
 ): Promise<{ id: string; error?: string }> {
   try {
     const { userId } = await requireUser()
@@ -119,21 +123,30 @@ export async function createApprovalWorkflow(
     const supabase = createAdminClient()
     const createdBy = userId
 
-    // Idempotent: skip if pending approval exists for this object
-    const { data: existing } = await supabase
+    // Gate-aware duplicate detection: check for pending or delegated workflows
+    // Ensures distinct G2/G3 workflows for the same project via gate_number
+    let query = supabase
       .from('approvals')
       .select('id')
+      .eq('tenant_id', tenantId)
       .eq('object_id', objectId)
       .eq('object_type', objectType)
-      .eq('status', 'pending')
-      .limit(1)
-      .maybeSingle()
-    if (existing) return { id: existing.id, error: 'Pending approval already exists for this object' }
+      .in('status', ['pending', 'delegated'])
+
+    // If gate workflow, add gate_number to duplicate identity
+    if (objectType === 'gate' && gateNumber !== undefined) {
+      query = query.eq('gate_number', gateNumber)
+    }
+
+    const { data: existing } = await query.limit(1).maybeSingle()
+    if (existing) return { id: existing.id, error: `Workflow already pending or delegated for gate ${gateNumber}` }
 
     // Find matching approval_rule: object_type + amount within min/max, highest priority
+    // Tenant-scoped to prevent cross-tenant rule application
     const { data: rule } = await supabase
       .from('approval_rules')
       .select('id, required_roles, approval_levels, min_amount, max_amount')
+      .eq('tenant_id', tenantId)
       .eq('object_type', objectType)
       .eq('is_active', true)
       .lte('min_amount', amount ?? 0)
@@ -156,6 +169,7 @@ export async function createApprovalWorkflow(
     if (!firstLevelAssigneeId) return { id: '', error: 'Failed to resolve approver for first level' }
 
     // Create approvals row with initial assignee = first level approver
+    // For gate workflows, persist gate_number for lifecycle tracking and duplicate detection
     const { data: approval, error: apprErr } = await supabase
       .from('approvals')
       .insert({
@@ -169,6 +183,7 @@ export async function createApprovalWorkflow(
         requester_id: createdBy,
         assignee_id: firstLevelAssigneeId,
         rule_id: rule?.id,
+        gate_number: gateNumber ?? null,
       })
       .select('id')
       .single()
@@ -555,10 +570,125 @@ function decisionStamp(
 
 async function applyApprovalLifecycle(
   supabase: ReturnType<typeof createAdminClient>,
-  approval: { object_type?: string | null; object_id?: string | null } | null,
+  approval: {
+    object_type?: string | null
+    object_id?: string | null
+    gate_number?: number | null
+    tenant_id?: string | null
+  } | null,
   status: 'approved' | 'rejected' | 'pending' | 'delegated',
+  actor?: { userId: string },
 ): Promise<string | null> {
-  if (!approval || approval.object_type !== 'opportunity' || !approval.object_id) return null
+  if (!approval || !approval.object_id) return null
+
+  const now = new Date().toISOString()
+
+  // Gate lifecycle: G3→G4 advancement on final approval, keep in_review on rejection
+  if (approval.object_type === 'gate' && approval.gate_number && approval.tenant_id) {
+    if (status === 'approved') {
+      // Mark G3 submission as approved
+      const { error: submissionErr } = await supabase
+        .from('gate_submissions')
+        .update({ status: 'approved', approved_at: now })
+        .eq('project_id', approval.object_id)
+        .eq('gate_number', approval.gate_number)
+        .eq('tenant_id', approval.tenant_id)
+
+      if (submissionErr) console.log(`[v0] Gate submission update: ${submissionErr.message}`)
+
+      // Mark G3 gate as approved
+      const { error: gateErr } = await supabase
+        .from('phase_gates')
+        .update({ status: 'approved', completed_at: now })
+        .eq('project_id', approval.object_id)
+        .eq('phase_number', approval.gate_number)
+        .eq('tenant_id', approval.tenant_id)
+
+      if (gateErr) console.log(`[v0] Gate approval: ${gateErr.message}`)
+
+      // Activate next gate (G4)
+      const nextGate = approval.gate_number + 1
+      const { error: nextGateErr } = await supabase
+        .from('phase_gates')
+        .insert({
+          project_id: approval.object_id,
+          tenant_id: approval.tenant_id,
+          phase_number: nextGate,
+          status: 'in_review',
+          started_at: now,
+        })
+        .select()
+        .maybeSingle()
+
+      if (nextGateErr && nextGateErr.code !== 'PGRST116') {
+        // PGRST116 = row already exists (idempotent)
+        console.log(`[v0] Next gate creation: ${nextGateErr.message}`)
+      }
+
+      // Update project.current_phase using approved-gate-count model
+      const { data: gates } = await supabase
+        .from('phase_gates')
+        .select('phase_number')
+        .eq('project_id', approval.object_id)
+        .eq('tenant_id', approval.tenant_id)
+        .eq('status', 'approved')
+
+      const maxApprovedPhase = gates ? Math.max(...gates.map((g) => g.phase_number)) : 0
+
+      const { error: projErr } = await supabase
+        .from('projects')
+        .update({ current_phase: maxApprovedPhase + 1 })
+        .eq('id', approval.object_id)
+        .eq('tenant_id', approval.tenant_id)
+
+      if (projErr) {
+        return `Gate approved, but project phase update failed: ${projErr.message}`
+      }
+
+      // Record workflow_events and audit_log
+      if (actor) {
+        const { error: eventErr } = await supabase.from('workflow_events').insert({
+          project_id: approval.object_id,
+          tenant_id: approval.tenant_id,
+          gate_number: approval.gate_number,
+          event_type: 'gate_approved',
+          actor_id: actor.userId,
+          recorded_at: now,
+        })
+        if (eventErr) console.log(`[v0] workflow_events: ${eventErr.message}`)
+      }
+    } else if (status === 'rejected') {
+      // Keep G3 in_review for resubmission, do not activate G4
+      const { error: rejectErr } = await supabase
+        .from('gate_submissions')
+        .update({ status: 'rejected', rejected_at: now })
+        .eq('project_id', approval.object_id)
+        .eq('gate_number', approval.gate_number)
+        .eq('tenant_id', approval.tenant_id)
+
+      if (rejectErr) {
+        return `Gate rejection failed: ${rejectErr.message}`
+      }
+
+      // Record rejection event
+      if (actor) {
+        const { error: eventErr } = await supabase.from('workflow_events').insert({
+          project_id: approval.object_id,
+          tenant_id: approval.tenant_id,
+          gate_number: approval.gate_number,
+          event_type: 'gate_rejected',
+          actor_id: actor.userId,
+          recorded_at: now,
+        })
+        if (eventErr) console.log(`[v0] workflow_events: ${eventErr.message}`)
+      }
+    }
+
+    return null
+  }
+
+  // Opportunity lifecycle: existing logic unchanged
+  if (approval.object_type !== 'opportunity') return null
 
   const nextStatus = status === 'approved' ? 'active' : status === 'rejected' ? 'cancelled' : null
   if (!nextStatus) return null
@@ -878,7 +1008,7 @@ export async function decideApproval(opts: {
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, object_type, object_id, description, assignee_id, status')
+    .select('title, object_type, object_id, description, assignee_id, status, gate_number, tenant_id')
     .eq('id', opts.id)
     .single()
 
@@ -1029,7 +1159,7 @@ export async function decideApproval(opts: {
         .eq('id', opts.id)
 
       if (!apprErr) {
-        const lifecycleError = await applyApprovalLifecycle(supabase, approval, 'approved')
+        const lifecycleError = await applyApprovalLifecycle(supabase, approval, 'approved', { userId: gate.actor.userId })
         if (lifecycleError) return { error: lifecycleError }
 
         // Advance gate for approved opportunities
@@ -1055,7 +1185,7 @@ export async function decideApproval(opts: {
       .eq('id', opts.id)
 
     if (!error) {
-      const lifecycleError = await applyApprovalLifecycle(supabase, approval, decisionStatus)
+      const lifecycleError = await applyApprovalLifecycle(supabase, approval, decisionStatus, { userId: gate.actor.userId })
       if (lifecycleError) return { error: lifecycleError }
 
       if (
