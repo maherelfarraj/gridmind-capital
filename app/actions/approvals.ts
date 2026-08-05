@@ -1233,9 +1233,13 @@ export async function decideApproval(opts: {
     if (error) return { error: error.message }
   }
 
-  // Create approval_conditions rows if decision='conditional_proceed'
+  // Create approval_conditions rows if decision='conditional_proceed'.
+  // (Gate approvals never reach here -- they insert conditions atomically inside
+  // decide_gate_approval. This is the non-gate path.) tenant_id is NOT NULL, so
+  // it must be supplied, and a failure is surfaced rather than only logged.
   if (opts.decision === 'conditional_proceed' && opts.conditions && opts.conditions.length > 0) {
     const conditionRows = opts.conditions.map((c) => ({
+      tenant_id: approval.tenant_id,
       approval_id: opts.id,
       title: c.title.trim(),
       due_date: c.due_date, // ISO date string
@@ -1244,7 +1248,7 @@ export async function decideApproval(opts: {
     }))
 
     const { error: condErr } = await supabase.from('approval_conditions').insert(conditionRows)
-    if (condErr) console.log(`[v0] Approval conditions creation warning: ${condErr.message}`)
+    if (condErr) return { error: `Approval conditions creation failed: ${condErr.message}` }
 
     // Emit 'condition_added' events for audit trail
     const eventRows = conditionRows.map((c) => ({
