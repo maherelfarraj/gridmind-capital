@@ -4,10 +4,13 @@ import React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { G0ApprovalReview } from '@/components/approvals/g0-approval-review'
+import { G3ApprovalReview } from '@/components/approvals/g3-approval-review'
 import {
   decideApproval,
   delegateApproval,
   getOpportunityApprovalDetail,
+  getGateApprovalDetail,
+  getEligibleDelegates,
 } from '@/app/actions/approvals'
 import { getSignaturesForEntity } from '@/app/actions/signatures'
 import type { SignatureDraft } from '@/app/actions/signatures'
@@ -18,11 +21,22 @@ export default function ApprovalDetailPage() {
   const router = useRouter()
   const id     = params?.id ?? ''
 
-  const { data: detail, error, isLoading } = useSWR(
+  // A gate approval and an opportunity (G0) approval are disjoint object_types.
+  // Each loader returns null for the wrong type (and short-circuits cheaply), so
+  // fetching both and rendering whichever resolves keeps one route for both.
+  const { data: gateDetail, isLoading: gateLoading } = useSWR(
+    id ? `gate-approval-detail-${id}` : null,
+    () => getGateApprovalDetail(id),
+    { revalidateOnFocus: false },
+  )
+
+  const { data: detail, error, isLoading: oppLoading } = useSWR(
     id ? `approval-detail-${id}` : null,
     () => getOpportunityApprovalDetail(id),
     { revalidateOnFocus: false },
   )
+
+  const isLoading = gateLoading || oppLoading
 
   const { data: signatures = [] } = useSWR(
     id ? `approval-signatures-${id}` : null,
@@ -39,6 +53,25 @@ export default function ApprovalDetailPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Loading approval...</p>
         </div>
       </div>
+    )
+  }
+
+  // ── Gate (G3) approval ───────────────────────────────────
+  if (gateDetail) {
+    return (
+      <G3ApprovalReview
+        detail={gateDetail}
+        existingSignatures={signatures}
+        onDecide={async (decision, rationale, conditions, signatureDraft) => {
+          const { error } = await decideApproval({ id, decision, rationale, conditions, signatureDraft })
+          if (error) throw new Error(error)
+        }}
+        onDelegate={async (delegateId, reason) => {
+          const { error } = await delegateApproval({ id, delegateId, reason })
+          if (error) throw new Error(error)
+        }}
+        loadDelegates={() => getEligibleDelegates(id)}
+      />
     )
   }
 

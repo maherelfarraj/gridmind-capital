@@ -92,7 +92,27 @@ vi.mock('@/lib/email/send', () => ({
   // Returns a promise because the action calls .catch() on the result.
   sendApprovalDecisionEmail: vi.fn(() => Promise.resolve()),
 }))
-vi.mock('@/app/actions/signatures', () => ({ createSignature: vi.fn() }))
+vi.mock('@/app/actions/signatures', () => ({
+  createSignature: vi.fn(async () => ({ id: 'sig-1' })),
+  // Gate endorsements stage the signature image, then the RPC persists it
+  // atomically. Return the shape decideApproval reads (staged.staged.*).
+  stageGateSignatureImage: vi.fn(async () => ({
+    staged: {
+      signerName: 'Actor One',
+      signerRole: 'tenant_admin',
+      imagePath: 'signatures/appr-1/sig.png',
+      ipAddress: null,
+    },
+  })),
+}))
+
+// A captured-but-unpersisted signature draft, as the review UI would hand off.
+const sigDraft = {
+  dataUrl: 'data:image/png;base64,AAAA',
+  statement: 'I endorse this gate decision.',
+  signerName: 'Actor One',
+  signerRole: 'tenant_admin',
+}
 vi.mock('@/app/actions/phase-gates', () => ({ advanceProjectGate: vi.fn(async () => ({ error: null })) }))
 
 import { decideApproval, delegateApproval } from '@/app/actions/approvals'
@@ -116,7 +136,7 @@ describe('decideApproval — gate routing', () => {
   })
 
   it('routes a gate decision through the decide_gate_approval RPC', async () => {
-    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok' })
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     expect(res.error).toBeNull()
     const call = state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')
     expect(call).toBeTruthy()
@@ -125,20 +145,28 @@ describe('decideApproval — gate routing', () => {
     })
   })
 
+  it('requires a signature to endorse a gate decision', async () => {
+    // proceed / conditional_proceed are endorsements: no draft ⇒ refuse BEFORE
+    // touching the RPC, so no partial write can occur.
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok' })
+    expect(res.error).toContain('signature is required')
+    expect(state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')).toBeUndefined()
+  })
+
   it('does NOT pre-authorize a gate with requireAssignedApprover', async () => {
-    await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok' })
+    await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     expect(state.requireAssignedApproverCalls).toBe(0)
   })
 
   it('scopes the approval lookup to the actor tenant', async () => {
-    await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok' })
+    await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     const tenantScoped = state.eqCalls.some((e) => e.table === 'approvals' && e.col === 'tenant_id' && e.val === 'tenant-a')
     expect(tenantScoped).toBe(true)
   })
 
   it('forwards conditions to the RPC for conditional_proceed', async () => {
     await decideApproval({
-      id: 'appr-1', decision: 'conditional_proceed', rationale: 'cond',
+      id: 'appr-1', decision: 'conditional_proceed', rationale: 'cond', signatureDraft: sigDraft,
       conditions: [{ title: 'Land title', due_date: '2026-09-01' }],
     })
     const call = state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')
@@ -147,7 +175,7 @@ describe('decideApproval — gate routing', () => {
 
   it('surfaces an RPC error and performs no bare approvals update', async () => {
     rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'sign-off pending' } }))
-    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok' })
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     expect(res.error).toContain('sign-off pending')
     expect(state.updates.filter((u) => u.table === 'approvals')).toHaveLength(0)
   })

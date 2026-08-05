@@ -17,6 +17,14 @@ import {
   shouldRouteGateDecisionToRpc,
   isAdminOverride,
 } from '@/lib/approvals/gate-routing'
+import {
+  filterEligibleDelegates,
+  type DelegateCandidate,
+} from '@/lib/approvals/delegate-eligibility'
+import {
+  mapGateApprovalDetail,
+  type GateApprovalDetailView,
+} from '@/lib/approvals/gate-detail'
 
 // profiles.role enum values that action approvals (used to resolve email recipients).
 const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
@@ -1409,6 +1417,206 @@ export async function getOpportunityApprovalDetail(
       description: approval.description ?? null,
     },
   }
+}
+
+/**
+ * Load the full governed detail view for a GATE approval (G3), tenant-scoped.
+ *
+ * Every query is filtered by the actor's tenant, so a forged/stale approval id
+ * or object_id pointing at another tenant simply resolves to nothing. Returns
+ * null when the approval is not a gate, is missing its gate number, or is not
+ * visible to the actor's tenant. The pure `mapGateApprovalDetail` mapper turns
+ * the raw rows into the view (overlaying the real submission form_data + docs +
+ * team onto the canonical G3 requirement set).
+ */
+export async function getGateApprovalDetail(
+  id: string,
+): Promise<GateApprovalDetailView | null> {
+  const res = await getAuthActor()
+  if ('error' in res) return null
+  const { actor } = res
+  const supabase = createAdminClient()
+
+  const { data: approval, error } = await supabase
+    .from('approvals')
+    .select(
+      'id, tenant_id, object_type, object_id, gate_number, title, status, priority, created_at, description, decision_note, requester_id, assignee_id',
+    )
+    .eq('id', id)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (error || !approval) return null
+  if (approval.object_type !== 'gate') return null
+
+  // Project (tenant-scoped) + its phase gate + latest gate submission.
+  let project = null
+  let phaseGate = null
+  let submission = null
+  if (approval.object_id) {
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('id, tenant_id, name, code, technology, capacity_mw, location, country, status, current_phase')
+      .eq('id', approval.object_id)
+      .eq('tenant_id', actor.tenantId)
+      .maybeSingle()
+    project = proj ?? null
+
+    if (project && approval.gate_number !== null) {
+      const { data: pg } = await supabase
+        .from('phase_gates')
+        .select('phase_number, phase_name, status')
+        .eq('project_id', project.id)
+        .eq('phase_number', approval.gate_number)
+        .maybeSingle()
+      phaseGate = pg ?? null
+
+      const { data: sub } = await supabase
+        .from('gate_submissions')
+        .select('form_data, status, submitted_at')
+        .eq('project_id', project.id)
+        .eq('gate_number', approval.gate_number)
+        .eq('tenant_id', actor.tenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      submission = sub ?? null
+    }
+  }
+
+  // Approval steps (ordered), tenant-scoped.
+  const { data: steps } = await supabase
+    .from('approval_steps')
+    .select('id, level, assigned_to, assigned_role, status')
+    .eq('approval_id', approval.id)
+    .eq('tenant_id', actor.tenantId)
+    .order('level')
+
+  // Requester + current assignee profiles, tenant-scoped.
+  const profileIds = [approval.requester_id, approval.assignee_id].filter(Boolean) as string[]
+  const profileById = new Map<string, any>()
+  if (profileIds.length > 0) {
+    const { data: profs } = await supabase
+      .from('profiles')
+      .select('id, tenant_id, full_name, email, role')
+      .in('id', profileIds)
+      .eq('tenant_id', actor.tenantId)
+    for (const p of profs ?? []) profileById.set(p.id, p)
+  }
+
+  // Deliverable docs + team, project-scoped (used to overlay real bindings).
+  let deliverableDocs: any[] = []
+  let teamMembers: any[] = []
+  if (project) {
+    const { data: docs } = await supabase
+      .from('document_files')
+      .select('id, title, file_name, category, status')
+      .eq('project_id', project.id)
+      .eq('tenant_id', actor.tenantId)
+    deliverableDocs = docs ?? []
+
+    const { data: assignments } = await supabase
+      .from('project_team')
+      .select('person_id, roles(code, title), profiles!project_team_person_id_fkey(full_name)')
+      .eq('project_id', project.id)
+      .eq('tenant_id', actor.tenantId)
+    teamMembers = (assignments ?? []).map((a: any) => ({
+      person_id: a.person_id,
+      full_name: a.profiles?.full_name ?? null,
+      role_code: a.roles?.code ?? null,
+      role_title: a.roles?.title ?? null,
+    }))
+  }
+
+  // Governed event trail, tenant-scoped.
+  const { data: events } = await supabase
+    .from('approval_events')
+    .select('id, event, actor_id, from_status, to_status, detail, created_at')
+    .eq('approval_id', approval.id)
+    .eq('tenant_id', actor.tenantId)
+    .order('created_at', { ascending: true })
+
+  return mapGateApprovalDetail({
+    approval,
+    project,
+    phaseGate,
+    submission,
+    steps: steps ?? [],
+    requester: approval.requester_id ? profileById.get(approval.requester_id) ?? null : null,
+    currentAssignee: approval.assignee_id ? profileById.get(approval.assignee_id) ?? null : null,
+    deliverableDocs,
+    teamMembers,
+    events: events ?? [],
+  })
+}
+
+export interface EligibleDelegate {
+  id: string
+  name: string
+  role: string | null
+}
+
+/**
+ * Real, governed delegate recipients for a gate approval — the fix for the
+ * hard-coded five fake emails the picker used to render. Resolves the approval's
+ * tenant + the CURRENT pending step's required role, loads active same-tenant
+ * profiles, and returns only those the DB RPC would actually accept (filtered by
+ * the shared, pure `filterEligibleDelegates` rule). The current assignee is
+ * excluded (delegating to yourself is a no-op the RPC rejects anyway).
+ */
+export async function getEligibleDelegates(approvalId: string): Promise<EligibleDelegate[]> {
+  const res = await getAuthActor()
+  if ('error' in res) return []
+  const { actor } = res
+  const supabase = createAdminClient()
+
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('id, tenant_id, assignee_id')
+    .eq('id', approvalId)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (!approval) return []
+
+  // Required role = the current (lowest-level) pending step's assigned_role.
+  const { data: currentStep } = await supabase
+    .from('approval_steps')
+    .select('assigned_role')
+    .eq('approval_id', approvalId)
+    .eq('tenant_id', actor.tenantId)
+    .eq('status', 'pending')
+    .order('level')
+    .limit(1)
+    .maybeSingle()
+
+  // Candidate pool: active same-tenant profiles that can act on approvals.
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, tenant_id, full_name, role, is_active')
+    .eq('tenant_id', actor.tenantId)
+    .eq('is_active', true)
+    .in('role', APPROVER_ENUM_ROLES)
+
+  const candidates: DelegateCandidate[] = (profiles ?? []).map((p) => ({
+    id: p.id,
+    tenantId: p.tenant_id,
+    role: p.role,
+    isActive: p.is_active,
+    name: p.full_name,
+  }))
+
+  const eligible = filterEligibleDelegates(candidates, {
+    tenantId: actor.tenantId,
+    requiredRole: currentStep?.assigned_role ?? null,
+    approverRoles: APPROVER_ENUM_ROLES,
+    adminRoles: ADMIN_ROLES as readonly string[],
+    excludeId: approval.assignee_id ?? null,
+  })
+
+  return eligible.map((c) => ({
+    id: c.id,
+    name: c.name ?? 'Unnamed',
+    role: c.role,
+  }))
 }
 
 export interface ApprovalsDashboard {
