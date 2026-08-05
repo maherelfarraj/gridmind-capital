@@ -5,11 +5,13 @@
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getG2Submission } from '@/app/actions/g2-submissions'
+import { getG3Submission } from '@/app/actions/g3-submissions'
 import { notFound } from 'next/navigation'
 import { G0IntakeForm } from '@/components/stage-gate/g0-intake-form'
 import { G1DevelopmentForm } from '@/components/stage-gate/g1-development-form'
 import { G2PermittingForm } from '@/components/stage-gate/g2-permitting-form'
 import { G2EngineeringForm } from '@/components/stage-gate/g2-engineering-form'
+import { G3CommercialForm } from '@/components/stage-gate/g3-commercial-form'
 import { G3ProcurementForm } from '@/components/stage-gate/g3-procurement-form'
 import { G4ConstructionForm } from '@/components/stage-gate/g4-construction-form'
 import { G6CommissioningForm } from '@/components/stage-gate/g6-commissioning-form'
@@ -67,6 +69,12 @@ export default async function GateFormPage({ params }: Props) {
     g2Submission = await getG2Submission(projectId)
   }
 
+  // Load G3 submission if gate 3
+  let g3Submission: Awaited<ReturnType<typeof getG3Submission>> = null
+  if (gateNum === 3) {
+    g3Submission = await getG3Submission(projectId)
+  }
+
   function renderForm() {
     // BATCH 20 CORRECTED: Semantic 1-8 canonical phase mapping
     // Gates 2 & 3 are locked info panels (no workspace form yet)
@@ -87,8 +95,14 @@ export default async function GateFormPage({ params }: Props) {
           />
         ) : null
       case 3:
-        // G3: Commercial & Financial Close (RTB) (no workspace form yet)
-        return <LockedInfoPanel phase={3} title="Commercial & Financial Close (RTB)" description="Final commercial terms and ready-to-build approval — form workspace not yet available." />
+        // G3: Commercial & Financial Close (RTB)
+        return project ? (
+          <G3CommercialForm
+            projectId={projectId}
+            projectName={project.name}
+            existingSubmission={g3Submission}
+          />
+        ) : null
       case 4:
         // G4: Detailed Design (IFC) (uses G2EngineeringForm)
         return <G2EngineeringForm {...shared} initialData={initialData} />
