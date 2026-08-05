@@ -1,9 +1,11 @@
 -- Gate Governance Workflow — transactional regression tests
 --
 -- Exercises the governed gate-approval RPCs end-to-end against the REAL schema:
---   * create_approval_workflow_tx   (20260805190005)
---   * decide_gate_approval  v3      (20260805190006)  [+ p_signature]
---   * delegate_gate_approval verify (20260805190007)
+--   * create_approval_workflow_tx      (20260805190005)
+--   * decide_gate_approval  v4         (20260805190008)  [signature keyed to the
+--       CANONICAL phase_gates.id, signature REQUIRED for endorsements]
+--   * delegate_gate_approval role-chk  (20260805190009)  [delegate role must be
+--       an approver AND admin-or-exact-match to the current step]
 --
 -- The ENTIRE script runs inside ONE transaction and ROLLS BACK at the end, so
 -- it never persists a fixture. Every check RAISEs on failure, which aborts and
@@ -19,9 +21,12 @@ BEGIN;
 DO $$
 DECLARE
   v_tenant   UUID;
-  v_p1       UUID;  -- actor / level-1 assignee
-  v_p2       UUID;  -- level-2 assignee / delegate
+  v_p1       UUID;  -- actor / level-1 assignee (approver role)
+  v_p2       UUID;  -- level-2 assignee / delegate (approver role)
   v_p3       UUID;
+  v_p1role   TEXT;
+  v_p2role   TEXT;
+  v_pbad     UUID;  -- active NON-approver profile (delegation must reject)
   v_proj     UUID;
   v_g3       UUID;
   v_appr     UUID;
@@ -37,21 +42,32 @@ BEGIN
   SELECT id INTO v_tenant FROM public.tenants LIMIT 1;
   IF v_tenant IS NULL THEN RAISE EXCEPTION 'no tenant available for test'; END IF;
 
-  SELECT id INTO v_p1 FROM public.profiles
+  -- The stricter delegate RPC accepts ONLY canonical approver roles, so the
+  -- fixture actors must themselves be approvers or the "valid delegation" step
+  -- would be (correctly) rejected. Capture each one's role for the role checks.
+  SELECT id, role INTO v_p1, v_p1role FROM public.profiles
     WHERE tenant_id = v_tenant AND is_active = true
-      AND role NOT IN ('subcontractor','client_viewer')
+      AND role IN ('system_admin','tenant_admin','project_director','project_manager')
     ORDER BY id LIMIT 1;
-  SELECT id INTO v_p2 FROM public.profiles
+  SELECT id, role INTO v_p2, v_p2role FROM public.profiles
     WHERE tenant_id = v_tenant AND is_active = true
-      AND role NOT IN ('subcontractor','client_viewer') AND id <> v_p1
+      AND role IN ('system_admin','tenant_admin','project_director','project_manager') AND id <> v_p1
     ORDER BY id LIMIT 1;
   SELECT id INTO v_p3 FROM public.profiles
     WHERE tenant_id = v_tenant AND is_active = true
-      AND role NOT IN ('subcontractor','client_viewer') AND id NOT IN (v_p1, v_p2)
+      AND role IN ('system_admin','tenant_admin','project_director','project_manager')
+      AND id NOT IN (v_p1, v_p2)
     ORDER BY id LIMIT 1;
   IF v_p1 IS NULL OR v_p2 IS NULL THEN
-    RAISE EXCEPTION 'need at least two active internal profiles in tenant %', v_tenant;
+    RAISE EXCEPTION 'need at least two active approver-role profiles in tenant %', v_tenant;
   END IF;
+  -- Optional: an active NON-approver (engineer/hse_manager/etc.) for a negative
+  -- delegation test. NULL is tolerated (that check is skipped with a NOTICE).
+  SELECT id INTO v_pbad FROM public.profiles
+    WHERE tenant_id = v_tenant AND is_active = true
+      AND role NOT IN ('system_admin','tenant_admin','project_director','project_manager',
+                       'subcontractor','client_viewer')
+    ORDER BY id LIMIT 1;
 
   INSERT INTO public.projects (tenant_id, name, code, current_phase, status)
     VALUES (v_tenant, 'ZZ Gate Gov Test', 'ZZ-GGT-' || floor(random()*1e7)::text, 2, 'active')
@@ -103,11 +119,16 @@ BEGIN
   IF v_assignee <> v_p2 THEN RAISE EXCEPTION 'FAIL progression: assignee did not move to L2 actor'; END IF;
   IF v_status <> 'pending' THEN RAISE EXCEPTION 'FAIL progression: approval finalized too early (%)', v_status; END IF;
 
-  -- signature row for L1 must exist (inserted INSIDE the RPC tx)
+  -- signature row for L1 must exist (inserted INSIDE the RPC tx), keyed to the
+  -- CANONICAL phase_gates.id (v_g3) — NOT the approval id.
   SELECT count(*) INTO v_count FROM public.signatures
-    WHERE entity_type = 'gate_approval' AND entity_id = v_appr AND signer_id = v_p1;
-  IF v_count <> 1 THEN RAISE EXCEPTION 'FAIL progression: L1 signature not persisted atomically (got %)', v_count; END IF;
-  RAISE NOTICE 'PASS 2: L1 proceed -> partial, assignee moved to L2, L1 signature persisted';
+    WHERE entity_type = 'gate_approval' AND entity_id = v_g3 AND signer_id = v_p1;
+  IF v_count <> 1 THEN RAISE EXCEPTION 'FAIL progression: L1 signature not keyed to phase_gates.id (got %)', v_count; END IF;
+  -- and it must NOT be keyed to the approval id (the old, wrong identity)
+  SELECT count(*) INTO v_count FROM public.signatures
+    WHERE entity_type = 'gate_approval' AND entity_id = v_appr;
+  IF v_count <> 0 THEN RAISE EXCEPTION 'FAIL identity: signature wrongly keyed to approval id (got %)', v_count; END IF;
+  RAISE NOTICE 'PASS 2: L1 proceed -> partial, assignee moved to L2, L1 signature keyed to phase_gates.id';
 
   -- ---- 3) final level: L2 proceed -> approved, G3 advances, sig persisted -
   v_sig := jsonb_build_object(

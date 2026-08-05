@@ -11,10 +11,10 @@
 -- must be:
 --   * an EXISTING, active, same-tenant profile (unchanged);
 --   * NOT the acting approver (unchanged);
---   * a member of the canonical approver-role set
---       (system_admin, tenant_admin, project_director, project_manager,
---        finance_manager) -- this set matches lib/auth/guard.ts APPROVER_ROLES
---        and INCLUDES finance_manager;
+--   * a member of the CANONICAL approver-role set
+--       (system_admin, tenant_admin, project_director, project_manager) --
+--        this set is the SINGLE SOURCE OF TRUTH in lib/auth/roles.ts
+--        (GATE_APPROVER_ROLES) and a drift test asserts the two stay identical;
 --   * AND either a platform admin (system_admin / tenant_admin), who may take
 --     any step, OR a role that EQUALS the current step's assigned_role.
 --
@@ -40,8 +40,9 @@ DECLARE
   v_step      public.approval_steps%ROWTYPE;
   v_delegate  public.profiles%ROWTYPE;
   v_rows      integer;
-  -- Canonical approver-role set (mirrors lib/auth/guard.ts APPROVER_ROLES).
-  v_approver_roles text[] := ARRAY['system_admin','tenant_admin','project_director','project_manager','finance_manager'];
+  -- CANONICAL approver-role set -- MUST equal GATE_APPROVER_ROLES in
+  -- lib/auth/roles.ts (a drift test enforces this). Keep the two in lockstep.
+  v_approver_roles text[] := ARRAY['system_admin','tenant_admin','project_director','project_manager'];
   v_admin_roles    text[] := ARRAY['system_admin','tenant_admin'];
 BEGIN
   IF p_approval_id IS NULL OR p_tenant_id IS NULL OR p_actor IS NULL OR p_delegate IS NULL THEN
