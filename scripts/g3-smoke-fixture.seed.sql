@@ -33,15 +33,16 @@
 -- fixture can never masquerade as a valid one.
 -- =====================================================================
 
--- Default the tenant_id psql var to a sentinel when not provided on the CLI.
+-- Abort immediately if -v tenant_id was not supplied. No fallback of any kind.
 \if :{?tenant_id}
 \else
-  \set tenant_id 'RESOLVE_BY_NAME'
+  \echo 'SEED ABORTED: -v tenant_id=<uuid> is required (no fallback).'
+  \quit
 \endif
 
 DO $$
 DECLARE
-  v_tenant_input text := nullif(:'tenant_id', 'RESOLVE_BY_NAME');
+  v_tenant_input text := nullif(:'tenant_id', '');
   v_tenant   uuid;
   v_project  uuid := 'aaaaaaaa-0000-4000-8000-000000000003';  -- fixed fixture id
   v_uploader uuid;
@@ -49,18 +50,26 @@ DECLARE
   v_r_dev uuid; v_r_fin uuid; v_r_leg uuid; v_r_pd uuid;
   v_n int;
 BEGIN
-  -- ---- Resolve tenant (explicit override, else by name; assert exactly one) ----
-  IF v_tenant_input IS NOT NULL THEN
-    SELECT id INTO v_tenant FROM public.tenants WHERE id = v_tenant_input::uuid;
-    IF v_tenant IS NULL THEN
-      RAISE EXCEPTION 'SEED: tenant_id % not found', v_tenant_input;
-    END IF;
-  ELSE
-    SELECT count(*) INTO v_n FROM public.tenants WHERE name = 'GridMind Capital';
-    IF v_n <> 1 THEN
-      RAISE EXCEPTION 'SEED: expected exactly 1 tenant named "GridMind Capital", found % (pass -v tenant_id=<uuid>)', v_n;
-    END IF;
-    SELECT id INTO v_tenant FROM public.tenants WHERE name = 'GridMind Capital';
+  -- ---- Resolve tenant STRICTLY from the required -v tenant_id (no fallback) ----
+  IF v_tenant_input IS NULL THEN
+    RAISE EXCEPTION 'SEED: tenant_id is required (pass -v tenant_id=<uuid>)';
+  END IF;
+  SELECT id INTO v_tenant FROM public.tenants WHERE id = v_tenant_input::uuid;
+  IF v_tenant IS NULL THEN
+    RAISE EXCEPTION 'SEED: tenant_id % not found', v_tenant_input;
+  END IF;
+
+  -- ---- Abort if a prior fixture with lifecycle activity already exists ----
+  -- Re-seeding on top of an in-flight fixture would corrupt the state machine.
+  -- Any existing gate_submissions / approvals / workflow_events for the fixture
+  -- project means it is mid-lifecycle: refuse and require an explicit teardown.
+  SELECT
+    (SELECT count(*) FROM public.gate_submissions WHERE project_id = v_project)
+  + (SELECT count(*) FROM public.approvals       WHERE object_type = 'gate' AND object_id = v_project)
+  + (SELECT count(*) FROM public.workflow_events WHERE metadata->>'project_id' = v_project::text)
+  INTO v_n;
+  IF v_n > 0 THEN
+    RAISE EXCEPTION 'SEED: fixture % already has % lifecycle row(s); run scripts/g3-smoke-fixture.teardown.sql first', v_project, v_n;
   END IF;
 
   -- ---- Resolve the four canonical role ids by code (assert each exists) ----
@@ -93,13 +102,18 @@ BEGIN
   ON CONFLICT (id) DO UPDATE
     SET tenant_id = EXCLUDED.tenant_id, current_phase = 2, status = 'active', updated_at = now();
 
-  -- 2) Phase gates: G1/G2 approved, G3 in_review, G4 pending
+  -- 2) All 8 canonical phase gates: G1/G2 approved, G3 in_review, G4-G8 pending.
+  --    Names mirror lib/gates/phase-model.ts CANONICAL_PHASE_NAMES exactly.
   DELETE FROM public.phase_gates WHERE project_id = v_project;
   INSERT INTO public.phase_gates (project_id, phase_number, phase_name, status) VALUES
-    (v_project, 1, 'Origination & Feasibility',           'approved'),
-    (v_project, 2, 'Permitting & Grid Application',        'approved'),
-    (v_project, 3, 'Commercial & Financial Close (RTB)',   'in_review'),
-    (v_project, 4, 'Detailed Design (IFC)',                'pending');
+    (v_project, 1, 'Origination & Feasibility',         'approved'),
+    (v_project, 2, 'Permitting & Grid Application',      'approved'),
+    (v_project, 3, 'Commercial & Financial Close (RTB)', 'in_review'),
+    (v_project, 4, 'Detailed Design (IFC)',              'pending'),
+    (v_project, 5, 'Procurement & Manufacturing',        'pending'),
+    (v_project, 6, 'Construction & Installation',        'pending'),
+    (v_project, 7, 'Commissioning & Grid Tests',         'pending'),
+    (v_project, 8, 'Handover & O&M',                     'pending');
 
   -- 3) Six deliverable documents tagged with the EXACT governed categories.
   DELETE FROM public.document_files WHERE project_id = v_project;
@@ -123,14 +137,16 @@ BEGIN
 
   -- ---- POST-SEED ASSERTIONS (fail the whole tx on any drift) ----
 
-  -- 4 phase gates in the exact expected states.
+  -- All 8 phase gates present in the exact expected states.
+  SELECT count(*) INTO v_n FROM public.phase_gates WHERE project_id = v_project;
+  IF v_n <> 8 THEN RAISE EXCEPTION 'SEED ASSERT: expected 8 phase_gates rows, found %', v_n; END IF;
   SELECT count(*) INTO v_n FROM public.phase_gates
    WHERE project_id = v_project AND (
      (phase_number = 1 AND status = 'approved')  OR
      (phase_number = 2 AND status = 'approved')  OR
      (phase_number = 3 AND status = 'in_review') OR
-     (phase_number = 4 AND status = 'pending'));
-  IF v_n <> 4 THEN RAISE EXCEPTION 'SEED ASSERT: phase_gates states wrong (matched %/4)', v_n; END IF;
+     (phase_number BETWEEN 4 AND 8 AND status = 'pending'));
+  IF v_n <> 8 THEN RAISE EXCEPTION 'SEED ASSERT: phase_gates states wrong (matched %/8)', v_n; END IF;
 
   -- Each deliverable category present exactly as governed.
   SELECT count(*) INTO v_n FROM public.document_files
