@@ -226,8 +226,9 @@ export function ProjectRegistry() {
   const [search, setSearch] = React.useState('')
   const [filterType, setFilterType] = React.useState<string>('All')
 
-  // `?gate=G0` must drive the filter. It is matched against `projects.current_phase`
-  // server-side (G0 → 0, G1 → 1, …), not against a phase-workstream key.
+  // `?gate=GN` drives the filter. Server-side it is matched against the project's
+  // CURRENT ACTIVE gate derived from phase_gates (first non-approved phase_number),
+  // NOT `projects.current_phase`. G1 → 1, G2 → 2, … See getProjects().
   const gateParam = parseGateCode(searchParams?.get('gate'))
   const [filterGate, setFilterGate] = React.useState<string>(
     gateParam !== null ? `G${gateParam}` : 'All',
@@ -242,8 +243,9 @@ export function ProjectRegistry() {
   const [filterOpen, setFilterOpen] = React.useState(false)
   const [archiveTarget, setArchiveTarget] = React.useState<GmcProject | null>(null)
 
-  // Live data — SWR fetches from real DB; falls back to mock when empty.
-  // The gate filter is pushed down to the query so it matches current_phase exactly.
+  // Live data — SWR fetches from the real DB (no mock fallback). The gate filter
+  // is resolved server-side against phase_gates (active-gate semantics), so the
+  // returned rows are already the projects active at `gateParam`.
   const { data: liveRows, mutate } = useSWR<Project[]>(
     `project-registry-live-${gateParam ?? 'all'}`,
     () => getProjects({ status: null, gate: gateParam }),
@@ -289,7 +291,11 @@ export function ProjectRegistry() {
         if (!p.name.toLowerCase().includes(q) && !p.code.toLowerCase().includes(q)) return false
       }
       if (filterType !== 'All' && p.type !== filterType) return false
-      if (filterGate !== 'All' && p.currentGate !== filterGate) return false
+      // NOTE: the gate filter is applied SERVER-SIDE (getProjects resolves the
+      // active gate from phase_gates and returns only matching projects). We do
+      // NOT re-filter on p.currentGate here — that value is the active phase's
+      // human NAME (e.g. "Permitting & Grid Application"), not a "G2" code, so
+      // comparing it to filterGate would wrongly hide every server-matched row.
       if (filterHealth !== 'All' && p.health !== filterHealth.toLowerCase()) return false
       return true
     })

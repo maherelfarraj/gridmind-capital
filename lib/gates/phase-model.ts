@@ -136,6 +136,62 @@ export function computeCurrentPhase(
 }
 
 /**
+ * The gate statuses that make a phase_gate the project's CURRENT ACTIVE gate.
+ *
+ * A gate is "active" once it is no longer `approved` (work has moved past it)
+ * but the project has actually reached it — i.e. it is the first non-approved
+ * gate. `approved` gates are historical; gates strictly AFTER the active one are
+ * still `pending` future work and must NOT count as active. We treat the FIRST
+ * non-approved gate as active regardless of its specific non-approved status
+ * (`in_review`, `conditional`, `rejected`, or even `pending` when nothing is in
+ * review yet), because that is the gate the project is currently sitting on.
+ */
+export type PhaseGateStatus =
+  | 'approved'
+  | 'conditional'
+  | 'in_review'
+  | 'pending'
+  | 'rejected'
+
+/**
+ * Compute the ACTIVE gate's DB phase_number (1–8) from phase_gates rows.
+ *
+ * The active gate is the first gate (ascending phase_number) whose status is not
+ * `approved`. Returns `null` when every gate is approved (nothing is active) or
+ * when there are no gate rows at all.
+ *
+ * This is the source of truth for the registry's "current gate" filter. It is
+ * intentionally derived from phase_gates — NOT `projects.current_phase` — so a
+ * project with G1 approved and G2 in_review is active at G2, not G1.
+ */
+export function activeGatePhaseNumber(
+  phaseGates: Array<{ phase_number: number; status: string }> | null | undefined,
+): number | null {
+  if (!phaseGates || phaseGates.length === 0) return null
+  const sorted = [...phaseGates].sort((a, b) => a.phase_number - b.phase_number)
+  for (const g of sorted) {
+    if (g.status !== 'approved') return g.phase_number
+  }
+  return null // all approved → no active gate
+}
+
+/**
+ * Does a project's phase_gates make it match a `?gate=GN` active-gate filter?
+ *
+ * `gateNumber` is the 1-based DB phase_number the user filtered on (G1 → 1, …).
+ * Returns true only when the project's ACTIVE gate equals that phase_number.
+ * A project whose matching gate is already `approved` (historical) or still
+ * `pending` behind an earlier active gate (future) does NOT match.
+ */
+export function projectMatchesActiveGate(
+  phaseGates: Array<{ phase_number: number; status: string }> | null | undefined,
+  gateNumber: number,
+): boolean {
+  const active = activeGatePhaseNumber(phaseGates)
+  return active !== null && active === gateNumber
+}
+
+/**
  * UNIFIED GATE STATE DERIVATION — Single source of truth for all UI displays.
  * Derives all gate information from fetched phase_gates rows.
  * Returns consistent values for: completed phase label, active phase, and 1-based gate codes.
