@@ -43,49 +43,46 @@ async function resolveApprovers(
 }
 
 /**
- * Resolve the approver seat occupant for a given role.
- * Falls back to tenant_admin if no profile has the role or the role has no active member.
- * Used by approval creation paths to set assignee_id before writing the approval row.
+ * Resolve the approver seat occupant for a given role. FAIL-CLOSED.
+ *
+ * 🚨 This function may return ONLY an active, same-tenant profile UUID, or null.
+ * It previously fell back to returning `tenantId` itself when no profile could be
+ * found ("worst case: tenant_id"). A tenant id is NOT a person: writing it into
+ * approvals.assignee_id / approval_steps.assigned_to created a workflow assigned
+ * to a row that can never authenticate, so the approval could never be actioned
+ * and no real approver was ever accountable. That fallback is removed entirely.
+ *
+ * Resolution order: (1) an active profile holding the requested role; (2) an
+ * active tenant_admin. If neither exists, return null and let the caller ABORT
+ * workflow creation rather than invent an assignee.
+ *
+ * Returns the resolved profile id AND the role the seat represents (the requested
+ * role, or 'tenant_admin' when it fell back), which the caller records as the
+ * step's assigned_role so delegation eligibility can be checked against it.
  */
 async function resolveApproveeSeat(
   supabase: ReturnType<typeof createAdminClient>,
   tenantId: string,
   role: string | null | undefined,
-): Promise<string | null> {
-  if (!role) {
-    // Fallback: assign to tenant_admin
+): Promise<{ id: string; resolvedRole: string } | null> {
+  // (1) Prefer an active profile that actually holds the requested role.
+  if (role) {
     const { data, error } = await supabase
       .from('profiles')
       .select('id')
       .eq('tenant_id', tenantId)
-      .eq('role', 'tenant_admin')
+      .eq('role', role)
       .eq('is_active', true)
       .limit(1)
       .maybeSingle()
     if (error) {
-      console.error('[approvals] resolveApproveeSeat tenant_admin lookup failed:', error.message)
+      console.error('[approvals] resolveApproveeSeat role lookup failed:', error.message)
       return null
     }
-    return data?.id ?? tenantId // Worst case: tenant_id itself (not ideal, but explicit)
+    if (data?.id) return { id: data.id, resolvedRole: role }
   }
 
-  // Look for an active profile with the specified role
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .eq('role', role)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[approvals] resolveApproveeSeat role lookup failed:', error.message)
-    return null
-  }
-  if (data?.id) return data.id
-
-  // Role exists but no seat is occupied — assign to tenant_admin
+  // (2) Fall back to an active tenant_admin — a REAL profile only, never tenantId.
   const { data: admin, error: adminErr } = await supabase
     .from('profiles')
     .select('id')
@@ -95,10 +92,13 @@ async function resolveApproveeSeat(
     .limit(1)
     .maybeSingle()
   if (adminErr) {
-    console.error('[approvals] resolveApproveeSeat fallback lookup failed:', adminErr.message)
+    console.error('[approvals] resolveApproveeSeat tenant_admin fallback lookup failed:', adminErr.message)
     return null
   }
-  return admin?.id ?? tenantId
+  if (admin?.id) return { id: admin.id, resolvedRole: 'tenant_admin' }
+
+  // Fail closed: no active same-tenant profile could be resolved.
+  return null
 }
 
 /**
