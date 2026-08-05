@@ -3,10 +3,21 @@
 import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { CheckCircle2, Circle, AlertCircle, Briefcase, DollarSign, Users, FileText, ChevronDown } from 'lucide-react'
-import { G3FormData, REQUIRED_COMMERCIAL_MILESTONES, REQUIRED_FINANCIAL_CHECKPOINTS, REQUIRED_DELIVERABLES, REQUIRED_STAFFING_ROLES, initializeG3Form, assessG3Readiness } from '@/lib/gates/g3-requirements'
+import {
+  G3FormData,
+  REQUIRED_COMMERCIAL_MILESTONES,
+  REQUIRED_FINANCIAL_CHECKPOINTS,
+  REQUIRED_DELIVERABLES,
+  REQUIRED_STAFFING_ROLES,
+  initializeG3Form,
+  assessG3Readiness,
+  isCategoryAllowedForDeliverable,
+  isRoleCodeAllowedForStaffing,
+  DELIVERABLE_CATEGORY_MAP,
+  STAFFING_ROLE_CODE_MAP,
+} from '@/lib/gates/g3-requirements'
 import { submitG3FormAction, loadG3EligibleDocuments, loadG3ProjectTeamMembers } from '@/app/actions/g3-submissions'
 
 interface G3CommercialFormProps {
@@ -24,8 +35,8 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [readiness, setReadiness] = useState(assessG3Readiness(null))
-  const [documents, setDocuments] = useState<Array<{ id: string; title: string; uploader: string; uploadedAt: string }>>([])
-  const [teamMembers, setTeamMembers] = useState<Array<{ profileId: string; name: string; role: string }>>([])
+  const [documents, setDocuments] = useState<Array<{ id: string; title: string; category: string | null; uploader: string; uploadedAt: string }>>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{ profileId: string; name: string; role: string; roleCode: string }>>([])
   const [expandedDeliverableId, setExpandedDeliverableId] = useState<string | null>(null)
   const [expandedRoleId, setExpandedRoleId] = useState<string | null>(null)
 
@@ -229,31 +240,41 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
                     />
                   </button>
                 )}
-                {expandedDeliverableId === deliverable.id && isEditable && (
-                  <div className="mt-3 space-y-1 border-t pt-2">
-                    {documents.length > 0 ? (
-                      documents.map((doc) => (
-                        <button
-                          key={doc.id}
-                          onClick={() => {
-                            setFormData({
-                              ...formData,
-                              deliverables: formData.deliverables.map((d) =>
-                                d.id === deliverable.id ? { ...d, documentId: doc.id } : d,
-                              ),
-                            })
-                            setExpandedDeliverableId(null)
-                          }}
-                          className="w-full text-left text-xs p-2 rounded hover:bg-blue-50 border"
-                        >
-                          {doc.title} ({doc.uploader}, {doc.uploadedAt})
-                        </button>
-                      ))
-                    ) : (
-                      <div className="text-xs text-slate-500 p-2">No documents available</div>
-                    )}
-                  </div>
-                )}
+                {expandedDeliverableId === deliverable.id && isEditable && (() => {
+                  // Only documents whose category is allowed for THIS deliverable are selectable.
+                  const eligibleDocs = documents.filter((doc) =>
+                    isCategoryAllowedForDeliverable(deliverable.id, doc.category),
+                  )
+                  const allowed = DELIVERABLE_CATEGORY_MAP[deliverable.id]?.join(', ') ?? 'n/a'
+                  return (
+                    <div className="mt-3 space-y-1 border-t pt-2">
+                      {eligibleDocs.length > 0 ? (
+                        eligibleDocs.map((doc) => (
+                          <button
+                            key={doc.id}
+                            onClick={() => {
+                              setFormData({
+                                ...formData,
+                                deliverables: formData.deliverables.map((d) =>
+                                  d.id === deliverable.id ? { ...d, documentId: doc.id } : d,
+                                ),
+                              })
+                              setExpandedDeliverableId(null)
+                            }}
+                            className="w-full text-left text-xs p-2 rounded hover:bg-blue-50 border"
+                          >
+                            {doc.title} ({doc.category ?? 'uncategorized'} · {doc.uploader}, {doc.uploadedAt})
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-xs text-slate-500 p-2">
+                          No eligible documents. This deliverable requires a document categorized as:{' '}
+                          <span className="font-mono">{allowed}</span>.
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}
@@ -309,31 +330,41 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
                     />
                   </button>
                 )}
-                {expandedRoleId === role.roleId && isEditable && (
-                  <div className="mt-3 space-y-1 border-t pt-2">
-                    {teamMembers.length > 0 ? (
-                      teamMembers.map((member) => (
-                        <button
-                          key={member.profileId}
-                          onClick={() => {
-                            setFormData({
-                              ...formData,
-                              staffingRoles: formData.staffingRoles.map((r) =>
-                                r.roleId === role.roleId ? { ...r, assignedProfileId: member.profileId } : r,
-                              ),
-                            })
-                            setExpandedRoleId(null)
-                          }}
-                          className="w-full text-left text-xs p-2 rounded hover:bg-blue-50 border"
-                        >
-                          {member.name} ({member.role})
-                        </button>
-                      ))
-                    ) : (
-                      <div className="text-xs text-slate-500 p-2">No team members available</div>
-                    )}
-                  </div>
-                )}
+                {expandedRoleId === role.roleId && isEditable && (() => {
+                  // Only members assigned through an allowed roles.code for THIS seat are selectable.
+                  const eligibleMembers = teamMembers.filter((member) =>
+                    isRoleCodeAllowedForStaffing(role.roleId, member.roleCode),
+                  )
+                  const allowed = STAFFING_ROLE_CODE_MAP[role.roleId]?.join(', ') ?? 'n/a'
+                  return (
+                    <div className="mt-3 space-y-1 border-t pt-2">
+                      {eligibleMembers.length > 0 ? (
+                        eligibleMembers.map((member) => (
+                          <button
+                            key={member.profileId}
+                            onClick={() => {
+                              setFormData({
+                                ...formData,
+                                staffingRoles: formData.staffingRoles.map((r) =>
+                                  r.roleId === role.roleId ? { ...r, assignedProfileId: member.profileId } : r,
+                                ),
+                              })
+                              setExpandedRoleId(null)
+                            }}
+                            className="w-full text-left text-xs p-2 rounded hover:bg-blue-50 border"
+                          >
+                            {member.name} ({member.role} · {member.roleCode})
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-xs text-slate-500 p-2">
+                          No eligible members. This seat requires a team member assigned through role code:{' '}
+                          <span className="font-mono">{allowed}</span>.
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}

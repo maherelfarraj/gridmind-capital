@@ -1,5 +1,3 @@
-import { TOTAL_PHASES } from './phase-model'
-
 /**
  * G3 Commercial & Financial Close form structure and validation.
  * 
@@ -175,6 +173,76 @@ export const REQUIRED_STAFFING_ROLES: Array<{ roleId: string; roleName: string; 
     description: 'Transaction advisor for commercial close management',
   },
 ]
+
+// ============================================================================
+// CANONICAL DELIVERABLE → DOCUMENT CATEGORY MAPPING
+// ============================================================================
+// Single source of truth mapping each required G3 deliverable to the exact
+// document_files.category value(s) that are acceptable for that specific item.
+// `document_files.category` is free-form text in the schema (no CHECK), so this
+// map defines the governed vocabulary for G3 deliverables. The smoke fixture
+// seed MUST tag its six documents with exactly these categories. A document
+// whose category is not in the allowed set for a given form item is rejected,
+// even if it is a valid, tenant-scoped, non-deleted document on the project.
+
+export const DELIVERABLE_CATEGORY_MAP: Record<string, string[]> = {
+  'signed-ppa': ['commercial'],
+  'epc-contract': ['procurement'],
+  'financial-model': ['financial'],
+  'insurance': ['insurance'],
+  'lender-term-sheet': ['financial'],
+  'legal-opinion': ['legal'],
+}
+
+/** Exact list of deliverable item ids the server/UI expects (order-independent). */
+export const REQUIRED_DELIVERABLE_IDS = REQUIRED_DELIVERABLES.map((d) => d.id)
+
+/**
+ * Returns true iff `category` is an allowed document category for the given
+ * deliverable form item. Unknown deliverable ids are never eligible.
+ */
+export function isCategoryAllowedForDeliverable(
+  deliverableId: string,
+  category: string | null | undefined,
+): boolean {
+  const allowed = DELIVERABLE_CATEGORY_MAP[deliverableId]
+  if (!allowed || !category) return false
+  return allowed.includes(category)
+}
+
+// ============================================================================
+// CANONICAL STAFFING ROLE → roles.code MAPPING
+// ============================================================================
+// Each G3 form staffing role must be filled by a project_team member assigned
+// through a specific canonical roles.code. FIN and LEG map exactly; the
+// commercial and transaction seats map to the closest governed org roles
+// (Project Developer owns commercial/PPA origination; Project Director owns
+// transaction close). The four target codes are distinct so the fixture can
+// seat four different people. A member assigned through any other role code is
+// rejected for that seat even if they are a valid project_team member.
+
+export const STAFFING_ROLE_CODE_MAP: Record<string, string[]> = {
+  'commercial-manager': ['DEV'],
+  'finance-lead': ['FIN'],
+  'legal-counsel': ['LEG'],
+  'transaction-advisor': ['PD'],
+}
+
+/** Exact list of staffing role ids the server/UI expects (order-independent). */
+export const REQUIRED_STAFFING_ROLE_IDS = REQUIRED_STAFFING_ROLES.map((r) => r.roleId)
+
+/**
+ * Returns true iff `roleCode` is an allowed org role for the given G3 staffing
+ * seat. Unknown staffing role ids are never eligible.
+ */
+export function isRoleCodeAllowedForStaffing(
+  staffingRoleId: string,
+  roleCode: string | null | undefined,
+): boolean {
+  const allowed = STAFFING_ROLE_CODE_MAP[staffingRoleId]
+  if (!allowed || !roleCode) return false
+  return allowed.includes(roleCode)
+}
 
 // ============================================================================
 // FORM DATA STRUCTURE
