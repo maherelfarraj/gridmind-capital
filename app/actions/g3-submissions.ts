@@ -108,7 +108,7 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `G3 is not ready: ${readiness.blockers.join('; ')}` }
   }
 
-  // 6. Batch-validate all deliverable documents exist and are in-scope.
+  // 6. Batch-validate all deliverable documents using canonical document_files model.
   // Do NOT rely on loadG3EligibleDocuments() for security — submitted form data is client-controlled.
   const documentIds = formData.deliverables
     .map((d) => d.documentId)
@@ -118,57 +118,59 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `${formData.deliverables.length - documentIds.length} deliverables missing document IDs` }
   }
 
-  // Batch-query all documents; verify each exists, is in-scope, and not archived
-  const { data: documents } = await supabase
-    .from('documents')
-    .select('id, project_id, tenant_id, metadata')
+  // Batch-query canonical document_files; verify each exists, is in-scope, eligible status
+  const { data: docFiles } = await supabase
+    .from('document_files')
+    .select('id, project_id, tenant_id, storage_path, file_name, category, status, uploaded_by, created_at')
     .in('id', documentIds)
 
-  if (!documents || documents.length !== documentIds.length) {
-    return { error: `${documentIds.length - (documents?.length ?? 0)} document IDs not found in database` }
+  if (!docFiles || docFiles.length !== documentIds.length) {
+    return { error: `${documentIds.length - (docFiles?.length ?? 0)} document file IDs not found in database` }
   }
 
-  // Verify ALL documents belong to this project/tenant and are not archived
-  const invalidDocs = documents.filter(
-    (d) => d.project_id !== projectId || d.tenant_id !== tenantId || d.metadata?.status === 'archived',
+  // Verify ALL documents have storage paths, belong to this project/tenant, and are not deleted/superseded
+  const invalidDocs = docFiles.filter(
+    (d) => !d.storage_path || !d.file_name || d.project_id !== projectId || d.tenant_id !== tenantId || d.status === 'deleted' || d.status === 'superseded',
   )
   if (invalidDocs.length > 0) {
     return { 
-      error: `${invalidDocs.length} documents are invalid, archived, or not in this project` 
+      error: `${invalidDocs.length} document files are invalid, deleted, superseded, or not in this project` 
     }
   }
 
-  // 7. Batch-validate all staffing assignments are active project_team members.
+  // 7. Batch-validate all staffing assignments using canonical project_team model (role_id/person_id).
   // Do NOT rely on loadG3ProjectTeamMembers() for security — submitted form data is client-controlled.
-  const profileIds = formData.staffingRoles
+  const personIds = formData.staffingRoles
     .map((r) => r.assignedProfileId)
     .filter(Boolean) as string[]
 
-  if (profileIds.length !== formData.staffingRoles.length) {
-    return { error: `${formData.staffingRoles.length - profileIds.length} staffing roles not assigned` }
+  if (personIds.length !== formData.staffingRoles.length) {
+    return { error: `${formData.staffingRoles.length - personIds.length} staffing roles not assigned` }
   }
 
-  // Batch-query all profiles through project_team; verify active membership
-  const { data: teamMembers } = await supabase
+  // Batch-query canonical project_team through person_id foreign key; verify active assignment and active person
+  const { data: assignments } = await supabase
     .from('project_team')
-    .select('profile_id, project_id, tenant_id, is_active, profiles(id, is_active)')
-    .in('profile_id', profileIds)
+    .select('person_id, project_id, tenant_id, role_id, roles(id, code, title), profiles_project_team_person_id_fkey(id, is_active)')
+    .in('person_id', personIds)
     .eq('project_id', projectId)
     .eq('tenant_id', tenantId)
-    .eq('is_active', true)
 
-  if (!teamMembers || teamMembers.length !== profileIds.length) {
+  if (!assignments || assignments.length !== personIds.length) {
     return {
-      error: `${profileIds.length - (teamMembers?.length ?? 0)} team members are not found, inactive, or not on this project`,
+      error: `${personIds.length - (assignments?.length ?? 0)} people are not assigned to this project or not in this tenant`,
     }
   }
 
-  // Verify each profile is also active (not just the team membership)
-  const inactiveProfiles = teamMembers.filter(
-    (m) => !m.profiles || (typeof m.profiles === 'object' && !('is_active' in m.profiles && m.profiles.is_active)),
-  )
-  if (inactiveProfiles.length > 0) {
-    return { error: `${inactiveProfiles.length} assigned team members have inactive profiles` }
+  // Verify each person has an active profile (not just the team assignment)
+  const inactivePeople = assignments.filter((a) => {
+    if (!a.profiles_project_team_person_id_fkey) return true
+    if (!Array.isArray(a.profiles_project_team_person_id_fkey)) return true
+    const profile = a.profiles_project_team_person_id_fkey[0]
+    return !profile || !profile.is_active
+  })
+  if (inactivePeople.length > 0) {
+    return { error: `${inactivePeople.length} assigned people have inactive profiles` }
   }
 
   // 8. Check for duplicate active approval workflow (pending or delegated) BEFORE changing gate_submissions.
@@ -241,20 +243,19 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: approvalResult.error }
   }
 
-  // 8. Audit log.
+  // 8. Audit log (use lowercase action per schema constraint).
   await supabase.from('audit_log').insert({
+    tenant_id: tenantId,
     table_name: 'gate_submissions',
     record_id: projectId,
-    action: 'INSERT',
-    op: 'submit_g3',
-    reason: 'G3 Commercial & Financial Close submission',
+    action: 'insert',
     changed_by: actor.userId,
-    changed_at: new Date().toISOString(),
-    old_values: {},
+    old_values: null,
     new_values: {
       gate_number: 3,
       status: 'submitted',
       completeness: readiness.completionPercentage,
+      op: 'submit_g3',
     },
   })
 
@@ -262,8 +263,8 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
 }
 
 /**
- * Load eligible documents for G3 submission (project + tenant scoped, non-archived).
- * Shows file name, uploader profile, and upload date.
+ * Load eligible documents for G3 submission using canonical document_files model.
+ * Shows file name, title, uploader profile, and created date.
  */
 export async function loadG3EligibleDocuments(projectId: string) {
   const tenantId = await getCurrentTenantId()
@@ -281,18 +282,19 @@ export async function loadG3EligibleDocuments(projectId: string) {
 
   if (!project) return { documents: [], error: 'Project not found or not in your tenant' }
 
-  // Load documents for this project/tenant, excluding archived
-  const { data: documents } = await supabase
-    .from('documents')
-    .select('id, title, metadata, created_at, created_by')
+  // Load canonical document_files for this project/tenant, excluding deleted/superseded
+  const { data: docFiles } = await supabase
+    .from('document_files')
+    .select('id, file_name, title, uploaded_by, created_at')
     .eq('project_id', projectId)
     .eq('tenant_id', tenantId)
-    .not('metadata->status', 'eq', '"archived"')
+    .not('status', 'eq', 'deleted')
+    .not('status', 'eq', 'superseded')
     .order('created_at', { ascending: false })
 
-  // Enrich with uploader info
-  if (documents && documents.length > 0) {
-    const uploaderIds = [...new Set(documents.map((d) => d.created_by).filter(Boolean))]
+  // Enrich with uploader profile info
+  if (docFiles && docFiles.length > 0) {
+    const uploaderIds = [...new Set(docFiles.map((d) => d.uploaded_by).filter(Boolean))]
     const { data: uploaders } = await supabase
       .from('profiles')
       .select('id, full_name')
@@ -301,10 +303,10 @@ export async function loadG3EligibleDocuments(projectId: string) {
     const uploaderMap = new Map(uploaders?.map((u) => [u.id, u.full_name]) ?? [])
 
     return {
-      documents: documents.map((d) => ({
+      documents: docFiles.map((d) => ({
         id: d.id,
-        title: d.title,
-        uploader: uploaderMap.get(d.created_by) || 'Unknown',
+        title: d.title || d.file_name,
+        uploader: uploaderMap.get(d.uploaded_by) || 'Unknown',
         uploadedAt: new Date(d.created_at).toLocaleDateString(),
       })),
     }
@@ -314,8 +316,8 @@ export async function loadG3EligibleDocuments(projectId: string) {
 }
 
 /**
- * Load active project_team members for G3 staffing (tenant + project scoped).
- * Shows profile name and project role.
+ * Load active project_team members for G3 staffing using canonical model (role_id/person_id).
+ * Shows person name and role title.
  */
 export async function loadG3ProjectTeamMembers(projectId: string) {
   const tenantId = await getCurrentTenantId()
@@ -333,33 +335,25 @@ export async function loadG3ProjectTeamMembers(projectId: string) {
 
   if (!project) return { members: [], error: 'Project not found or not in your tenant' }
 
-  // Load active project_team members
-  const { data: members } = await supabase
+  // Load canonical project_team assignments with role and person details
+  const { data: assignments } = await supabase
     .from('project_team')
-    .select('profile_id, role')
+    .select('person_id, role_id, roles(id, code, title), profiles_project_team_person_id_fkey(id, full_name)')
     .eq('project_id', projectId)
     .eq('tenant_id', tenantId)
-    .eq('is_active', true)
 
-  if (!members || members.length === 0) {
+  if (!assignments || assignments.length === 0) {
     return { members: [], error: 'No active team members found' }
   }
 
-  // Enrich with profile info
-  const profileIds = members.map((m) => m.profile_id)
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, full_name')
-    .in('id', profileIds)
-
-  const profileMap = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? [])
-
   return {
-    members: members.map((m) => ({
-      profileId: m.profile_id,
-      name: profileMap.get(m.profile_id) || 'Unknown',
-      role: m.role,
-    })),
+    members: assignments
+      .filter((a) => a.profiles_project_team_person_id_fkey && a.roles)
+      .map((a) => ({
+        profileId: a.person_id,
+        name: (a.profiles_project_team_person_id_fkey as any).full_name || 'Unknown',
+        role: (a.roles as any).title,
+      })),
   }
 }
 

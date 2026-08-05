@@ -204,8 +204,13 @@ export async function createApprovalWorkflow(
       })
     }
 
+    // Insert approval_steps: fail atomically if this fails
     const { error: stepErr } = await supabase.from('approval_steps').insert(stepRows)
-    if (stepErr) console.log(`[v0] approval_steps creation warning: ${stepErr.message}`)
+    if (stepErr) {
+      // Rollback: delete the approval and events before failing
+      await supabase.from('approvals').delete().eq('id', approval.id)
+      return { id: '', error: `Approval steps creation failed: ${stepErr.message}` }
+    }
 
     // Emit events: 'created' + 'assigned' per level
     const eventRows = [
@@ -223,8 +228,15 @@ export async function createApprovalWorkflow(
       })),
     ]
 
+    // Insert approval_events: fail atomically if this fails
     const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
-    if (eventErr) console.log(`[v0] approval_events creation warning: ${eventErr.message}`)
+    if (eventErr) {
+      // Rollback: delete approval, steps, and any inserted events
+      await supabase.from('approval_steps').delete().eq('approval_id', approval.id)
+      await supabase.from('approval_events').delete().eq('approval_id', approval.id)
+      await supabase.from('approvals').delete().eq('id', approval.id)
+      return { id: '', error: `Approval events creation failed: ${eventErr.message}` }
+    }
 
     return { id: approval.id }
   } catch (e: any) {
@@ -583,104 +595,111 @@ async function applyApprovalLifecycle(
 
   const now = new Date().toISOString()
 
-  // Gate lifecycle: G3→G4 advancement on final approval, keep in_review on rejection
+  // Gate lifecycle: Use canonical phase_gates state machine
   if (approval.object_type === 'gate' && approval.gate_number && approval.tenant_id) {
     if (status === 'approved') {
-      // Mark G3 submission as approved
+      // Update gate_submissions with reviewed_at/reviewed_by (not approved_at)
       const { error: submissionErr } = await supabase
         .from('gate_submissions')
-        .update({ status: 'approved', approved_at: now })
+        .update({ status: 'approved', reviewed_at: now, reviewed_by: actor?.userId ?? null })
         .eq('project_id', approval.object_id)
         .eq('gate_number', approval.gate_number)
         .eq('tenant_id', approval.tenant_id)
 
-      if (submissionErr) console.log(`[v0] Gate submission update: ${submissionErr.message}`)
+      if (submissionErr) {
+        return `Gate submission update failed: ${submissionErr.message}`
+      }
 
-      // Mark G3 gate as approved
-      const { error: gateErr } = await supabase
+      // Update current phase_gates row (e.g., phase 3) from in_review to approved
+      const { error: currentGateErr } = await supabase
         .from('phase_gates')
-        .update({ status: 'approved', completed_at: now })
+        .update({ status: 'approved', reviewed_at: now, reviewed_by: actor?.userId ?? null })
         .eq('project_id', approval.object_id)
         .eq('phase_number', approval.gate_number)
         .eq('tenant_id', approval.tenant_id)
+        .eq('status', 'in_review')
 
-      if (gateErr) console.log(`[v0] Gate approval: ${gateErr.message}`)
+      if (currentGateErr) {
+        return `Current phase gate update failed: ${currentGateErr.message}`
+      }
 
-      // Activate next gate (G4)
+      // Update next phase_gates row (e.g., phase 4) from pending to in_review
       const nextGate = approval.gate_number + 1
       const { error: nextGateErr } = await supabase
         .from('phase_gates')
-        .insert({
-          project_id: approval.object_id,
-          tenant_id: approval.tenant_id,
-          phase_number: nextGate,
-          status: 'in_review',
-          started_at: now,
-        })
-        .select()
-        .maybeSingle()
+        .update({ status: 'in_review', reviewed_at: now, reviewed_by: actor?.userId ?? null })
+        .eq('project_id', approval.object_id)
+        .eq('phase_number', nextGate)
+        .eq('tenant_id', approval.tenant_id)
+        .eq('status', 'pending')
 
-      if (nextGateErr && nextGateErr.code !== 'PGRST116') {
-        // PGRST116 = row already exists (idempotent)
-        console.log(`[v0] Next gate creation: ${nextGateErr.message}`)
+      if (nextGateErr) {
+        return `Next phase gate activation failed: ${nextGateErr.message}`
       }
 
-      // Update project.current_phase using approved-gate-count model
-      const { data: gates } = await supabase
+      // Compute project.current_phase as count of approved gates
+      const { data: approvedGates } = await supabase
         .from('phase_gates')
         .select('phase_number')
         .eq('project_id', approval.object_id)
         .eq('tenant_id', approval.tenant_id)
         .eq('status', 'approved')
 
-      const maxApprovedPhase = gates ? Math.max(...gates.map((g) => g.phase_number)) : 0
+      const currentPhase = (approvedGates?.length ?? 0) + 1
 
       const { error: projErr } = await supabase
         .from('projects')
-        .update({ current_phase: maxApprovedPhase + 1 })
+        .update({ current_phase: currentPhase })
         .eq('id', approval.object_id)
         .eq('tenant_id', approval.tenant_id)
 
       if (projErr) {
-        return `Gate approved, but project phase update failed: ${projErr.message}`
+        return `Project phase update failed: ${projErr.message}`
       }
 
-      // Record workflow_events and audit_log
+      // Record workflow_events using canonical schema
       if (actor) {
         const { error: eventErr } = await supabase.from('workflow_events').insert({
-          project_id: approval.object_id,
-          tenant_id: approval.tenant_id,
-          gate_number: approval.gate_number,
-          event_type: 'gate_approved',
+          instance_id: null,
+          from_state: 'in_review',
+          to_state: 'approved',
+          transition_code: 'gate_approved',
           actor_id: actor.userId,
-          recorded_at: now,
+          comment: null,
+          metadata: { project_id: approval.object_id, gate_number: approval.gate_number, tenant_id: approval.tenant_id },
         })
-        if (eventErr) console.log(`[v0] workflow_events: ${eventErr.message}`)
+        if (eventErr) {
+          return `Workflow event recording failed: ${eventErr.message}`
+        }
       }
     } else if (status === 'rejected') {
-      // Keep G3 in_review for resubmission, do not activate G4
+      // Update gate_submissions with reviewed_at/reviewed_by (not rejected_at)
       const { error: rejectErr } = await supabase
         .from('gate_submissions')
-        .update({ status: 'rejected', rejected_at: now })
+        .update({ status: 'rejected', reviewed_at: now, reviewed_by: actor?.userId ?? null })
         .eq('project_id', approval.object_id)
         .eq('gate_number', approval.gate_number)
         .eq('tenant_id', approval.tenant_id)
 
       if (rejectErr) {
-        return `Gate rejection failed: ${rejectErr.message}`
+        return `Gate rejection update failed: ${rejectErr.message}`
       }
 
-      // Record rejection event
+      // Keep current phase (e.g., phase 3) in_review, do not advance to next phase
+      // Record workflow_events using canonical schema
       if (actor) {
         const { error: eventErr } = await supabase.from('workflow_events').insert({
-          project_id: approval.object_id,
-          tenant_id: approval.tenant_id,
-          gate_number: approval.gate_number,
-          event_type: 'gate_rejected',
+          instance_id: null,
+          from_state: 'in_review',
+          to_state: 'in_review',
+          transition_code: 'gate_rejected',
           actor_id: actor.userId,
-          recorded_at: now,
+          comment: null,
+          metadata: { project_id: approval.object_id, gate_number: approval.gate_number, tenant_id: approval.tenant_id },
         })
-        if (eventErr) console.log(`[v0] workflow_events: ${eventErr.message}`)
+        if (eventErr) {
+          return `Workflow event recording failed: ${eventErr.message}`
+        }
       }
     }
 
