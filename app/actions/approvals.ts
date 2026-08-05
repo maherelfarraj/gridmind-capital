@@ -11,6 +11,12 @@ import {
   mapOpportunityApprovalDetail,
   type OpportunityApprovalView,
 } from '@/lib/approvals/opportunity-detail'
+import {
+  isGateNumberMissing,
+  duplicateWorkflowMessage,
+  shouldRouteGateDecisionToRpc,
+  isAdminOverride,
+} from '@/lib/approvals/gate-routing'
 
 // profiles.role enum values that action approvals (used to resolve email recipients).
 const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
@@ -121,7 +127,7 @@ export async function createApprovalWorkflow(
     // duplicate identity, the phase_gates transition, and the lifecycle audit.
     // Require it up front, BEFORE any query or insert, so gate 0 is accepted
     // (explicit null/undefined check) but a missing gate number is rejected.
-    if (objectType === 'gate' && (gateNumber === null || gateNumber === undefined)) {
+    if (isGateNumberMissing(objectType, gateNumber)) {
       return { id: '', error: 'A gate workflow requires a gate number' }
     }
 
@@ -149,12 +155,7 @@ export async function createApprovalWorkflow(
 
     const { data: existing } = await query.limit(1).maybeSingle()
     if (existing) {
-      // Gate-specific message for gate workflows; generic message otherwise.
-      const dupMessage =
-        objectType === 'gate'
-          ? `Workflow already pending or delegated for gate ${gateNumber}`
-          : `Workflow already pending or delegated for this ${objectType}`
-      return { id: existing.id, error: dupMessage }
+      return { id: existing.id, error: duplicateWorkflowMessage(objectType, gateNumber) }
     }
 
     // Find matching approval_rule: object_type + amount within min/max, highest priority
@@ -1018,18 +1019,19 @@ export async function decideApproval(opts: {
   // object type with an EXPLICIT gate_number null/undefined check so a gate
   // numbered 0 still reaches this path.
   // ===========================================================================
-  if (approval.object_type === 'gate') {
-    if (approval.gate_number === null || approval.gate_number === undefined) {
+  if (shouldRouteGateDecisionToRpc(approval.object_type)) {
+    if (isGateNumberMissing('gate', approval.gate_number)) {
       return { error: 'This gate approval is missing a gate number and cannot be decided' }
     }
 
     // Admin override: an admin deciding an approval they are not assigned to.
     // Passed to the RPC so its assignment check can allow the override while
     // still rejecting an unrelated, non-admin caller.
-    const isAdminOverride = !!(
-      gate.actor.role &&
-      (ADMIN_ROLES as readonly string[]).includes(gate.actor.role) &&
-      gate.actor.userId !== approval.assignee_id
+    const adminOverride = isAdminOverride(
+      gate.actor.role,
+      gate.actor.userId,
+      approval.assignee_id,
+      ADMIN_ROLES as readonly string[],
     )
 
     const { data: rpcOutcome, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
@@ -1038,7 +1040,7 @@ export async function decideApproval(opts: {
       p_actor: gate.actor.userId,
       p_decision: opts.decision,
       p_rationale: opts.rationale,
-      p_is_admin_override: isAdminOverride,
+      p_is_admin_override: adminOverride,
     })
 
     if (rpcErr) return { error: `Gate decision failed: ${rpcErr.message}` }

@@ -115,6 +115,20 @@ BEGIN
     (v_project, 7, 'Commissioning & Grid Tests',         'pending'),
     (v_project, 8, 'Handover & O&M',                     'pending');
 
+  -- 2b) RACI gate sign-offs: inserting G3 as 'in_review' fires
+  --     trg_spawn_gate_signoffs, which creates one pending gate_signoffs row per
+  --     gate_signoff_template. enforce_gate_approval() blocks the eventual
+  --     approval until every one is 'signed'. A ready-to-decide G3 fixture must
+  --     therefore sign them all, or the human's approval test would fail with
+  --     "Gate cannot be approved: N sign-off(s) still pending".
+  UPDATE public.gate_signoffs gs
+     SET status = 'signed', signed_at = now()
+    FROM public.phase_gates pg
+   WHERE gs.phase_gate_id = pg.id
+     AND pg.project_id = v_project
+     AND pg.phase_number = 3
+     AND gs.status <> 'signed';
+
   -- 3) Six deliverable documents tagged with the EXACT governed categories.
   DELETE FROM public.document_files WHERE project_id = v_project;
   INSERT INTO public.document_files
@@ -147,6 +161,15 @@ BEGIN
      (phase_number = 3 AND status = 'in_review') OR
      (phase_number BETWEEN 4 AND 8 AND status = 'pending'));
   IF v_n <> 8 THEN RAISE EXCEPTION 'SEED ASSERT: phase_gates states wrong (matched %/8)', v_n; END IF;
+
+  -- The G3 gate must have ZERO unsigned sign-offs, or enforce_gate_approval()
+  -- will block the human's approval test. (Spawned by trg_spawn_gate_signoffs
+  -- when G3 entered 'in_review'; all signed in step 2b above.)
+  SELECT count(*) INTO v_n
+    FROM public.gate_signoffs gs
+    JOIN public.phase_gates pg ON pg.id = gs.phase_gate_id
+   WHERE pg.project_id = v_project AND pg.phase_number = 3 AND gs.status <> 'signed';
+  IF v_n <> 0 THEN RAISE EXCEPTION 'SEED ASSERT: G3 still has % unsigned sign-off(s); gate would be un-approvable', v_n; END IF;
 
   -- Each deliverable category present exactly as governed.
   SELECT count(*) INTO v_n FROM public.document_files

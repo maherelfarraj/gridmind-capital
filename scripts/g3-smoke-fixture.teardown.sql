@@ -35,11 +35,18 @@ BEGIN
     DELETE FROM public.approvals           WHERE id         = ANY(v_approval_ids);
   END IF;
 
-  -- 2) Lifecycle + fixture rows scoped to the project (no audit triggers here)
+  -- 2) Lifecycle + fixture rows scoped to the project (no audit triggers here).
+  --    gate_signoffs + approval_items are spawned by trg_spawn_gate_signoffs when
+  --    a gate enters 'in_review'; gate_signoffs.phase_gate_id FKs phase_gates, so
+  --    both must be removed BEFORE phase_gates.
   DELETE FROM public.workflow_events  WHERE metadata->>'project_id' = v_project::text;
   DELETE FROM public.gate_submissions WHERE project_id = v_project;
   DELETE FROM public.project_team     WHERE project_id = v_project;
   DELETE FROM public.document_files   WHERE project_id = v_project;
+  DELETE FROM public.approval_items   WHERE project_id = v_project;
+  DELETE FROM public.gate_signoffs gs
+   USING public.phase_gates pg
+   WHERE gs.phase_gate_id = pg.id AND pg.project_id = v_project;
   DELETE FROM public.phase_gates      WHERE project_id = v_project;
 
   -- 3) The project itself (fires the projects audit trigger -> inserts an audit_log row)
@@ -57,6 +64,8 @@ BEGIN
   + (SELECT count(*) FROM public.gate_submissions WHERE project_id = v_project)
   + (SELECT count(*) FROM public.workflow_events WHERE metadata->>'project_id' = v_project::text)
   + (SELECT count(*) FROM public.approvals       WHERE object_type = 'gate' AND object_id = v_project)
+  + (SELECT count(*) FROM public.approval_items  WHERE project_id = v_project)
+  + (SELECT count(*) FROM public.gate_signoffs gs JOIN public.phase_gates pg ON pg.id = gs.phase_gate_id WHERE pg.project_id = v_project)
   + (SELECT count(*) FROM public.audit_log       WHERE record_id = v_project::text)
   INTO v_n;
   IF v_n <> 0 THEN
