@@ -6,7 +6,7 @@ import { headers } from 'next/headers'
 
 const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
-import { requireUser } from '@/lib/auth/guard'
+import { requireUser, getAuthActor } from '@/lib/auth/guard'
 
 export type SignatureEntityType = 'gate_approval' | 'vo_approval' | 'client_report' | 'certificate'
 
@@ -289,10 +289,13 @@ export interface StagedGateSignature {
  * signature and the endorsement commit atomically.
  *
  * Storage is not transactional with Postgres, so the blob is staged first and
- * the RPC writes only the DB row keyed to the returned `imagePath`. If the
- * decision rolls back, the blob is a harmless orphan (no row references it) —
- * the important invariant (no signature ROW without a committed decision, and no
- * committed endorsement without a signature row) is preserved by the RPC.
+ * the RPC writes only the DB row keyed to the returned `imagePath`.
+ *
+ * A staged blob left behind by a FAILED decision is NOT an acceptable orphan:
+ * `decideApproval` deletes it (via `removeStagedGateSignature`) whenever the RPC
+ * returns an error or throws before it can commit. Only a successful, committed
+ * decision keeps the blob (its `signatures` row now references it). The earlier
+ * "harmless orphan" framing is retired — failed-decision blobs are cleaned up.
  */
 export async function stageGateSignatureImage(opts: {
   dataUrl: string
@@ -329,6 +332,27 @@ export async function stageGateSignatureImage(opts: {
   }
 }
 
+/**
+ * Delete a staged gate-signature PNG from storage.
+ *
+ * Called by `decideApproval` when a gate decision FAILS after the image was
+ * staged (the RPC returned an error, or threw before it could commit). A staged
+ * blob whose decision never committed has no `signatures` row referencing it and
+ * must not linger — see `stageGateSignatureImage`. On a successful, committed
+ * decision this is never called, so a real signature image is never removed.
+ */
+export async function removeStagedGateSignature(
+  path: string,
+): Promise<{ removed: true } | { error: string }> {
+  await requireUser()
+  if (!path?.trim()) return { error: 'No staged signature path to remove' }
+
+  const supabase = createAdminClient()
+  const { error } = await supabase.storage.from(BUCKET).remove([path])
+  if (error) return { error: error.message }
+  return { removed: true }
+}
+
 async function toRecords(
   supabase: ReturnType<typeof createAdminClient>,
   rows: Array<Record<string, unknown>>,
@@ -355,17 +379,92 @@ async function toRecords(
   )
 }
 
-/** All signatures attached to a specific entity (e.g. a gate approval). */
+/**
+ * All signatures attached to a specific entity (e.g. a client report), scoped to
+ * the authenticated caller's tenant.
+ *
+ * SECURITY: this runs on the RLS-bypassing admin client, so it MUST authenticate
+ * and tenant-scope itself. An unauthenticated caller gets nothing, and the query
+ * ALWAYS filters `tenant_id` so signatures and their storage URLs can never be
+ * read across tenants. For gate approvals prefer `getGateApprovalSignatures`,
+ * which additionally resolves the canonical phase-gate identity.
+ */
 export async function getSignaturesForEntity(
   entityType: SignatureEntityType,
   entityId: string,
 ): Promise<SignatureRecord[]> {
+  const res = await getAuthActor()
+  if ('error' in res) return []
+  const { actor } = res
+
   const supabase = createAdminClient()
   const { data } = await supabase
     .from('signatures')
     .select('*')
+    .eq('tenant_id', actor.tenantId)
     .eq('entity_type', entityType)
     .eq('entity_id', entityId)
+    .order('signed_at', { ascending: true })
+  if (!data) return []
+  return toRecords(supabase, data)
+}
+
+/**
+ * Tenant-scoped signatures for a GATE approval, keyed to the CANONICAL
+ * phase-gate identity (not the approval id).
+ *
+ * The gate-decision RPC (decide_gate_approval v4) writes each endorsement
+ * signature with `entity_id = phase_gates.id`, so the read path must resolve
+ * that same identity. Guarantees, in order:
+ *   1. authenticate the viewer;
+ *   2. verify the approval belongs to the viewer's tenant and is a gate;
+ *   3. resolve the canonical `phase_gates.id` (via the tenant-owned project);
+ *   4. query signatures by tenant_id + entity_type='gate_approval' + that id.
+ * Only after all checks pass are signed URLs generated and returned.
+ */
+export async function getGateApprovalSignatures(approvalId: string): Promise<SignatureRecord[]> {
+  const res = await getAuthActor()
+  if ('error' in res) return []
+  const { actor } = res
+
+  const supabase = createAdminClient()
+
+  // (2) The approval must be visible to this tenant and be a gate workflow.
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('id, tenant_id, object_type, object_id, gate_number')
+    .eq('id', approvalId)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (!approval || approval.object_type !== 'gate') return []
+  if (approval.object_id === null || approval.gate_number === null || approval.gate_number === undefined) {
+    return []
+  }
+
+  // (3) Resolve the canonical phase-gate identity, tenant-verified via project.
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', approval.object_id)
+    .eq('tenant_id', actor.tenantId)
+    .maybeSingle()
+  if (!project) return []
+
+  const { data: gate } = await supabase
+    .from('phase_gates')
+    .select('id')
+    .eq('project_id', project.id)
+    .eq('phase_number', approval.gate_number)
+    .maybeSingle()
+  if (!gate) return []
+
+  // (4) Signatures for THIS gate identity, tenant-scoped.
+  const { data } = await supabase
+    .from('signatures')
+    .select('*')
+    .eq('tenant_id', actor.tenantId)
+    .eq('entity_type', 'gate_approval')
+    .eq('entity_id', gate.id)
     .order('signed_at', { ascending: true })
   if (!data) return []
   return toRecords(supabase, data)
