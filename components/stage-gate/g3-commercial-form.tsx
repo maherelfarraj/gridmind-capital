@@ -12,7 +12,11 @@ import { submitG3FormAction } from '@/app/actions/g3-submissions'
 interface G3CommercialFormProps {
   projectId: string
   projectName: string
-  existingSubmission?: { formData?: G3FormData; status?: string } | null
+  existingSubmission?: {
+    formData?: G3FormData
+    submissionStatus?: string | null
+    gateStatus?: string | null
+  } | null
 }
 
 export function G3CommercialForm({ projectId, projectName, existingSubmission }: G3CommercialFormProps) {
@@ -34,9 +38,12 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
     setReadiness(assessG3Readiness(formData))
   }, [formData])
 
-  const isApproved = existingSubmission?.status === 'approved'
-  const isSubmitted = existingSubmission?.status === 'submitted'
-  const isEditable = !isApproved && !isSubmitted
+  const gateStatus = existingSubmission?.gateStatus
+  const submissionStatus = existingSubmission?.submissionStatus
+  const isApproved = submissionStatus === 'approved'
+  const isPending = submissionStatus === 'submitted'
+  const isGateLocked = gateStatus !== 'in_review'
+  const isEditable = !isGateLocked && !isApproved && !isPending
 
   const handleSubmit = async () => {
     if (!isEditable || !readiness.ready) return
@@ -72,7 +79,7 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
             <span className="text-slate-600">Completion: {readiness.completionPercentage}%</span>
           </div>
           {isApproved && <p className="text-sm text-green-600 mt-2">✓ Approved</p>}
-          {isSubmitted && <p className="text-sm text-blue-600 mt-2">⏳ Pending Approval</p>}
+          {isPending && <p className="text-sm text-blue-600 mt-2">⏳ Pending Approval</p>}
         </CardContent>
       </Card>
 
@@ -167,27 +174,7 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
         <CardContent className="space-y-2">
           {formData.deliverables.map((deliverable) => (
             <div key={deliverable.id} className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={deliverable.uploaded}
-                onChange={(e) => {
-                  setFormData({
-                    ...formData,
-                    deliverables: formData.deliverables.map((d) =>
-                      d.id === deliverable.id
-                        ? {
-                            ...d,
-                            uploaded: e.target.checked,
-                            uploadedAt: e.target.checked ? new Date().toISOString() : null,
-                          }
-                        : d,
-                    ),
-                  })
-                }}
-                disabled={!isEditable}
-                className="cursor-pointer"
-              />
-              {deliverable.uploaded ? (
+              {deliverable.documentId ? (
                 <CheckCircle2 className="w-5 h-5 text-green-600" />
               ) : (
                 <Circle className="w-5 h-5 text-slate-300" />
@@ -195,12 +182,16 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
               <div className="flex-1">
                 <div className="font-medium text-sm">{deliverable.name}</div>
                 <div className="text-xs text-slate-500">{deliverable.description}</div>
-                {!deliverable.uploaded && <div className="text-xs text-orange-600">Not uploaded</div>}
+                {deliverable.documentId ? (
+                  <div className="text-xs text-green-600">Document attached</div>
+                ) : (
+                  <div className="text-xs text-orange-600">No document</div>
+                )}
               </div>
             </div>
           ))}
           <div className="text-xs text-slate-600 pt-2">
-            {formData.deliverables.filter((d) => d.uploaded).length}/{REQUIRED_DELIVERABLES.length} uploaded
+            {formData.deliverables.filter((d) => d.documentId).length}/{REQUIRED_DELIVERABLES.length} with documents
           </div>
         </CardContent>
       </Card>
@@ -215,40 +206,17 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
           {formData.staffingRoles.map((role) => (
             <div key={role.roleId} className="p-2 rounded hover:bg-slate-50">
               <div className="font-medium text-sm flex items-center gap-2">
-                {role.assignedTo ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Circle className="w-4 h-4 text-slate-300" />}
+                {role.assignedProfileId ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Circle className="w-4 h-4 text-slate-300" />}
                 {role.roleName}
               </div>
               <div className="text-xs text-slate-500">{role.description}</div>
-              {isEditable ? (
-                <Input
-                  placeholder="Enter assigned person's name"
-                  value={role.assignedTo?.name || ''}
-                  onChange={(e) => {
-                    setFormData({
-                      ...formData,
-                      staffingRoles: formData.staffingRoles.map((r) =>
-                        r.roleId === role.roleId
-                          ? {
-                              ...r,
-                              assignedTo: e.target.value.trim()
-                                ? { id: `${role.roleId}-${Date.now()}`, name: e.target.value }
-                                : null,
-                            }
-                          : r,
-                      ),
-                    })
-                  }}
-                  className="mt-1 h-8 text-xs"
-                />
-              ) : (
-                <div className="text-xs text-slate-600 mt-1">
-                  {role.assignedTo?.name || 'Not assigned'}
-                </div>
-              )}
+              <div className="text-xs text-slate-600 mt-1">
+                {role.assignedProfileId ? `Assigned to profile ${role.assignedProfileId.slice(0, 8)}...` : 'Not assigned'}
+              </div>
             </div>
           ))}
           <div className="text-xs text-slate-600 pt-2">
-            {formData.staffingRoles.filter((r) => r.assignedTo).length}/{REQUIRED_STAFFING_ROLES.length} assigned
+            {formData.staffingRoles.filter((r) => r.assignedProfileId).length}/{REQUIRED_STAFFING_ROLES.length} assigned
           </div>
         </CardContent>
       </Card>
@@ -294,7 +262,12 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
 
       {/* Actions */}
       <div className="flex gap-3">
-        {!isApproved && isEditable && (
+        {isGateLocked && !isApproved && (
+          <div className="text-sm text-amber-600 flex-1 text-center py-2">
+            🔒 Gate locked - not open for submission
+          </div>
+        )}
+        {isEditable && (
           <Button
             onClick={handleSubmit}
             disabled={isSubmitting || !readiness.ready}
@@ -302,6 +275,11 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
           >
             {isSubmitting ? 'Submitting...' : 'Submit G3 for Approval'}
           </Button>
+        )}
+        {isPending && (
+          <div className="text-sm text-blue-600 flex-1 text-center py-2">
+            ⏳ Submission pending review by required approvers
+          </div>
         )}
         {isApproved && (
           <div className="text-sm text-green-600 flex items-center gap-2">

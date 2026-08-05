@@ -4,12 +4,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import { getCurrentTenantId } from '@/lib/tenant'
 import { G3FormData, assessG3Readiness } from '@/lib/gates/g3-requirements'
-import { advanceProjectGate } from './phase-gates'
-import { createApproval } from './approvals'
+import { createApprovalWorkflow } from './approvals'
 
 /**
- * Load existing G3 submission for a project (current tenant only).
- * Returns null if no submission exists or gate is not in_review status.
+ * Load existing G3 submission and gate status for a project (current tenant only).
+ * Returns submission data even if gate is locked/approved so form can show proper UI states.
  */
 export async function getG3Submission(projectId: string) {
   const tenantId = await getCurrentTenantId()
@@ -35,9 +34,6 @@ export async function getG3Submission(projectId: string) {
     .eq('phase_number', 3)
     .maybeSingle()
 
-  // Can only submit G3 when it's in_review.
-  if (!gate || gate.status !== 'in_review') return null
-
   // Get existing submission if any.
   const { data: submission } = await supabase
     .from('gate_submissions')
@@ -46,12 +42,11 @@ export async function getG3Submission(projectId: string) {
     .eq('gate_number', 3)
     .maybeSingle()
 
-  return submission
-    ? {
-        formData: (submission.form_data ?? undefined) as G3FormData | undefined,
-        status: submission.status,
-      }
-    : null
+  return {
+    formData: (submission?.form_data ?? undefined) as G3FormData | undefined,
+    submissionStatus: submission?.status ?? null,
+    gateStatus: gate?.status ?? null,
+  }
 }
 
 /**
@@ -113,7 +108,34 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `G3 is not ready: ${readiness.blockers.join('; ')}` }
   }
 
-  // 6. Upsert gate_submissions.
+  // 6. Verify all deliverables have real document IDs.
+  const missingDocuments = formData.deliverables.filter((d) => !d.documentId)
+  if (missingDocuments.length > 0) {
+    return { error: `${missingDocuments.length} deliverables missing document records` }
+  }
+
+  // 7. Verify all staffing roles have real profile IDs.
+  const unassignedStaff = formData.staffingRoles.filter((r) => !r.assignedProfileId)
+  if (unassignedStaff.length > 0) {
+    return { error: `${unassignedStaff.length} staffing roles not assigned to project members` }
+  }
+
+  // 8. Check for duplicate active approval workflow.
+  const { data: existingApproval } = await supabase
+    .from('approvals')
+    .select('id, status')
+    .eq('tenant_id', tenantId)
+    .eq('object_type', 'gate')
+    .eq('object_id', projectId)
+    .eq('gate_number', 3)
+    .eq('status', 'pending')
+    .maybeSingle()
+
+  if (existingApproval) {
+    return { error: 'G3 submission already pending approval' }
+  }
+
+  // 9. Upsert gate_submissions.
   const { error: submitError } = await supabase
     .from('gate_submissions')
     .upsert(
@@ -130,30 +152,22 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
 
   if (submitError) return { error: `Failed to save G3 submission: ${submitError.message}` }
 
-  // 7. Create approval record directly.
-  const { error: approvalError } = await supabase
-    .from('approvals')
-    .insert({
-      tenant_id: tenantId,
-      object_type: 'gate',
-      object_id: projectId,
-      gate_number: 3,
-      title: `G3 Commercial & Financial Close: ${project.name}`,
-      description: 'Commercial and financial close for ready-to-build approval',
-      status: 'pending',
-      priority: 'normal',
-      requester_id: actor.userId,
-      amount: 0,
-    })
+  // 10. Create approval workflow via canonical engine.
+  const approvalResult = await createApprovalWorkflow(
+    'gate',
+    projectId,
+    `G3 Commercial & Financial Close: ${project.name}`,
+    0, // amount not applicable for gates
+  )
 
-  if (approvalError) {
-    // Rollback: delete the submission if approval creation failed
+  if (approvalResult.error) {
+    // Rollback: delete the submission if workflow creation failed
     await supabase
       .from('gate_submissions')
       .delete()
       .eq('project_id', projectId)
       .eq('gate_number', 3)
-    return { error: `Failed to create approval record: ${approvalError.message}` }
+    return { error: approvalResult.error }
   }
 
   // 8. Audit log.
@@ -177,85 +191,12 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
 }
 
 /**
- * Decide on G3 approval (approve or reject).
- * - Approves/rejects the submission
- * - Calls canonical gate lifecycle to advance project if approved
- * - Records audit trail with real actor ID
- * - Enforces tenant isolation
+ * G3 approval decisions are routed through the canonical decideApproval() action.
+ * Use: decideApproval(approvalId, 'approved' | 'rejected', rationale)
+ * 
+ * The canonical workflow handles:
+ * - Approval step completion and quorum validation
+ * - Gate lifecycle advancement when quorum met (Corrections 10-11)
+ * - Audit trail and actor attribution
+ * - Delegation and escalation rules
  */
-export async function decideG3ApprovalAction(
-  projectId: string,
-  decision: 'approved' | 'rejected',
-  rationale: string,
-) {
-  // 1. Authenticate and verify approver role.
-  const actorResult = await requireWriter()
-  if ('error' in actorResult) return actorResult
-  const { actor } = actorResult
-
-  // 2. Get tenant and verify actor.
-  const tenantId = await getCurrentTenantId()
-  if (!tenantId) return { error: 'Tenant context not available' }
-
-  const supabase = createAdminClient()
-
-  // 3. Verify project in tenant.
-  const { data: project } = await supabase
-    .from('projects')
-    .select('id, tenant_id')
-    .eq('id', projectId)
-    .eq('tenant_id', tenantId)
-    .single()
-
-  if (!project) return { error: 'Project not found or not in your tenant' }
-
-  // 4. Get the approval record for this G3 submission.
-  const { data: approval } = await supabase
-    .from('approvals')
-    .select('id, status')
-    .eq('tenant_id', tenantId)
-    .eq('object_type', 'gate')
-    .eq('object_id', projectId)
-    .eq('gate_number', 3)
-    .maybeSingle()
-
-  if (!approval) return { error: 'No G3 approval request found' }
-  if (approval.status !== 'pending') return { error: 'G3 approval is not pending' }
-
-  // 5. Update approval status.
-  const { error: updateError } = await supabase
-    .from('approvals')
-    .update({
-      status: decision === 'approved' ? 'approved' : 'rejected',
-      decided_at: new Date().toISOString(),
-      decided_by: actor.userId,
-      decision_note: rationale,
-    })
-    .eq('id', approval.id)
-
-  if (updateError) return { error: `Failed to update approval: ${updateError.message}` }
-
-  // 6. If approved, advance project gate via canonical lifecycle.
-  if (decision === 'approved') {
-    const advanceResult = await advanceProjectGate(projectId, { viaApproval: true })
-    if ('error' in advanceResult) return advanceResult
-  }
-
-  // 7. Audit log.
-  await supabase.from('audit_log').insert({
-    table_name: 'approvals',
-    record_id: approval.id,
-    action: 'UPDATE',
-    op: decision === 'approved' ? 'approve_g3' : 'reject_g3',
-    reason: rationale,
-    changed_by: actor.userId,
-    changed_at: new Date().toISOString(),
-    old_values: { status: 'pending' },
-    new_values: {
-      status: decision === 'approved' ? 'approved' : 'rejected',
-      project_advanced: decision === 'approved',
-    },
-  })
-
-  return {}
-}

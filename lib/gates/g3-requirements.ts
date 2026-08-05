@@ -100,12 +100,10 @@ export type Deliverable = {
   name: string
   description: string
   category: 'contracts' | 'financial' | 'approvals'
-  uploaded: boolean
-  uploadedAt: string | null
-  fileName: string | null
+  documentId: string | null // Reference to real document record (no fake uploads)
 }
 
-export const REQUIRED_DELIVERABLES: Array<Omit<Deliverable, 'uploaded' | 'uploadedAt' | 'fileName'>> = [
+export const REQUIRED_DELIVERABLES: Array<Omit<Deliverable, 'documentId'>> = [
   {
     id: 'signed-ppa',
     name: 'Signed PPA',
@@ -152,7 +150,7 @@ export type StaffingRole = {
   roleId: string
   roleName: string
   description: string
-  assignedTo: { id: string; name: string } | null
+  assignedProfileId: string | null // Reference to real project_team profile (never invented)
 }
 
 export const REQUIRED_STAFFING_ROLES: Array<{ roleId: string; roleName: string; description: string }> = [
@@ -218,19 +216,14 @@ export function initializeG3Form(): G3FormData {
       completed: false,
     })),
     deliverables: REQUIRED_DELIVERABLES.map((d) => ({
-      id: d.id,
-      name: d.name,
-      description: d.description,
-      category: d.category,
-      uploaded: false,
-      uploadedAt: null,
-      fileName: null,
+      ...d,
+      documentId: null,
     })),
     staffingRoles: REQUIRED_STAFFING_ROLES.map((r) => ({
       roleId: r.roleId,
       roleName: r.roleName,
       description: r.description,
-      assignedTo: null,
+      assignedProfileId: null,
     })),
     executiveSummary: null,
   }
@@ -238,10 +231,10 @@ export function initializeG3Form(): G3FormData {
 
 /**
  * Assess G3 readiness for approval. A project is G3-ready when:
- * - 4/5 commercial milestones completed
- * - 4/5 financial checkpoints completed
- * - All 6 deliverables uploaded
- * - All 4 staffing roles assigned
+ * - ALL 5/5 commercial milestones completed (governed: no variance allowed)
+ * - ALL 5/5 financial checkpoints completed (governed: no variance allowed)
+ * - All 6 deliverables with real document IDs bound
+ * - All 4 staffing roles assigned to real project team members
  * - Executive summary provided
  */
 export function assessG3Readiness(formData: G3FormData | null): G3Readiness {
@@ -251,19 +244,14 @@ export function assessG3Readiness(formData: G3FormData | null): G3Readiness {
       completionPercentage: 0,
       blockers: ['No submission data provided'],
       missingDeliverables: REQUIRED_DELIVERABLES.map((d) => ({
-        id: d.id,
-        name: d.name,
-        description: d.description,
-        category: d.category,
-        uploaded: false,
-        uploadedAt: null,
-        fileName: null,
+        ...d,
+        documentId: null,
       })),
       unassignedRoles: REQUIRED_STAFFING_ROLES.map((r) => ({
         roleId: r.roleId,
         roleName: r.roleName,
         description: r.description,
-        assignedTo: null,
+        assignedProfileId: null,
       })),
       incompleteMilestones: [],
       incompleteCheckpoints: [],
@@ -276,32 +264,32 @@ export function assessG3Readiness(formData: G3FormData | null): G3Readiness {
   const incompleteMilestones: CommercialMilestone[] = []
   const incompleteCheckpoints: FinancialCheckpoint[] = []
 
-  // Commercial milestones: need 4/5
+  // Commercial milestones: ALL 5/5 required (governance: no variance allowed)
   const completedCommercial = formData.commercialMilestones.filter((m) => m.completed).length
-  if (completedCommercial < 4) {
-    blockers.push(`Only ${completedCommercial}/5 commercial milestones completed (need 4)`)
+  if (completedCommercial < 5) {
+    blockers.push(`Only ${completedCommercial}/5 commercial milestones completed (all 5 required)`)
     incompleteMilestones.push(...formData.commercialMilestones.filter((m) => !m.completed))
   }
 
-  // Financial checkpoints: need 4/5
+  // Financial checkpoints: ALL 5/5 required (governance: no variance allowed)
   const completedFinancial = formData.financialCheckpoints.filter((c) => c.completed).length
-  if (completedFinancial < 4) {
-    blockers.push(`Only ${completedFinancial}/5 financial checkpoints completed (need 4)`)
+  if (completedFinancial < 5) {
+    blockers.push(`Only ${completedFinancial}/5 financial checkpoints completed (all 5 required)`)
     incompleteCheckpoints.push(...formData.financialCheckpoints.filter((c) => !c.completed))
   }
 
-  // Deliverables: all 6 required
-  const uploadedCount = formData.deliverables.filter((d) => d.uploaded).length
-  if (uploadedCount < 6) {
-    blockers.push(`${uploadedCount}/6 required deliverables uploaded`)
-    missingDeliverables.push(...formData.deliverables.filter((d) => !d.uploaded))
+  // Deliverables: all 6 with real document IDs
+  const documentsUploaded = formData.deliverables.filter((d) => d.documentId).length
+  if (documentsUploaded < 6) {
+    blockers.push(`${documentsUploaded}/6 required deliverables with document records`)
+    missingDeliverables.push(...formData.deliverables.filter((d) => !d.documentId))
   }
 
-  // Staffing: all 4 roles must be assigned
-  const assignedRoles = formData.staffingRoles.filter((r) => r.assignedTo).length
+  // Staffing: all 4 roles with real profile assignments
+  const assignedRoles = formData.staffingRoles.filter((r) => r.assignedProfileId).length
   if (assignedRoles < 4) {
     blockers.push(`${assignedRoles}/4 staffing roles assigned`)
-    unassignedRoles.push(...formData.staffingRoles.filter((r) => !r.assignedTo))
+    unassignedRoles.push(...formData.staffingRoles.filter((r) => !r.assignedProfileId))
   }
 
   // Executive summary
@@ -309,10 +297,10 @@ export function assessG3Readiness(formData: G3FormData | null): G3Readiness {
     blockers.push('Executive summary is required')
   }
 
-  // Completion percentage: (commercial 4/5 + financial 4/5 + deliverables 6/6 + staffing 4/4 + summary) / 5
-  const commercialScore = Math.min(completedCommercial / 4, 1)
-  const financialScore = Math.min(completedFinancial / 4, 1)
-  const deliverablesScore = uploadedCount / 6
+  // Completion percentage: (commercial 5/5 + financial 5/5 + deliverables 6/6 + staffing 4/4 + summary) / 5
+  const commercialScore = completedCommercial / 5
+  const financialScore = completedFinancial / 5
+  const deliverablesScore = documentsUploaded / 6
   const staffingScore = assignedRoles / 4
   const summaryScore = formData.executiveSummary?.trim() ? 1 : 0
   const completionPercentage = Math.round(

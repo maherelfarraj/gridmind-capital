@@ -73,15 +73,14 @@ describe('G3 Commercial & Financial Close Workspace', () => {
       expect(form.financialCheckpoints.every((c) => !c.completed)).toBe(true)
     })
 
-    it('all deliverables start unuploaded', () => {
+    it('all deliverables start without document IDs', () => {
       const form = initializeG3Form()
-      expect(form.deliverables.every((d) => !d.uploaded)).toBe(true)
-      expect(form.deliverables.every((d) => d.uploadedAt === null)).toBe(true)
+      expect(form.deliverables.every((d) => !d.documentId)).toBe(true)
     })
 
-    it('all staffing roles start unassigned', () => {
+    it('all staffing roles start without profile assignments', () => {
       const form = initializeG3Form()
-      expect(form.staffingRoles.every((r) => !r.assignedTo)).toBe(true)
+      expect(form.staffingRoles.every((r) => !r.assignedProfileId)).toBe(true)
     })
   })
 
@@ -134,27 +133,16 @@ describe('G3 Commercial & Financial Close Workspace', () => {
       expect(result.blockers.some((b) => b.includes('Executive summary'))).toBe(true)
     })
 
-    it('becomes ready when all requirements met', () => {
+    it('becomes ready when all 5/5 requirements met with document/profile binding', () => {
       const form = initializeG3Form()
-      // 4/5 milestones
-      form.commercialMilestones[0].completed = true
-      form.commercialMilestones[1].completed = true
-      form.commercialMilestones[2].completed = true
-      form.commercialMilestones[3].completed = true
-      // 4/5 checkpoints
-      form.financialCheckpoints[0].completed = true
-      form.financialCheckpoints[1].completed = true
-      form.financialCheckpoints[2].completed = true
-      form.financialCheckpoints[3].completed = true
-      // All 6 deliverables
-      form.deliverables.forEach((d) => {
-        d.uploaded = true
-        d.uploadedAt = new Date().toISOString()
-      })
-      // All 4 roles
-      form.staffingRoles.forEach((r, i) => {
-        r.assignedTo = { id: `role-${i}`, name: `Person ${i}` }
-      })
+      // ALL 5/5 milestones required
+      form.commercialMilestones.forEach((m) => (m.completed = true))
+      // ALL 5/5 checkpoints required
+      form.financialCheckpoints.forEach((c) => (c.completed = true))
+      // All 6 deliverables with real document IDs
+      form.deliverables.forEach((d) => (d.documentId = `doc-${d.id}`))
+      // All 4 roles with real profile IDs
+      form.staffingRoles.forEach((r) => (r.assignedProfileId = `profile-${r.roleId}`))
       // Executive summary
       form.executiveSummary = 'Commercial and financial close ready for approval.'
 
@@ -166,17 +154,17 @@ describe('G3 Commercial & Financial Close Workspace', () => {
 
     it('calculates correct completion percentage when partially complete', () => {
       const form = initializeG3Form()
-      // 2/5 milestones (50% towards 4 needed)
+      // 2/5 milestones (40% = 2/5)
       form.commercialMilestones[0].completed = true
       form.commercialMilestones[1].completed = true
       // 0/5 checkpoints (0%)
-      // 3/6 deliverables (50%)
-      form.deliverables[0].uploaded = true
-      form.deliverables[1].uploaded = true
-      form.deliverables[2].uploaded = true
-      // 2/4 roles (50%)
-      form.staffingRoles[0].assignedTo = { id: 'r1', name: 'Person 1' }
-      form.staffingRoles[1].assignedTo = { id: 'r2', name: 'Person 2' }
+      // 3/6 deliverables with documents (50%)
+      form.deliverables[0].documentId = 'doc-1'
+      form.deliverables[1].documentId = 'doc-2'
+      form.deliverables[2].documentId = 'doc-3'
+      // 2/4 roles with profiles (50%)
+      form.staffingRoles[0].assignedProfileId = 'profile-1'
+      form.staffingRoles[1].assignedProfileId = 'profile-2'
       // No summary (0%)
 
       const result = assessG3Readiness(form)
@@ -185,48 +173,38 @@ describe('G3 Commercial & Financial Close Workspace', () => {
       expect(result.completionPercentage).toBeLessThan(100)
     })
 
-    it('requires only 4/5 milestones (5th not needed)', () => {
+    it('rejects 4/5 milestones (all 5 required)', () => {
       const form = initializeG3Form()
       form.commercialMilestones[0].completed = true
       form.commercialMilestones[1].completed = true
       form.commercialMilestones[2].completed = true
       form.commercialMilestones[3].completed = true
-      // 5th milestone left incomplete - should still be ready
+      // 5th milestone left incomplete - MUST FAIL
       form.financialCheckpoints.forEach((c) => (c.completed = true))
-      form.deliverables.forEach((d) => {
-        d.uploaded = true
-        d.uploadedAt = new Date().toISOString()
-      })
-      form.staffingRoles.forEach((r, i) => {
-        r.assignedTo = { id: `role-${i}`, name: `Person ${i}` }
-      })
+      form.deliverables.forEach((d) => (d.documentId = `doc-${d.id}`))
+      form.staffingRoles.forEach((r) => (r.assignedProfileId = `profile-${r.roleId}`))
       form.executiveSummary = 'Summary'
 
       const result = assessG3Readiness(form)
-      expect(result.incompleteMilestones).toHaveLength(0) // No blockers for incomplete items
-      expect(result.ready).toBe(true)
+      expect(result.ready).toBe(false)
+      expect(result.blockers.some((b) => b.includes('4/5 commercial'))).toBe(true)
     })
 
-    it('requires only 4/5 checkpoints (5th not needed)', () => {
+    it('rejects 4/5 checkpoints (all 5 required)', () => {
       const form = initializeG3Form()
       form.commercialMilestones.forEach((m) => (m.completed = true))
       form.financialCheckpoints[0].completed = true
       form.financialCheckpoints[1].completed = true
       form.financialCheckpoints[2].completed = true
       form.financialCheckpoints[3].completed = true
-      // 5th checkpoint left incomplete - should still be ready
-      form.deliverables.forEach((d) => {
-        d.uploaded = true
-        d.uploadedAt = new Date().toISOString()
-      })
-      form.staffingRoles.forEach((r, i) => {
-        r.assignedTo = { id: `role-${i}`, name: `Person ${i}` }
-      })
+      // 5th checkpoint left incomplete - MUST FAIL
+      form.deliverables.forEach((d) => (d.documentId = `doc-${d.id}`))
+      form.staffingRoles.forEach((r) => (r.assignedProfileId = `profile-${r.roleId}`))
       form.executiveSummary = 'Summary'
 
       const result = assessG3Readiness(form)
-      expect(result.incompleteCheckpoints).toHaveLength(0) // No blockers for incomplete items
-      expect(result.ready).toBe(true)
+      expect(result.ready).toBe(false)
+      expect(result.blockers.some((b) => b.includes('4/5 financial'))).toBe(true)
     })
   })
 })
