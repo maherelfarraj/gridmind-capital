@@ -8,11 +8,10 @@ import { G3ApprovalReview } from '@/components/approvals/g3-approval-review'
 import {
   decideApproval,
   delegateApproval,
-  getOpportunityApprovalDetail,
-  getGateApprovalDetail,
+  getApprovalDetailRouted,
   getEligibleDelegates,
 } from '@/app/actions/approvals'
-import { getSignaturesForEntity } from '@/app/actions/signatures'
+import { getGateApprovalSignatures, getSignaturesForEntity } from '@/app/actions/signatures'
 import type { SignatureDraft } from '@/app/actions/signatures'
 import type { UserProfile } from '@/components/approvals/g0-approval-review'
 
@@ -21,26 +20,24 @@ export default function ApprovalDetailPage() {
   const router = useRouter()
   const id     = params?.id ?? ''
 
-  // A gate approval and an opportunity (G0) approval are disjoint object_types.
-  // Each loader returns null for the wrong type (and short-circuits cheaply), so
-  // fetching both and rendering whichever resolves keeps one route for both.
-  const { data: gateDetail, isLoading: gateLoading } = useSWR(
-    id ? `gate-approval-detail-${id}` : null,
-    () => getGateApprovalDetail(id),
-    { revalidateOnFocus: false },
-  )
-
-  const { data: detail, error, isLoading: oppLoading } = useSWR(
+  // ONE authoritative, discriminated fetch. The server reads object_type and
+  // routes to exactly one typed loader, so a gate approval can never render
+  // through the G0 path (and vice versa) — no dual-fetch race, no fallback.
+  const { data: routed, error, isLoading } = useSWR(
     id ? `approval-detail-${id}` : null,
-    () => getOpportunityApprovalDetail(id),
+    () => getApprovalDetailRouted(id),
     { revalidateOnFocus: false },
   )
 
-  const isLoading = gateLoading || oppLoading
-
+  // Signatures, resolved per approval kind: a GATE reads via the canonical
+  // phase-gate identity (the id the decision RPC signs against); a G0/opportunity
+  // reads by its approval id. Both readers are tenant-scoped server-side.
   const { data: signatures = [] } = useSWR(
-    id ? `approval-signatures-${id}` : null,
-    () => getSignaturesForEntity('gate_approval', id),
+    id && routed && routed.kind !== 'not_found' ? `approval-signatures-${routed.kind}-${id}` : null,
+    () =>
+      routed?.kind === 'gate'
+        ? getGateApprovalSignatures(id)
+        : getSignaturesForEntity('gate_approval', id),
     { revalidateOnFocus: false },
   )
 
@@ -57,10 +54,10 @@ export default function ApprovalDetailPage() {
   }
 
   // ── Gate (G3) approval ───────────────────────────────────
-  if (gateDetail) {
+  if (routed?.kind === 'gate') {
     return (
       <G3ApprovalReview
-        detail={gateDetail}
+        detail={routed.gate}
         existingSignatures={signatures}
         onDecide={async (decision, rationale, conditions, signatureDraft) => {
           const { error } = await decideApproval({ id, decision, rationale, conditions, signatureDraft })
@@ -76,7 +73,7 @@ export default function ApprovalDetailPage() {
   }
 
   // ── Not found ────────────────────────────────────────────
-  if (error || !detail) {
+  if (error || !routed || routed.kind === 'not_found') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 p-8 text-center">
         <p className="text-slate-500 dark:text-slate-400">
@@ -93,7 +90,7 @@ export default function ApprovalDetailPage() {
     )
   }
 
-  const { approval, opportunity, requester: requesterView, linkedProject } = detail
+  const { approval, opportunity, requester: requesterView, linkedProject } = routed.opportunity
 
   // The requester is the REAL profile resolved server-side, or an explicit
   // "Requester unavailable" marker — never a fabricated "Project Manager".

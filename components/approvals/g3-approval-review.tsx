@@ -189,7 +189,7 @@ export interface G3ApprovalReviewProps {
 export function G3ApprovalReview({
   detail, existingSignatures = [], onDecide, onDelegate, loadDelegates,
 }: G3ApprovalReviewProps) {
-  const { approval, project, phaseGate, submission, g3, steps, requester, currentAssignee, events } = detail
+  const { approval, project, phaseGate, submission, g3, steps, requester, currentAssignee, events, viewerGating } = detail
 
   const [decision, setDecision] = React.useState<Decision>('proceed')
   const [showSig, setShowSig] = React.useState(false)
@@ -204,12 +204,18 @@ export function G3ApprovalReview({
   const [error, setError] = React.useState<string | null>(null)
   const [done, setDone] = React.useState(false)
 
+  // Control gating is SERVER-COMPUTED (detail.viewerGating): the current-step
+  // assignee or an admin may act; everyone else sees a read-only panel with the
+  // reason. This is presentation only — the RPCs remain the enforcement boundary.
+  const { canDecide, canDelegate, readOnlyReason } = viewerGating
+  // Display-only: drives the status badge + SLA countdown, independent of who is
+  // viewing. Actionability is governed by canDecide/canDelegate above.
   const isDecided = approval.status === 'approved' || approval.status === 'rejected'
   const minChars = MIN_CHARS[decision]
   const charCount = rationale.length
   const needsSignature = decision === 'proceed' || decision === 'conditional_proceed'
   const signatureReady = !needsSignature || signature !== null
-  const canSubmit = charCount >= minChars && signatureReady && !submitting && !isDecided
+  const canSubmit = canDecide && charCount >= minChars && signatureReady && !submitting
   const cfg = DECISION_CONFIG[decision]
 
   const now = useClientNow(60_000)
@@ -459,9 +465,9 @@ export function G3ApprovalReview({
           <Card>
             <CardHeader icon={<Gavel className="w-5 h-5" />} title="Your Decision" />
             <div className="p-5 space-y-4">
-              {isDecided ? (
+              {!canDecide ? (
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  This gate has already been {approval.status}. No further decision can be recorded.
+                  {readOnlyReason ?? 'You do not have permission to act on this gate.'}
                 </p>
               ) : (
                 <>
@@ -575,12 +581,14 @@ export function G3ApprovalReview({
                     >
                       {submitting ? 'Submitting…' : `Submit ${cfg.label}`}
                     </button>
-                    <button
-                      type="button" onClick={openDelegate}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                    >
-                      Delegate…
-                    </button>
+                    {canDelegate && (
+                      <button
+                        type="button" onClick={openDelegate}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                      >
+                        Delegate…
+                      </button>
+                    )}
                   </div>
                 </>
               )}

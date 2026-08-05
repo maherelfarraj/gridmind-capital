@@ -3,10 +3,15 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireApprover, getAuthActor, requireAssignedApprover, ADMIN_ROLES } from '@/lib/auth/guard'
 import { requireUser, requireInternalRole } from '@/lib/auth/guard'
-import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
+import { DB_ADMIN_ROLES, GATE_APPROVER_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
-import { createSignature, stageGateSignatureImage, type SignatureDraft } from '@/app/actions/signatures'
+import {
+  createSignature,
+  stageGateSignatureImage,
+  removeStagedGateSignature,
+  type SignatureDraft,
+} from '@/app/actions/signatures'
 import {
   mapOpportunityApprovalDetail,
   type OpportunityApprovalView,
@@ -26,9 +31,12 @@ import {
   type GateApprovalDetailView,
 } from '@/lib/approvals/gate-detail'
 
-// profiles.role enum values that action approvals (used to resolve email recipients).
-const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
 import { getCurrentTenantId } from '@/lib/tenant'
+
+// The canonical approver vocabulary (single source of truth in lib/auth/roles).
+// Kept as a mutable string[] alias because the Supabase `.in()` filter and the
+// pure eligibility helper expect `string[]`.
+const APPROVER_ENUM_ROLES: string[] = [...GATE_APPROVER_ROLES]
 
 /** Resolve the active approver profiles (id + email + name) for a tenant. */
 async function resolveApprovers(
@@ -1047,18 +1055,32 @@ export async function decideApproval(opts: {
       }
     }
 
-    const { data: rpcOutcome, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
-      p_approval_id: opts.id,
-      p_tenant_id: approval.tenant_id,
-      p_actor: gate.actor.userId,
-      p_decision: opts.decision,
-      p_rationale: opts.rationale,
-      p_is_admin_override: adminOverride,
-      p_conditions: conditionsJson,
-      p_signature: signatureJson,
-    })
-
-    if (rpcErr) return { error: `Gate decision failed: ${rpcErr.message}` }
+    let rpcOutcome: unknown
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
+        p_approval_id: opts.id,
+        p_tenant_id: approval.tenant_id,
+        p_actor: gate.actor.userId,
+        p_decision: opts.decision,
+        p_rationale: opts.rationale,
+        p_is_admin_override: adminOverride,
+        p_conditions: conditionsJson,
+        p_signature: signatureJson,
+      })
+      if (rpcErr) {
+        // The decision did NOT commit, so the staged signature image has no
+        // signatures row referencing it. Remove it so a failed attempt never
+        // leaves an orphan blob behind. Cleanup is best-effort; the decision
+        // error is what we surface.
+        if (signatureJson) await removeStagedGateSignature(signatureJson.image_path).catch(() => {})
+        return { error: `Gate decision failed: ${rpcErr.message}` }
+      }
+      rpcOutcome = data
+    } catch (e: any) {
+      // A throw before/at the RPC also means no committed decision — clean up.
+      if (signatureJson) await removeStagedGateSignature(signatureJson.image_path).catch(() => {})
+      return { error: `Gate decision failed: ${e?.message ?? 'unknown error'}` }
+    }
 
     // Best-effort notification only for a finalized decision.
     if (rpcOutcome === 'approved' || rpcOutcome === 'rejected') {
@@ -1377,6 +1399,12 @@ export async function getOpportunityApprovalDetail(
     .single()
   if (error || !approval) return null
 
+  // HARD DISCRIMINATOR: a gate approval must NEVER render through the G0 path.
+  // The G0 view omits gate governance (steps/quorum, signatures, delegation),
+  // so mapping a gate here would silently present a governed decision as an
+  // ungoverned one. Gate approvals are served exclusively by getGateApprovalDetail.
+  if (approval.object_type === 'gate') return null
+
   // Resolve the linked project — tenant-scoped, so a stale/forged object_id
   // pointing at another tenant's project simply returns no row.
   let project = null
@@ -1546,7 +1574,48 @@ export async function getGateApprovalDetail(
     deliverableDocs,
     teamMembers,
     events: events ?? [],
+    // Server-computed control gating for THIS viewer (admin override recognized).
+    viewer: {
+      actorId: actor.userId,
+      actorRole: actor.role ?? null,
+      adminRoles: ADMIN_ROLES as readonly string[],
+    },
   })
+}
+
+/**
+ * Discriminated approval-detail loader — the single authoritative entry point
+ * for the review page. Reads the approval's `object_type` ONCE (tenant-scoped)
+ * and routes to exactly one typed loader, so a gate approval can never fall back
+ * to the G0 renderer and vice versa. The page switches on `kind` instead of
+ * racing two independent fetches and rendering whichever resolves first.
+ */
+export type RoutedApprovalDetail =
+  | { kind: 'gate'; gate: GateApprovalDetailView }
+  | { kind: 'opportunity'; opportunity: OpportunityApprovalDetail }
+  | { kind: 'not_found' }
+
+export async function getApprovalDetailRouted(id: string): Promise<RoutedApprovalDetail> {
+  const res = await getAuthActor()
+  if ('error' in res) return { kind: 'not_found' }
+  const { actor } = res
+  const supabase = createAdminClient()
+
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('object_type')
+    .eq('id', id)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (!approval) return { kind: 'not_found' }
+
+  if (approval.object_type === 'gate') {
+    const gate = await getGateApprovalDetail(id)
+    return gate ? { kind: 'gate', gate } : { kind: 'not_found' }
+  }
+
+  const opportunity = await getOpportunityApprovalDetail(id)
+  return opportunity ? { kind: 'opportunity', opportunity } : { kind: 'not_found' }
 }
 
 export interface EligibleDelegate {

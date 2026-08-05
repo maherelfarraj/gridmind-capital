@@ -99,6 +99,33 @@ export const DB_ADMIN_ROLES: readonly DbUserRole[] = [
   'project_director',
 ]
 
+/**
+ * CANONICAL approver vocabulary — the ONLY `profiles.role` values that may be
+ * assigned to an approval step, act on a gate decision, or receive a delegated
+ * gate approval. This is the single source of truth shared by:
+ *   - `resolveApprovers` / `getEligibleDelegates` (candidate pools),
+ *   - `filterEligibleDelegates` (client-safe eligibility),
+ *   - the `decide_gate_approval` / `delegate_gate_approval` RPCs (which hardcode
+ *     the SAME set; a drift test asserts they stay equal).
+ *
+ * Listed EXPLICITLY (never derived by exclusion): an approver is a deliberate
+ * authority grant, so a new role must be opted-in here on purpose rather than
+ * leaking in because it wasn't excluded. Members are a subset of DB_USER_ROLES,
+ * enforced by the `readonly DbUserRole[]` type — an invalid role fails to
+ * compile.
+ */
+export const GATE_APPROVER_ROLES: readonly DbUserRole[] = [
+  'system_admin',
+  'tenant_admin',
+  'project_director',
+  'project_manager',
+]
+
+/** True only for a canonical role permitted to act as a gate approver. */
+export function isGateApproverRole(value: unknown): value is DbUserRole {
+  return isDbUserRole(value) && GATE_APPROVER_ROLES.includes(value)
+}
+
 export interface DbRoleMeta {
   label: string
   /** badge: bg + text + border */

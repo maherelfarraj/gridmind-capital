@@ -218,6 +218,63 @@ export interface GateApprovalDetailView {
   requester: GatePersonView
   currentAssignee: GatePersonView
   events: GateEventView[]
+  /**
+   * SERVER-COMPUTED authorization for the viewing user. The UI MUST use these
+   * to enable/disable the decision + delegation controls; they are NOT the
+   * security boundary (the RPCs are), but they stop unauthorized users from even
+   * seeing actionable controls. Computed by `computeGateReviewGating`.
+   */
+  viewerGating: GateViewerGating
+}
+
+export interface GateViewerGating {
+  /** May submit a decision (proceed/conditional_proceed/hold/reject). */
+  canDecide: boolean
+  /** May delegate the current step to another eligible approver. */
+  canDelegate: boolean
+  /** Non-null ⇒ controls are read-only; human-readable explanation. */
+  readOnlyReason: string | null
+}
+
+/**
+ * Decide, from the viewer's relationship to the CURRENT pending step, whether
+ * the review controls are actionable. Pure and deterministic so it can be unit-
+ * tested without a DB. This is presentation gating; the RPCs remain the sole
+ * enforcement boundary.
+ *
+ * Rules (first match wins):
+ *   - already finalized (not 'pending')      → read-only, both false
+ *   - no current pending step                 → read-only, both false
+ *   - viewer IS the current-step assignee     → decide + delegate
+ *   - viewer holds an admin-override role      → decide + delegate (override)
+ *   - otherwise                                → read-only, both false
+ */
+export function computeGateReviewGating(input: {
+  status: 'pending' | 'approved' | 'rejected' | 'delegated'
+  currentAssigneeId: string | null
+  actorId: string | null
+  actorRole: string | null
+  adminRoles: readonly string[]
+}): GateViewerGating {
+  const locked = (readOnlyReason: string): GateViewerGating => ({
+    canDecide: false,
+    canDelegate: false,
+    readOnlyReason,
+  })
+
+  if (input.status !== 'pending') {
+    return locked(`This gate approval has already been ${input.status}.`)
+  }
+  if (!input.currentAssigneeId) {
+    return locked('There is no pending approval step to act on.')
+  }
+  if (input.actorId && input.actorId === input.currentAssigneeId) {
+    return { canDecide: true, canDelegate: true, readOnlyReason: null }
+  }
+  if (input.actorRole && input.adminRoles.includes(input.actorRole)) {
+    return { canDecide: true, canDelegate: true, readOnlyReason: null }
+  }
+  return locked('You are not the assigned approver for the current step.')
 }
 
 const UNAVAILABLE_PERSON: GatePersonView = {
@@ -358,6 +415,12 @@ export function mapGateApprovalDetail(input: {
   deliverableDocs: RawDeliverableDoc[]
   teamMembers: RawTeamMember[]
   events: RawGateEvent[]
+  /**
+   * The viewing user's identity + admin roles, used to compute `viewerGating`.
+   * Optional so pure mapping tests need not supply it; when omitted the view is
+   * fully locked (nothing actionable), which is the safe default.
+   */
+  viewer?: { actorId: string | null; actorRole: string | null; adminRoles: readonly string[] }
 }): GateApprovalDetailView | null {
   const { approval } = input
   if (approval.object_type !== 'gate') return null
@@ -375,6 +438,16 @@ export function mapGateApprovalDetail(input: {
 
   const docsById = new Map(input.deliverableDocs.map((d) => [d.id, d]))
   const teamByPerson = new Map(input.teamMembers.map((m) => [m.person_id, m]))
+
+  const stepsView = buildSteps(input.steps)
+  const status = (approval.status ?? 'pending') as 'pending' | 'approved' | 'rejected' | 'delegated'
+  const viewerGating = computeGateReviewGating({
+    status,
+    currentAssigneeId: stepsView.currentAssigneeId,
+    actorId: input.viewer?.actorId ?? null,
+    actorRole: input.viewer?.actorRole ?? null,
+    adminRoles: input.viewer?.adminRoles ?? [],
+  })
 
   return {
     approval: {
@@ -428,7 +501,7 @@ export function mapGateApprovalDetail(input: {
       submittedAt: input.submission?.submitted_at ?? null,
     },
     g3: buildG3(formData, docsById, teamByPerson),
-    steps: buildSteps(input.steps),
+    steps: stepsView,
     requester: buildPerson(approval.tenant_id, input.requester),
     currentAssignee: buildPerson(approval.tenant_id, input.currentAssignee),
     events: input.events.map((e) => ({
@@ -439,5 +512,6 @@ export function mapGateApprovalDetail(input: {
       detail: e.detail,
       createdAt: e.created_at,
     })),
+    viewerGating,
   }
 }
