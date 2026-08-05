@@ -4,9 +4,11 @@
  * BATCH 20: Unified around 1-8 phase model (legacy 0-7 rows archived, read-only).
  */
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getG2Submission } from '@/app/actions/g2-submissions'
 import { notFound } from 'next/navigation'
 import { G0IntakeForm } from '@/components/stage-gate/g0-intake-form'
 import { G1DevelopmentForm } from '@/components/stage-gate/g1-development-form'
+import { G2PermittingForm } from '@/components/stage-gate/g2-permitting-form'
 import { G2EngineeringForm } from '@/components/stage-gate/g2-engineering-form'
 import { G3ProcurementForm } from '@/components/stage-gate/g3-procurement-form'
 import { G4ConstructionForm } from '@/components/stage-gate/g4-construction-form'
@@ -59,6 +61,12 @@ export default async function GateFormPage({ params }: Props) {
     readOnly:    isReadOnly,
   }
 
+  // Load G2 submission if gate 2
+  let g2Submission: Awaited<ReturnType<typeof getG2Submission>> = null
+  if (gateNum === 2) {
+    g2Submission = await getG2Submission(projectId)
+  }
+
   function renderForm() {
     // BATCH 20 CORRECTED: Semantic 1-8 canonical phase mapping
     // Gates 2 & 3 are locked info panels (no workspace form yet)
@@ -70,8 +78,14 @@ export default async function GateFormPage({ params }: Props) {
         // G1: Origination & Feasibility (uses G1DevelopmentForm)
         return <G1DevelopmentForm {...shared} initialData={initialData} />
       case 2:
-        // G2: Permitting & Grid Application (no workspace form yet)
-        return <LockedInfoPanel phase={2} title="Permitting & Grid Application" description="Grid connection application and permitting phase — form workspace not yet available." />
+        // G2: Permitting & Grid Application
+        return project ? (
+          <G2PermittingForm
+            projectId={projectId}
+            projectName={project.name}
+            existingSubmission={g2Submission}
+          />
+        ) : null
       case 3:
         // G3: Commercial & Financial Close (RTB) (no workspace form yet)
         return <LockedInfoPanel phase={3} title="Commercial & Financial Close (RTB)" description="Final commercial terms and ready-to-build approval — form workspace not yet available." />
