@@ -143,9 +143,13 @@ BEGIN
   IF v_status <> 'approved' THEN RAISE EXCEPTION 'FAIL final: approval not approved (%)', v_status; END IF;
   SELECT status INTO v_g3status FROM public.phase_gates WHERE id = v_g3;
   IF v_g3status <> 'approved' THEN RAISE EXCEPTION 'FAIL final: G3 not advanced (%)', v_g3status; END IF;
+  -- Both endorsement signatures (L1 + L2) are keyed to the SAME canonical
+  -- phase_gates.id, not the approval id.
+  SELECT count(*) INTO v_count FROM public.signatures WHERE entity_id = v_g3;
+  IF v_count <> 2 THEN RAISE EXCEPTION 'FAIL final: expected 2 signatures keyed to phase_gates.id, got %', v_count; END IF;
   SELECT count(*) INTO v_count FROM public.signatures WHERE entity_id = v_appr;
-  IF v_count <> 2 THEN RAISE EXCEPTION 'FAIL final: expected 2 signatures, got %', v_count; END IF;
-  RAISE NOTICE 'PASS 3: L2 proceed -> approved, G3 advanced, both signatures persisted';
+  IF v_count <> 0 THEN RAISE EXCEPTION 'FAIL identity: signatures wrongly keyed to approval id (got %)', v_count; END IF;
+  RAISE NOTICE 'PASS 3: L2 proceed -> approved, G3 advanced, both signatures keyed to phase_gates.id';
 
   -- ---- 4) endorsement without a signature RAISEs (nothing persisted) ------
   -- Uses a FRESH project + in-review gate so the ONLY reason the decision can
@@ -177,22 +181,24 @@ BEGIN
       IF SQLERRM NOT LIKE '%signature is required%' THEN
         RAISE EXCEPTION 'FAIL sig-required: wrong rejection reason: %', SQLERRM;
       END IF;
-      -- and nothing was persisted for this approval
-      IF (SELECT count(*) FROM public.signatures WHERE entity_id = v_appr2) <> 0 THEN
+      -- and nothing was persisted for this gate (signatures key to phase_gates.id)
+      IF (SELECT count(*) FROM public.signatures WHERE entity_id = v_g3b) <> 0 THEN
         RAISE EXCEPTION 'FAIL sig-required: a signature row survived a rejected decision';
       END IF;
       RAISE NOTICE 'PASS 4: proceed without a signature is rejected by the RPC, nothing persisted';
     END;
   END;
 
-  -- ---- 5) delegation verifies the delegate ------------------------------
+  -- ---- 5) delegation verifies the delegate (identity AND role) ------------
+  -- The step's assigned_role is set to v_p2's OWN role so the "valid" delegation
+  -- is a deterministic exact-role match, independent of whether v_p2 is an admin.
   DECLARE
     v_apprD UUID;
     v_fake  UUID := '00000000-0000-0000-0000-0000000000fe';
   BEGIN
     v_apprD := public.create_approval_workflow_tx(
       v_tenant, 'gate', v_proj, 'ZZ G3 c', NULL, 3, v_p1, NULL, 'normal',
-      jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role','project_manager'))
+      jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p2role))
     );
 
     -- self-delegation rejected
@@ -211,14 +217,26 @@ BEGIN
       IF SQLERRM LIKE '%FAIL delegate%' THEN RAISE; END IF;
     END;
 
-    -- valid delegation moves BOTH the step and approval assignee
+    -- NON-APPROVER delegate rejected by the new role gate (skipped if none exist)
+    IF v_pbad IS NOT NULL THEN
+      BEGIN
+        PERFORM public.delegate_gate_approval(v_apprD, v_tenant, v_p1, v_pbad, 'not an approver', false);
+        RAISE EXCEPTION 'FAIL delegate: non-approver delegate did NOT raise';
+      EXCEPTION WHEN OTHERS THEN
+        IF SQLERRM LIKE '%FAIL delegate%' THEN RAISE; END IF;
+      END;
+    ELSE
+      RAISE NOTICE 'NOTE: no active non-approver profile available; skipped non-approver rejection';
+    END IF;
+
+    -- valid delegation (exact-role match) moves BOTH the step and approval assignee
     v_result := public.delegate_gate_approval(v_apprD, v_tenant, v_p1, v_p2, 'busy', false);
     SELECT assignee_id INTO v_assignee FROM public.approvals WHERE id = v_apprD;
     IF v_assignee <> v_p2 THEN RAISE EXCEPTION 'FAIL delegate: approval assignee did not move'; END IF;
     SELECT count(*) INTO v_count FROM public.approval_steps
       WHERE approval_id = v_apprD AND status = 'pending' AND assigned_to = v_p2;
     IF v_count <> 1 THEN RAISE EXCEPTION 'FAIL delegate: pending step not reassigned to delegate'; END IF;
-    RAISE NOTICE 'PASS 5: delegation rejects self/unknown, valid moves step + approval assignee';
+    RAISE NOTICE 'PASS 5: delegation rejects self/unknown/non-approver, valid (role-matched) moves step + approval assignee';
   END;
 
   -- ---- 6) wrong-tenant decision is rejected ------------------------------
