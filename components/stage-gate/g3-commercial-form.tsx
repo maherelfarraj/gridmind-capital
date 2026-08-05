@@ -5,9 +5,9 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { CheckCircle2, Circle, AlertCircle, Briefcase, DollarSign, Users, FileText } from 'lucide-react'
+import { CheckCircle2, Circle, AlertCircle, Briefcase, DollarSign, Users, FileText, ChevronDown } from 'lucide-react'
 import { G3FormData, REQUIRED_COMMERCIAL_MILESTONES, REQUIRED_FINANCIAL_CHECKPOINTS, REQUIRED_DELIVERABLES, REQUIRED_STAFFING_ROLES, initializeG3Form, assessG3Readiness } from '@/lib/gates/g3-requirements'
-import { submitG3FormAction } from '@/app/actions/g3-submissions'
+import { submitG3FormAction, loadG3EligibleDocuments, loadG3ProjectTeamMembers } from '@/app/actions/g3-submissions'
 
 interface G3CommercialFormProps {
   projectId: string
@@ -24,14 +24,30 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [readiness, setReadiness] = useState(assessG3Readiness(null))
+  const [documents, setDocuments] = useState<Array<{ id: string; title: string; uploader: string; uploadedAt: string }>>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{ profileId: string; name: string; role: string }>>([])
+  const [expandedDeliverableId, setExpandedDeliverableId] = useState<string | null>(null)
+  const [expandedRoleId, setExpandedRoleId] = useState<string | null>(null)
 
-  // Initialize form from existing submission or blank
+  // Load eligible documents and team members on mount
   useEffect(() => {
-    if (existingSubmission?.formData) {
-      setFormData(existingSubmission.formData)
+    const loadData = async () => {
+      const [docsResult, teamResult] = await Promise.all([
+        loadG3EligibleDocuments(projectId),
+        loadG3ProjectTeamMembers(projectId),
+      ])
+      
+      if (docsResult.documents) setDocuments(docsResult.documents)
+      if (teamResult.members) setTeamMembers(teamResult.members)
+      
+      if (existingSubmission?.formData) {
+        setFormData(existingSubmission.formData)
+      }
+      setIsLoading(false)
     }
-    setIsLoading(false)
-  }, [existingSubmission])
+    
+    loadData()
+  }, [projectId, existingSubmission])
 
   // Recalculate readiness whenever form changes
   useEffect(() => {
@@ -171,25 +187,76 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
           <FileText className="w-5 h-5 text-slate-600" />
           <CardTitle>Required Deliverables (all 6 required)</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {formData.deliverables.map((deliverable) => (
-            <div key={deliverable.id} className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
-              {deliverable.documentId ? (
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
-              ) : (
-                <Circle className="w-5 h-5 text-slate-300" />
-              )}
-              <div className="flex-1">
-                <div className="font-medium text-sm">{deliverable.name}</div>
-                <div className="text-xs text-slate-500">{deliverable.description}</div>
-                {deliverable.documentId ? (
-                  <div className="text-xs text-green-600">Document attached</div>
-                ) : (
-                  <div className="text-xs text-orange-600">No document</div>
+        <CardContent className="space-y-3">
+          {formData.deliverables.map((deliverable) => {
+            const selectedDoc = documents.find((d) => d.id === deliverable.documentId)
+            return (
+              <div key={deliverable.id} className="border rounded p-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="font-medium text-sm flex items-center gap-2">
+                      {deliverable.documentId ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Circle className="w-4 h-4 text-slate-300" />
+                      )}
+                      {deliverable.name}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">{deliverable.description}</div>
+                    {selectedDoc ? (
+                      <div className="text-xs text-green-600 mt-2">
+                        ✓ {selectedDoc.title} (by {selectedDoc.uploader}, {selectedDoc.uploadedAt})
+                      </div>
+                    ) : (
+                      <div className="text-xs text-orange-600 mt-2">No document selected</div>
+                    )}
+                  </div>
+                </div>
+                {isEditable && (
+                  <button
+                    onClick={() =>
+                      setExpandedDeliverableId(
+                        expandedDeliverableId === deliverable.id ? null : deliverable.id,
+                      )
+                    }
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    {selectedDoc ? 'Change' : 'Select'} Document
+                    <ChevronDown
+                      className={`w-3 h-3 transition-transform ${
+                        expandedDeliverableId === deliverable.id ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+                )}
+                {expandedDeliverableId === deliverable.id && isEditable && (
+                  <div className="mt-3 space-y-1 border-t pt-2">
+                    {documents.length > 0 ? (
+                      documents.map((doc) => (
+                        <button
+                          key={doc.id}
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              deliverables: formData.deliverables.map((d) =>
+                                d.id === deliverable.id ? { ...d, documentId: doc.id } : d,
+                              ),
+                            })
+                            setExpandedDeliverableId(null)
+                          }}
+                          className="w-full text-left text-xs p-2 rounded hover:bg-blue-50 border"
+                        >
+                          {doc.title} ({doc.uploader}, {doc.uploadedAt})
+                        </button>
+                      ))
+                    ) : (
+                      <div className="text-xs text-slate-500 p-2">No documents available</div>
+                    )}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            )
+          })}
           <div className="text-xs text-slate-600 pt-2">
             {formData.deliverables.filter((d) => d.documentId).length}/{REQUIRED_DELIVERABLES.length} with documents
           </div>
@@ -202,19 +269,74 @@ export function G3CommercialForm({ projectId, projectName, existingSubmission }:
           <Users className="w-5 h-5 text-slate-600" />
           <CardTitle>Staffing (all 4 roles required)</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {formData.staffingRoles.map((role) => (
-            <div key={role.roleId} className="p-2 rounded hover:bg-slate-50">
-              <div className="font-medium text-sm flex items-center gap-2">
-                {role.assignedProfileId ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Circle className="w-4 h-4 text-slate-300" />}
-                {role.roleName}
+        <CardContent className="space-y-3">
+          {formData.staffingRoles.map((role) => {
+            const selectedMember = teamMembers.find((m) => m.profileId === role.assignedProfileId)
+            return (
+              <div key={role.roleId} className="border rounded p-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="font-medium text-sm flex items-center gap-2">
+                      {role.assignedProfileId ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Circle className="w-4 h-4 text-slate-300" />
+                      )}
+                      {role.roleName}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">{role.description}</div>
+                    {selectedMember ? (
+                      <div className="text-xs text-green-600 mt-2">
+                        ✓ {selectedMember.name} ({selectedMember.role})
+                      </div>
+                    ) : (
+                      <div className="text-xs text-orange-600 mt-2">Not assigned</div>
+                    )}
+                  </div>
+                </div>
+                {isEditable && (
+                  <button
+                    onClick={() =>
+                      setExpandedRoleId(expandedRoleId === role.roleId ? null : role.roleId)
+                    }
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    {selectedMember ? 'Change' : 'Assign'} Team Member
+                    <ChevronDown
+                      className={`w-3 h-3 transition-transform ${
+                        expandedRoleId === role.roleId ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+                )}
+                {expandedRoleId === role.roleId && isEditable && (
+                  <div className="mt-3 space-y-1 border-t pt-2">
+                    {teamMembers.length > 0 ? (
+                      teamMembers.map((member) => (
+                        <button
+                          key={member.profileId}
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              staffingRoles: formData.staffingRoles.map((r) =>
+                                r.roleId === role.roleId ? { ...r, assignedProfileId: member.profileId } : r,
+                              ),
+                            })
+                            setExpandedRoleId(null)
+                          }}
+                          className="w-full text-left text-xs p-2 rounded hover:bg-blue-50 border"
+                        >
+                          {member.name} ({member.role})
+                        </button>
+                      ))
+                    ) : (
+                      <div className="text-xs text-slate-500 p-2">No team members available</div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="text-xs text-slate-500">{role.description}</div>
-              <div className="text-xs text-slate-600 mt-1">
-                {role.assignedProfileId ? `Assigned to profile ${role.assignedProfileId.slice(0, 8)}...` : 'Not assigned'}
-              </div>
-            </div>
-          ))}
+            )
+          })}
           <div className="text-xs text-slate-600 pt-2">
             {formData.staffingRoles.filter((r) => r.assignedProfileId).length}/{REQUIRED_STAFFING_ROLES.length} assigned
           </div>

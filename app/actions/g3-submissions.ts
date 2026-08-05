@@ -120,7 +120,7 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     return { error: `${unassignedStaff.length} staffing roles not assigned to project members` }
   }
 
-  // 8. Check for duplicate active approval workflow.
+  // 8. Check for duplicate active approval workflow (pending or delegated) BEFORE changing gate_submissions.
   const { data: existingApproval } = await supabase
     .from('approvals')
     .select('id, status')
@@ -128,11 +128,11 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
     .eq('object_type', 'gate')
     .eq('object_id', projectId)
     .eq('gate_number', 3)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'delegated'])
     .maybeSingle()
 
   if (existingApproval) {
-    return { error: 'G3 submission already pending approval' }
+    return { error: `G3 workflow already ${existingApproval.status} (distinct G2/G3 workflows)` }
   }
 
   // 9. Upsert gate_submissions.
@@ -191,12 +191,114 @@ export async function submitG3FormAction(projectId: string, formData: G3FormData
 }
 
 /**
+ * Load eligible documents for G3 submission (project + tenant scoped, non-archived).
+ * Shows file name, uploader profile, and upload date.
+ */
+export async function loadG3EligibleDocuments(projectId: string) {
+  const tenantId = await getCurrentTenantId()
+  if (!tenantId) return { documents: [], error: 'Tenant context not available' }
+
+  const supabase = createAdminClient()
+
+  // Verify project in tenant
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id, tenant_id')
+    .eq('id', projectId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (!project) return { documents: [], error: 'Project not found or not in your tenant' }
+
+  // Load documents for this project/tenant, excluding archived
+  const { data: documents } = await supabase
+    .from('documents')
+    .select('id, title, metadata, created_at, created_by')
+    .eq('project_id', projectId)
+    .eq('tenant_id', tenantId)
+    .not('metadata->status', 'eq', '"archived"')
+    .order('created_at', { ascending: false })
+
+  // Enrich with uploader info
+  if (documents && documents.length > 0) {
+    const uploaderIds = [...new Set(documents.map((d) => d.created_by).filter(Boolean))]
+    const { data: uploaders } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', uploaderIds)
+
+    const uploaderMap = new Map(uploaders?.map((u) => [u.id, u.full_name]) ?? [])
+
+    return {
+      documents: documents.map((d) => ({
+        id: d.id,
+        title: d.title,
+        uploader: uploaderMap.get(d.created_by) || 'Unknown',
+        uploadedAt: new Date(d.created_at).toLocaleDateString(),
+      })),
+    }
+  }
+
+  return { documents: [] }
+}
+
+/**
+ * Load active project_team members for G3 staffing (tenant + project scoped).
+ * Shows profile name and project role.
+ */
+export async function loadG3ProjectTeamMembers(projectId: string) {
+  const tenantId = await getCurrentTenantId()
+  if (!tenantId) return { members: [], error: 'Tenant context not available' }
+
+  const supabase = createAdminClient()
+
+  // Verify project in tenant
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id, tenant_id')
+    .eq('id', projectId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (!project) return { members: [], error: 'Project not found or not in your tenant' }
+
+  // Load active project_team members
+  const { data: members } = await supabase
+    .from('project_team')
+    .select('profile_id, role')
+    .eq('project_id', projectId)
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+
+  if (!members || members.length === 0) {
+    return { members: [], error: 'No active team members found' }
+  }
+
+  // Enrich with profile info
+  const profileIds = members.map((m) => m.profile_id)
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, full_name')
+    .in('id', profileIds)
+
+  const profileMap = new Map(profiles?.map((p) => [p.id, p.full_name]) ?? [])
+
+  return {
+    members: members.map((m) => ({
+      profileId: m.profile_id,
+      name: profileMap.get(m.profile_id) || 'Unknown',
+      role: m.role,
+    })),
+  }
+}
+
+/**
  * G3 approval decisions are routed through the canonical decideApproval() action.
  * Use: decideApproval(approvalId, 'approved' | 'rejected', rationale)
  * 
  * The canonical workflow handles:
  * - Approval step completion and quorum validation
- * - Gate lifecycle advancement when quorum met (Corrections 10-11)
+ * - Gate lifecycle advancement when quorum met
  * - Audit trail and actor attribution
  * - Delegation and escalation rules
  */
