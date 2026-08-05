@@ -117,6 +117,14 @@ export async function createApprovalWorkflow(
   gateNumber?: number,
 ): Promise<{ id: string; error?: string }> {
   try {
+    // A gate workflow is meaningless without a gate number: it drives the
+    // duplicate identity, the phase_gates transition, and the lifecycle audit.
+    // Require it up front, BEFORE any query or insert, so gate 0 is accepted
+    // (explicit null/undefined check) but a missing gate number is rejected.
+    if (objectType === 'gate' && (gateNumber === null || gateNumber === undefined)) {
+      return { id: '', error: 'A gate workflow requires a gate number' }
+    }
+
     const { userId } = await requireUser()
     
     const tenantId = await getCurrentTenantId()
@@ -133,13 +141,21 @@ export async function createApprovalWorkflow(
       .eq('object_type', objectType)
       .in('status', ['pending', 'delegated'])
 
-    // If gate workflow, add gate_number to duplicate identity
-    if (objectType === 'gate' && gateNumber !== undefined) {
+    // If gate workflow, scope the duplicate identity by gate_number. Explicit
+    // null/undefined check (not truthiness) so gate_number 0 is not skipped.
+    if (objectType === 'gate' && gateNumber !== null && gateNumber !== undefined) {
       query = query.eq('gate_number', gateNumber)
     }
 
     const { data: existing } = await query.limit(1).maybeSingle()
-    if (existing) return { id: existing.id, error: `Workflow already pending or delegated for gate ${gateNumber}` }
+    if (existing) {
+      // Gate-specific message for gate workflows; generic message otherwise.
+      const dupMessage =
+        objectType === 'gate'
+          ? `Workflow already pending or delegated for gate ${gateNumber}`
+          : `Workflow already pending or delegated for this ${objectType}`
+      return { id: existing.id, error: dupMessage }
+    }
 
     // Find matching approval_rule: object_type + amount within min/max, highest priority
     // Tenant-scoped to prevent cross-tenant rule application
@@ -593,43 +609,12 @@ async function applyApprovalLifecycle(
     tenant_id?: string | null
   } | null,
   status: 'approved' | 'rejected' | 'pending' | 'delegated',
-  actor?: { userId: string },
-  rationale?: string | null,
 ): Promise<string | null> {
   if (!approval || !approval.object_id) return null
 
-  // Gate lifecycle: the ENTIRE transition (submission + phase_gates state
-  // machine + projects.current_phase + workflow_events audit) is performed
-  // atomically by the finalize_gate_decision RPC. A single plpgsql transaction
-  // means a failure at any step rolls back all writes — no half-transitioned
-  // gate. The RPC also owns the phase_gates scoping (that table has no
-  // tenant_id column) and persists the rationale.
-  if (approval.object_type === 'gate' && approval.gate_number && approval.tenant_id) {
-    if (status !== 'approved' && status !== 'rejected') {
-      // pending/delegated do not finalize a gate.
-      return null
-    }
-    if (!actor) {
-      return 'Gate decision requires an authenticated actor'
-    }
-
-    const { error: rpcError } = await supabase.rpc('finalize_gate_decision', {
-      p_project_id: approval.object_id,
-      p_gate_number: approval.gate_number,
-      p_tenant_id: approval.tenant_id,
-      p_decision: status,
-      p_actor: actor.userId,
-      p_rationale: rationale ?? null,
-    })
-
-    if (rpcError) {
-      return `Gate ${status} finalize failed: ${rpcError.message}`
-    }
-
-    return null
-  }
-
-  // Opportunity lifecycle: existing logic unchanged
+  // Gate approvals are NOT handled here: decideApproval routes every gate
+  // decision through the atomic decide_gate_approval RPC before reaching this
+  // helper. This function only carries the non-gate opportunity lifecycle.
   if (approval.object_type !== 'opportunity') return null
 
   const nextStatus = status === 'approved' ? 'active' : status === 'rejected' ? 'cancelled' : null
@@ -1022,6 +1007,75 @@ export async function decideApproval(opts: {
 
   const decisionStatus = statusMap[opts.decision]
 
+  // ===========================================================================
+  // GATE APPROVALS: the entire decision is atomic via decide_gate_approval.
+  //
+  // For a gate workflow we must NOT perform any separate step / approval /
+  // submission / phase / event writes here -- a partial failure between them is
+  // exactly the non-atomic bug this replaces. The RPC locks the approval and its
+  // current step, verifies tenant + assignment, and performs every write inside
+  // one transaction (rolling all of them back on any error). We route on the
+  // object type with an EXPLICIT gate_number null/undefined check so a gate
+  // numbered 0 still reaches this path.
+  // ===========================================================================
+  if (approval.object_type === 'gate') {
+    if (approval.gate_number === null || approval.gate_number === undefined) {
+      return { error: 'This gate approval is missing a gate number and cannot be decided' }
+    }
+
+    // Admin override: an admin deciding an approval they are not assigned to.
+    // Passed to the RPC so its assignment check can allow the override while
+    // still rejecting an unrelated, non-admin caller.
+    const isAdminOverride = !!(
+      gate.actor.role &&
+      (ADMIN_ROLES as readonly string[]).includes(gate.actor.role) &&
+      gate.actor.userId !== approval.assignee_id
+    )
+
+    const { data: rpcOutcome, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
+      p_approval_id: opts.id,
+      p_tenant_id: approval.tenant_id,
+      p_actor: gate.actor.userId,
+      p_decision: opts.decision,
+      p_rationale: opts.rationale,
+      p_is_admin_override: isAdminOverride,
+    })
+
+    if (rpcErr) return { error: `Gate decision failed: ${rpcErr.message}` }
+
+    // Conditions are a supplementary artifact of a conditional approval, not part
+    // of the atomic gate transition. Record them (tenant-scoped) after the RPC
+    // commits. approval_conditions.tenant_id is NOT NULL, so it must be supplied.
+    if (opts.decision === 'conditional_proceed' && opts.conditions && opts.conditions.length > 0) {
+      const conditionRows = opts.conditions.map((c) => ({
+        tenant_id: approval.tenant_id,
+        approval_id: opts.id,
+        title: c.title.trim(),
+        due_date: c.due_date,
+        status: 'open',
+        created_by: gate.actor.userId,
+      }))
+      const { error: condErr } = await supabase.from('approval_conditions').insert(conditionRows)
+      if (condErr) console.log(`[v0] Approval conditions creation warning: ${condErr.message}`)
+    }
+
+    // Best-effort notification only for a finalized decision.
+    if (rpcOutcome === 'approved' || rpcOutcome === 'rejected') {
+      sendApprovalDecisionEmail({
+        to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
+        requesterName: 'Team',
+        title: approval.title ?? opts.id,
+        decision: rpcOutcome === 'approved' ? 'approved' : 'rejected',
+        decisionBy: 'Executive Sponsor',
+        projectCode: approval.object_type ?? 'G0',
+        approvalId: opts.id,
+        reason: opts.rationale,
+      }).catch(() => {})
+    }
+
+    return { error: null }
+  }
+
   // If a step workflow exists, update ONLY the current step; otherwise update the approval directly
   if (currentStep) {
     // Step-aware: mark current step with decision + emit event
@@ -1101,7 +1155,7 @@ export async function decideApproval(opts: {
         .eq('id', opts.id)
 
       if (!apprErr) {
-        const lifecycleError = await applyApprovalLifecycle(supabase, approval, 'approved', { userId: gate.actor.userId }, opts.rationale)
+        const lifecycleError = await applyApprovalLifecycle(supabase, approval, 'approved')
         if (lifecycleError) return { error: lifecycleError }
 
         // Advance gate for approved opportunities
@@ -1127,7 +1181,7 @@ export async function decideApproval(opts: {
       .eq('id', opts.id)
 
     if (!error) {
-      const lifecycleError = await applyApprovalLifecycle(supabase, approval, decisionStatus, { userId: gate.actor.userId }, opts.rationale)
+      const lifecycleError = await applyApprovalLifecycle(supabase, approval, decisionStatus)
       if (lifecycleError) return { error: lifecycleError }
 
       if (

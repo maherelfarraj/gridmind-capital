@@ -8,13 +8,12 @@
 -- NOTE: The preview shares the PRODUCTION database. Running this writes real
 -- production rows. Use scripts/g3-smoke-fixture.teardown.sql to remove.
 --
--- TENANT PARAMETER
---   Override the target tenant explicitly:
+-- TENANT PARAMETER (REQUIRED — no fallback)
+--   The target tenant MUST be passed explicitly:
 --     psql "$POSTGRES_URL_NON_POOLING" -v tenant_id="<uuid>" -f scripts/g3-smoke-fixture.seed.sql
---   If -v tenant_id is not supplied, the script resolves the tenant named
---   'GridMind Capital' and asserts exactly one exists. It NEVER falls back to
---   "first tenant by created_at" (that silently binds the fixture to an
---   arbitrary tenant).
+--   There is NO tenant-name fallback and NO "first tenant by created_at"
+--   fallback: omitting -v tenant_id aborts the seed. This prevents the fixture
+--   from silently binding to an arbitrary tenant.
 --
 -- EXACT-MATCH ALIGNMENT (must mirror lib/gates/g3-requirements.ts)
 --   Deliverable document categories (DELIVERABLE_CATEGORY_MAP):
