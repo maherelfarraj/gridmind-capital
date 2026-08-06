@@ -120,19 +120,39 @@ describe('planSignatureStorageCleanup', () => {
     expect(res.ok).toBe(false)
   })
 
-  it('SKIPS non-gate signatures instead of failing (validator does not apply)', () => {
+  it('HARD-FAILS a non-gate signature that still carries a stored path', () => {
+    // Previously SKIPPED, which was unsafe: the database step deletes EVERY
+    // signature row for this project, so a skipped row with a real path would
+    // have its row removed and its blob left behind — the exact orphan this
+    // teardown exists to prevent.
     const res = planSignatureStorageCleanup(
       [{ id: 's1', entity_type: 'client_report', signature_image_path: 'signatures/x/client_report/a.png' }],
       TENANT,
     )
-    expect(res.ok).toBe(true)
-    expect(res.ok && res.paths).toEqual([])
-    expect(res.ok && res.skipped[0].reason).toContain('non-gate')
+    expect(res.ok).toBe(false)
+    expect(!res.ok && res.error).toContain('unexpected')
+    expect(!res.ok && res.error).toContain('client_report')
   })
 
-  it('SKIPS a row with no stored path (there is no object to remove)', () => {
+  it.each([
+    ['null', null],
+    ['an empty string', ''],
+    ['whitespace only', '   '],
+  ])('SKIPS a row whose path is %s (row-only cleanup, nothing to orphan)', (_label, path) => {
     const res = planSignatureStorageCleanup(
-      [{ id: 's1', entity_type: 'gate_approval', signature_image_path: null }],
+      [{ id: 's1', entity_type: 'gate_approval', signature_image_path: path }],
+      TENANT,
+    )
+    expect(res.ok).toBe(true)
+    expect(res.ok && res.paths).toEqual([])
+    expect(res.ok && res.skipped[0].reason).toContain('row-only')
+  })
+
+  it('a non-gate row with NO path remains a safe row-only skip', () => {
+    // The hard failure is specifically about an unreachable BLOB. With no path
+    // there is nothing to orphan, so this must not become a false alarm.
+    const res = planSignatureStorageCleanup(
+      [{ id: 's1', entity_type: 'client_report', signature_image_path: null }],
       TENANT,
     )
     expect(res.ok).toBe(true)
