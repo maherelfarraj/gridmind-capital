@@ -5,6 +5,10 @@ import {
   REQUIRED_STAFFING_ROLES,
   type G3FormData,
 } from '@/lib/gates/g3-requirements'
+import {
+  isRequesterSelfAction,
+  REQUESTER_SELF_ACTION_MESSAGE,
+} from '@/lib/approvals/gate-routing'
 
 /**
  * Gate approval detail plumbing (object_type='gate').
@@ -244,10 +248,18 @@ export interface GateViewerGating {
  *
  * Rules (first match wins):
  *   - approved or rejected (finalized)       → read-only (locked permanently)
+ *   - viewer IS the requester                → read-only (segregation of duties)
  *   - no current pending step                → read-only (nothing to act on)
  *   - viewer IS the current-step assignee    → decide + delegate (new owner)
- *   - viewer holds an admin-override role    → decide + delegate (override)
+ *   - viewer holds an admin-override role     → decide + delegate (override)
  *   - otherwise                              → read-only (not authorized)
+ *
+ * SEGREGATION OF DUTIES: a user whose id equals the approval's requester_id may
+ * NEVER decide, hold, reject, or delegate their own gate approval — this holds
+ * even for system_admin / tenant_admin. The requester check is therefore
+ * evaluated BEFORE the assignment and admin-override branches so an admin can
+ * never "override" their way onto an approval they themselves requested. This is
+ * presentation gating only; the server action and RPCs re-enforce it.
  *
  * NOTE: 'delegated' status is treated like 'pending' IF a current step exists.
  * The delegation event moves the step's assigned_to to the new owner; so a
@@ -260,6 +272,13 @@ export function computeGateReviewGating(input: {
   actorId: string | null
   actorRole: string | null
   adminRoles: readonly string[]
+  /**
+   * The approval's requester_id. When it equals actorId the viewer is locked out
+   * (segregation of duties), regardless of assignment or admin role. Optional so
+   * pure mapping/gating tests that predate this rule remain valid; the real
+   * loader (getGateApprovalDetail) always supplies it.
+   */
+  requesterId?: string | null
 }): GateViewerGating {
   const locked = (readOnlyReason: string): GateViewerGating => ({
     canDecide: false,
@@ -270,6 +289,18 @@ export function computeGateReviewGating(input: {
   // Approved or rejected = workflow is finished; no further action possible.
   if (input.status === 'approved' || input.status === 'rejected') {
     return locked(`This gate approval has already been ${input.status}.`)
+  }
+
+  // Segregation of duties: the requester can never act on their own approval,
+  // not even as an admin. Evaluated BEFORE assignment/override so no override
+  // path can reach an actionable state for the requester.
+  if (isRequesterSelfAction(input.actorId, input.requesterId ?? null)) {
+    return locked(REQUESTER_SELF_ACTION_MESSAGE)
+  }
+
+  // If there's no current pending step, nothing can be acted upon.
+  if (!input.currentAssigneeId) {
+    return locked('There is no pending approval step to act on.')
   }
 
   // If there's no current pending step, nothing can be acted upon.
@@ -461,6 +492,9 @@ export function mapGateApprovalDetail(input: {
     actorId: input.viewer?.actorId ?? null,
     actorRole: input.viewer?.actorRole ?? null,
     adminRoles: input.viewer?.adminRoles ?? [],
+    // Requester identity comes from the approval itself, never the viewer, so
+    // a requester is locked out even when they are also the current assignee.
+    requesterId: approval.requester_id ?? null,
   })
 
   return {

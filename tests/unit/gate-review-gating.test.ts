@@ -122,6 +122,106 @@ describe('computeGateReviewGating', () => {
   })
 })
 
+describe('computeGateReviewGating — requester self-action prohibition', () => {
+  const SELF = /cannot act on an approval you requested/i
+
+  it('locks the requester even when they are the current-step assignee', () => {
+    // The requester happens to also be the assigned approver. Segregation of
+    // duties wins: they must NOT be able to decide their own approval.
+    const g = computeGateReviewGating({
+      status: 'pending', currentAssigneeId: 'req-1', actorId: 'req-1',
+      actorRole: 'project_manager', adminRoles: ADMIN, requesterId: 'req-1',
+    })
+    expect(g.canDecide).toBe(false)
+    expect(g.canDelegate).toBe(false)
+    expect(g.readOnlyReason).toMatch(SELF)
+  })
+
+  it('locks the requester even as a tenant_admin (no override escape)', () => {
+    const g = computeGateReviewGating({
+      status: 'pending', currentAssigneeId: 'someone-else', actorId: 'req-1',
+      actorRole: 'tenant_admin', adminRoles: ADMIN, requesterId: 'req-1',
+    })
+    expect(g.canDecide).toBe(false)
+    expect(g.canDelegate).toBe(false)
+    expect(g.readOnlyReason).toMatch(SELF)
+  })
+
+  it('locks the requester even as a system_admin', () => {
+    const g = computeGateReviewGating({
+      status: 'pending', currentAssigneeId: 'someone-else', actorId: 'req-1',
+      actorRole: 'system_admin', adminRoles: ADMIN, requesterId: 'req-1',
+    })
+    expect(g.canDecide).toBe(false)
+    expect(g.readOnlyReason).toMatch(SELF)
+  })
+
+  it('still allows a non-requester assigned approver to decide', () => {
+    const g = computeGateReviewGating({
+      status: 'pending', currentAssigneeId: 'appr-1', actorId: 'appr-1',
+      actorRole: 'project_manager', adminRoles: ADMIN, requesterId: 'req-1',
+    })
+    expect(g).toEqual({ canDecide: true, canDelegate: true, readOnlyReason: null })
+  })
+
+  it('still allows an unrelated admin to override when they are not the requester', () => {
+    const g = computeGateReviewGating({
+      status: 'pending', currentAssigneeId: 'appr-1', actorId: 'admin-9',
+      actorRole: 'tenant_admin', adminRoles: ADMIN, requesterId: 'req-1',
+    })
+    expect(g.canDecide).toBe(true)
+    expect(g.canDelegate).toBe(true)
+  })
+
+  it('the requester lock takes precedence over the no-pending-step lock', () => {
+    // Even with no pending step, a requester must see the self-action reason
+    // (the rule is evaluated before the pending-step check per the contract).
+    const g = computeGateReviewGating({
+      status: 'pending', currentAssigneeId: null, actorId: 'req-1',
+      actorRole: 'tenant_admin', adminRoles: ADMIN, requesterId: 'req-1',
+    })
+    expect(g.readOnlyReason).toMatch(SELF)
+  })
+
+  it('a finalized approval stays locked-as-finalized even for the requester', () => {
+    // approved/rejected is checked FIRST, so the message names the final state.
+    const g = computeGateReviewGating({
+      status: 'approved', currentAssigneeId: 'req-1', actorId: 'req-1',
+      actorRole: 'tenant_admin', adminRoles: ADMIN, requesterId: 'req-1',
+    })
+    expect(g.readOnlyReason).toMatch(/already been approved/)
+  })
+})
+
+describe('mapGateApprovalDetail — requester locked out via the approval row', () => {
+  const raw = () => ({
+    approval: {
+      id: 'a1', tenant_id: 't1', object_type: 'gate', object_id: 'p1', gate_number: 3,
+      title: 'G3', status: 'pending', priority: 'normal', created_at: '2026-01-01',
+      description: null, decision_note: null, requester_id: 'req-1', assignee_id: 'req-1',
+    },
+    project: { id: 'p1', tenant_id: 't1', name: 'P', code: 'P-1', technology: null,
+      capacity_mw: null, location: null, country: null, status: 'active', current_phase: 2 },
+    phaseGate: { phase_number: 3, phase_name: 'RTB', status: 'in_review' },
+    submission: null,
+    steps: [{ id: 's1', level: 1, assigned_to: 'req-1', assigned_role: 'project_manager', status: 'pending' }],
+    requester: null, currentAssignee: null,
+    deliverableDocs: [], teamMembers: [], events: [],
+  })
+
+  it('locks the requester even when they view as the assigned admin', () => {
+    // requester_id comes from the APPROVAL, not the viewer — so an admin viewer
+    // who is also the requester and the assignee is still fully locked.
+    const v = mapGateApprovalDetail({
+      ...(raw() as any),
+      viewer: { actorId: 'req-1', actorRole: 'tenant_admin', adminRoles: ADMIN },
+    })!
+    expect(v.viewerGating.canDecide).toBe(false)
+    expect(v.viewerGating.canDelegate).toBe(false)
+    expect(v.viewerGating.readOnlyReason).toMatch(/cannot act on an approval you requested/i)
+  })
+})
+
 describe('mapGateApprovalDetail viewerGating default', () => {
   const raw = () => ({
     approval: {

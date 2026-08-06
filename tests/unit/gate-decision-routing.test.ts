@@ -130,6 +130,7 @@ vi.mock('@/app/actions/phase-gates', () => ({ advanceProjectGate: vi.fn(async ()
 
 import { decideApproval, delegateApproval } from '@/app/actions/approvals'
 import { deleteFailedStagedSignature } from '@/lib/approvals/signature-storage'
+import { stageGateSignatureImage } from '@/app/actions/signatures'
 
 beforeEach(() => {
   state.rpcCalls.length = 0
@@ -140,6 +141,7 @@ beforeEach(() => {
   state.approvalRow = null
   rpc.mockClear()
   ;(deleteFailedStagedSignature as unknown as { mockClear: () => void }).mockClear()
+  ;(stageGateSignatureImage as unknown as { mockClear: () => void }).mockClear()
 })
 
 describe('decideApproval — gate routing', () => {
@@ -259,6 +261,74 @@ describe('decideApproval — gate routing', () => {
     rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'boom' } }))
     await decideApproval({ id: 'appr-1', decision: 'reject', rationale: 'no' })
     expect(deleteFailedStagedSignature).not.toHaveBeenCalled()
+  })
+})
+
+describe('decideApproval — requester self-action prohibition (gate)', () => {
+  beforeEach(() => {
+    // The actor (actor-1) is ALSO the requester and the assigned approver — the
+    // exact self-approval scenario. requireApprover returns role tenant_admin,
+    // so this also covers the admin-override escape attempt.
+    state.approvalRow = {
+      title: 'G3', object_type: 'gate', object_id: 'proj-1', description: null,
+      assignee_id: 'actor-1', requester_id: 'actor-1', status: 'pending',
+      gate_number: 3, tenant_id: 'tenant-a',
+    }
+  })
+
+  it('refuses a gate decision by the requester', async () => {
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'self', signatureDraft: sigDraft })
+    expect(res.error).toMatch(/cannot act on an approval you requested/i)
+  })
+
+  it('refuses BEFORE staging any signature (no orphan blob)', async () => {
+    await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'self', signatureDraft: sigDraft })
+    // The guard runs before the gate branch stages the image — nothing staged,
+    // so nothing to clean up.
+    expect(stageGateSignatureImage).not.toHaveBeenCalled()
+    expect(deleteFailedStagedSignature).not.toHaveBeenCalled()
+  })
+
+  it('refuses WITHOUT calling the decide_gate_approval RPC', async () => {
+    await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'self', signatureDraft: sigDraft })
+    expect(state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')).toBeUndefined()
+  })
+
+  it('refuses a reject by the requester too (all decision kinds)', async () => {
+    const res = await decideApproval({ id: 'appr-1', decision: 'reject', rationale: 'self' })
+    expect(res.error).toMatch(/cannot act on an approval you requested/i)
+    expect(state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')).toBeUndefined()
+  })
+
+  it('does NOT block a non-gate approval requested by the actor', async () => {
+    // Segregation-of-duties enforcement here is scoped to gate approvals; the
+    // opportunity path keeps its own local authorization. Prove the gate guard
+    // does not leak into it.
+    state.approvalRow = {
+      title: 'Opp', object_type: 'opportunity', object_id: 'opp-1', description: null,
+      assignee_id: 'actor-1', requester_id: 'actor-1', status: 'pending',
+      gate_number: null, tenant_id: 'tenant-a',
+    }
+    const res = await decideApproval({ id: 'appr-3', decision: 'proceed', rationale: 'ok' })
+    // res.error may be a string or a structured error depending on the non-gate
+    // lifecycle mock; the only thing that matters is the gate self-action guard
+    // never fired for an opportunity approval.
+    const errStr = typeof res.error === 'string' ? res.error : JSON.stringify(res.error ?? '')
+    expect(errStr).not.toMatch(/cannot act on an approval you requested/i)
+  })
+})
+
+describe('delegateApproval — requester self-action prohibition (gate)', () => {
+  it('refuses a gate delegation by the requester without calling the RPC', async () => {
+    state.approvalRow = {
+      description: null, assignee_id: 'actor-1', requester_id: 'actor-1',
+      object_type: 'gate', gate_number: 3,
+    }
+    const res = await delegateApproval({ id: 'appr-1', delegateId: 'delegate-1', reason: 'hand off my own' })
+    expect(res.error).toMatch(/cannot act on an approval you requested/i)
+    expect(state.rpcCalls.find((c) => c.fn === 'delegate_gate_approval')).toBeUndefined()
+    // and no bare approvals UPDATE either
+    expect(state.updates.filter((u) => u.table === 'approvals')).toHaveLength(0)
   })
 })
 
