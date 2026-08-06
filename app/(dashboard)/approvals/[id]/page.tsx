@@ -72,6 +72,27 @@ export default function ApprovalDetailPage() {
     )
   }
 
+  // ── Unsupported type ──────────────────────────────────────
+  if (routed?.kind === 'unsupported') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 p-8 text-center">
+        <p className="text-slate-600 dark:text-slate-300">
+          This approval type ({<span className="font-mono">{routed.objectType}</span>}) does not yet have a governed detail view.
+        </p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Contact support if you need to access this approval.
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push('/approvals')}
+          className="px-4 py-2 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
+        >
+          Back to Approvals
+        </button>
+      </div>
+    )
+  }
+
   // ── Not found ────────────────────────────────────────────
   if (error || !routed || routed.kind === 'not_found') {
     return (

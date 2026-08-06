@@ -42,7 +42,7 @@ DECLARE
   v_rows      integer;
   -- CANONICAL approver-role set -- MUST equal GATE_APPROVER_ROLES in
   -- lib/auth/roles.ts (a drift test enforces this). Keep the two in lockstep.
-  v_approver_roles text[] := ARRAY['system_admin','tenant_admin','project_director','project_manager'];
+  v_approver_roles text[] := ARRAY['system_admin','tenant_admin','project_director','project_manager','finance_manager'];
   v_admin_roles    text[] := ARRAY['system_admin','tenant_admin'];
 BEGIN
   IF p_approval_id IS NULL OR p_tenant_id IS NULL OR p_actor IS NULL OR p_delegate IS NULL THEN

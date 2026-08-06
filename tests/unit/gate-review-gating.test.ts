@@ -66,6 +66,60 @@ describe('computeGateReviewGating', () => {
     })
     expect(g.canDecide).toBe(false)
   })
+
+  it('treats delegated approvals like pending (actionable for new assignee)', () => {
+    // After delegation, the step's assigned_to moved to the delegate. Status becomes
+    // 'delegated' but a pending step still exists. The delegate (new assignee) must
+    // be able to act.
+    const g = computeGateReviewGating({
+      status: 'delegated', currentAssigneeId: 'delegate-1', actorId: 'delegate-1',
+      actorRole: 'project_manager', adminRoles: ADMIN,
+    })
+    expect(g.canDecide).toBe(true)
+    expect(g.canDelegate).toBe(true)
+    expect(g.readOnlyReason).toBe(null)
+  })
+
+  it('locks original assignee after delegation', () => {
+    // After delegation, the original assignee is no longer in the current step;
+    // they should see "not the assigned approver" error.
+    const g = computeGateReviewGating({
+      status: 'delegated', currentAssigneeId: 'delegate-1', actorId: 'original-u1',
+      actorRole: 'project_manager', adminRoles: ADMIN,
+    })
+    expect(g.canDecide).toBe(false)
+    expect(g.canDelegate).toBe(false)
+    expect(g.readOnlyReason).toMatch(/not the assigned approver/i)
+  })
+
+  it('allows admin override on delegated approval', () => {
+    // Even on a delegated approval, an admin can still decide + delegate.
+    const g = computeGateReviewGating({
+      status: 'delegated', currentAssigneeId: 'delegate-1', actorId: 'admin-9',
+      actorRole: 'system_admin', adminRoles: ADMIN,
+    })
+    expect(g.canDecide).toBe(true)
+    expect(g.canDelegate).toBe(true)
+  })
+
+  it('locks unrelated viewers on delegated approval', () => {
+    const g = computeGateReviewGating({
+      status: 'delegated', currentAssigneeId: 'delegate-1', actorId: 'random-user',
+      actorRole: 'project_manager', adminRoles: ADMIN,
+    })
+    expect(g.canDecide).toBe(false)
+    expect(g.readOnlyReason).toMatch(/not the assigned approver/i)
+  })
+
+  it('rejects on delegated if no current step exists', () => {
+    // Even though status is 'delegated', if there's no pending step, nothing can be acted upon.
+    const g = computeGateReviewGating({
+      status: 'delegated', currentAssigneeId: null, actorId: 'admin-9',
+      actorRole: 'system_admin', adminRoles: ADMIN,
+    })
+    expect(g.canDecide).toBe(false)
+    expect(g.readOnlyReason).toMatch(/no pending approval step/i)
+  })
 })
 
 describe('mapGateApprovalDetail viewerGating default', () => {
@@ -104,9 +158,9 @@ describe('mapGateApprovalDetail viewerGating default', () => {
 describe('GATE_APPROVER_ROLES drift guard', () => {
   const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8')
 
-  it('the canonical set is exactly the expected four roles', () => {
+  it('the canonical set is exactly the expected five roles', () => {
     expect([...GATE_APPROVER_ROLES].sort()).toEqual(
-      ['project_director', 'project_manager', 'system_admin', 'tenant_admin'],
+      ['finance_manager', 'project_director', 'project_manager', 'system_admin', 'tenant_admin'],
     )
   })
 
@@ -119,7 +173,5 @@ describe('GATE_APPROVER_ROLES drift guard', () => {
     expect(m, 'v_approver_roles array literal not found').toBeTruthy()
     const rpcRoles = m![1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).sort()
     expect(rpcRoles).toEqual([...GATE_APPROVER_ROLES].sort())
-    // finance_manager must NOT sneak back in without also being added canonically.
-    expect(rpcRoles).not.toContain('finance_manager')
   })
 })

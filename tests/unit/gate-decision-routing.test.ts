@@ -104,8 +104,11 @@ vi.mock('@/app/actions/signatures', () => ({
       ipAddress: null,
     },
   })),
-  // A failed decision must delete the staged image so no orphan blob remains.
-  removeStagedGateSignature: vi.fn(async () => ({ removed: true })),
+}))
+
+// Mock the secure cleanup module (server-only, not exported as a client action).
+vi.mock('@/lib/approvals/signature-cleanup', () => ({
+  deleteFailedStagedSignature: vi.fn(async () => ({ removed: true })),
 }))
 
 // A captured-but-unpersisted signature draft, as the review UI would hand off.
@@ -118,7 +121,7 @@ const sigDraft = {
 vi.mock('@/app/actions/phase-gates', () => ({ advanceProjectGate: vi.fn(async () => ({ error: null })) }))
 
 import { decideApproval, delegateApproval } from '@/app/actions/approvals'
-import { removeStagedGateSignature } from '@/app/actions/signatures'
+import { deleteFailedStagedSignature } from '@/lib/approvals/signature-cleanup'
 
 beforeEach(() => {
   state.rpcCalls.length = 0
@@ -128,7 +131,7 @@ beforeEach(() => {
   state.rpcResult = 'approved'
   state.approvalRow = null
   rpc.mockClear()
-  ;(removeStagedGateSignature as unknown as { mockClear: () => void }).mockClear()
+  ;(deleteFailedStagedSignature as unknown as { mockClear: () => void }).mockClear()
 })
 
 describe('decideApproval — gate routing', () => {
@@ -187,14 +190,14 @@ describe('decideApproval — gate routing', () => {
   it('removes the staged signature when the decision RPC fails', async () => {
     rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'sign-off pending' } }))
     await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
-    // Cleanup must target the exact staged path so no orphan blob survives.
-    expect(removeStagedGateSignature).toHaveBeenCalledWith('signatures/appr-1/sig.png')
+    // Cleanup must target the exact staged path and tenant so no orphan blob survives.
+    expect(deleteFailedStagedSignature).toHaveBeenCalledWith('signatures/appr-1/sig.png', 'tenant-a')
   })
 
   it('does NOT remove the staged signature on a successful decision', async () => {
     await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     // A committed decision keeps its signature image (a row now references it).
-    expect(removeStagedGateSignature).not.toHaveBeenCalled()
+    expect(deleteFailedStagedSignature).not.toHaveBeenCalled()
   })
 })
 

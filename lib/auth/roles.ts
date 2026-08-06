@@ -119,6 +119,7 @@ export const GATE_APPROVER_ROLES: readonly DbUserRole[] = [
   'tenant_admin',
   'project_director',
   'project_manager',
+  'finance_manager',
 ]
 
 /** True only for a canonical role permitted to act as a gate approver. */

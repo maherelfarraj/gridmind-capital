@@ -243,11 +243,16 @@ export interface GateViewerGating {
  * enforcement boundary.
  *
  * Rules (first match wins):
- *   - already finalized (not 'pending')      → read-only, both false
- *   - no current pending step                 → read-only, both false
- *   - viewer IS the current-step assignee     → decide + delegate
- *   - viewer holds an admin-override role      → decide + delegate (override)
- *   - otherwise                                → read-only, both false
+ *   - approved or rejected (finalized)       → read-only (locked permanently)
+ *   - no current pending step                → read-only (nothing to act on)
+ *   - viewer IS the current-step assignee    → decide + delegate (new owner)
+ *   - viewer holds an admin-override role    → decide + delegate (override)
+ *   - otherwise                              → read-only (not authorized)
+ *
+ * NOTE: 'delegated' status is treated like 'pending' IF a current step exists.
+ * The delegation event moves the step's assigned_to to the new owner; so a
+ * delegated approval with a pending step is ACTIONABLE for the new assignee.
+ * The status field is informational; the current-step assignee is authoritative.
  */
 export function computeGateReviewGating(input: {
   status: 'pending' | 'approved' | 'rejected' | 'delegated'
@@ -262,18 +267,27 @@ export function computeGateReviewGating(input: {
     readOnlyReason,
   })
 
-  if (input.status !== 'pending') {
+  // Approved or rejected = workflow is finished; no further action possible.
+  if (input.status === 'approved' || input.status === 'rejected') {
     return locked(`This gate approval has already been ${input.status}.`)
   }
+
+  // If there's no current pending step, nothing can be acted upon.
   if (!input.currentAssigneeId) {
     return locked('There is no pending approval step to act on.')
   }
+
+  // The current step's assignee (the authoritative actor) may decide + delegate.
   if (input.actorId && input.actorId === input.currentAssigneeId) {
     return { canDecide: true, canDelegate: true, readOnlyReason: null }
   }
+
+  // Admins (system_admin / tenant_admin) override and may decide + delegate any step.
   if (input.actorRole && input.adminRoles.includes(input.actorRole)) {
     return { canDecide: true, canDelegate: true, readOnlyReason: null }
   }
+
+  // No other viewers have authority to act.
   return locked('You are not the assigned approver for the current step.')
 }
 

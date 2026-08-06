@@ -6,12 +6,8 @@ import { requireUser, requireInternalRole } from '@/lib/auth/guard'
 import { DB_ADMIN_ROLES, GATE_APPROVER_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
-import {
-  createSignature,
-  stageGateSignatureImage,
-  removeStagedGateSignature,
-  type SignatureDraft,
-} from '@/app/actions/signatures'
+import { createSignature, stageGateSignatureImage, type SignatureDraft } from '@/app/actions/signatures'
+import { deleteFailedStagedSignature } from '@/lib/approvals/signature-cleanup'
 import {
   mapOpportunityApprovalDetail,
   type OpportunityApprovalView,
@@ -1068,18 +1064,40 @@ export async function decideApproval(opts: {
         p_signature: signatureJson,
       })
       if (rpcErr) {
-        // The decision did NOT commit, so the staged signature image has no
-        // signatures row referencing it. Remove it so a failed attempt never
-        // leaves an orphan blob behind. Cleanup is best-effort; the decision
-        // error is what we surface.
-        if (signatureJson) await removeStagedGateSignature(signatureJson.image_path).catch(() => {})
-        return { error: `Gate decision failed: ${rpcErr.message}` }
+        // The decision did NOT commit, so any staged signature image must be cleaned up.
+        // If cleanup also fails, return BOTH errors so the caller knows about both problems.
+        let cleanupError: string | null = null
+        if (signatureJson) {
+          const cleanupResult = await deleteFailedStagedSignature(
+            signatureJson.image_path,
+            approval.tenant_id,
+          )
+          if ('error' in cleanupResult) {
+            cleanupError = cleanupResult.error
+          }
+        }
+        const errors = [rpcErr.message, cleanupError].filter(Boolean).join('; ')
+        return { error: `Gate decision failed: ${errors}` }
       }
       rpcOutcome = data
     } catch (e: any) {
-      // A throw before/at the RPC also means no committed decision — clean up.
-      if (signatureJson) await removeStagedGateSignature(signatureJson.image_path).catch(() => {})
-      return { error: `Gate decision failed: ${e?.message ?? 'unknown error'}` }
+      // An exception before/at the RPC also means no committed decision — attempt cleanup.
+      let cleanupError: string | null = null
+      if (signatureJson) {
+        try {
+          const cleanupResult = await deleteFailedStagedSignature(
+            signatureJson.image_path,
+            approval.tenant_id,
+          )
+          if ('error' in cleanupResult) {
+            cleanupError = cleanupResult.error
+          }
+        } catch (cleanupEx: any) {
+          cleanupError = `Cleanup threw: ${cleanupEx?.message}`
+        }
+      }
+      const errors = [e?.message ?? 'unknown error', cleanupError].filter(Boolean).join('; ')
+      return { error: `Gate decision failed: ${errors}` }
     }
 
     // Best-effort notification only for a finalized decision.
@@ -1399,11 +1417,12 @@ export async function getOpportunityApprovalDetail(
     .single()
   if (error || !approval) return null
 
-  // HARD DISCRIMINATOR: a gate approval must NEVER render through the G0 path.
-  // The G0 view omits gate governance (steps/quorum, signatures, delegation),
-  // so mapping a gate here would silently present a governed decision as an
-  // ungoverned one. Gate approvals are served exclusively by getGateApprovalDetail.
-  if (approval.object_type === 'gate') return null
+  // HARD DISCRIMINATOR: only 'opportunity' object_type renders through the G0 path.
+  // All other types (gate, project_charter, purchase_order, change_order, etc.)
+  // require their own specialized detail loaders and must not fall through G0.
+  // This prevents governed workflows from being silently presented as ungoverned,
+  // and unsupported types from rendering incomplete/misleading information.
+  if (approval.object_type !== 'opportunity') return null
 
   // Resolve the linked project — tenant-scoped, so a stale/forged object_id
   // pointing at another tenant's project simply returns no row.
@@ -1586,13 +1605,15 @@ export async function getGateApprovalDetail(
 /**
  * Discriminated approval-detail loader — the single authoritative entry point
  * for the review page. Reads the approval's `object_type` ONCE (tenant-scoped)
- * and routes to exactly one typed loader, so a gate approval can never fall back
- * to the G0 renderer and vice versa. The page switches on `kind` instead of
- * racing two independent fetches and rendering whichever resolves first.
+ * and routes to exactly one typed loader with explicit handling for each type.
+ * Unsupported types return an explicit 'unsupported' result (not 'not_found').
+ * The page switches on `kind` and can display a helpful message for unsupported
+ * approval types rather than a confusing 404.
  */
 export type RoutedApprovalDetail =
   | { kind: 'gate'; gate: GateApprovalDetailView }
   | { kind: 'opportunity'; opportunity: OpportunityApprovalDetail }
+  | { kind: 'unsupported'; objectType: string }
   | { kind: 'not_found' }
 
 export async function getApprovalDetailRouted(id: string): Promise<RoutedApprovalDetail> {
@@ -1609,13 +1630,20 @@ export async function getApprovalDetailRouted(id: string): Promise<RoutedApprova
     .single()
   if (!approval) return { kind: 'not_found' }
 
+  // Exhaustive switch: handle each supported type; anything else is unsupported.
   if (approval.object_type === 'gate') {
     const gate = await getGateApprovalDetail(id)
     return gate ? { kind: 'gate', gate } : { kind: 'not_found' }
   }
 
-  const opportunity = await getOpportunityApprovalDetail(id)
-  return opportunity ? { kind: 'opportunity', opportunity } : { kind: 'not_found' }
+  if (approval.object_type === 'opportunity') {
+    const opportunity = await getOpportunityApprovalDetail(id)
+    return opportunity ? { kind: 'opportunity', opportunity } : { kind: 'not_found' }
+  }
+
+  // All other types (project_charter, purchase_order, change_order, etc.) are
+  // not yet supported in the detail view and need their own specialized loaders.
+  return { kind: 'unsupported', objectType: approval.object_type }
 }
 
 export interface EligibleDelegate {
@@ -1640,11 +1668,21 @@ export async function getEligibleDelegates(approvalId: string): Promise<Eligible
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('id, tenant_id, assignee_id')
+    .select('id, tenant_id, assignee_id, status')
     .eq('id', approvalId)
     .eq('tenant_id', actor.tenantId)
     .single()
   if (!approval) return []
+
+  // AUTHORIZATION: Only the current step's assignee or a platform admin may
+  // retrieve the delegate list. This prevents unrelated viewers from discovering
+  // other approvers and delegating inappropriately.
+  const isCurrentAssignee = approval.assignee_id === actor.userId
+  const isAdmin = ADMIN_ROLES.includes(actor.role ?? '')
+  if (!isCurrentAssignee && !isAdmin) {
+    // Return empty list for unauthorized viewers (silent deny, not an error).
+    return []
+  }
 
   // Required role = the current (lowest-level) pending step's assigned_role.
   const { data: currentStep } = await supabase
