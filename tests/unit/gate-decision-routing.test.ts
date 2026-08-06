@@ -221,9 +221,11 @@ describe('decideApproval — gate routing', () => {
       .mockImplementationOnce(async () => ({ error: 'blob locked' }))
     const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     // Neither error may mask the other: the operator needs to know the decision
-    // failed AND that a staged blob was left behind.
-    expect(res.error).toContain('sign-off pending')
-    expect(res.error).toContain('blob locked')
+    // failed AND that a staged blob was left behind. Assert the EXACT contract
+    // string, not just substring presence.
+    expect(res.error).toBe(
+      'Gate decision failed: sign-off pending; signature cleanup failed: blob locked',
+    )
   })
 
   it('never lets a THROWING cleanup replace the original decision error', async () => {
@@ -231,8 +233,20 @@ describe('decideApproval — gate routing', () => {
     ;(deleteFailedStagedSignature as unknown as { mockImplementationOnce: (f: unknown) => void })
       .mockImplementationOnce(async () => { throw new Error('cleanup exploded') })
     const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
-    expect(res.error).toContain('sign-off pending')
-    expect(res.error).toContain('cleanup exploded')
+    // A thrown exception is converted to the SAME combined shape as a returned
+    // { error } — the caller cannot tell which failure mode occurred, and the
+    // decision error survives either way.
+    expect(res.error).toBe(
+      'Gate decision failed: sign-off pending; signature cleanup failed: cleanup exploded',
+    )
+  })
+
+  it('omits the cleanup clause entirely when cleanup succeeds', async () => {
+    rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'sign-off pending' } }))
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
+    // A successful cleanup must not add noise to the decision error.
+    expect(res.error).toBe('Gate decision failed: sign-off pending')
+    expect(res.error).not.toContain('signature cleanup failed')
   })
 
   it('does NOT remove the staged signature on a successful decision', async () => {

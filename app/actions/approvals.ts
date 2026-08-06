@@ -1059,23 +1059,41 @@ export async function decideApproval(opts: {
     // ORIGINAL decision error is always preserved alongside any cleanup error —
     // neither is allowed to mask the other.
     let cleanupAttempted = false
-    const failWithCleanup = async (decisionError: string): Promise<{ error: string }> => {
-      let cleanupError: string | null = null
-      if (signatureJson && !cleanupAttempted) {
-        cleanupAttempted = true
-        try {
-          const cleanupResult = await deleteFailedStagedSignature(
-            signatureJson.image_path,
-            approval.tenant_id,
-          )
-          if ('error' in cleanupResult) cleanupError = cleanupResult.error
-        } catch (cleanupEx: any) {
-          // A throwing cleanup must never replace the decision error.
-          cleanupError = `Cleanup threw: ${cleanupEx?.message ?? 'unknown error'}`
-        }
+
+    /**
+     * Attempts cleanup and converts EITHER failure mode — a returned `{ error }`
+     * or a thrown exception — into a cleanup-error string. This helper NEVER
+     * throws, which is precisely what stops a failing cleanup from replacing or
+     * masking the decision error that actually matters. The `cleanupAttempted`
+     * latch guarantees at most ONE attempt across both call sites, so the outer
+     * catch can never retry a cleanup the RPC-error branch already performed.
+     *
+     * Returns null when there was nothing to clean up, or cleanup succeeded.
+     */
+    const attemptStagedCleanup = async (): Promise<string | null> => {
+      if (!signatureJson || cleanupAttempted) return null
+      cleanupAttempted = true
+      try {
+        const result = await deleteFailedStagedSignature(
+          signatureJson.image_path,
+          approval.tenant_id,
+        )
+        return 'error' in result ? result.error : null
+      } catch (cleanupEx: any) {
+        return cleanupEx?.message ?? 'unknown error'
       }
-      const errors = [decisionError, cleanupError].filter(Boolean).join('; ')
-      return { error: `Gate decision failed: ${errors}` }
+    }
+
+    const failWithCleanup = async (decisionError: string): Promise<{ error: string }> => {
+      const cleanupError = await attemptStagedCleanup()
+      // The decision error always leads; the cleanup failure is appended so an
+      // operator learns both that the decision failed AND that a staged blob
+      // was left behind.
+      return {
+        error: cleanupError
+          ? `Gate decision failed: ${decisionError}; signature cleanup failed: ${cleanupError}`
+          : `Gate decision failed: ${decisionError}`,
+      }
     }
 
     let rpcOutcome: unknown

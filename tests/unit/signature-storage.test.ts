@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
   count: 0 as number,
   lookupError: null as { message: string } | null,
   removed: [] as string[][],
+  removedFrom: [] as string[],
   removeError: null as { message: string } | null,
   uploaded: [] as { bucket: string; path: string }[],
   signedFrom: [] as string[],
@@ -33,6 +34,10 @@ vi.mock('@/lib/supabase/admin', () => ({
       from: (bucket: string) => ({
         remove: async (paths: string[]) => {
           state.removed.push(paths)
+          // Record WHICH bucket the delete was issued against. This is the
+          // observation that makes the upload/cleanup drift test meaningful:
+          // the original bug was a delete aimed at a bucket that does not exist.
+          state.removedFrom.push(bucket)
           return { error: state.removeError }
         },
         upload: async (path: string) => {
@@ -65,6 +70,7 @@ beforeEach(() => {
   state.count = 0
   state.lookupError = null
   state.removed.length = 0
+  state.removedFrom.length = 0
   state.removeError = null
   state.uploaded.length = 0
   state.signedFrom.length = 0
@@ -82,6 +88,32 @@ describe('canonical bucket', () => {
     await createSignatureSignedUrl(VALID)
     expect(state.uploaded[0].bucket).toBe(SIGNATURE_BUCKET)
     expect(state.signedFrom[0]).toBe(SIGNATURE_BUCKET)
+  })
+
+  /**
+   * DRIFT TEST (the regression that started all of this).
+   *
+   * The uploader wrote to 'documents' while cleanup deleted from 'signatures',
+   * a bucket this project never provisioned — so every cleanup was a silent
+   * no-op and every failed decision orphaned its blob. Asserting the constant
+   * alone would NOT have caught that: both sides have to be OBSERVED at runtime
+   * issuing their call against the same bucket.
+   */
+  it('cleanup deletes from the EXACT bucket the uploader wrote to', async () => {
+    await uploadSignatureObject(VALID, Buffer.from('x'))
+    await deleteFailedStagedSignature(VALID, TENANT)
+
+    expect(state.uploaded).toHaveLength(1)
+    expect(state.removedFrom).toHaveLength(1)
+    // Non-vacuous: both calls happened, and they addressed one identical bucket.
+    expect(state.removedFrom[0]).toBe(state.uploaded[0].bucket)
+    expect(state.removedFrom[0]).toBe('documents')
+  })
+
+  it('cleanup never addresses a "signatures" bucket', async () => {
+    await deleteFailedStagedSignature(VALID, TENANT)
+    // The bucket that does not exist must never be named again.
+    expect(state.removedFrom).not.toContain('signatures')
   })
 })
 
