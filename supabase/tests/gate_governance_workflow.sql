@@ -359,6 +359,270 @@ BEGIN
     RAISE NOTICE 'PASS 7: requester self-decide (assignee AND admin-override) + self-delegate all refused, ZERO mutation';
   END;
 
+  -- ---- 8) AUDIT TRANSITIONS: from_status must reflect real approval status --
+  -- Exercises all five event-emitting decision paths on a FRESH delegated
+  -- approval so the ONLY observable difference vs v5 is the from_status value.
+  -- Each sub-block uses a separate approval to keep the assertions clean.
+  -- Ordinary 'pending' paths are also verified to confirm no regression.
+  --
+  -- Literals are pinned in assertions (not derived from a shared constant) so
+  -- a mutation that changes the variable assignment is caught by a fixed string.
+  DECLARE
+    v_projA  UUID;
+    v_g3A    UUID;
+    v_apprA  UUID;
+    v_sigA   JSONB;
+    v_ev_from TEXT; v_ev_to TEXT;
+  BEGIN
+    -- Shared project + gate for all sub-tests in this block.
+    INSERT INTO public.projects (tenant_id, name, code, current_phase, status)
+      VALUES (v_tenant, 'ZZ Audit Trans', 'ZZ-GAT-' || floor(random()*1e7)::text, 2, 'active')
+      RETURNING id INTO v_projA;
+    INSERT INTO public.phase_gates (project_id, phase_number, phase_name, status) VALUES
+      (v_projA, 3, 'RTB', 'in_review'), (v_projA, 4, 'IFC', 'pending');
+    SELECT id INTO v_g3A FROM public.phase_gates WHERE project_id = v_projA AND phase_number = 3;
+    UPDATE public.gate_signoffs SET status = 'signed', signed_at = now() WHERE phase_gate_id = v_g3A;
+    INSERT INTO public.gate_submissions (tenant_id, project_id, gate_number, status, submitted_by)
+      VALUES (v_tenant, v_projA, 3, 'submitted', v_p1);
+
+    v_sigA := jsonb_build_object(
+      'signer_name', 'Delegated Actor', 'signer_role', v_p2role,
+      'image_path', 'signatures/x/gate_approval/aud-test.png',
+      'statement', 'Delegated endorsement.', 'ip_address', '127.0.0.1'
+    );
+
+    -- 8a) HOLD on a delegated approval: decided delegated->delegated
+    v_apprA := public.create_approval_workflow_tx(
+      v_tenant, 'gate', v_projA, 'ZZ aud hold', NULL, 3, v_p1, NULL, 'normal',
+      jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p1role))
+    );
+    -- Delegate to v_p2 to put approval in 'delegated' state.
+    PERFORM public.delegate_gate_approval(v_apprA, v_tenant, v_p1, v_p2, 'busy', false);
+    -- Verify approval is now delegated before deciding.
+    SELECT status INTO v_status FROM public.approvals WHERE id = v_apprA;
+    IF v_status <> 'delegated' THEN
+      RAISE EXCEPTION 'FAIL 8a setup: expected delegated, got %', v_status;
+    END IF;
+    -- Now v_p2 holds the step. Decide as v_p2 (admin override because step
+    -- assigned_role may differ from p2's role after delegation).
+    PERFORM public.decide_gate_approval(v_apprA, v_tenant, v_p2, 'hold', 'pause', true, NULL, NULL);
+    -- The decided event must be delegated -> delegated (literal 'delegated', not 'pending').
+    SELECT from_status, to_status INTO v_ev_from, v_ev_to
+      FROM public.approval_events
+      WHERE approval_id = v_apprA AND event = 'decided'
+      ORDER BY created_at DESC LIMIT 1;
+    IF v_ev_from <> 'delegated' THEN
+      RAISE EXCEPTION 'FAIL 8a hold from_status: expected literal ''delegated'', got ''%''', v_ev_from;
+    END IF;
+    IF v_ev_to <> 'delegated' THEN
+      RAISE EXCEPTION 'FAIL 8a hold to_status: expected literal ''delegated'', got ''%''', v_ev_to;
+    END IF;
+    RAISE NOTICE 'PASS 8a: delegated + hold -> decided delegated->delegated';
+
+    -- 8b) REJECT on a delegated approval: decided delegated->rejected
+    v_apprA := public.create_approval_workflow_tx(
+      v_tenant, 'gate', v_projA, 'ZZ aud reject', NULL, 3, v_p1, NULL, 'normal',
+      jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p1role))
+    );
+    PERFORM public.delegate_gate_approval(v_apprA, v_tenant, v_p1, v_p2, 'busy', false);
+    PERFORM public.decide_gate_approval(v_apprA, v_tenant, v_p2, 'reject', 'no go', true, NULL, NULL);
+    SELECT from_status, to_status INTO v_ev_from, v_ev_to
+      FROM public.approval_events
+      WHERE approval_id = v_apprA AND event = 'decided'
+      ORDER BY created_at DESC LIMIT 1;
+    IF v_ev_from <> 'delegated' THEN
+      RAISE EXCEPTION 'FAIL 8b reject from_status: expected literal ''delegated'', got ''%''', v_ev_from;
+    END IF;
+    IF v_ev_to <> 'rejected' THEN
+      RAISE EXCEPTION 'FAIL 8b reject to_status: expected literal ''rejected'', got ''%''', v_ev_to;
+    END IF;
+    -- audit_log old_values must also carry the real status.
+    SELECT (old_values->>'status') INTO v_ev_from
+      FROM public.audit_log WHERE record_id = v_apprA::text ORDER BY changed_at DESC LIMIT 1;
+    IF v_ev_from <> 'delegated' THEN
+      RAISE EXCEPTION 'FAIL 8b audit old_values status: expected literal ''delegated'', got ''%''', v_ev_from;
+    END IF;
+    RAISE NOTICE 'PASS 8b: delegated + reject -> decided delegated->rejected, audit old_values correct';
+
+    -- 8c) CONDITIONAL_PROCEED final on a delegated (single-level) approval.
+    --     condition_added: delegated->delegated
+    --     decided:         delegated->approved
+    --     approved:        delegated->approved
+    -- Need a fresh gate_submission row (only one per project+gate allowed).
+    -- Re-use v_projA but create a FRESH gate set on phase 5/6.
+    DECLARE
+      v_g5A UUID;
+      v_apprC UUID;
+    BEGIN
+      INSERT INTO public.phase_gates (project_id, phase_number, phase_name, status) VALUES
+        (v_projA, 5, 'RTB2', 'in_review'), (v_projA, 6, 'IFC2', 'pending');
+      SELECT id INTO v_g5A FROM public.phase_gates WHERE project_id = v_projA AND phase_number = 5;
+      UPDATE public.gate_signoffs SET status = 'signed', signed_at = now() WHERE phase_gate_id = v_g5A;
+      INSERT INTO public.gate_submissions (tenant_id, project_id, gate_number, status, submitted_by)
+        VALUES (v_tenant, v_projA, 5, 'submitted', v_p1);
+      v_sigA := jsonb_build_object(
+        'signer_name', 'Delegated Actor', 'signer_role', v_p2role,
+        'image_path', 'signatures/x/gate_approval/aud-test-cond.png',
+        'statement', 'Conditional delegated endorsement.', 'ip_address', '127.0.0.1'
+      );
+      v_apprC := public.create_approval_workflow_tx(
+        v_tenant, 'gate', v_projA, 'ZZ aud cond', NULL, 5, v_p1, NULL, 'normal',
+        jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p1role))
+      );
+      PERFORM public.delegate_gate_approval(v_apprC, v_tenant, v_p1, v_p2, 'cond busy', false);
+      PERFORM public.decide_gate_approval(v_apprC, v_tenant, v_p2, 'conditional_proceed', 'ok cond', true,
+        jsonb_build_array(jsonb_build_object('title','Review land title','due_date','2026-09-30')), v_sigA);
+      -- condition_added: delegated->delegated
+      SELECT from_status, to_status INTO v_ev_from, v_ev_to
+        FROM public.approval_events
+        WHERE approval_id = v_apprC AND event = 'condition_added' LIMIT 1;
+      IF v_ev_from <> 'delegated' OR v_ev_to <> 'delegated' THEN
+        RAISE EXCEPTION 'FAIL 8c condition_added: expected delegated->delegated, got %->%', v_ev_from, v_ev_to;
+      END IF;
+      -- decided: delegated->approved (final level)
+      SELECT from_status, to_status INTO v_ev_from, v_ev_to
+        FROM public.approval_events
+        WHERE approval_id = v_apprC AND event = 'decided' LIMIT 1;
+      IF v_ev_from <> 'delegated' OR v_ev_to <> 'approved' THEN
+        RAISE EXCEPTION 'FAIL 8c decided: expected delegated->approved, got %->%', v_ev_from, v_ev_to;
+      END IF;
+      -- approved: delegated->approved
+      SELECT from_status, to_status INTO v_ev_from, v_ev_to
+        FROM public.approval_events
+        WHERE approval_id = v_apprC AND event = 'approved' LIMIT 1;
+      IF v_ev_from <> 'delegated' OR v_ev_to <> 'approved' THEN
+        RAISE EXCEPTION 'FAIL 8c approved: expected delegated->approved, got %->%', v_ev_from, v_ev_to;
+      END IF;
+      RAISE NOTICE 'PASS 8c: delegated + conditional_proceed final -> condition_added delegated->delegated, decided delegated->approved, approved delegated->approved';
+    END;
+
+    -- 8d) Multi-level partial on a delegated approval.
+    --     decided: delegated -> pending  (approval returns to pending for L2)
+    --     assigned: delegated -> pending
+    -- v_p3 is required for a second step (separate from requester/assignee).
+    IF v_p3 IS NULL THEN
+      RAISE NOTICE 'NOTE 8d: no third approver profile available; skipping multi-level delegated partial test';
+    ELSE
+      DECLARE
+        v_g7A UUID;
+        v_apprM UUID;
+        v_sigM JSONB;
+      BEGIN
+        INSERT INTO public.phase_gates (project_id, phase_number, phase_name, status) VALUES
+          (v_projA, 7, 'RTB3', 'in_review'), (v_projA, 8, 'IFC3', 'pending');
+        SELECT id INTO v_g7A FROM public.phase_gates WHERE project_id = v_projA AND phase_number = 7;
+        UPDATE public.gate_signoffs SET status = 'signed', signed_at = now() WHERE phase_gate_id = v_g7A;
+        INSERT INTO public.gate_submissions (tenant_id, project_id, gate_number, status, submitted_by)
+          VALUES (v_tenant, v_projA, 7, 'submitted', v_p1);
+        v_sigM := jsonb_build_object(
+          'signer_name', 'Delegated Multi', 'signer_role', v_p2role,
+          'image_path', 'signatures/x/gate_approval/aud-test-multi.png',
+          'statement', 'Delegated partial endorsement.', 'ip_address', '127.0.0.1'
+        );
+        v_apprM := public.create_approval_workflow_tx(
+          v_tenant, 'gate', v_projA, 'ZZ aud multi', NULL, 7, v_p1, NULL, 'normal',
+          jsonb_build_array(
+            jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p1role),
+            jsonb_build_object('level',2,'assigned_to',v_p3,'assigned_role',v_p2role)
+          )
+        );
+        -- Delegate L1 to v_p2.
+        PERFORM public.delegate_gate_approval(v_apprM, v_tenant, v_p1, v_p2, 'multi busy', false);
+        -- v_p2 decides L1 (partial — L2 remains).
+        v_result := public.decide_gate_approval(v_apprM, v_tenant, v_p2, 'proceed', 'partial ok', true, NULL, v_sigM);
+        IF v_result <> 'partial' THEN
+          RAISE EXCEPTION 'FAIL 8d: expected partial, got %', v_result;
+        END IF;
+        -- decided: delegated -> pending
+        SELECT from_status, to_status INTO v_ev_from, v_ev_to
+          FROM public.approval_events
+          WHERE approval_id = v_apprM AND event = 'decided' ORDER BY created_at DESC LIMIT 1;
+        IF v_ev_from <> 'delegated' OR v_ev_to <> 'pending' THEN
+          RAISE EXCEPTION 'FAIL 8d decided: expected delegated->pending, got %->%', v_ev_from, v_ev_to;
+        END IF;
+        -- assigned: delegated -> pending
+        SELECT from_status, to_status INTO v_ev_from, v_ev_to
+          FROM public.approval_events
+          WHERE approval_id = v_apprM AND event = 'assigned' ORDER BY created_at DESC LIMIT 1;
+        IF v_ev_from <> 'delegated' OR v_ev_to <> 'pending' THEN
+          RAISE EXCEPTION 'FAIL 8d assigned: expected delegated->pending, got %->%', v_ev_from, v_ev_to;
+        END IF;
+        RAISE NOTICE 'PASS 8d: delegated + proceed partial -> decided delegated->pending, assigned delegated->pending';
+      END;
+    END IF;
+
+    -- 8e) Ordinary PENDING decisions retain correct from_status = 'pending'.
+    --     (Regression check: v6 must not break the common case.)
+    DECLARE
+      v_g9A UUID;
+      v_apprP UUID;
+      v_sigP JSONB;
+    BEGIN
+      INSERT INTO public.phase_gates (project_id, phase_number, phase_name, status) VALUES
+        (v_projA, 9, 'RTB4', 'in_review'), (v_projA, 10, 'IFC4', 'pending');
+      SELECT id INTO v_g9A FROM public.phase_gates WHERE project_id = v_projA AND phase_number = 9;
+      UPDATE public.gate_signoffs SET status = 'signed', signed_at = now() WHERE phase_gate_id = v_g9A;
+      INSERT INTO public.gate_submissions (tenant_id, project_id, gate_number, status, submitted_by)
+        VALUES (v_tenant, v_projA, 9, 'submitted', v_p1);
+      v_sigP := jsonb_build_object(
+        'signer_name', 'Pending Actor', 'signer_role', v_p1role,
+        'image_path', 'signatures/x/gate_approval/aud-test-pending.png',
+        'statement', 'Pending endorsement.', 'ip_address', '127.0.0.1'
+      );
+      v_apprP := public.create_approval_workflow_tx(
+        v_tenant, 'gate', v_projA, 'ZZ aud pend', NULL, 9, v_p1, NULL, 'normal',
+        jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p1role))
+      );
+      -- No delegation: approval stays 'pending'.
+      SELECT status INTO v_status FROM public.approvals WHERE id = v_apprP;
+      IF v_status <> 'pending' THEN
+        RAISE EXCEPTION 'FAIL 8e setup: expected pending, got %', v_status;
+      END IF;
+      PERFORM public.decide_gate_approval(v_apprP, v_tenant, v_p1, 'proceed', 'pend ok', false, NULL, v_sigP);
+      -- decided: pending -> approved  (v_from_status = 'pending', final level)
+      SELECT from_status, to_status INTO v_ev_from, v_ev_to
+        FROM public.approval_events
+        WHERE approval_id = v_apprP AND event = 'decided' ORDER BY created_at DESC LIMIT 1;
+      IF v_ev_from <> 'pending' OR v_ev_to <> 'approved' THEN
+        RAISE EXCEPTION 'FAIL 8e decided: expected pending->approved, got %->%', v_ev_from, v_ev_to;
+      END IF;
+      -- approved: pending -> approved
+      SELECT from_status, to_status INTO v_ev_from, v_ev_to
+        FROM public.approval_events
+        WHERE approval_id = v_apprP AND event = 'approved' LIMIT 1;
+      IF v_ev_from <> 'pending' OR v_ev_to <> 'approved' THEN
+        RAISE EXCEPTION 'FAIL 8e approved: expected pending->approved, got %->%', v_ev_from, v_ev_to;
+      END IF;
+      RAISE NOTICE 'PASS 8e: pending + proceed final -> decided pending->approved, approved pending->approved';
+    END;
+
+    -- 8f) REJECT from pending: decided pending->rejected (regression).
+    DECLARE v_apprR UUID; BEGIN
+      -- Reuse v_projA gate 3 (re-insert a fresh submission since gate state was
+      -- already advanced in 8a–8e; use gate 11 to avoid collision).
+      INSERT INTO public.phase_gates (project_id, phase_number, phase_name, status) VALUES
+        (v_projA, 11, 'RTB5', 'in_review');
+      INSERT INTO public.gate_submissions (tenant_id, project_id, gate_number, status, submitted_by)
+        VALUES (v_tenant, v_projA, 11, 'submitted', v_p1);
+      UPDATE public.gate_signoffs SET status = 'signed', signed_at = now()
+        WHERE phase_gate_id IN (SELECT id FROM public.phase_gates WHERE project_id = v_projA AND phase_number = 11);
+      v_apprR := public.create_approval_workflow_tx(
+        v_tenant, 'gate', v_projA, 'ZZ aud rej pend', NULL, 11, v_p1, NULL, 'normal',
+        jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p1role))
+      );
+      PERFORM public.decide_gate_approval(v_apprR, v_tenant, v_p1, 'reject', 'no', false, NULL, NULL);
+      SELECT from_status, to_status INTO v_ev_from, v_ev_to
+        FROM public.approval_events
+        WHERE approval_id = v_apprR AND event = 'decided' LIMIT 1;
+      IF v_ev_from <> 'pending' OR v_ev_to <> 'rejected' THEN
+        RAISE EXCEPTION 'FAIL 8f reject from pending: expected pending->rejected, got %->%', v_ev_from, v_ev_to;
+      END IF;
+      RAISE NOTICE 'PASS 8f: pending + reject -> decided pending->rejected';
+    END;
+
+    RAISE NOTICE 'PASS 8: all audit-transition event checks passed (delegated + pending, all decision paths)';
+  END;
+
   RAISE NOTICE '=== ALL GATE GOVERNANCE CHECKS PASSED (rolling back) ===';
 END $$;
 

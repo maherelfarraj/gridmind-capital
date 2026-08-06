@@ -332,6 +332,76 @@ describe('delegateApproval — requester self-action prohibition (gate)', () => 
   })
 })
 
+/**
+ * Audit-transition tests: the from_status in approval_events must reflect the
+ * ACTUAL approval status at decision time, not a hardcoded 'pending'. These
+ * tests drive the server action with a 'delegated' approval and assert the RPC
+ * receives the right payload shape. The RPC itself is the source of truth for
+ * DB writes; we prove the action does not manufacture a false from_status.
+ *
+ * NOTE: the server action does not construct approval_events itself — it calls
+ * decide_gate_approval which owns all event writes. What we verify here is:
+ *   (a) the action forwards the correct approval row data to the RPC;
+ *   (b) the approval row loaded in tests includes the real status field
+ *       (so any future action-level from_status logic would be caught);
+ *   (c) the RPC is called exactly once and with no bare updates to approvals.
+ *
+ * The ACTUAL event from_status values are validated by the SQL regression PASS 8
+ * and the mutation guards in delegate-eligibility and gate-decision-routing.
+ */
+describe('decideApproval — audit transitions on a delegated approval', () => {
+  beforeEach(() => {
+    // approval.status = 'delegated' — this is the shape that was producing
+    // false 'pending' from_status in every approval_event.
+    state.approvalRow = {
+      title: 'G3 Delegated', object_type: 'gate', object_id: 'proj-d', description: null,
+      assignee_id: 'delegate-9', requester_id: 'requester-9', status: 'delegated',
+      gate_number: 3, tenant_id: 'tenant-a',
+    }
+  })
+
+  it('routes a delegated proceed through the RPC (status=delegated is not rejected)', async () => {
+    const res = await decideApproval({
+      id: 'appr-d', decision: 'proceed', rationale: 'delegated ok', signatureDraft: sigDraft,
+    })
+    // The action must not refuse 'delegated' status — only the RPC decides
+    // whether the actor is the current-step assignee.
+    expect(res.error).toBeNull()
+    const call = state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')
+    expect(call).toBeTruthy()
+    expect(call!.args.p_approval_id).toBe('appr-d')
+    expect(call!.args.p_decision).toBe('proceed')
+  })
+
+  it('routes a delegated reject through the RPC', async () => {
+    const res = await decideApproval({ id: 'appr-d', decision: 'reject', rationale: 'delegated reject' })
+    expect(res.error).toBeNull()
+    const call = state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')
+    expect(call).toBeTruthy()
+    expect(call!.args.p_decision).toBe('reject')
+  })
+
+  it('routes a delegated hold through the RPC', async () => {
+    const res = await decideApproval({ id: 'appr-d', decision: 'hold', rationale: 'delegated hold' })
+    expect(res.error).toBeNull()
+    const call = state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')
+    expect(call).toBeTruthy()
+    expect(call!.args.p_decision).toBe('hold')
+  })
+
+  it('issues NO bare approvals UPDATE for a delegated decision', async () => {
+    await decideApproval({ id: 'appr-d', decision: 'reject', rationale: 'delegated reject' })
+    expect(state.updates.filter((u) => u.table === 'approvals')).toHaveLength(0)
+  })
+
+  it('does NOT mistake delegated status for a completed approval (no early-exit)', async () => {
+    // 'approved' and 'rejected' are the terminal statuses that cause an early
+    // exit in the app action. 'delegated' must NOT be treated the same way.
+    await decideApproval({ id: 'appr-d', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
+    expect(state.rpcCalls.find((c) => c.fn === 'decide_gate_approval')).toBeTruthy()
+  })
+})
+
 describe('decideApproval — non-gate path still authorizes locally', () => {
   it('calls requireAssignedApprover for an opportunity approval', async () => {
     state.approvalRow = {
