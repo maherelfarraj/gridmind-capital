@@ -130,6 +130,7 @@ vi.mock('@/app/actions/phase-gates', () => ({ advanceProjectGate: vi.fn(async ()
 
 import { decideApproval, delegateApproval } from '@/app/actions/approvals'
 import { deleteFailedStagedSignature } from '@/lib/approvals/signature-storage'
+import { stageGateSignatureImage } from '@/app/actions/signatures'
 
 beforeEach(() => {
   state.rpcCalls.length = 0

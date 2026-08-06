@@ -65,3 +65,32 @@ export function isAdminOverride(
   if (!adminRoles.includes(actorRole)) return false
   return actorUserId !== assigneeId
 }
+
+/**
+ * The single, canonical error/message for a requester attempting to act on
+ * their own gate approval. Segregation of duties: the person who REQUESTED a
+ * gate decision may never decide, hold, reject, or delegate it — not even a
+ * system_admin / tenant_admin exercising an "admin override". This one string is
+ * shared by the UI gating, the server action, and (in spirit) the RPC error so
+ * the boundaries never present divergent language for the same refusal.
+ */
+export const REQUESTER_SELF_ACTION_MESSAGE =
+  'You cannot act on an approval you requested.'
+
+/**
+ * True when the acting user is the requester of the approval. Pure and total.
+ *
+ * This is a SEGREGATION-OF-DUTIES check, entirely independent of assignment and
+ * admin-override: an admin override lets an admin act on a step assigned to
+ * someone else, but it must NEVER let anyone act on an approval they themselves
+ * requested. Callers must therefore evaluate this BEFORE any assignment/override
+ * logic. Returns false only when either id is missing (nothing to compare) —
+ * the real enforcement boundaries (server action + RPC) always supply both.
+ */
+export function isRequesterSelfAction(
+  actorUserId: string | null | undefined,
+  requesterId: string | null | undefined,
+): boolean {
+  if (!actorUserId || !requesterId) return false
+  return actorUserId === requesterId
+}

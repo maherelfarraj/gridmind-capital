@@ -17,6 +17,8 @@ import {
   duplicateWorkflowMessage,
   shouldRouteGateDecisionToRpc,
   isAdminOverride,
+  isRequesterSelfAction,
+  REQUESTER_SELF_ACTION_MESSAGE,
 } from '@/lib/approvals/gate-routing'
 import {
   filterEligibleDelegates,
@@ -909,7 +911,7 @@ export async function decideApproval(opts: {
   // tenant. gate.actor.tenantId is validated non-null by requireApprover().
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, object_type, object_id, description, assignee_id, status, gate_number, tenant_id')
+    .select('title, object_type, object_id, description, assignee_id, requester_id, status, gate_number, tenant_id')
     .eq('id', opts.id)
     .eq('tenant_id', gate.actor.tenantId)
     .single()
@@ -927,6 +929,19 @@ export async function decideApproval(opts: {
   // with requireAssignedApprover(approval) here (that would double-check the
   // stale approvals.assignee_id and could disagree with the locked current step).
   const isGateApproval = shouldRouteGateDecisionToRpc(approval.object_type)
+
+  // ── SEGREGATION OF DUTIES (gate approvals) ────────────────────────────────
+  // A user may NEVER decide (proceed / conditional_proceed / hold / reject) a
+  // gate approval they themselves requested — not even a system_admin /
+  // tenant_admin exercising an admin override. This is enforced HERE, before any
+  // signature is staged (staging happens only in the gate branch below) and
+  // before the decide_gate_approval RPC is called, so no side effect — not even
+  // an orphan storage blob — can occur for a self-action attempt. The RPC
+  // re-enforces this as the final authority; the UI hides the controls; this is
+  // the server-action layer of the same fail-closed rule.
+  if (isGateApproval && isRequesterSelfAction(gate.actor.userId, approval.requester_id)) {
+    return { error: REQUESTER_SELF_ACTION_MESSAGE }
+  }
 
   // Step-aware from-state: verify caller is assigned to the CURRENT pending step
   const { data: currentStep } = await supabase
@@ -1316,13 +1331,23 @@ export async function delegateApproval(opts: {
   // only delegate approvals in their own tenant.
   const { data: current, error: readErr } = await supabase
     .from('approvals')
-    .select('description, assignee_id, object_type, gate_number')
+    .select('description, assignee_id, requester_id, object_type, gate_number')
     .eq('id', opts.id)
     .eq('tenant_id', tenantId)
     .single()
 
   if (readErr) return { error: readErr.message }
   if (!current) return { error: 'Approval not found' }
+
+  // SEGREGATION OF DUTIES (gate approvals): the requester may never delegate an
+  // approval they requested, not even as an admin. Enforced before the
+  // delegate_gate_approval RPC (and before any write); the RPC re-enforces it.
+  if (
+    shouldRouteGateDecisionToRpc(current.object_type) &&
+    isRequesterSelfAction(gate.actor.userId, current.requester_id)
+  ) {
+    return { error: REQUESTER_SELF_ACTION_MESSAGE }
+  }
 
   const isAdmin = gate.actor.role && (ADMIN_ROLES as readonly string[]).includes(gate.actor.role)
 

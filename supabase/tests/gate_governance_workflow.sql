@@ -250,6 +250,115 @@ BEGIN
     RAISE NOTICE 'PASS 6: wrong-tenant decision rejected (%)', left(SQLERRM, 50);
   END;
 
+  -- ---- 7) SEGREGATION OF DUTIES: requester may not self-decide -----------
+  -- A FRESH in-review gate whose approval requester AND sole step assignee are
+  -- the SAME person (v_p1). The ONLY reason a decision can be refused is the
+  -- requester rule, and it must be refused even WITH admin override. Assert a
+  -- clean rollback: no step, approval, gate, signature, condition, event,
+  -- workflow-event, or audit mutation survives the refusal.
+  DECLARE
+    v_projS   UUID;
+    v_g3s     UUID;
+    v_apprS   UUID;
+    v_sigS    JSONB;
+    v_ev0     INT;  v_ev1     INT;
+    v_sig0    INT;  v_sig1    INT;
+    v_cond0   INT;  v_cond1   INT;
+    v_wev0    INT;  v_wev1    INT;
+    v_aud0    INT;  v_aud1    INT;
+    v_stepA0  UUID; v_stepA1  UUID;
+    v_stepS0  TEXT; v_stepS1  TEXT;
+  BEGIN
+    INSERT INTO public.projects (tenant_id, name, code, current_phase, status)
+      VALUES (v_tenant, 'ZZ Gate Gov SelfAct', 'ZZ-GGT-' || floor(random()*1e7)::text, 2, 'active')
+      RETURNING id INTO v_projS;
+    INSERT INTO public.phase_gates (project_id, phase_number, phase_name, status) VALUES
+      (v_projS, 3, 'RTB', 'in_review'), (v_projS, 4, 'IFC', 'pending');
+    SELECT id INTO v_g3s FROM public.phase_gates WHERE project_id = v_projS AND phase_number = 3;
+    UPDATE public.gate_signoffs SET status = 'signed', signed_at = now() WHERE phase_gate_id = v_g3s;
+    INSERT INTO public.gate_submissions (tenant_id, project_id, gate_number, status, submitted_by)
+      VALUES (v_tenant, v_projS, 3, 'submitted', v_p1);
+
+    -- requester = v_p1, level-1 assignee = v_p1 (self-action target)
+    v_apprS := public.create_approval_workflow_tx(
+      v_tenant, 'gate', v_projS, 'ZZ G3 self', NULL, 3, v_p1, NULL, 'normal',
+      jsonb_build_array(jsonb_build_object('level',1,'assigned_to',v_p1,'assigned_role',v_p1role))
+    );
+
+    -- snapshot pre-state
+    SELECT count(*) INTO v_ev0   FROM public.approval_events     WHERE approval_id = v_apprS;
+    SELECT count(*) INTO v_sig0  FROM public.signatures          WHERE entity_id = v_g3s;
+    SELECT count(*) INTO v_cond0 FROM public.approval_conditions WHERE approval_id = v_apprS;
+    SELECT count(*) INTO v_wev0  FROM public.workflow_events     WHERE (metadata->>'project_id') = v_projS::text;
+    SELECT count(*) INTO v_aud0  FROM public.audit_log           WHERE record_id = v_apprS::text;
+    SELECT assigned_to, status INTO v_stepA0, v_stepS0
+      FROM public.approval_steps WHERE approval_id = v_apprS ORDER BY level LIMIT 1;
+
+    v_sigS := jsonb_build_object(
+      'signer_name', 'Self Actor', 'signer_role', v_p1role,
+      'image_path', 'signatures/x/gate_approval/' || v_apprS || '-self.png',
+      'statement', 'I (the requester) endorse my own gate.', 'ip_address', '127.0.0.1'
+    );
+
+    -- (a) requester as the ASSIGNED approver (no override) -> refused
+    BEGIN
+      PERFORM public.decide_gate_approval(v_apprS, v_tenant, v_p1, 'proceed', 'self', false, NULL, v_sigS);
+      RAISE EXCEPTION 'FAIL self-decide: requester/assignee decision did NOT raise';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM LIKE '%FAIL self-decide%' THEN RAISE; END IF;
+      IF SQLERRM NOT LIKE '%segregation of duties%' THEN
+        RAISE EXCEPTION 'FAIL self-decide: wrong rejection reason: %', SQLERRM;
+      END IF;
+    END;
+
+    -- (b) requester WITH admin override -> still refused (override cannot bypass)
+    BEGIN
+      PERFORM public.decide_gate_approval(v_apprS, v_tenant, v_p1, 'proceed', 'self+override', true, NULL, v_sigS);
+      RAISE EXCEPTION 'FAIL self-decide: requester admin-override decision did NOT raise';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM LIKE '%FAIL self-decide%' THEN RAISE; END IF;
+      IF SQLERRM NOT LIKE '%segregation of duties%' THEN
+        RAISE EXCEPTION 'FAIL self-decide: wrong override rejection reason: %', SQLERRM;
+      END IF;
+    END;
+
+    -- (c) requester self-DELEGATION -> refused (even with admin override)
+    BEGIN
+      PERFORM public.delegate_gate_approval(v_apprS, v_tenant, v_p1, v_p2, 'hand off my own', true);
+      RAISE EXCEPTION 'FAIL self-delegate: requester delegation did NOT raise';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM LIKE '%FAIL self-delegate%' THEN RAISE; END IF;
+      IF SQLERRM NOT LIKE '%segregation of duties%' THEN
+        RAISE EXCEPTION 'FAIL self-delegate: wrong rejection reason: %', SQLERRM;
+      END IF;
+    END;
+
+    -- snapshot post-state and assert ZERO mutation from the three refusals
+    SELECT count(*) INTO v_ev1   FROM public.approval_events     WHERE approval_id = v_apprS;
+    SELECT count(*) INTO v_sig1  FROM public.signatures          WHERE entity_id = v_g3s;
+    SELECT count(*) INTO v_cond1 FROM public.approval_conditions WHERE approval_id = v_apprS;
+    SELECT count(*) INTO v_wev1  FROM public.workflow_events     WHERE (metadata->>'project_id') = v_projS::text;
+    SELECT count(*) INTO v_aud1  FROM public.audit_log           WHERE record_id = v_apprS::text;
+    SELECT assigned_to, status INTO v_stepA1, v_stepS1
+      FROM public.approval_steps WHERE approval_id = v_apprS ORDER BY level LIMIT 1;
+
+    IF v_ev1   <> v_ev0   THEN RAISE EXCEPTION 'FAIL self-action: approval_events changed (% -> %)', v_ev0, v_ev1; END IF;
+    IF v_sig1  <> v_sig0  THEN RAISE EXCEPTION 'FAIL self-action: signatures changed (% -> %)', v_sig0, v_sig1; END IF;
+    IF v_cond1 <> v_cond0 THEN RAISE EXCEPTION 'FAIL self-action: approval_conditions changed (% -> %)', v_cond0, v_cond1; END IF;
+    IF v_wev1  <> v_wev0  THEN RAISE EXCEPTION 'FAIL self-action: workflow_events changed (% -> %)', v_wev0, v_wev1; END IF;
+    IF v_aud1  <> v_aud0  THEN RAISE EXCEPTION 'FAIL self-action: audit_log changed (% -> %)', v_aud0, v_aud1; END IF;
+    IF v_stepA1 <> v_stepA0 OR v_stepS1 <> v_stepS0 THEN
+      RAISE EXCEPTION 'FAIL self-action: step assignee/status changed (% / % -> % / %)', v_stepA0, v_stepS0, v_stepA1, v_stepS1;
+    END IF;
+
+    SELECT status INTO v_status  FROM public.approvals   WHERE id = v_apprS;
+    IF v_status <> 'pending' THEN RAISE EXCEPTION 'FAIL self-action: approval status changed to %', v_status; END IF;
+    SELECT status INTO v_g3status FROM public.phase_gates WHERE id = v_g3s;
+    IF v_g3status <> 'in_review' THEN RAISE EXCEPTION 'FAIL self-action: gate status changed to %', v_g3status; END IF;
+
+    RAISE NOTICE 'PASS 7: requester self-decide (assignee AND admin-override) + self-delegate all refused, ZERO mutation';
+  END;
+
   RAISE NOTICE '=== ALL GATE GOVERNANCE CHECKS PASSED (rolling back) ===';
 END $$;
 
