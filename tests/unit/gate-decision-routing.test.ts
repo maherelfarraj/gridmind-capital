@@ -92,6 +92,14 @@ vi.mock('@/lib/email/send', () => ({
   // Returns a promise because the action calls .catch() on the result.
   sendApprovalDecisionEmail: vi.fn(() => Promise.resolve()),
 }))
+// The canonical staged path shape. `deleteFailedStagedSignature` only accepts
+// signatures/<tenant-id>/gate_approval/<filename>.png, so the fixture must be a
+// path the real validator would actually pass. Declared via vi.hoisted because a
+// plain top-level const cannot be referenced from a hoisted vi.mock factory.
+const { STAGED_PATH } = vi.hoisted(() => ({
+  STAGED_PATH: 'signatures/00000000-0000-0000-0000-0000000000aa/gate_approval/appr-1-1.png',
+}))
+
 vi.mock('@/app/actions/signatures', () => ({
   createSignature: vi.fn(async () => ({ id: 'sig-1' })),
   // Gate endorsements stage the signature image, then the RPC persists it
@@ -100,14 +108,14 @@ vi.mock('@/app/actions/signatures', () => ({
     staged: {
       signerName: 'Actor One',
       signerRole: 'tenant_admin',
-      imagePath: 'signatures/appr-1/sig.png',
+      imagePath: STAGED_PATH,
       ipAddress: null,
     },
   })),
 }))
 
-// Mock the secure cleanup module (server-only, not exported as a client action).
-vi.mock('@/lib/approvals/signature-cleanup', () => ({
+// Mock the canonical server-only storage module (not a client-callable action).
+vi.mock('@/lib/approvals/signature-storage', () => ({
   deleteFailedStagedSignature: vi.fn(async () => ({ removed: true })),
 }))
 
@@ -121,7 +129,7 @@ const sigDraft = {
 vi.mock('@/app/actions/phase-gates', () => ({ advanceProjectGate: vi.fn(async () => ({ error: null })) }))
 
 import { decideApproval, delegateApproval } from '@/app/actions/approvals'
-import { deleteFailedStagedSignature } from '@/lib/approvals/signature-cleanup'
+import { deleteFailedStagedSignature } from '@/lib/approvals/signature-storage'
 
 beforeEach(() => {
   state.rpcCalls.length = 0
@@ -191,12 +199,51 @@ describe('decideApproval — gate routing', () => {
     rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'sign-off pending' } }))
     await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     // Cleanup must target the exact staged path and tenant so no orphan blob survives.
-    expect(deleteFailedStagedSignature).toHaveBeenCalledWith('signatures/appr-1/sig.png', 'tenant-a')
+    expect(deleteFailedStagedSignature).toHaveBeenCalledWith(STAGED_PATH, 'tenant-a')
+  })
+
+  it('attempts cleanup EXACTLY ONCE on an RPC error', async () => {
+    rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'sign-off pending' } }))
+    await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
+    expect(deleteFailedStagedSignature).toHaveBeenCalledTimes(1)
+  })
+
+  it('attempts cleanup EXACTLY ONCE when the RPC throws', async () => {
+    rpc.mockImplementationOnce(async () => { throw new Error('connection reset') })
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
+    expect(deleteFailedStagedSignature).toHaveBeenCalledTimes(1)
+    expect(res.error).toContain('connection reset')
+  })
+
+  it('preserves BOTH the RPC error and the cleanup error', async () => {
+    rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'sign-off pending' } }))
+    ;(deleteFailedStagedSignature as unknown as { mockImplementationOnce: (f: unknown) => void })
+      .mockImplementationOnce(async () => ({ error: 'blob locked' }))
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
+    // Neither error may mask the other: the operator needs to know the decision
+    // failed AND that a staged blob was left behind.
+    expect(res.error).toContain('sign-off pending')
+    expect(res.error).toContain('blob locked')
+  })
+
+  it('never lets a THROWING cleanup replace the original decision error', async () => {
+    rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'sign-off pending' } }))
+    ;(deleteFailedStagedSignature as unknown as { mockImplementationOnce: (f: unknown) => void })
+      .mockImplementationOnce(async () => { throw new Error('cleanup exploded') })
+    const res = await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
+    expect(res.error).toContain('sign-off pending')
+    expect(res.error).toContain('cleanup exploded')
   })
 
   it('does NOT remove the staged signature on a successful decision', async () => {
     await decideApproval({ id: 'appr-1', decision: 'proceed', rationale: 'ok', signatureDraft: sigDraft })
     // A committed decision keeps its signature image (a row now references it).
+    expect(deleteFailedStagedSignature).not.toHaveBeenCalled()
+  })
+
+  it('does not clean up for a non-endorsement (reject stages no signature)', async () => {
+    rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'boom' } }))
+    await decideApproval({ id: 'appr-1', decision: 'reject', rationale: 'no' })
     expect(deleteFailedStagedSignature).not.toHaveBeenCalled()
   })
 })

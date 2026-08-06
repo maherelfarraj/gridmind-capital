@@ -4,9 +4,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 
-const BUCKET = 'documents'
 import { getCurrentTenantId } from '@/lib/tenant'
 import { requireUser, getAuthActor } from '@/lib/auth/guard'
+/**
+ * Signature blobs are owned by ONE module. This file no longer declares a bucket
+ * name of its own — a second declaration is how the upload path and the cleanup
+ * path silently drifted onto different buckets.
+ */
+import {
+  buildStagedSignaturePath,
+  createSignatureSignedUrl,
+  uploadSignatureObject,
+} from '@/lib/approvals/signature-storage'
 
 export type SignatureEntityType = 'gate_approval' | 'vo_approval' | 'client_report' | 'certificate'
 
@@ -229,10 +238,8 @@ export async function createSignature(opts: {
   const stamp = Date.now()
   const storagePath = `signatures/${actor.tenantId}/${opts.entityType}/${opts.entityId}-${stamp}.png`
 
-  const { error: upErr } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, buffer, { contentType: 'image/png', upsert: false })
-  if (upErr) return { error: upErr.message }
+  const upErr = await uploadSignatureObject(storagePath, buffer)
+  if (upErr) return { error: upErr.error }
 
   const ip = await resolveIp()
   const signerName = opts.signerName?.trim() || signer.name
@@ -256,7 +263,7 @@ export async function createSignature(opts: {
     .single()
   if (error) return { error: error.message }
 
-  const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 3600)
+  const signedUrl = await createSignatureSignedUrl(storagePath)
 
   return {
     signature: {
@@ -267,7 +274,7 @@ export async function createSignature(opts: {
       signerId: data.signer_id,
       signerName: data.signer_name,
       signerRole: data.signer_role,
-      signatureImageUrl: signed?.signedUrl ?? '',
+      signatureImageUrl: signedUrl,
       signatureImagePath: data.signature_image_path,
       signedAt: data.signed_at,
       ipAddress: data.ip_address,
@@ -292,10 +299,11 @@ export interface StagedGateSignature {
  * the RPC writes only the DB row keyed to the returned `imagePath`.
  *
  * A staged blob left behind by a FAILED decision is NOT an acceptable orphan:
- * `decideApproval` deletes it (via `removeStagedGateSignature`) whenever the RPC
- * returns an error or throws before it can commit. Only a successful, committed
- * decision keeps the blob (its `signatures` row now references it). The earlier
- * "harmless orphan" framing is retired — failed-decision blobs are cleaned up.
+ * `decideApproval` deletes it (via the server-only
+ * `deleteFailedStagedSignature` in `lib/approvals/signature-storage.ts`)
+ * whenever the RPC returns an error or throws before it can commit. Only a
+ * successful, committed decision keeps the blob (its `signatures` row now
+ * references it). The earlier "harmless orphan" framing is retired.
  */
 export async function stageGateSignatureImage(opts: {
   dataUrl: string
@@ -316,11 +324,12 @@ export async function stageGateSignatureImage(opts: {
   const buffer = Buffer.from(match[2], 'base64')
   if (buffer.byteLength > 2 * 1024 * 1024) return { error: 'Signature image too large' }
 
-  const storagePath = `signatures/${actor.tenantId}/gate_approval/${opts.entityId}-${Date.now()}.png`
-  const { error: upErr } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, buffer, { contentType: 'image/png', upsert: false })
-  if (upErr) return { error: upErr.message }
+  // Built by the canonical module so the staged path is EXACTLY the shape
+  // `deleteFailedStagedSignature` will accept — the writer and the cleaner share
+  // one definition of the path instead of two similar string templates.
+  const storagePath = buildStagedSignaturePath(actor.tenantId, opts.entityId, Date.now())
+  const upErr = await uploadSignatureObject(storagePath, buffer)
+  if (upErr) return { error: upErr.error }
 
   return {
     staged: {
@@ -333,25 +342,19 @@ export async function stageGateSignatureImage(opts: {
 }
 
 /**
- * Delete a staged gate-signature PNG from storage.
+ * NOTE: there is deliberately NO exported staged-signature delete action here.
  *
- * Called by `decideApproval` when a gate decision FAILS after the image was
- * staged (the RPC returned an error, or threw before it could commit). A staged
- * blob whose decision never committed has no `signatures` row referencing it and
- * must not linger — see `stageGateSignatureImage`. On a successful, committed
- * decision this is never called, so a real signature image is never removed.
+ * The removed action took a raw storage path and deleted it — an arbitrary-path
+ * deletion primitive reachable from any client. It authenticated the caller but
+ * never validated the path shape, never bound the path to the caller's tenant,
+ * and never checked for a committed `signatures` row, so it could be used to
+ * destroy another tenant's signature evidence.
+ *
+ * Deletion now lives ONLY in the server-only canonical module
+ * (`lib/approvals/signature-storage.ts#deleteFailedStagedSignature`), which
+ * validates the exact path shape, enforces tenant ownership, and refuses any
+ * path a committed signature row references. `decideApproval` is its only caller.
  */
-export async function removeStagedGateSignature(
-  path: string,
-): Promise<{ removed: true } | { error: string }> {
-  await requireUser()
-  if (!path?.trim()) return { error: 'No staged signature path to remove' }
-
-  const supabase = createAdminClient()
-  const { error } = await supabase.storage.from(BUCKET).remove([path])
-  if (error) return { error: error.message }
-  return { removed: true }
-}
 
 async function toRecords(
   supabase: ReturnType<typeof createAdminClient>,
@@ -360,7 +363,7 @@ async function toRecords(
   return Promise.all(
     rows.map(async (r) => {
       const path = r.signature_image_path as string
-      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600)
+      const signedUrl = await createSignatureSignedUrl(path)
       return {
         id: r.id as string,
         entityType: r.entity_type as SignatureEntityType,
@@ -369,7 +372,7 @@ async function toRecords(
         signerId: r.signer_id as string,
         signerName: r.signer_name as string,
         signerRole: (r.signer_role as string) ?? null,
-        signatureImageUrl: signed?.signedUrl ?? '',
+        signatureImageUrl: signedUrl,
         signatureImagePath: path,
         signedAt: r.signed_at as string,
         ipAddress: (r.ip_address as string) ?? null,

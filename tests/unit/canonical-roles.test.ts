@@ -33,6 +33,17 @@ describe('canonical role source', () => {
     expect(guard).not.toMatch(/const\s+DB_USER_ROLES/)
   })
 
+  it('guard.ts APPROVER_ROLES is an ALIAS, not a duplicated literal', () => {
+    const guard = readCode('lib/auth/guard.ts')
+
+    // A byte-identical duplicate is still a second source of truth: editing one
+    // copy would silently authorize a different population in the guard than in
+    // the delegate pool and the gate RPCs. Require the alias form specifically.
+    expect(guard).toMatch(/APPROVER_ROLES:\s*readonly DbUserRole\[\]\s*=\s*GATE_APPROVER_ROLES/)
+    // ...and forbid re-listing the members inline.
+    expect(guard).not.toMatch(/APPROVER_ROLES[^\n]*=\s*\[/)
+  })
+
   it('guard.ts does not reimplement isDbUserRole', () => {
     const guard = readCode('lib/auth/guard.ts')
 
@@ -81,6 +92,15 @@ describe('canonical role source', () => {
     const guard = await import('@/lib/auth/guard')
 
     expect(guard.isDbUserRole).toBe(isDbUserRole)
+  })
+
+  it('guard.APPROVER_ROLES IS the canonical GATE_APPROVER_ROLES object', async () => {
+    const guard = await import('@/lib/auth/guard')
+    const { GATE_APPROVER_ROLES } = await import('@/lib/auth/roles')
+
+    // Reference identity, not deep equality: a copied array can drift, the same
+    // object cannot. This is what makes the two sets impossible to desynchronize.
+    expect(guard.APPROVER_ROLES).toBe(GATE_APPROVER_ROLES)
   })
 })
 

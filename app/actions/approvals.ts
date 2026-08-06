@@ -7,7 +7,7 @@ import { DB_ADMIN_ROLES, GATE_APPROVER_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
 import { createSignature, stageGateSignatureImage, type SignatureDraft } from '@/app/actions/signatures'
-import { deleteFailedStagedSignature } from '@/lib/approvals/signature-cleanup'
+import { deleteFailedStagedSignature } from '@/lib/approvals/signature-storage'
 import {
   mapOpportunityApprovalDetail,
   type OpportunityApprovalView,
@@ -1051,6 +1051,33 @@ export async function decideApproval(opts: {
       }
     }
 
+    // ── Failure boundary for the staged signature ────────────────────────────
+    // The decision either COMMITS or it does not. On any non-commit (RPC error
+    // OR thrown exception) the staged blob has no row referencing it and must be
+    // removed EXACTLY ONCE. Both failure modes funnel through this single helper
+    // so the RPC-error branch and the throw branch can never both fire, and the
+    // ORIGINAL decision error is always preserved alongside any cleanup error —
+    // neither is allowed to mask the other.
+    let cleanupAttempted = false
+    const failWithCleanup = async (decisionError: string): Promise<{ error: string }> => {
+      let cleanupError: string | null = null
+      if (signatureJson && !cleanupAttempted) {
+        cleanupAttempted = true
+        try {
+          const cleanupResult = await deleteFailedStagedSignature(
+            signatureJson.image_path,
+            approval.tenant_id,
+          )
+          if ('error' in cleanupResult) cleanupError = cleanupResult.error
+        } catch (cleanupEx: any) {
+          // A throwing cleanup must never replace the decision error.
+          cleanupError = `Cleanup threw: ${cleanupEx?.message ?? 'unknown error'}`
+        }
+      }
+      const errors = [decisionError, cleanupError].filter(Boolean).join('; ')
+      return { error: `Gate decision failed: ${errors}` }
+    }
+
     let rpcOutcome: unknown
     try {
       const { data, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
@@ -1063,42 +1090,14 @@ export async function decideApproval(opts: {
         p_conditions: conditionsJson,
         p_signature: signatureJson,
       })
-      if (rpcErr) {
-        // The decision did NOT commit, so any staged signature image must be cleaned up.
-        // If cleanup also fails, return BOTH errors so the caller knows about both problems.
-        let cleanupError: string | null = null
-        if (signatureJson) {
-          const cleanupResult = await deleteFailedStagedSignature(
-            signatureJson.image_path,
-            approval.tenant_id,
-          )
-          if ('error' in cleanupResult) {
-            cleanupError = cleanupResult.error
-          }
-        }
-        const errors = [rpcErr.message, cleanupError].filter(Boolean).join('; ')
-        return { error: `Gate decision failed: ${errors}` }
-      }
+      if (rpcErr) return await failWithCleanup(rpcErr.message)
       rpcOutcome = data
     } catch (e: any) {
-      // An exception before/at the RPC also means no committed decision — attempt cleanup.
-      let cleanupError: string | null = null
-      if (signatureJson) {
-        try {
-          const cleanupResult = await deleteFailedStagedSignature(
-            signatureJson.image_path,
-            approval.tenant_id,
-          )
-          if ('error' in cleanupResult) {
-            cleanupError = cleanupResult.error
-          }
-        } catch (cleanupEx: any) {
-          cleanupError = `Cleanup threw: ${cleanupEx?.message}`
-        }
-      }
-      const errors = [e?.message ?? 'unknown error', cleanupError].filter(Boolean).join('; ')
-      return { error: `Gate decision failed: ${errors}` }
+      return await failWithCleanup(e?.message ?? 'unknown error')
     }
+
+    // Past this point the decision COMMITTED. Cleanup is never reachable, so a
+    // real signature image can never be removed.
 
     // Best-effort notification only for a finalized decision.
     if (rpcOutcome === 'approved' || rpcOutcome === 'rejected') {
@@ -1668,32 +1667,44 @@ export async function getEligibleDelegates(approvalId: string): Promise<Eligible
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('id, tenant_id, assignee_id, status')
+    .select('id, tenant_id, status')
     .eq('id', approvalId)
     .eq('tenant_id', actor.tenantId)
     .single()
   if (!approval) return []
 
-  // AUTHORIZATION: Only the current step's assignee or a platform admin may
-  // retrieve the delegate list. This prevents unrelated viewers from discovering
-  // other approvers and delegating inappropriately.
-  const isCurrentAssignee = approval.assignee_id === actor.userId
-  const isAdmin = ADMIN_ROLES.includes(actor.role ?? '')
-  if (!isCurrentAssignee && !isAdmin) {
-    // Return empty list for unauthorized viewers (silent deny, not an error).
-    return []
-  }
-
-  // Required role = the current (lowest-level) pending step's assigned_role.
+  // The CURRENT (lowest-level) pending step is the sole authority on who may act
+  // now. It supplies BOTH the authorization identity (`assigned_to`) and the
+  // required role for the candidate pool (`assigned_role`).
   const { data: currentStep } = await supabase
     .from('approval_steps')
-    .select('assigned_role')
+    .select('assigned_to, assigned_role')
     .eq('approval_id', approvalId)
     .eq('tenant_id', actor.tenantId)
     .eq('status', 'pending')
     .order('level')
     .limit(1)
     .maybeSingle()
+
+  // No pending step ⇒ nothing is actionable, so there is nobody to delegate to.
+  // Returning [] here also means an already-decided approval never discloses the
+  // tenant's approver roster.
+  if (!currentStep) return []
+
+  // AUTHORIZATION: only the CURRENT STEP's assignee, or a platform admin, may
+  // retrieve the delegate list. `approvals.assignee_id` is NOT used: it is a
+  // denormalized convenience column that lags the step machine (it is stale
+  // mid-progression and after a delegation), so authorizing on it could both
+  // deny the person who is genuinely actionable and admit someone who no longer
+  // is. `approval_steps.assigned_to` is the value `delegate_gate_approval`
+  // itself locks and checks, so this matches the RPC's own boundary.
+  const isCurrentAssignee =
+    !!currentStep.assigned_to && currentStep.assigned_to === actor.userId
+  const isAdmin = ADMIN_ROLES.includes(actor.role ?? '')
+  if (!isCurrentAssignee && !isAdmin) {
+    // Silent deny (empty list, not an error) — do not disclose that a roster exists.
+    return []
+  }
 
   // Candidate pool: active same-tenant profiles that can act on approvals.
   const { data: profiles } = await supabase
@@ -1713,10 +1724,12 @@ export async function getEligibleDelegates(approvalId: string): Promise<Eligible
 
   const eligible = filterEligibleDelegates(candidates, {
     tenantId: actor.tenantId,
-    requiredRole: currentStep?.assigned_role ?? null,
+    requiredRole: currentStep.assigned_role ?? null,
     approverRoles: APPROVER_ENUM_ROLES,
     adminRoles: ADMIN_ROLES as readonly string[],
-    excludeId: approval.assignee_id ?? null,
+    // Exclude the CURRENT STEP's assignee — delegating a step to the person
+    // already holding it is the no-op the RPC rejects.
+    excludeId: currentStep.assigned_to ?? null,
   })
 
   return eligible.map((c) => ({

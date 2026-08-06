@@ -52,7 +52,7 @@ vi.mock('@/lib/auth/guard', () => ({
 }))
 vi.mock('@/lib/email/send', () => ({ sendApprovalRequestEmail: vi.fn(), sendApprovalDecisionEmail: vi.fn() }))
 vi.mock('@/app/actions/signatures', () => ({
-  createSignature: vi.fn(), stageGateSignatureImage: vi.fn(), removeStagedGateSignature: vi.fn(),
+  createSignature: vi.fn(), stageGateSignatureImage: vi.fn(),
 }))
 vi.mock('@/app/actions/phase-gates', () => ({ advanceProjectGate: vi.fn(async () => ({ error: null })) }))
 
@@ -98,4 +98,51 @@ describe('getOpportunityApprovalDetail hard gate guard', () => {
     const res = await getOpportunityApprovalDetail('appr-1')
     expect(res).toBeNull()
   })
+})
+
+/**
+ * UNSUPPORTED ROUTING.
+ *
+ * `purchase_order` and `change_order` are real object_types with no governed
+ * detail view. They must route to `kind:'unsupported'` and carry the type
+ * through, NOT fall through to the opportunity loader — mapping a purchase order
+ * into the G0 view would present an ungoverned decision surface for an approval
+ * this page cannot represent.
+ */
+describe('unsupported approval types', () => {
+  const unsupportedRow = (objectType: string) => ({
+    id: `appr-${objectType}`, tenant_id: 'tenant-a', object_type: objectType,
+    object_id: 'obj-1', gate_number: null, title: objectType, status: 'pending',
+    priority: 'normal', created_at: '2026-01-01', description: null,
+    requester_id: null, assignee_id: 'u1', amount: 500,
+  })
+
+  it.each(['purchase_order', 'change_order'])(
+    'routes %s to kind:"unsupported" with the object type preserved',
+    async (objectType) => {
+      state.approvalRow = unsupportedRow(objectType)
+      const res = await getApprovalDetailRouted(`appr-${objectType}`)
+      expect(res.kind).toBe('unsupported')
+      if (res.kind === 'unsupported') expect(res.objectType).toBe(objectType)
+    },
+  )
+
+  it.each(['purchase_order', 'change_order'])(
+    'never routes %s through the gate or opportunity path',
+    async (objectType) => {
+      state.approvalRow = unsupportedRow(objectType)
+      const res = await getApprovalDetailRouted(`appr-${objectType}`)
+      expect(res.kind).not.toBe('gate')
+      expect(res.kind).not.toBe('opportunity')
+    },
+  )
+
+  it.each(['purchase_order', 'change_order'])(
+    'the opportunity loader itself refuses %s (defense in depth)',
+    async (objectType) => {
+      state.approvalRow = unsupportedRow(objectType)
+      const res = await getOpportunityApprovalDetail(`appr-${objectType}`)
+      expect(res).toBeNull()
+    },
+  )
 })
