@@ -16,10 +16,15 @@
 --     -f scripts/g3-smoke-fixture.teardown.sql
 --
 -- STORAGE IS NOT HANDLED HERE. Signature BLOBS live in the `documents` bucket
--- and SQL cannot delete them. Run scripts/g3-smoke-fixture.teardown.ts instead,
--- which removes the validated storage objects FIRST and then executes this
--- file — deleting the rows first would discard the only record of which paths
--- to remove, permanently orphaning the blobs.
+-- and SQL cannot delete them. Run scripts/g3-smoke-fixture.teardown.ts instead:
+-- it removes the validated storage objects FIRST and then performs the same
+-- deletions ITSELF over supabase-js. It does NOT execute this file (there is no
+-- psql/pg driver in the CI environment), so this file is the reference form and
+-- the runner is the executable one. A drift test asserts both cover the same
+-- tables in the same relative order as TEARDOWN_DELETE_ORDER.
+--
+-- Deleting the rows before the blobs would discard the only record of which
+-- paths to remove, permanently orphaning them.
 --
 -- DELETE ORDER MATTERS. `projects` and `approvals` carry AFTER DELETE audit
 -- triggers that INSERT a delete-row into audit_log. So we delete those tables

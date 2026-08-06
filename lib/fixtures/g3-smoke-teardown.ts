@@ -96,11 +96,16 @@ export type StorageCleanupPlan =
  * silently ignoring it would let the teardown report success while leaving a
  * blob behind (or, worse, mask a path we should never have stored).
  *
- * Non-gate signature rows (e.g. `client_report`) are skipped rather than
- * failed: they use a different context segment, so the gate validator does not
- * apply to them, and the fixture never creates them.
+ * A NON-GATE row that still carries a non-empty path is a HARD FAILURE, not a
+ * skip. The database step deletes every signature row for this project
+ * unconditionally, so skipping such a row would delete the row while leaving
+ * its blob behind — precisely the orphan this teardown exists to prevent. The
+ * G3 fixture only ever creates `gate_approval` signatures, so any other
+ * entity_type carrying a path is unexpected contamination and must stop the
+ * run rather than be quietly tolerated.
  *
- * A row with no path at all is skipped — there is no object to remove.
+ * A row with a null/empty path is a genuine row-only cleanup case and is
+ * skipped: there is no object to remove, so deleting the row orphans nothing.
  */
 export function planSignatureStorageCleanup(
   rows: readonly SignatureRowForCleanup[],
@@ -110,13 +115,20 @@ export function planSignatureStorageCleanup(
   const skipped: { id: string; reason: string }[] = []
 
   for (const row of rows) {
-    if (!row.signature_image_path) {
-      skipped.push({ id: row.id, reason: 'no signature_image_path' })
+    // Row-only cleanup: no blob exists, so the later row delete orphans nothing.
+    if (!row.signature_image_path || !row.signature_image_path.trim()) {
+      skipped.push({ id: row.id, reason: 'no signature_image_path (row-only cleanup)' })
       continue
     }
     if (row.entity_type !== 'gate_approval') {
-      skipped.push({ id: row.id, reason: `non-gate entity_type ${row.entity_type ?? 'null'}` })
-      continue
+      return {
+        ok: false,
+        error:
+          `Refusing teardown: signature ${row.id} has entity_type ` +
+          `${row.entity_type ?? 'null'} with a stored path (${row.signature_image_path}). ` +
+          `The G3 fixture only creates gate_approval signatures, so this is unexpected ` +
+          `fixture contamination — deleting the row would orphan its blob.`,
+      }
     }
 
     const validation = validateStagedSignaturePath(row.signature_image_path, tenantId)
