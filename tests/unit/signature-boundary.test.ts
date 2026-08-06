@@ -81,12 +81,35 @@ describe('one canonical bucket owner', () => {
   })
 
   it('the canonical module declares the documents bucket exactly once', () => {
+    // The bucket literal moved to `signature-path.ts` so the teardown CLI can
+    // import it without tripping `server-only`. It must still be declared in
+    // exactly ONE place — a script-local copy is the same drift that broke
+    // deletion when the upload and cleanup paths named different buckets.
     const canonical = withSource.find((f) =>
-      f.path.endsWith(join('lib', 'approvals', 'signature-storage.ts')),
+      f.path.endsWith(join('lib', 'approvals', 'signature-path.ts')),
     )
     expect(canonical).toBeDefined()
     const declarations = canonical!.text.match(/SIGNATURE_BUCKET\s*=\s*'[^']+'/g) ?? []
     expect(declarations).toEqual(["SIGNATURE_BUCKET = 'documents'"])
+  })
+
+  it('NO other file in the repository assigns a signature bucket literal', () => {
+    // Stronger than checking one file: proves the constant was MOVED, not COPIED.
+    const offenders = others
+      .filter((f) => !f.path.endsWith(join('lib', 'approvals', 'signature-path.ts')))
+      .filter((f) => /SIGNATURE_BUCKET\s*=\s*'/.test(f.text))
+      .map((f) => f.path.replace(ROOT + '/', ''))
+    expect(offenders).toEqual([])
+  })
+
+  it('signature-storage re-exports the canonical rules rather than redefining them', () => {
+    const storage = withSource.find((f) =>
+      f.path.endsWith(join('lib', 'approvals', 'signature-storage.ts')),
+    )
+    expect(storage).toBeDefined()
+    expect(storage!.text).toMatch(/export\s*{[\s\S]*SIGNATURE_BUCKET[\s\S]*}\s*from\s*'\.\/signature-path'/)
+    // The validator must not be re-implemented alongside the re-export.
+    expect(storage!.text).not.toMatch(/export function validateStagedSignaturePath/)
   })
 })
 

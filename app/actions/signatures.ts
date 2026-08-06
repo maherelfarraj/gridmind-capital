@@ -6,6 +6,7 @@ import { headers } from 'next/headers'
 
 import { getCurrentTenantId } from '@/lib/tenant'
 import { requireUser, getAuthActor } from '@/lib/auth/guard'
+import { isPlatformAdminRole } from '@/lib/auth/roles'
 /**
  * Signature blobs are owned by ONE module. This file no longer declares a bucket
  * name of its own — a second declaration is how the upload path and the cleanup
@@ -114,21 +115,42 @@ export interface OrphanedSignature {
   signerName: string
   signedAt: string
   ageDays: number
+  /**
+   * How the signature's parent approval was resolved:
+   *   - `phase_gate` — the CANONICAL v4 identity (entity_id = phase_gates.id)
+   *   - `legacy_approval` — a pre-v4 row keyed directly to approvals.id
+   * Surfaced so an operator can tell a genuine regression from a historical row.
+   */
+  resolvedVia: 'phase_gate' | 'legacy_approval'
 }
 
 /**
- * REPORT (never delete) `gate_approval` signatures whose parent approval is still
- * undecided after `olderThanDays`.
+ * REPORT (never delete) `gate_approval` signatures whose parent approval is
+ * still undecided.
  *
- * Deliberately read-only. `signatures` is an append-only legal record: a row means
- * a real person put pen to paper, and we cannot distinguish "abandoned draft" from
- * "signed, decision still pending" with certainty. Deleting would also destroy the
- * only evidence that the signing happened at all.
+ * SECURITY: this runs on the RLS-BYPASSING admin client, so it MUST authorize
+ * and tenant-scope itself — RLS will not do it. Previously this function did
+ * NEITHER: it was an exported server action that any caller could invoke to
+ * enumerate every tenant's signer names and signing times. It now requires an
+ * authenticated `system_admin` or `tenant_admin`, and every query below is
+ * filtered to that caller's tenant. Unauthorized callers get an empty list
+ * (silent deny) rather than a message confirming rows exist.
  *
- * Orphans are now PREVENTED at the source (SignaturePad defers, and createSignature
- * refuses gate_approval writes outside a decision), so this should return an empty
- * list going forward. It exists to surface the historical rows and to detect any
- * regression that starts producing new ones.
+ * IDENTITY: `decide_gate_approval` v4 writes gate signatures with
+ * `entity_id = phase_gates.id`, NOT `approvals.id`. Resolving straight to
+ * `approvals.id` — as this function used to — therefore matches NOTHING for
+ * canonically-written rows, so it would have reported a clean system while real
+ * orphans existed. The canonical path is now:
+ *
+ *     signatures.entity_id -> phase_gates.id -> project_id + phase_number
+ *                          -> matching gate approval
+ *
+ * A separate, explicitly-flagged compatibility path still resolves pre-v4 rows
+ * that were keyed directly to an approval id.
+ *
+ * Deliberately read-only. `signatures` is an append-only legal record: a row
+ * means a real person put pen to paper, and we cannot distinguish "abandoned
+ * draft" from "signed, decision still pending" with certainty.
  */
 export async function findOrphanedGateSignatures(
   // Default 0 = report EVERY undecided-parent signature regardless of age.
@@ -136,12 +158,24 @@ export async function findOrphanedGateSignatures(
   // an age window silently hides exactly the rows this is meant to surface.
   // Pass a positive value only to ask "which are older than N days?".
   olderThanDays = 0,
+  opts: { includeLegacyApprovalKeyed?: boolean } = {},
 ): Promise<{ orphans: OrphanedSignature[] } | { error: string }> {
+  // (1) Authenticate. An unauthenticated caller learns nothing.
+  const res = await getAuthActor()
+  if ('error' in res) return { orphans: [] }
+  const { actor } = res
+
+  // (2) Authorize. This is an operational diagnostic over signer identities;
+  //     only platform/tenant administrators may run it.
+  if (!isPlatformAdminRole(actor.role)) return { orphans: [] }
+
   const supabase = createAdminClient()
 
+  // (3) Signatures, ALWAYS tenant-scoped.
   let sigQuery = supabase
     .from('signatures')
     .select('id, entity_id, signer_name, signed_at')
+    .eq('tenant_id', actor.tenantId)
     .eq('entity_type', 'gate_approval')
   // Only apply an age window when one was explicitly requested.
   if (olderThanDays > 0) {
@@ -152,31 +186,85 @@ export async function findOrphanedGateSignatures(
   if (error) return { error: error.message }
   if (!sigs?.length) return { orphans: [] }
 
-  // `signatures.entity_id` is POLYMORPHIC (no FK), so resolve parents explicitly.
+  const entityIds = Array.from(new Set(sigs.map((s) => s.entity_id)))
+
+  // (4) CANONICAL: entity_id -> phase_gates (tenant-verified via the project).
+  //     `phase_gates` has NO tenant_id column, so it is scoped through its
+  //     tenant-owned project — never by a direct tenant filter.
+  const { data: gates, error: gateErr } = await supabase
+    .from('phase_gates')
+    .select('id, project_id, phase_number')
+    .in('id', entityIds)
+  if (gateErr) return { error: gateErr.message }
+
+  const { data: projects, error: projErr } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('tenant_id', actor.tenantId)
+    .in('id', Array.from(new Set((gates ?? []).map((g) => g.project_id))))
+  if (projErr) return { error: projErr.message }
+
+  // A gate whose project belongs to ANOTHER tenant is dropped outright. It is
+  // not "an orphan we cannot resolve" — it is simply not this caller's row, and
+  // surfacing it would leak cross-tenant existence.
+  const ownedProjects = new Set((projects ?? []).map((p) => p.id))
+  const ownedGates = (gates ?? []).filter((g) => ownedProjects.has(g.project_id))
+
+  // (5) Parent approvals, tenant-scoped. Gate approvals key on
+  //     object_id = project id + gate_number = phase_number.
   const { data: approvals, error: apprErr } = await supabase
     .from('approvals')
-    .select('id, title, decided_at')
-    .in('id', Array.from(new Set(sigs.map((s) => s.entity_id))))
+    .select('id, title, decided_at, object_id, gate_number')
+    .eq('tenant_id', actor.tenantId)
+    .eq('object_type', 'gate')
   if (apprErr) return { error: apprErr.message }
 
   // decided_at IS NULL is the reliable test for "no decision was ever recorded".
   // `status` cannot be used: 'pending' is also the resting state of a live approval.
-  const undecided = new Map(
-    (approvals ?? []).filter((a) => a.decided_at === null).map((a) => [a.id, a]),
-  )
-
-  return {
-    orphans: sigs
-      .filter((s) => undecided.has(s.entity_id))
-      .map((s) => ({
-        signatureId:   s.id,
-        approvalId:    s.entity_id,
-        approvalTitle: undecided.get(s.entity_id)?.title ?? null,
-        signerName:    s.signer_name,
-        signedAt:      s.signed_at,
-        ageDays:       Math.floor((Date.now() - new Date(s.signed_at).getTime()) / 86400000),
-      })),
+  const undecidedByGateKey = new Map<string, { id: string; title: string | null }>()
+  const undecidedById = new Map<string, { id: string; title: string | null }>()
+  for (const a of approvals ?? []) {
+    if (a.decided_at !== null) continue
+    undecidedById.set(a.id, { id: a.id, title: a.title ?? null })
+    if (a.object_id && a.gate_number !== null && a.gate_number !== undefined) {
+      undecidedByGateKey.set(`${a.object_id}:${a.gate_number}`, { id: a.id, title: a.title ?? null })
+    }
   }
+
+  const gateById = new Map(ownedGates.map((g) => [g.id, g]))
+  const orphans: OrphanedSignature[] = []
+
+  for (const s of sigs) {
+    const gate = gateById.get(s.entity_id)
+    let parent: { id: string; title: string | null } | undefined
+    let resolvedVia: 'phase_gate' | 'legacy_approval'
+
+    if (gate) {
+      parent = undecidedByGateKey.get(`${gate.project_id}:${gate.phase_number}`)
+      resolvedVia = 'phase_gate'
+    } else if (opts.includeLegacyApprovalKeyed) {
+      // COMPATIBILITY PATH (opt-in): pre-v4 rows keyed straight to approvals.id.
+      // Off by default so canonical results are never silently mixed with
+      // legacy ones. `undecidedById` is already tenant-scoped.
+      parent = undecidedById.get(s.entity_id)
+      resolvedVia = 'legacy_approval'
+    } else {
+      continue
+    }
+
+    if (!parent) continue
+    orphans.push({
+      signatureId:   s.id,
+      approvalId:    parent.id,
+      approvalTitle: parent.title,
+      signerName:    s.signer_name,
+      signedAt:      s.signed_at,
+      ageDays:       Math.floor((Date.now() - new Date(s.signed_at).getTime()) / 86400000),
+      resolvedVia,
+    })
+  }
+
+  return { orphans }
 }
 
 /**
