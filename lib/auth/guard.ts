@@ -5,6 +5,7 @@ import {
   type ResolvedActor,
 } from '@/lib/auth/actor'
 import {
+  GATE_APPROVER_ROLES,
   isDbUserRole,
   isWriterRole,
   PLATFORM_ADMIN_ROLES,
@@ -50,14 +51,17 @@ export type GuardResult = { actor: AuthActor } | { error: string }
  */
 export const ADMIN_ROLES: readonly DbUserRole[] = PLATFORM_ADMIN_ROLES
 
-/** Roles allowed to decide/delegate approvals. */
-export const APPROVER_ROLES: readonly DbUserRole[] = [
-  'system_admin',
-  'tenant_admin',
-  'project_director',
-  'project_manager',
-  'finance_manager',
-]
+/**
+ * Roles allowed to decide/delegate approvals.
+ *
+ * ALIASED (never re-declared) to the canonical `GATE_APPROVER_ROLES` in
+ * `lib/auth/roles.ts`. This module owns no role list — a duplicated literal here
+ * was byte-identical to the canonical set only by luck, and any future change to
+ * one copy would silently authorize a different population in the guard than in
+ * the delegate pool and the `decide_gate_approval` / `delegate_gate_approval`
+ * RPCs. With an alias there is exactly one set and drift is impossible.
+ */
+export const APPROVER_ROLES: readonly DbUserRole[] = GATE_APPROVER_ROLES
 
 /**
  * Resolve the authenticated caller and their profile role.

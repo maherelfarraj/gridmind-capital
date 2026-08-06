@@ -29,11 +29,18 @@ export default function ApprovalDetailPage() {
     { revalidateOnFocus: false },
   )
 
-  // Signatures, resolved per approval kind: a GATE reads via the canonical
-  // phase-gate identity (the id the decision RPC signs against); a G0/opportunity
-  // reads by its approval id. Both readers are tenant-scoped server-side.
+  // Signatures are requested ONLY for the two kinds that can render them: a GATE
+  // reads via the canonical phase-gate identity (the id the decision RPC signs
+  // against), a G0/opportunity reads by its approval id. Both readers are
+  // tenant-scoped server-side.
+  //
+  // 'unsupported' (purchase_order, change_order, project_charter, …) and
+  // 'not_found' MUST NOT fetch: an unsupported type has no governed signature
+  // surface, renders no signature UI, and asking for one would issue a
+  // pointless privileged read for an approval kind this view cannot represent.
+  const canLoadSignatures = routed?.kind === 'gate' || routed?.kind === 'opportunity'
   const { data: signatures = [] } = useSWR(
-    id && routed && routed.kind !== 'not_found' ? `approval-signatures-${routed.kind}-${id}` : null,
+    id && canLoadSignatures ? `approval-signatures-${routed!.kind}-${id}` : null,
     () =>
       routed?.kind === 'gate'
         ? getGateApprovalSignatures(id)
