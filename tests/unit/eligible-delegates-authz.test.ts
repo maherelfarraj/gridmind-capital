@@ -158,3 +158,77 @@ describe('returns [] when there is no pending step', () => {
     expect(await getEligibleDelegates('appr-1')).toEqual([])
   })
 })
+
+/**
+ * Integration/action-level segregation of duties: the roster must never contain
+ * the approval's REQUESTER, the current-step assignee, or the authenticated
+ * actor — even when the requester holds a privileged (admin) role that would
+ * otherwise pass the admin branch. Uses DISTINCT requester / assignee / delegate
+ * UUIDs so no single omission can pass vacuously.
+ */
+const REQUESTER = '00000000-0000-0000-0000-00000000b001'
+const ASSIGNEE = '00000000-0000-0000-0000-00000000b002'
+const DELEGATE = '00000000-0000-0000-0000-00000000b003'
+const DELEGATE2 = '00000000-0000-0000-0000-00000000b004'
+
+describe('excludes requester, current-step assignee, and actor from the roster', () => {
+  beforeEach(() => {
+    // Actor is the current step assignee (authorized). Requester is a DIFFERENT
+    // person who also happens to be a tenant_admin (the production leak shape).
+    state.actor = { userId: ASSIGNEE, role: 'project_manager', tenantId: 'tenant-a' }
+    state.approvalRow = { id: 'appr-9', tenant_id: 'tenant-a', status: 'pending', requester_id: REQUESTER }
+    state.stepRow = { assigned_to: ASSIGNEE, assigned_role: 'project_manager' }
+    state.profiles = [
+      { id: REQUESTER, tenant_id: 'tenant-a', full_name: 'Requester Admin', role: 'tenant_admin', is_active: true },
+      { id: ASSIGNEE, tenant_id: 'tenant-a', full_name: 'Assignee', role: 'project_manager', is_active: true },
+      { id: DELEGATE, tenant_id: 'tenant-a', full_name: 'Eligible PM', role: 'project_manager', is_active: true },
+      { id: DELEGATE2, tenant_id: 'tenant-a', full_name: 'Eligible Admin', role: 'tenant_admin', is_active: true },
+    ]
+  })
+
+  it('returns a NON-EMPTY roster (exclusions are not vacuous)', async () => {
+    const ids = (await getEligibleDelegates('appr-9')).map((d) => d.id)
+    expect(ids.length).toBeGreaterThan(0)
+    expect(ids).toContain(DELEGATE) // matching-role non-admin remains available
+    expect(ids).toContain(DELEGATE2) // a different eligible tenant_admin remains
+  })
+
+  it('NEVER includes the requester (tenant_admin)', async () => {
+    const ids = (await getEligibleDelegates('appr-9')).map((d) => d.id)
+    expect(ids).not.toContain(REQUESTER)
+  })
+
+  it('NEVER includes the requester when they are a system_admin', async () => {
+    state.profiles = state.profiles.map((p) =>
+      p.id === REQUESTER ? { ...p, role: 'system_admin' } : p,
+    )
+    const ids = (await getEligibleDelegates('appr-9')).map((d) => d.id)
+    expect(ids).not.toContain(REQUESTER)
+    expect(ids.length).toBeGreaterThan(0)
+  })
+
+  it('NEVER includes the current-step assignee', async () => {
+    const ids = (await getEligibleDelegates('appr-9')).map((d) => d.id)
+    expect(ids).not.toContain(ASSIGNEE)
+  })
+
+  it('NEVER includes the authenticated actor (admin override case)', async () => {
+    // A platform admin who is ALSO the requester views the roster: they must not
+    // see themselves, and must not see the requester (which is themselves here).
+    state.actor = { userId: REQUESTER, role: 'tenant_admin', tenantId: 'tenant-a' }
+    const ids = (await getEligibleDelegates('appr-9')).map((d) => d.id)
+    expect(ids).not.toContain(REQUESTER)
+    expect(ids.length).toBeGreaterThan(0) // still offers the genuine delegates
+  })
+
+  it('still excludes unrelated-role, inactive, and cross-tenant candidates', async () => {
+    state.profiles = [
+      { id: DELEGATE, tenant_id: 'tenant-a', full_name: 'Eligible PM', role: 'project_manager', is_active: true },
+      { id: '00000000-0000-0000-0000-00000000b010', tenant_id: 'tenant-a', full_name: 'Viewer', role: 'viewer', is_active: true },
+      { id: '00000000-0000-0000-0000-00000000b011', tenant_id: 'tenant-a', full_name: 'Inactive PM', role: 'project_manager', is_active: false },
+      { id: '00000000-0000-0000-0000-00000000b012', tenant_id: 'tenant-b', full_name: 'Foreign PM', role: 'project_manager', is_active: true },
+    ]
+    const ids = (await getEligibleDelegates('appr-9')).map((d) => d.id)
+    expect(ids).toEqual([DELEGATE])
+  })
+})

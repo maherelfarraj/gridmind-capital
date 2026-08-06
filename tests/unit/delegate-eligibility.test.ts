@@ -25,6 +25,7 @@ const ctx: EligibilityContext = {
   requiredRole: 'project_manager',
   approverRoles: ['project_manager', 'tenant_admin', 'system_admin', 'project_director'],
   adminRoles: ['system_admin', 'tenant_admin'],
+  excludedIds: [],
 }
 
 const cand = (over: Partial<DelegateCandidate>): DelegateCandidate => ({
@@ -75,8 +76,21 @@ describe('isEligibleDelegate', () => {
     expect(isEligibleDelegate(cand({ id: U2, role: 'project_director' }), ctx)).toBe(false)
   })
 
-  it('excludes the current approver (excludeId)', () => {
-    expect(isEligibleDelegate(cand({ id: U1 }), { ...ctx, excludeId: U1 })).toBe(false)
+  it('excludes any id in excludedIds, even an otherwise-eligible one', () => {
+    expect(isEligibleDelegate(cand({ id: U1 }), { ...ctx, excludedIds: [U1] })).toBe(false)
+  })
+
+  it('excludes an admin-role id when it is in excludedIds (no role re-admit)', () => {
+    // A tenant_admin would normally pass the admin branch; being excluded wins.
+    expect(
+      isEligibleDelegate(cand({ id: U1, role: 'tenant_admin' }), { ...ctx, excludedIds: [U1] }),
+    ).toBe(false)
+  })
+
+  it('ignores null / blank entries in excludedIds', () => {
+    expect(
+      isEligibleDelegate(cand({ id: U1 }), { ...ctx, excludedIds: [null as any, '', '   ', U2] }),
+    ).toBe(true)
   })
 })
 
@@ -88,7 +102,17 @@ describe('filterEligibleDelegates', () => {
       cand({ id: U2, role: 'tenant_admin' }), // eligible (admin)
       cand({ id: U3, role: 'viewer' }), // not an approver
     ]
-    const out = filterEligibleDelegates(list, { ...ctx, excludeId: 'someone-else' })
+    const out = filterEligibleDelegates(list, { ...ctx, excludedIds: ['someone-else'] })
     expect(out.map((c) => c.id)).toEqual([U1, U2])
+  })
+
+  it('drops every excluded id while keeping the rest (multi-exclusion)', () => {
+    const list: DelegateCandidate[] = [
+      cand({ id: U1, role: 'project_manager' }), // excluded below
+      cand({ id: U2, role: 'tenant_admin' }), // excluded below
+      cand({ id: U3, role: 'project_manager' }), // survives
+    ]
+    const out = filterEligibleDelegates(list, { ...ctx, excludedIds: [U1, U2] })
+    expect(out.map((c) => c.id)).toEqual([U3])
   })
 })
