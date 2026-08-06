@@ -1699,8 +1699,9 @@ export interface EligibleDelegate {
  * hard-coded five fake emails the picker used to render. Resolves the approval's
  * tenant + the CURRENT pending step's required role, loads active same-tenant
  * profiles, and returns only those the DB RPC would actually accept (filtered by
- * the shared, pure `filterEligibleDelegates` rule). The current assignee is
- * excluded (delegating to yourself is a no-op the RPC rejects anyway).
+ * the shared, pure `filterEligibleDelegates` rule). The requester, the current
+ * step assignee, and the authenticated actor are all excluded explicitly, so a
+ * privileged (admin) role can never re-admit them; the RPC re-enforces the same.
  */
 export async function getEligibleDelegates(approvalId: string): Promise<EligibleDelegate[]> {
   const res = await getAuthActor()
@@ -1710,7 +1711,7 @@ export async function getEligibleDelegates(approvalId: string): Promise<Eligible
 
   const { data: approval } = await supabase
     .from('approvals')
-    .select('id, tenant_id, status')
+    .select('id, tenant_id, status, requester_id')
     .eq('id', approvalId)
     .eq('tenant_id', actor.tenantId)
     .single()
@@ -1770,9 +1771,19 @@ export async function getEligibleDelegates(approvalId: string): Promise<Eligible
     requiredRole: currentStep.assigned_role ?? null,
     approverRoles: APPROVER_ENUM_ROLES,
     adminRoles: ADMIN_ROLES as readonly string[],
-    // Exclude the CURRENT STEP's assignee — delegating a step to the person
-    // already holding it is the no-op the RPC rejects.
-    excludeId: currentStep.assigned_to ?? null,
+    // Every identity that must NEVER be offered as a delegate — listed
+    // explicitly so an admin role cannot re-admit any of them:
+    //   - approval.requester_id: segregation of duties (the person who requested
+    //     the gate decision may not receive it back). This was the production
+    //     leak — the requester (a tenant_admin) was appearing in the roster.
+    //   - currentStep.assigned_to: delegating a step to its current holder is the
+    //     no-op the RPC rejects.
+    //   - actor.userId: you cannot delegate to yourself.
+    excludedIds: [
+      approval.requester_id ?? null,
+      currentStep.assigned_to ?? null,
+      actor.userId,
+    ],
   })
 
   return eligible.map((c) => ({
