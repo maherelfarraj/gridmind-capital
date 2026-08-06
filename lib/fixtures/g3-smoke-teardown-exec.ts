@@ -39,23 +39,26 @@ export interface TeardownFilterable<R> extends PromiseLike<R> {
   in(column: string, values: readonly unknown[]): TeardownFilterable<R>
 }
 
-export interface TeardownReadable<Row> extends TeardownFilterable<{
-  data: Row[] | null
-  count?: number | null
-  error: TeardownError | null
-}> {
-  eq(column: string, value: unknown): TeardownReadable<Row>
-  in(column: string, values: readonly unknown[]): TeardownReadable<Row>
+/**
+ * A SELECT chain. This is a single interface rather than an intersection of a
+ * "countable" and a "readable" one: `.eq()` must return the SAME type it was
+ * called on, and an intersection collapses to whichever member declares `.eq`
+ * first — silently dropping `.maybeSingle()` after the first filter.
+ */
+export interface TeardownQuery<Row = Record<string, unknown>>
+  extends PromiseLike<{
+    data: Row[] | null
+    count: number | null
+    error: TeardownError | null
+  }> {
+  eq(column: string, value: unknown): TeardownQuery<Row>
+  in(column: string, values: readonly unknown[]): TeardownQuery<Row>
   maybeSingle(): PromiseLike<{ data: Row | null; error: TeardownError | null }>
 }
 
 export interface TeardownTable {
   delete(): TeardownFilterable<{ error: TeardownError | null }>
-  select(
-    columns: string,
-    options?: { count?: 'exact'; head?: boolean },
-  ): TeardownFilterable<{ count: number | null; error: TeardownError | null }> &
-    TeardownReadable<Record<string, unknown>>
+  select(columns: string, options?: { count?: 'exact'; head?: boolean }): TeardownQuery
 }
 
 export interface TeardownStorageBucket {
