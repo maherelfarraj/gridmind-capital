@@ -3,18 +3,38 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter, requireApprover, getAuthActor, requireAssignedApprover, ADMIN_ROLES } from '@/lib/auth/guard'
 import { requireUser, requireInternalRole } from '@/lib/auth/guard'
-import { DB_ADMIN_ROLES } from '@/lib/auth/roles'
+import { DB_ADMIN_ROLES, GATE_APPROVER_ROLES } from '@/lib/auth/roles'
 import { sendApprovalRequestEmail, sendApprovalDecisionEmail } from '@/lib/email/send'
 import type { ApprovalRecord } from '@/components/approvals/approval-inbox'
-import { createSignature, type SignatureDraft } from '@/app/actions/signatures'
+import { createSignature, stageGateSignatureImage, type SignatureDraft } from '@/app/actions/signatures'
+import { deleteFailedStagedSignature } from '@/lib/approvals/signature-storage'
 import {
   mapOpportunityApprovalDetail,
   type OpportunityApprovalView,
 } from '@/lib/approvals/opportunity-detail'
+import {
+  isGateNumberMissing,
+  duplicateWorkflowMessage,
+  shouldRouteGateDecisionToRpc,
+  isAdminOverride,
+  isRequesterSelfAction,
+  REQUESTER_SELF_ACTION_MESSAGE,
+} from '@/lib/approvals/gate-routing'
+import {
+  filterEligibleDelegates,
+  type DelegateCandidate,
+} from '@/lib/approvals/delegate-eligibility'
+import {
+  mapGateApprovalDetail,
+  type GateApprovalDetailView,
+} from '@/lib/approvals/gate-detail'
 
-// profiles.role enum values that action approvals (used to resolve email recipients).
-const APPROVER_ENUM_ROLES = ['system_admin', 'tenant_admin', 'project_director', 'project_manager']
 import { getCurrentTenantId } from '@/lib/tenant'
+
+// The canonical approver vocabulary (single source of truth in lib/auth/roles).
+// Kept as a mutable string[] alias because the Supabase `.in()` filter and the
+// pure eligibility helper expect `string[]`.
+const APPROVER_ENUM_ROLES: string[] = [...GATE_APPROVER_ROLES]
 
 /** Resolve the active approver profiles (id + email + name) for a tenant. */
 async function resolveApprovers(
@@ -37,49 +57,46 @@ async function resolveApprovers(
 }
 
 /**
- * Resolve the approver seat occupant for a given role.
- * Falls back to tenant_admin if no profile has the role or the role has no active member.
- * Used by approval creation paths to set assignee_id before writing the approval row.
+ * Resolve the approver seat occupant for a given role. FAIL-CLOSED.
+ *
+ * 🚨 This function may return ONLY an active, same-tenant profile UUID, or null.
+ * It previously fell back to returning `tenantId` itself when no profile could be
+ * found ("worst case: tenant_id"). A tenant id is NOT a person: writing it into
+ * approvals.assignee_id / approval_steps.assigned_to created a workflow assigned
+ * to a row that can never authenticate, so the approval could never be actioned
+ * and no real approver was ever accountable. That fallback is removed entirely.
+ *
+ * Resolution order: (1) an active profile holding the requested role; (2) an
+ * active tenant_admin. If neither exists, return null and let the caller ABORT
+ * workflow creation rather than invent an assignee.
+ *
+ * Returns the resolved profile id AND the role the seat represents (the requested
+ * role, or 'tenant_admin' when it fell back), which the caller records as the
+ * step's assigned_role so delegation eligibility can be checked against it.
  */
 async function resolveApproveeSeat(
   supabase: ReturnType<typeof createAdminClient>,
   tenantId: string,
   role: string | null | undefined,
-): Promise<string | null> {
-  if (!role) {
-    // Fallback: assign to tenant_admin
+): Promise<{ id: string; resolvedRole: string } | null> {
+  // (1) Prefer an active profile that actually holds the requested role.
+  if (role) {
     const { data, error } = await supabase
       .from('profiles')
       .select('id')
       .eq('tenant_id', tenantId)
-      .eq('role', 'tenant_admin')
+      .eq('role', role)
       .eq('is_active', true)
       .limit(1)
       .maybeSingle()
     if (error) {
-      console.error('[approvals] resolveApproveeSeat tenant_admin lookup failed:', error.message)
+      console.error('[approvals] resolveApproveeSeat role lookup failed:', error.message)
       return null
     }
-    return data?.id ?? tenantId // Worst case: tenant_id itself (not ideal, but explicit)
+    if (data?.id) return { id: data.id, resolvedRole: role }
   }
 
-  // Look for an active profile with the specified role
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .eq('role', role)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[approvals] resolveApproveeSeat role lookup failed:', error.message)
-    return null
-  }
-  if (data?.id) return data.id
-
-  // Role exists but no seat is occupied — assign to tenant_admin
+  // (2) Fall back to an active tenant_admin — a REAL profile only, never tenantId.
   const { data: admin, error: adminErr } = await supabase
     .from('profiles')
     .select('id')
@@ -89,10 +106,13 @@ async function resolveApproveeSeat(
     .limit(1)
     .maybeSingle()
   if (adminErr) {
-    console.error('[approvals] resolveApproveeSeat fallback lookup failed:', adminErr.message)
+    console.error('[approvals] resolveApproveeSeat tenant_admin fallback lookup failed:', adminErr.message)
     return null
   }
-  return admin?.id ?? tenantId
+  if (admin?.id) return { id: admin.id, resolvedRole: 'tenant_admin' }
+
+  // Fail closed: no active same-tenant profile could be resolved.
+  return null
 }
 
 /**
@@ -105,35 +125,59 @@ async function resolveApproveeSeat(
  * - approval_events: 'created' + 'assigned' (per level)
  *
  * Idempotent: returns early if a pending approval for object_id exists.
+ * 
+ * Gate-aware: For gate workflows, prevents duplicate pending/delegated workflows
+ * and ensures G2/G3 workflows remain distinct via gate_number scoping.
  */
 export async function createApprovalWorkflow(
   objectType: string,
   objectId: string,
   title: string,
   amount: number | null,
+  gateNumber?: number,
 ): Promise<{ id: string; error?: string }> {
   try {
+    // A gate workflow is meaningless without a gate number: it drives the
+    // duplicate identity, the phase_gates transition, and the lifecycle audit.
+    // Require it up front, BEFORE any query or insert, so gate 0 is accepted
+    // (explicit null/undefined check) but a missing gate number is rejected.
+    if (isGateNumberMissing(objectType, gateNumber)) {
+      return { id: '', error: 'A gate workflow requires a gate number' }
+    }
+
     const { userId } = await requireUser()
     
     const tenantId = await getCurrentTenantId()
     const supabase = createAdminClient()
     const createdBy = userId
 
-    // Idempotent: skip if pending approval exists for this object
-    const { data: existing } = await supabase
+    // Gate-aware duplicate detection: check for pending or delegated workflows
+    // Ensures distinct G2/G3 workflows for the same project via gate_number
+    let query = supabase
       .from('approvals')
       .select('id')
+      .eq('tenant_id', tenantId)
       .eq('object_id', objectId)
       .eq('object_type', objectType)
-      .eq('status', 'pending')
-      .limit(1)
-      .maybeSingle()
-    if (existing) return { id: existing.id, error: 'Pending approval already exists for this object' }
+      .in('status', ['pending', 'delegated'])
+
+    // If gate workflow, scope the duplicate identity by gate_number. Explicit
+    // null/undefined check (not truthiness) so gate_number 0 is not skipped.
+    if (objectType === 'gate' && gateNumber !== null && gateNumber !== undefined) {
+      query = query.eq('gate_number', gateNumber)
+    }
+
+    const { data: existing } = await query.limit(1).maybeSingle()
+    if (existing) {
+      return { id: existing.id, error: duplicateWorkflowMessage(objectType, gateNumber) }
+    }
 
     // Find matching approval_rule: object_type + amount within min/max, highest priority
+    // Tenant-scoped to prevent cross-tenant rule application
     const { data: rule } = await supabase
       .from('approval_rules')
       .select('id, required_roles, approval_levels, min_amount, max_amount')
+      .eq('tenant_id', tenantId)
       .eq('object_type', objectType)
       .eq('is_active', true)
       .lte('min_amount', amount ?? 0)
@@ -150,68 +194,45 @@ export async function createApprovalWorkflow(
       requiredRoles = rule.required_roles ?? ['tenant_admin']
     }
 
-    // Resolve the first level approver (will be assigned_to on approvals.assignee_id)
-    const firstLevelRole = requiredRoles[0] ?? 'tenant_admin'
-    const firstLevelAssigneeId = await resolveApproveeSeat(supabase, tenantId, firstLevelRole)
-    if (!firstLevelAssigneeId) return { id: '', error: 'Failed to resolve approver for first level' }
-
-    // Create approvals row with initial assignee = first level approver
-    const { data: approval, error: apprErr } = await supabase
-      .from('approvals')
-      .insert({
-        tenant_id: tenantId,
-        object_type: objectType,
-        object_id: objectId,
-        title,
-        status: 'pending',
-        priority: 'normal',
-        amount,
-        requester_id: createdBy,
-        assignee_id: firstLevelAssigneeId,
-        rule_id: rule?.id,
-      })
-      .select('id')
-      .single()
-
-    if (apprErr || !approval) return { id: '', error: `Approval creation failed: ${apprErr?.message}` }
-
-    // Create approval_steps (one per level)
-    const stepRows = []
+    // Resolve one seat per level (READ-ONLY). resolveApproveeSeat is fail-closed:
+    // if any level cannot be resolved to a REAL active same-tenant profile, we
+    // abort BEFORE writing anything -- no approval row is created without a full,
+    // valid set of assignees. This replaces the old "insert approval, then loop-
+    // insert steps, then compensate on failure" path.
+    const steps: Array<{ level: number; assigned_to: string; assigned_role: string }> = []
     for (let level = 1; level <= approvalLevels; level++) {
       const role = requiredRoles[level - 1] ?? 'tenant_admin'
-      const assigneeId = await resolveApproveeSeat(supabase, tenantId, role)
-      if (!assigneeId) return { id: '', error: `Failed to resolve approver for level ${level}` }
-      stepRows.push({
-        approval_id: approval.id,
-        level,
-        assigned_to: assigneeId,
-        status: 'pending',
-      })
+      const seat = await resolveApproveeSeat(supabase, tenantId, role)
+      if (!seat) {
+        return {
+          id: '',
+          error: `Cannot create approval workflow: no active ${role} (or tenant_admin) exists to fill level ${level}`,
+        }
+      }
+      steps.push({ level, assigned_to: seat.id, assigned_role: seat.resolvedRole })
     }
 
-    const { error: stepErr } = await supabase.from('approval_steps').insert(stepRows)
-    if (stepErr) console.log(`[v0] approval_steps creation warning: ${stepErr.message}`)
+    // Single atomic write: approvals + approval_steps (with tenant_id) + events
+    // all commit or roll back together inside create_approval_workflow_tx. No
+    // app-side compensation code, and no possibility of an orphaned approval.
+    const { data: newId, error: rpcErr } = await supabase.rpc('create_approval_workflow_tx', {
+      p_tenant_id: tenantId,
+      p_object_type: objectType,
+      p_object_id: objectId,
+      p_title: title,
+      p_amount: amount,
+      p_gate_number: gateNumber ?? null,
+      p_requester: createdBy,
+      p_rule_id: rule?.id ?? null,
+      p_priority: 'normal',
+      p_steps: steps,
+    })
 
-    // Emit events: 'created' + 'assigned' per level
-    const eventRows = [
-      {
-        approval_id: approval.id,
-        actor_id: createdBy,
-        event_type: 'created',
-        metadata: { rule: rule?.id, levels: approvalLevels, amount },
-      },
-      ...stepRows.map((s) => ({
-        approval_id: approval.id,
-        actor_id: createdBy,
-        event_type: 'assigned',
-        metadata: { level: s.level, assigned_to: s.assigned_to },
-      })),
-    ]
+    if (rpcErr || !newId) {
+      return { id: '', error: `Approval workflow creation failed: ${rpcErr?.message ?? 'no id returned'}` }
+    }
 
-    const { error: eventErr } = await supabase.from('approval_events').insert(eventRows)
-    if (eventErr) console.log(`[v0] approval_events creation warning: ${eventErr.message}`)
-
-    return { id: approval.id }
+    return { id: newId as string }
   } catch (e: any) {
     return { id: '', error: e.message }
   }
@@ -555,10 +576,20 @@ function decisionStamp(
 
 async function applyApprovalLifecycle(
   supabase: ReturnType<typeof createAdminClient>,
-  approval: { object_type?: string | null; object_id?: string | null } | null,
+  approval: {
+    object_type?: string | null
+    object_id?: string | null
+    gate_number?: number | null
+    tenant_id?: string | null
+  } | null,
   status: 'approved' | 'rejected' | 'pending' | 'delegated',
 ): Promise<string | null> {
-  if (!approval || approval.object_type !== 'opportunity' || !approval.object_id) return null
+  if (!approval || !approval.object_id) return null
+
+  // Gate approvals are NOT handled here: decideApproval routes every gate
+  // decision through the atomic decide_gate_approval RPC before reaching this
+  // helper. This function only carries the non-gate opportunity lifecycle.
+  if (approval.object_type !== 'opportunity') return null
 
   const nextStatus = status === 'approved' ? 'active' : status === 'rejected' ? 'cancelled' : null
   if (!nextStatus) return null
@@ -876,10 +907,13 @@ export async function decideApproval(opts: {
     reject:              'rejected',
   } as const
 
+  // Tenant-scope the lookup: an approver may only act on approvals in their own
+  // tenant. gate.actor.tenantId is validated non-null by requireApprover().
   const { data: approval } = await supabase
     .from('approvals')
-    .select('title, object_type, object_id, description, assignee_id, status')
+    .select('title, object_type, object_id, description, assignee_id, requester_id, status, gate_number, tenant_id')
     .eq('id', opts.id)
+    .eq('tenant_id', gate.actor.tenantId)
     .single()
 
   if (!approval) return { error: 'Approval not found' }
@@ -888,6 +922,25 @@ export async function decideApproval(opts: {
   const FINAL_STATES = ['approved', 'rejected']
   if (approval.status && FINAL_STATES.includes(approval.status)) {
     return { error: 'Cannot decide: this approval has already been decided' }
+  }
+
+  // Gate approvals are routed to the atomic RPC, which is the SOLE source of
+  // truth for current-step assignment. We must NOT pre-authorize a gate decision
+  // with requireAssignedApprover(approval) here (that would double-check the
+  // stale approvals.assignee_id and could disagree with the locked current step).
+  const isGateApproval = shouldRouteGateDecisionToRpc(approval.object_type)
+
+  // ── SEGREGATION OF DUTIES (gate approvals) ────────────────────────────────
+  // A user may NEVER decide (proceed / conditional_proceed / hold / reject) a
+  // gate approval they themselves requested — not even a system_admin /
+  // tenant_admin exercising an admin override. This is enforced HERE, before any
+  // signature is staged (staging happens only in the gate branch below) and
+  // before the decide_gate_approval RPC is called, so no side effect — not even
+  // an orphan storage blob — can occur for a self-action attempt. The RPC
+  // re-enforces this as the final authority; the UI hides the controls; this is
+  // the server-action layer of the same fail-closed rule.
+  if (isGateApproval && isRequesterSelfAction(gate.actor.userId, approval.requester_id)) {
+    return { error: REQUESTER_SELF_ACTION_MESSAGE }
   }
 
   // Step-aware from-state: verify caller is assigned to the CURRENT pending step
@@ -900,12 +953,9 @@ export async function decideApproval(opts: {
     .limit(1)
     .maybeSingle()
 
-  // If a step workflow exists, verify the caller is assigned to the current step
-  if (currentStep && currentStep.assigned_to !== gate.actor.userId) {
-    const approverCheck = await requireAssignedApprover(approval)
-    if ('error' in approverCheck) return approverCheck
-  } else {
-    // No step workflow: verify caller is the assigned approver (or admin override)
+  // Non-gate approvals authorize here (assigned approver or admin override).
+  // Gate approvals defer entirely to decide_gate_approval's locked-step check.
+  if (!isGateApproval) {
     const approverCheck = await requireAssignedApprover(approval)
     if ('error' in approverCheck) return approverCheck
   }
@@ -928,11 +978,13 @@ export async function decideApproval(opts: {
     }
   }
 
-  // Persist the signature only now that the caller is authorized AND the target
-  // approval exists. If it fails we abort without touching the decision, so we
-  // never record a decision whose signature is missing.
-  let signatureId: string | undefined
-  if (opts.signatureDraft) {
+  // NON-GATE approvals (e.g. opportunity) persist the signature here, only now
+  // that the caller is authorized AND the target approval exists. Gate approvals
+  // do NOT persist here: their signature row is written INSIDE
+  // decide_gate_approval so it commits atomically with the endorsement (see the
+  // gate branch below). Persisting a gate signature here would re-introduce the
+  // orphan-on-rollback bug.
+  if (opts.signatureDraft && !isGateApproval) {
     const sigRes = await createSignature({
       dataUrl:     opts.signatureDraft.dataUrl,
       entityType:  'gate_approval',
@@ -945,10 +997,157 @@ export async function decideApproval(opts: {
       allowUndecided: true,
     })
     if ('error' in sigRes) return { error: `Could not record your signature: ${sigRes.error}` }
-    signatureId = sigRes.signature.id
   }
 
   const decisionStatus = statusMap[opts.decision]
+
+  // ===========================================================================
+  // GATE APPROVALS: the entire decision is atomic via decide_gate_approval.
+  //
+  // For a gate workflow we must NOT perform any separate step / approval /
+  // submission / phase / event writes here -- a partial failure between them is
+  // exactly the non-atomic bug this replaces. The RPC locks the approval and its
+  // current step, verifies tenant + assignment, and performs every write inside
+  // one transaction (rolling all of them back on any error). We route on the
+  // object type with an EXPLICIT gate_number null/undefined check so a gate
+  // numbered 0 still reaches this path.
+  // ===========================================================================
+  if (isGateApproval) {
+    if (isGateNumberMissing('gate', approval.gate_number)) {
+      return { error: 'This gate approval is missing a gate number and cannot be decided' }
+    }
+
+    // Admin override: only for a VALIDATED system_admin/tenant_admin acting on an
+    // approval assigned to someone else. Passed to the RPC so its locked-step
+    // assignment check can allow the override while still rejecting an unrelated,
+    // non-admin caller.
+    const adminOverride = isAdminOverride(
+      gate.actor.role,
+      gate.actor.userId,
+      approval.assignee_id,
+      ADMIN_ROLES as readonly string[],
+    )
+
+    // Conditions travel INTO the RPC as JSONB so they are inserted inside the
+    // same transaction as the step/gate writes. A conditional_proceed with no
+    // valid condition RAISEs in the RPC and rolls the whole decision back.
+    const conditionsJson =
+      opts.decision === 'conditional_proceed'
+        ? (opts.conditions ?? []).map((c) => ({ title: c.title.trim(), due_date: c.due_date }))
+        : null
+
+    // Signatures are part of the governed endorsement. An approving decision
+    // (proceed / conditional_proceed) MUST be signed; hold / reject are not
+    // endorsements and are never signed. The PNG is STAGED to storage here, then
+    // the signature ROW is inserted INSIDE decide_gate_approval so it commits (or
+    // rolls back) atomically with the decision.
+    const isEndorsement = opts.decision === 'proceed' || opts.decision === 'conditional_proceed'
+    let signatureJson: {
+      signer_name: string; signer_role: string | null; image_path: string; statement: string; ip_address: string | null
+    } | null = null
+
+    if (isEndorsement) {
+      if (!opts.signatureDraft) {
+        return { error: 'A signature is required to endorse this gate decision' }
+      }
+      const staged = await stageGateSignatureImage({
+        dataUrl:    opts.signatureDraft.dataUrl,
+        entityId:   opts.id,
+        signerName: opts.signatureDraft.signerName,
+        signerRole: opts.signatureDraft.signerRole,
+      })
+      if ('error' in staged) return { error: `Could not record your signature: ${staged.error}` }
+      signatureJson = {
+        signer_name: staged.staged.signerName,
+        signer_role: staged.staged.signerRole,
+        image_path:  staged.staged.imagePath,
+        statement:   opts.signatureDraft.statement,
+        ip_address:  staged.staged.ipAddress,
+      }
+    }
+
+    // ── Failure boundary for the staged signature ────────────────────────────
+    // The decision either COMMITS or it does not. On any non-commit (RPC error
+    // OR thrown exception) the staged blob has no row referencing it and must be
+    // removed EXACTLY ONCE. Both failure modes funnel through this single helper
+    // so the RPC-error branch and the throw branch can never both fire, and the
+    // ORIGINAL decision error is always preserved alongside any cleanup error —
+    // neither is allowed to mask the other.
+    let cleanupAttempted = false
+
+    /**
+     * Attempts cleanup and converts EITHER failure mode — a returned `{ error }`
+     * or a thrown exception — into a cleanup-error string. This helper NEVER
+     * throws, which is precisely what stops a failing cleanup from replacing or
+     * masking the decision error that actually matters. The `cleanupAttempted`
+     * latch guarantees at most ONE attempt across both call sites, so the outer
+     * catch can never retry a cleanup the RPC-error branch already performed.
+     *
+     * Returns null when there was nothing to clean up, or cleanup succeeded.
+     */
+    const attemptStagedCleanup = async (): Promise<string | null> => {
+      if (!signatureJson || cleanupAttempted) return null
+      cleanupAttempted = true
+      try {
+        const result = await deleteFailedStagedSignature(
+          signatureJson.image_path,
+          approval.tenant_id,
+        )
+        return 'error' in result ? result.error : null
+      } catch (cleanupEx: any) {
+        return cleanupEx?.message ?? 'unknown error'
+      }
+    }
+
+    const failWithCleanup = async (decisionError: string): Promise<{ error: string }> => {
+      const cleanupError = await attemptStagedCleanup()
+      // The decision error always leads; the cleanup failure is appended so an
+      // operator learns both that the decision failed AND that a staged blob
+      // was left behind.
+      return {
+        error: cleanupError
+          ? `Gate decision failed: ${decisionError}; signature cleanup failed: ${cleanupError}`
+          : `Gate decision failed: ${decisionError}`,
+      }
+    }
+
+    let rpcOutcome: unknown
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('decide_gate_approval', {
+        p_approval_id: opts.id,
+        p_tenant_id: approval.tenant_id,
+        p_actor: gate.actor.userId,
+        p_decision: opts.decision,
+        p_rationale: opts.rationale,
+        p_is_admin_override: adminOverride,
+        p_conditions: conditionsJson,
+        p_signature: signatureJson,
+      })
+      if (rpcErr) return await failWithCleanup(rpcErr.message)
+      rpcOutcome = data
+    } catch (e: any) {
+      return await failWithCleanup(e?.message ?? 'unknown error')
+    }
+
+    // Past this point the decision COMMITTED. Cleanup is never reachable, so a
+    // real signature image can never be removed.
+
+    // Best-effort notification only for a finalized decision.
+    if (rpcOutcome === 'approved' || rpcOutcome === 'rejected') {
+      sendApprovalDecisionEmail({
+        to: process.env.NOTIFICATION_EMAIL || 'admin@gridmind.capital',
+        requesterName: 'Team',
+        title: approval.title ?? opts.id,
+        decision: rpcOutcome === 'approved' ? 'approved' : 'rejected',
+        decisionBy: 'Executive Sponsor',
+        projectCode: approval.object_type ?? 'G0',
+        approvalId: opts.id,
+        reason: opts.rationale,
+      }).catch(() => {})
+    }
+
+    return { error: null }
+  }
 
   // If a step workflow exists, update ONLY the current step; otherwise update the approval directly
   if (currentStep) {
@@ -1072,9 +1271,13 @@ export async function decideApproval(opts: {
     if (error) return { error: error.message }
   }
 
-  // Create approval_conditions rows if decision='conditional_proceed'
+  // Create approval_conditions rows if decision='conditional_proceed'.
+  // (Gate approvals never reach here -- they insert conditions atomically inside
+  // decide_gate_approval. This is the non-gate path.) tenant_id is NOT NULL, so
+  // it must be supplied, and a failure is surfaced rather than only logged.
   if (opts.decision === 'conditional_proceed' && opts.conditions && opts.conditions.length > 0) {
     const conditionRows = opts.conditions.map((c) => ({
+      tenant_id: approval.tenant_id,
       approval_id: opts.id,
       title: c.title.trim(),
       due_date: c.due_date, // ISO date string
@@ -1083,7 +1286,7 @@ export async function decideApproval(opts: {
     }))
 
     const { error: condErr } = await supabase.from('approval_conditions').insert(conditionRows)
-    if (condErr) console.log(`[v0] Approval conditions creation warning: ${condErr.message}`)
+    if (condErr) return { error: `Approval conditions creation failed: ${condErr.message}` }
 
     // Emit 'condition_added' events for audit trail
     const eventRows = conditionRows.map((c) => ({
@@ -1122,28 +1325,69 @@ export async function delegateApproval(opts: {
   if ('error' in gate) return gate
 
   const supabase = createAdminClient()
+  const tenantId = gate.actor.tenantId
 
-  // Read the approval to verify authorization
+  // Read the approval to verify authorization. Tenant-scoped: an approver may
+  // only delegate approvals in their own tenant.
   const { data: current, error: readErr } = await supabase
     .from('approvals')
-    .select('description, assignee_id')
+    .select('description, assignee_id, requester_id, object_type, gate_number')
     .eq('id', opts.id)
+    .eq('tenant_id', tenantId)
     .single()
 
   if (readErr) return { error: readErr.message }
-  
-  // Verify the session user is the current assignee (or admin)
-  const ADMIN_ROLES = ['system_admin', 'tenant_admin']
-  const isAdmin = gate.actor.role && ADMIN_ROLES.includes(gate.actor.role as any)
-  const isAssignee = gate.actor.userId === current?.assignee_id
-  
+  if (!current) return { error: 'Approval not found' }
+
+  // SEGREGATION OF DUTIES (gate approvals): the requester may never delegate an
+  // approval they requested, not even as an admin. Enforced before the
+  // delegate_gate_approval RPC (and before any write); the RPC re-enforces it.
+  if (
+    shouldRouteGateDecisionToRpc(current.object_type) &&
+    isRequesterSelfAction(gate.actor.userId, current.requester_id)
+  ) {
+    return { error: REQUESTER_SELF_ACTION_MESSAGE }
+  }
+
+  const isAdmin = gate.actor.role && (ADMIN_ROLES as readonly string[]).includes(gate.actor.role)
+
+  // -------------------------------------------------------------------------
+  // GATE workflows: delegation is a transactional hand-off of the CURRENT step,
+  // routed to delegate_gate_approval. The RPC locks the approval + current step,
+  // verifies tenant + current-assignee/admin authorization, moves BOTH the step
+  // and approvals.assignee_id to the delegate, marks the approval delegated,
+  // records the rationale, and writes event + audit rows -- all or nothing.
+  // -------------------------------------------------------------------------
+  if (shouldRouteGateDecisionToRpc(current.object_type)) {
+    const adminOverride = isAdminOverride(
+      gate.actor.role,
+      gate.actor.userId,
+      current.assignee_id,
+      ADMIN_ROLES as readonly string[],
+    )
+
+    const { error: rpcErr } = await supabase.rpc('delegate_gate_approval', {
+      p_approval_id: opts.id,
+      p_tenant_id: tenantId,
+      p_actor: gate.actor.userId,
+      p_delegate: opts.delegateId,
+      p_rationale: opts.reason,
+      p_is_admin_override: adminOverride,
+    })
+
+    if (rpcErr) return { error: `Gate delegation failed: ${rpcErr.message}` }
+    return { error: null }
+  }
+
+  // Non-gate approvals: verify the caller is the current assignee (or admin).
+  const isAssignee = gate.actor.userId === current.assignee_id
   if (!isAdmin && !isAssignee) {
     return { error: 'Only the assigned approver or admin can delegate this approval' }
   }
 
   // Append to the audit trail rather than overwriting it.
   const note = `[Delegated to ${opts.delegateId} at ${new Date().toISOString()}] Reason: ${opts.reason}`
-  const description = current?.description ? `${current.description}\n${note}` : note
+  const description = current.description ? `${current.description}\n${note}` : note
 
   const { error } = await supabase
     .from('approvals')
@@ -1156,6 +1400,7 @@ export async function delegateApproval(opts: {
       updated_at:  new Date().toISOString(),
     })
     .eq('id', opts.id)
+    .eq('tenant_id', tenantId)
   return { error: error?.message ?? null }
 }
 
@@ -1214,6 +1459,13 @@ export async function getOpportunityApprovalDetail(
     .single()
   if (error || !approval) return null
 
+  // HARD DISCRIMINATOR: only 'opportunity' object_type renders through the G0 path.
+  // All other types (gate, project_charter, purchase_order, change_order, etc.)
+  // require their own specialized detail loaders and must not fall through G0.
+  // This prevents governed workflows from being silently presented as ungoverned,
+  // and unsupported types from rendering incomplete/misleading information.
+  if (approval.object_type !== 'opportunity') return null
+
   // Resolve the linked project — tenant-scoped, so a stale/forged object_id
   // pointing at another tenant's project simply returns no row.
   let project = null
@@ -1254,6 +1506,291 @@ export async function getOpportunityApprovalDetail(
       description: approval.description ?? null,
     },
   }
+}
+
+/**
+ * Load the full governed detail view for a GATE approval (G3), tenant-scoped.
+ *
+ * Every query is filtered by the actor's tenant, so a forged/stale approval id
+ * or object_id pointing at another tenant simply resolves to nothing. Returns
+ * null when the approval is not a gate, is missing its gate number, or is not
+ * visible to the actor's tenant. The pure `mapGateApprovalDetail` mapper turns
+ * the raw rows into the view (overlaying the real submission form_data + docs +
+ * team onto the canonical G3 requirement set).
+ */
+export async function getGateApprovalDetail(
+  id: string,
+): Promise<GateApprovalDetailView | null> {
+  const res = await getAuthActor()
+  if ('error' in res) return null
+  const { actor } = res
+  const supabase = createAdminClient()
+
+  const { data: approval, error } = await supabase
+    .from('approvals')
+    .select(
+      'id, tenant_id, object_type, object_id, gate_number, title, status, priority, created_at, description, decision_note, requester_id, assignee_id',
+    )
+    .eq('id', id)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (error || !approval) return null
+  if (approval.object_type !== 'gate') return null
+
+  // Project (tenant-scoped) + its phase gate + latest gate submission.
+  let project = null
+  let phaseGate = null
+  let submission = null
+  if (approval.object_id) {
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('id, tenant_id, name, code, technology, capacity_mw, location, country, status, current_phase')
+      .eq('id', approval.object_id)
+      .eq('tenant_id', actor.tenantId)
+      .maybeSingle()
+    project = proj ?? null
+
+    if (project && approval.gate_number !== null) {
+      const { data: pg } = await supabase
+        .from('phase_gates')
+        .select('phase_number, phase_name, status')
+        .eq('project_id', project.id)
+        .eq('phase_number', approval.gate_number)
+        .maybeSingle()
+      phaseGate = pg ?? null
+
+      const { data: sub } = await supabase
+        .from('gate_submissions')
+        .select('form_data, status, submitted_at')
+        .eq('project_id', project.id)
+        .eq('gate_number', approval.gate_number)
+        .eq('tenant_id', actor.tenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      submission = sub ?? null
+    }
+  }
+
+  // Approval steps (ordered), tenant-scoped.
+  const { data: steps } = await supabase
+    .from('approval_steps')
+    .select('id, level, assigned_to, assigned_role, status')
+    .eq('approval_id', approval.id)
+    .eq('tenant_id', actor.tenantId)
+    .order('level')
+
+  // Requester + current assignee profiles, tenant-scoped.
+  const profileIds = [approval.requester_id, approval.assignee_id].filter(Boolean) as string[]
+  const profileById = new Map<string, any>()
+  if (profileIds.length > 0) {
+    const { data: profs } = await supabase
+      .from('profiles')
+      .select('id, tenant_id, full_name, email, role')
+      .in('id', profileIds)
+      .eq('tenant_id', actor.tenantId)
+    for (const p of profs ?? []) profileById.set(p.id, p)
+  }
+
+  // Deliverable docs + team, project-scoped (used to overlay real bindings).
+  let deliverableDocs: any[] = []
+  let teamMembers: any[] = []
+  if (project) {
+    const { data: docs } = await supabase
+      .from('document_files')
+      .select('id, title, file_name, category, status')
+      .eq('project_id', project.id)
+      .eq('tenant_id', actor.tenantId)
+    deliverableDocs = docs ?? []
+
+    const { data: assignments } = await supabase
+      .from('project_team')
+      .select('person_id, roles(code, title), profiles!project_team_person_id_fkey(full_name)')
+      .eq('project_id', project.id)
+      .eq('tenant_id', actor.tenantId)
+    teamMembers = (assignments ?? []).map((a: any) => ({
+      person_id: a.person_id,
+      full_name: a.profiles?.full_name ?? null,
+      role_code: a.roles?.code ?? null,
+      role_title: a.roles?.title ?? null,
+    }))
+  }
+
+  // Governed event trail, tenant-scoped.
+  const { data: events } = await supabase
+    .from('approval_events')
+    .select('id, event, actor_id, from_status, to_status, detail, created_at')
+    .eq('approval_id', approval.id)
+    .eq('tenant_id', actor.tenantId)
+    .order('created_at', { ascending: true })
+
+  return mapGateApprovalDetail({
+    approval,
+    project,
+    phaseGate,
+    submission,
+    steps: steps ?? [],
+    requester: approval.requester_id ? profileById.get(approval.requester_id) ?? null : null,
+    currentAssignee: approval.assignee_id ? profileById.get(approval.assignee_id) ?? null : null,
+    deliverableDocs,
+    teamMembers,
+    events: events ?? [],
+    // Server-computed control gating for THIS viewer (admin override recognized).
+    viewer: {
+      actorId: actor.userId,
+      actorRole: actor.role ?? null,
+      adminRoles: ADMIN_ROLES as readonly string[],
+    },
+  })
+}
+
+/**
+ * Discriminated approval-detail loader — the single authoritative entry point
+ * for the review page. Reads the approval's `object_type` ONCE (tenant-scoped)
+ * and routes to exactly one typed loader with explicit handling for each type.
+ * Unsupported types return an explicit 'unsupported' result (not 'not_found').
+ * The page switches on `kind` and can display a helpful message for unsupported
+ * approval types rather than a confusing 404.
+ */
+export type RoutedApprovalDetail =
+  | { kind: 'gate'; gate: GateApprovalDetailView }
+  | { kind: 'opportunity'; opportunity: OpportunityApprovalDetail }
+  | { kind: 'unsupported'; objectType: string }
+  | { kind: 'not_found' }
+
+export async function getApprovalDetailRouted(id: string): Promise<RoutedApprovalDetail> {
+  const res = await getAuthActor()
+  if ('error' in res) return { kind: 'not_found' }
+  const { actor } = res
+  const supabase = createAdminClient()
+
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('object_type')
+    .eq('id', id)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (!approval) return { kind: 'not_found' }
+
+  // Exhaustive switch: handle each supported type; anything else is unsupported.
+  if (approval.object_type === 'gate') {
+    const gate = await getGateApprovalDetail(id)
+    return gate ? { kind: 'gate', gate } : { kind: 'not_found' }
+  }
+
+  if (approval.object_type === 'opportunity') {
+    const opportunity = await getOpportunityApprovalDetail(id)
+    return opportunity ? { kind: 'opportunity', opportunity } : { kind: 'not_found' }
+  }
+
+  // All other types (project_charter, purchase_order, change_order, etc.) are
+  // not yet supported in the detail view and need their own specialized loaders.
+  return { kind: 'unsupported', objectType: approval.object_type }
+}
+
+export interface EligibleDelegate {
+  id: string
+  name: string
+  role: string | null
+}
+
+/**
+ * Real, governed delegate recipients for a gate approval — the fix for the
+ * hard-coded five fake emails the picker used to render. Resolves the approval's
+ * tenant + the CURRENT pending step's required role, loads active same-tenant
+ * profiles, and returns only those the DB RPC would actually accept (filtered by
+ * the shared, pure `filterEligibleDelegates` rule). The requester, the current
+ * step assignee, and the authenticated actor are all excluded explicitly, so a
+ * privileged (admin) role can never re-admit them; the RPC re-enforces the same.
+ */
+export async function getEligibleDelegates(approvalId: string): Promise<EligibleDelegate[]> {
+  const res = await getAuthActor()
+  if ('error' in res) return []
+  const { actor } = res
+  const supabase = createAdminClient()
+
+  const { data: approval } = await supabase
+    .from('approvals')
+    .select('id, tenant_id, status, requester_id')
+    .eq('id', approvalId)
+    .eq('tenant_id', actor.tenantId)
+    .single()
+  if (!approval) return []
+
+  // The CURRENT (lowest-level) pending step is the sole authority on who may act
+  // now. It supplies BOTH the authorization identity (`assigned_to`) and the
+  // required role for the candidate pool (`assigned_role`).
+  const { data: currentStep } = await supabase
+    .from('approval_steps')
+    .select('assigned_to, assigned_role')
+    .eq('approval_id', approvalId)
+    .eq('tenant_id', actor.tenantId)
+    .eq('status', 'pending')
+    .order('level')
+    .limit(1)
+    .maybeSingle()
+
+  // No pending step ⇒ nothing is actionable, so there is nobody to delegate to.
+  // Returning [] here also means an already-decided approval never discloses the
+  // tenant's approver roster.
+  if (!currentStep) return []
+
+  // AUTHORIZATION: only the CURRENT STEP's assignee, or a platform admin, may
+  // retrieve the delegate list. `approvals.assignee_id` is NOT used: it is a
+  // denormalized convenience column that lags the step machine (it is stale
+  // mid-progression and after a delegation), so authorizing on it could both
+  // deny the person who is genuinely actionable and admit someone who no longer
+  // is. `approval_steps.assigned_to` is the value `delegate_gate_approval`
+  // itself locks and checks, so this matches the RPC's own boundary.
+  const isCurrentAssignee =
+    !!currentStep.assigned_to && currentStep.assigned_to === actor.userId
+  const isAdmin = ADMIN_ROLES.includes(actor.role ?? '')
+  if (!isCurrentAssignee && !isAdmin) {
+    // Silent deny (empty list, not an error) — do not disclose that a roster exists.
+    return []
+  }
+
+  // Candidate pool: active same-tenant profiles that can act on approvals.
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, tenant_id, full_name, role, is_active')
+    .eq('tenant_id', actor.tenantId)
+    .eq('is_active', true)
+    .in('role', APPROVER_ENUM_ROLES)
+
+  const candidates: DelegateCandidate[] = (profiles ?? []).map((p) => ({
+    id: p.id,
+    tenantId: p.tenant_id,
+    role: p.role,
+    isActive: p.is_active,
+    name: p.full_name,
+  }))
+
+  const eligible = filterEligibleDelegates(candidates, {
+    tenantId: actor.tenantId,
+    requiredRole: currentStep.assigned_role ?? null,
+    approverRoles: APPROVER_ENUM_ROLES,
+    adminRoles: ADMIN_ROLES as readonly string[],
+    // Every identity that must NEVER be offered as a delegate — listed
+    // explicitly so an admin role cannot re-admit any of them:
+    //   - approval.requester_id: segregation of duties (the person who requested
+    //     the gate decision may not receive it back). This was the production
+    //     leak — the requester (a tenant_admin) was appearing in the roster.
+    //   - currentStep.assigned_to: delegating a step to its current holder is the
+    //     no-op the RPC rejects.
+    //   - actor.userId: you cannot delegate to yourself.
+    excludedIds: [
+      approval.requester_id ?? null,
+      currentStep.assigned_to ?? null,
+      actor.userId,
+    ],
+  })
+
+  return eligible.map((c) => ({
+    id: c.id,
+    name: c.name ?? 'Unnamed',
+    role: c.role,
+  }))
 }
 
 export interface ApprovalsDashboard {

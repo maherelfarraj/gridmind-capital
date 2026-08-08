@@ -4,12 +4,14 @@ import React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { G0ApprovalReview } from '@/components/approvals/g0-approval-review'
+import { G3ApprovalReview } from '@/components/approvals/g3-approval-review'
 import {
   decideApproval,
   delegateApproval,
-  getOpportunityApprovalDetail,
+  getApprovalDetailRouted,
+  getEligibleDelegates,
 } from '@/app/actions/approvals'
-import { getSignaturesForEntity } from '@/app/actions/signatures'
+import { getGateApprovalSignatures, getSignaturesForEntity } from '@/app/actions/signatures'
 import type { SignatureDraft } from '@/app/actions/signatures'
 import type { UserProfile } from '@/components/approvals/g0-approval-review'
 
@@ -18,15 +20,31 @@ export default function ApprovalDetailPage() {
   const router = useRouter()
   const id     = params?.id ?? ''
 
-  const { data: detail, error, isLoading } = useSWR(
+  // ONE authoritative, discriminated fetch. The server reads object_type and
+  // routes to exactly one typed loader, so a gate approval can never render
+  // through the G0 path (and vice versa) — no dual-fetch race, no fallback.
+  const { data: routed, error, isLoading } = useSWR(
     id ? `approval-detail-${id}` : null,
-    () => getOpportunityApprovalDetail(id),
+    () => getApprovalDetailRouted(id),
     { revalidateOnFocus: false },
   )
 
+  // Signatures are requested ONLY for the two kinds that can render them: a GATE
+  // reads via the canonical phase-gate identity (the id the decision RPC signs
+  // against), a G0/opportunity reads by its approval id. Both readers are
+  // tenant-scoped server-side.
+  //
+  // 'unsupported' (purchase_order, change_order, project_charter, …) and
+  // 'not_found' MUST NOT fetch: an unsupported type has no governed signature
+  // surface, renders no signature UI, and asking for one would issue a
+  // pointless privileged read for an approval kind this view cannot represent.
+  const canLoadSignatures = routed?.kind === 'gate' || routed?.kind === 'opportunity'
   const { data: signatures = [] } = useSWR(
-    id ? `approval-signatures-${id}` : null,
-    () => getSignaturesForEntity('gate_approval', id),
+    id && canLoadSignatures ? `approval-signatures-${routed!.kind}-${id}` : null,
+    () =>
+      routed?.kind === 'gate'
+        ? getGateApprovalSignatures(id)
+        : getSignaturesForEntity('gate_approval', id),
     { revalidateOnFocus: false },
   )
 
@@ -42,8 +60,48 @@ export default function ApprovalDetailPage() {
     )
   }
 
+  // ── Gate (G3) approval ───────────────────────────────────
+  if (routed?.kind === 'gate') {
+    return (
+      <G3ApprovalReview
+        detail={routed.gate}
+        existingSignatures={signatures}
+        onDecide={async (decision, rationale, conditions, signatureDraft) => {
+          const { error } = await decideApproval({ id, decision, rationale, conditions, signatureDraft })
+          if (error) throw new Error(error)
+        }}
+        onDelegate={async (delegateId, reason) => {
+          const { error } = await delegateApproval({ id, delegateId, reason })
+          if (error) throw new Error(error)
+        }}
+        loadDelegates={() => getEligibleDelegates(id)}
+      />
+    )
+  }
+
+  // ── Unsupported type ──────────────────────────────────────
+  if (routed?.kind === 'unsupported') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 p-8 text-center">
+        <p className="text-slate-600 dark:text-slate-300">
+          This approval type ({<span className="font-mono">{routed.objectType}</span>}) does not yet have a governed detail view.
+        </p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Contact support if you need to access this approval.
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push('/approvals')}
+          className="px-4 py-2 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
+        >
+          Back to Approvals
+        </button>
+      </div>
+    )
+  }
+
   // ── Not found ────────────────────────────────────────────
-  if (error || !detail) {
+  if (error || !routed || routed.kind === 'not_found') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 p-8 text-center">
         <p className="text-slate-500 dark:text-slate-400">
@@ -60,7 +118,7 @@ export default function ApprovalDetailPage() {
     )
   }
 
-  const { approval, opportunity, requester: requesterView, linkedProject } = detail
+  const { approval, opportunity, requester: requesterView, linkedProject } = routed.opportunity
 
   // The requester is the REAL profile resolved server-side, or an explicit
   // "Requester unavailable" marker — never a fabricated "Project Manager".

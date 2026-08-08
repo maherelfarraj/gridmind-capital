@@ -115,7 +115,13 @@ export default function AdminTestingPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => router.push(`/projects/${project.id}`)}
+                          data-testid={`view-${project.code.toLowerCase()}`}
+                          onClick={() => {
+                            // Route directly to the gate workspace for the current phase so
+                            // testers land on the actionable gate form (clamped to canonical 1-8).
+                            const phase = Math.min(Math.max(project.current_phase || 1, 1), 8)
+                            router.push(`/stage-gates/${project.id}/gate/${phase}`)
+                          }}
                         >
                           View
                         </Button>
@@ -144,7 +150,7 @@ export default function AdminTestingPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-blue-800">
           <p><strong>Fresh Start:</strong> Resets project to G0 with all approvals cleared. Use for testing new gate flows.</p>
-          <p><strong>View Project:</strong> Navigate to project detail page to perform gate advancement testing.</p>
+          <p><strong>View:</strong> Opens the gate workspace for the project&apos;s current phase to perform gate advancement testing.</p>
           <p><strong>Multi-Project:</strong> All 16 projects are available for concurrent testing.</p>
           <p><strong>Vocabulary Check:</strong> Verify stepper, panel, and registry badge all show real phase_names from database.</p>
         </CardContent>
