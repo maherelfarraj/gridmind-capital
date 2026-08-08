@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { Loader2, ShoppingCart, Plus, X, Users } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
-import { submitG3FormAction, type G3FormData } from '@/app/actions/gate-submissions'
+import { submitG5FormAction, type G5FormData } from '@/app/actions/gate-submissions'
 import { Section, Field, GateFormHeader, SuccessCard, inputCls, selectCls, textareaCls } from './gate-form-primitives'
 
 const schema = z.object({
@@ -36,7 +36,7 @@ interface Props {
   projectId: string
   projectCode: string
   projectName: string
-  initialData?: Partial<G3FormData>
+  initialData?: Partial<G5FormData>
   readOnly?: boolean
 }
 
@@ -53,7 +53,7 @@ export function G3ProcurementForm({ projectId, projectCode, projectName, initial
 
   async function onSubmit(values: FormValues) {
     if (readOnly) return
-    const { error } = await submitG3FormAction(values as G3FormData, projectId, projectName)
+    const { error } = await submitG5FormAction(values as G5FormData, projectId, projectName)
     if (error) {
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {

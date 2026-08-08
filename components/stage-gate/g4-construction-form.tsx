@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { Loader2, HardHat, ClipboardCheck } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
-import { submitG4FormAction, type G4FormData } from '@/app/actions/gate-submissions'
+import { submitG6FormAction, type G6FormData } from '@/app/actions/gate-submissions'
 import { Section, Field, GateFormHeader, SuccessCard, inputCls } from './gate-form-primitives'
 
 const schema = z.object({
@@ -46,7 +46,7 @@ interface Props {
   projectId: string
   projectCode: string
   projectName: string
-  initialData?: Partial<G4FormData>
+  initialData?: Partial<G6FormData>
   readOnly?: boolean
 }
 
@@ -61,7 +61,7 @@ export function G4ConstructionForm({ projectId, projectCode, projectName, initia
 
   async function onSubmit(values: FormValues) {
     if (readOnly) return
-    const { error } = await submitG4FormAction(values as G4FormData, projectId, projectName)
+    const { error } = await submitG6FormAction(values as G6FormData, projectId, projectName)
     if (error) {
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {

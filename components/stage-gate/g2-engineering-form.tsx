@@ -13,7 +13,7 @@ import { Loader2, FileText, Plus, X, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
-import { submitG2FormAction, type G2FormData } from '@/app/actions/gate-submissions'
+import { submitG4FormAction, type G4FormData } from '@/app/actions/gate-submissions'
 import { Section, Field, GateFormHeader, SuccessCard, inputCls, selectCls, textareaCls } from './gate-form-primitives'
 
 const DISCIPLINES = ['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation & Control', 'Process', 'HVAC', 'Telecom']
@@ -39,7 +39,7 @@ interface Props {
   projectId: string
   projectCode: string
   projectName: string
-  initialData?: Partial<G2FormData>
+  initialData?: Partial<G4FormData>
   readOnly?: boolean
 }
 
@@ -56,7 +56,7 @@ export function G2EngineeringForm({ projectId, projectCode, projectName, initial
 
   async function onSubmit(values: FormValues) {
     if (readOnly) return
-    const { error } = await submitG2FormAction(values as G2FormData, projectId, projectName)
+    const { error } = await submitG4FormAction(values as G4FormData, projectId, projectName)
     if (error) {
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {
