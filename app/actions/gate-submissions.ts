@@ -3,7 +3,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireWriter } from '@/lib/auth/guard'
 import { sendApprovalRequestEmail } from '@/lib/email/send'
-import { getCurrentTenantId } from '@/lib/tenant'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -220,6 +219,14 @@ export interface G8FormData {
 /**
  * Saves a gate submission (upsert on project_id + gate_number) and creates a
  * paired approvals row — mirrors the G0/G1 pattern for gates 4 through 8.
+ *
+ * All tenant verification, the phase-gate-lock check, the resubmission guard,
+ * and the idempotent approval-creation decision happen INSIDE the
+ * `submit_gate_form_tx` SECURITY DEFINER transaction (one round-trip), which
+ * locks the project + any existing gate_submissions/approvals rows for the
+ * duration of the write. This closes the tenant-scoping gap and the TOCTOU
+ * window that existed when this logic ran as five separate, unlocked
+ * round-trips from the app.
  */
 async function submitGateForm(
   gateNumber: number,
@@ -229,104 +236,19 @@ async function submitGateForm(
 ): Promise<{ error: string | null }> {
   const guard = await requireWriter()
   if ('error' in guard) return guard
-  const tenantId = await getCurrentTenantId()
 
   const supabase = createAdminClient()
 
-  // BATCH 20: Canonical 1-8 phase mapping (gate submission phase requirements)
-  // gate_number 0 archived (legacy), gate_number 1-8 are canonical phases
-  // CHECK constraint interim: gate_number BETWEEN 0 AND 8 (0=legacy, 1-8=canonical)
-  const PHASE_GATE_MAPPING: Record<number, number> = {
-    0: 0,    // G0 (legacy): Opportunity Intake, cp >= 0
-    1: 0,    // G1: Origination, cp >= 0
-    2: 1,    // G2: Permitting & Grid, cp >= 1
-    3: 2,    // G3: Commercial Close, cp >= 2
-    4: 3,    // G4: Detailed Design, cp >= 3
-    5: 4,    // G5: Procurement, cp >= 4
-    6: 5,    // G6: Construction, cp >= 5
-    7: 6,    // G7: Commissioning, cp >= 6
-    8: 7,    // G8: Handover & O&M, cp >= 7
-  }
-
-  // Verify project exists and get its current phase
-  const { data: project, error: projectErr } = await supabase
-    .from('projects')
-    .select('id, current_phase')
-    .eq('id', projectId)
-    .single()
-
-  if (projectErr) return { error: `Could not find project: ${projectErr.message}` }
-  if (!project) return { error: 'Project not found' }
-
-  // Validate current_phase allows this gate submission (current_phase must be >= minimum phase for gate)
-  const minPhase = PHASE_GATE_MAPPING[gateNumber] ?? -1
-  if (project.current_phase < minPhase) {
-    return { error: `Gate locked: this gate submission is not available at the current project phase` }
-  }
-
-  // Check if an existing approved submission exists (reject resubmit of approved)
-  const { data: existingSubmission, error: subCheckErr } = await supabase
-    .from('gate_submissions')
-    .select('id, status')
-    .eq('project_id', projectId)
-    .eq('gate_number', gateNumber)
-    .single()
-
-  if (subCheckErr && subCheckErr.code !== 'PGRST116') {
-    // PGRST116 = no rows, which is normal
-    return { error: `Submission check failed: ${subCheckErr.message}` }
-  }
-
-  if (existingSubmission?.status === 'approved') {
-    return { error: `This gate has already been approved. Resubmission is not permitted.` }
-  }
-
-  const { error: subError } = await supabase.from('gate_submissions').upsert(
-    {
-      project_id:   projectId,
-      gate_number:  gateNumber,
-      form_data:    formData as Record<string, unknown>,
-      status:       'submitted',
-      submitted_at: new Date().toISOString(),
-      updated_at:   new Date().toISOString(),
-    },
-    { onConflict: 'project_id,gate_number' },
-  )
-  if (subError) return { error: subError.message }
-
-  // Idempotent approval insert: check for existing pending approval before insert.
-  // NOTE: approvals has no `metadata` column — gate_number is a real column,
-  // matching the canonical pattern used by g2-submissions.ts/g3-submissions.ts.
-  const { data: existingApproval, error: apprCheckErr } = await supabase
-    .from('approvals')
-    .select('id, status')
-    .eq('object_type', 'gate')
-    .eq('object_id', projectId)
-    .eq('gate_number', gateNumber)
-    .in('status', ['pending', 'delegated'])
-    .maybeSingle()
-
-  if (apprCheckErr && apprCheckErr.code !== 'PGRST116') {
-    // Log but don't fail—approval check is advisory
-    console.log(`[v0] Approval check warning: ${apprCheckErr.message}`)
-  } else if (existingApproval) {
-    // Pending approval already exists for this (project, gate) pair—skip insert
-    return { error: null }
-  }
-
-  // Create the approval request for this submission (idempotent via check above)
-  const { error: apprError } = await supabase.from('approvals').insert({
-    tenant_id:    tenantId,
-    object_type:  'gate',
-    object_id:    projectId,
-    gate_number:  gateNumber,
-    title:        `G${gateNumber} Submission — ${projectName}`,
-    status:       'pending',
-    priority:     'normal',
-    requester_id: guard.actor.userId,
+  const { error } = await supabase.rpc('submit_gate_form_tx', {
+    p_tenant_id:   guard.actor.tenantId,
+    p_project_id:  projectId,
+    p_gate_number: gateNumber,
+    p_actor:       guard.actor.userId,
+    p_form_data:   formData as Record<string, unknown>,
+    p_title:       `G${gateNumber} Submission — ${projectName}`,
   })
 
-  return { error: apprError?.message ?? null }
+  return { error: error?.message ?? null }
 }
 
 export async function submitG4FormAction(formData: G4FormData, projectId: string, projectName: string) {
