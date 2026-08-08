@@ -561,12 +561,40 @@ export async function getGateApprovalSignatures(approvalId: string): Promise<Sig
   return toRecords(supabase, data)
 }
 
-/** Full signature audit trail for a project (admin view). */
+/**
+ * Full signature audit trail for a project (admin view).
+ *
+ * SECURITY: this runs on the RLS-BYPASSING admin client, so it MUST authenticate
+ * and tenant-scope itself. It previously did neither: it queried `signatures` by
+ * `project_id` alone with no auth check, so any caller could read any tenant's
+ * project's signatures and generate signed URLs for them. Guarantees, in order:
+ *   1. authenticate the viewer — an unauthenticated caller gets [];
+ *   2. verify `projectId` belongs to the viewer's tenant — a cross-tenant or
+ *      unknown project id gets [], and no signature query is even issued;
+ *   3. query `signatures` filtered by BOTH tenant_id and project_id.
+ * Only after both checks pass are rows converted to signed URLs.
+ */
 export async function getProjectSignatureAudit(projectId: string): Promise<SignatureRecord[]> {
+  const res = await getAuthActor()
+  if ('error' in res) return []
+  const { actor } = res
+
   const supabase = createAdminClient()
+
+  // The project must belong to the viewer's tenant. A cross-tenant or
+  // nonexistent project id refuses here, before any signature row is queried.
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('tenant_id', actor.tenantId)
+    .maybeSingle()
+  if (!project) return []
+
   const { data } = await supabase
     .from('signatures')
     .select('*')
+    .eq('tenant_id', actor.tenantId)
     .eq('project_id', projectId)
     .order('signed_at', { ascending: false })
   if (!data) return []
