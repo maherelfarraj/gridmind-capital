@@ -10,24 +10,36 @@
 -- concurrent double-submit could race past the existing-approval check and
 -- create duplicate pending approvals (TOCTOU).
 --
--- Fix: one SECURITY DEFINER transaction that locks + tenant-verifies the
+-- Fix: one SECURITY INVOKER transaction that locks + tenant-verifies the
 -- project, enforces the phase-gate-lock check server-side, locks any
 -- existing gate_submissions row before upserting (tagging tenant_id +
 -- submitted_by), and locks any existing pending/delegated approvals row
 -- before deciding whether to insert a new one -- closing the TOCTOU window
 -- and guaranteeing both writes commit or roll back together.
+--
+-- SECURITY INVOKER (not DEFINER): the function runs with the CALLING role's
+-- own privileges/RLS rather than the function owner's, so it carries no
+-- privilege-escalation risk of its own. This is safe here because the ONLY
+-- role granted EXECUTE is service_role, which already has BYPASSRLS and
+-- full SELECT/INSERT/UPDATE/DELETE grants on projects/gate_submissions/
+-- approvals directly -- the function adds transactional atomicity and row
+-- locking on top of privileges the caller already holds, not new access.
+--
+-- p_title is NOT a parameter: the approval title is derived from the
+-- tenant-verified, locked `projects` row (v_project.name) inside the
+-- transaction, so a caller can no longer pass an arbitrary/spoofed title
+-- disconnected from the project it actually locked.
 
 CREATE OR REPLACE FUNCTION public.submit_gate_form_tx(
   p_tenant_id   uuid,
   p_project_id  uuid,
   p_gate_number integer,
   p_actor       uuid,
-  p_form_data   jsonb,
-  p_title       text
+  p_form_data   jsonb
 )
 RETURNS text
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
 DECLARE
@@ -37,6 +49,7 @@ DECLARE
   v_existing_approval public.approvals%ROWTYPE;
   v_min_phase         integer;
   v_rows              integer;
+  v_title             text;
 BEGIN
   IF p_tenant_id IS NULL OR p_project_id IS NULL OR p_gate_number IS NULL OR p_actor IS NULL THEN
     RAISE EXCEPTION 'submit_gate_form_tx: missing required argument';
@@ -65,6 +78,11 @@ BEGIN
   IF v_project.current_phase < v_min_phase THEN
     RAISE EXCEPTION 'submit_gate_form_tx: gate % is locked at current phase %', p_gate_number, v_project.current_phase;
   END IF;
+
+  -- Title is derived from the locked, tenant-verified project row -- never
+  -- from caller input -- so it can never disagree with which project/tenant
+  -- was actually locked and written.
+  v_title := 'G' || p_gate_number || ' Submission — ' || v_project.name;
 
   -- Lock any existing submission for this (project, gate) before deciding
   -- whether to upsert. No resubmission once approved (preserves existing
@@ -116,7 +134,7 @@ BEGIN
   INSERT INTO public.approvals
     (tenant_id, object_type, object_id, gate_number, title, status, priority, requester_id)
   VALUES
-    (p_tenant_id, 'gate', p_project_id, p_gate_number, p_title, 'pending', 'normal', p_actor);
+    (p_tenant_id, 'gate', p_project_id, p_gate_number, v_title, 'pending', 'normal', p_actor);
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows <> 1 THEN
     RAISE EXCEPTION 'submit_gate_form_tx: expected exactly one approval created, got %', v_rows;
@@ -126,7 +144,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb, text) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb, text) FROM authenticated;
-GRANT EXECUTE ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb, text) TO service_role;
+REVOKE ALL ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_gate_form_tx(uuid, uuid, integer, uuid, jsonb) TO service_role;

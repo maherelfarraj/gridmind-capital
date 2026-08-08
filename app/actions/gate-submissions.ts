@@ -222,17 +222,22 @@ export interface G8FormData {
  *
  * All tenant verification, the phase-gate-lock check, the resubmission guard,
  * and the idempotent approval-creation decision happen INSIDE the
- * `submit_gate_form_tx` SECURITY DEFINER transaction (one round-trip), which
+ * `submit_gate_form_tx` SECURITY INVOKER transaction (one round-trip), which
  * locks the project + any existing gate_submissions/approvals rows for the
  * duration of the write. This closes the tenant-scoping gap and the TOCTOU
  * window that existed when this logic ran as five separate, unlocked
  * round-trips from the app.
+ *
+ * `_projectName` is accepted (and kept, for source-compat with existing
+ * call sites) but is intentionally unused: the approval title is derived
+ * server-side, inside the transaction, from the tenant-verified, locked
+ * `projects` row — never from caller-supplied input.
  */
 async function submitGateForm(
   gateNumber: number,
   formData: unknown,
   projectId: string,
-  projectName: string,
+  _projectName: string,
 ): Promise<{ error: string | null }> {
   const guard = await requireWriter()
   if ('error' in guard) return guard
@@ -245,7 +250,6 @@ async function submitGateForm(
     p_gate_number: gateNumber,
     p_actor:       guard.actor.userId,
     p_form_data:   formData as Record<string, unknown>,
-    p_title:       `G${gateNumber} Submission — ${projectName}`,
   })
 
   return { error: error?.message ?? null }

@@ -82,21 +82,33 @@ beforeEach(() => {
 })
 
 describe('submitGateForm (G4-G8) — tenant-scoped, atomic RPC', () => {
-  it('calls submit_gate_form_tx exactly once with the actor own tenantId and userId', async () => {
+  it('calls submit_gate_form_tx exactly once with the actor own tenantId and userId, and no p_title', async () => {
     const result = await submitG4FormAction({ foo: 'bar' } as any, 'project-1', 'Project One')
 
     expect(result.error).toBeNull()
     expect(state.rpcCalls).toHaveLength(1)
     expect(state.rpcCalls[0].fn).toBe('submit_gate_form_tx')
-    expect(state.rpcCalls[0].args).toMatchObject({
+    // Exact key set (not toMatchObject) so a reintroduced p_title, or any
+    // other stray argument, fails this assertion instead of passing silently.
+    expect(Object.keys(state.rpcCalls[0].args).sort()).toEqual(
+      ['p_actor', 'p_form_data', 'p_gate_number', 'p_project_id', 'p_tenant_id'].sort(),
+    )
+    expect(state.rpcCalls[0].args).toEqual({
       p_tenant_id: 'tenant-a',
       p_project_id: 'project-1',
       p_gate_number: 4,
       p_actor: 'actor-1',
       p_form_data: { foo: 'bar' },
     })
-    expect(state.rpcCalls[0].args.p_title).toContain('G4')
-    expect(state.rpcCalls[0].args.p_title).toContain('Project One')
+  })
+
+  it('never sends a title/name derived from client input — the RPC derives it server-side', async () => {
+    // A caller-supplied projectName must never leak into the RPC call, even
+    // if it is spoofed/mismatched relative to the real project.
+    await submitG4FormAction({ foo: 'bar' } as any, 'project-1', 'Spoofed Project Name — Not The Real One')
+
+    expect(state.rpcCalls[0].args).not.toHaveProperty('p_title')
+    expect(JSON.stringify(state.rpcCalls[0].args)).not.toContain('Spoofed Project Name')
   })
 
   it('never reads or writes gate_submissions/approvals directly from the app', async () => {
