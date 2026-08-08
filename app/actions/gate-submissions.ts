@@ -161,9 +161,16 @@ export async function submitG1FormAction(
   return { error: error?.message ?? null }
 }
 
-// ─── G2–G7 form data types ────────────────────────────────────
+// ─── G4–G8 form data types ────────────────────────────────────
+// BATCH 20 canonical renumbering: these types/actions were historically
+// named after legacy (pre-canonical) gate numbers even though the router
+// serves their components at canonical slots 4-8. Names below now match
+// the canonical gate_number each one actually writes. The old, unreferenced
+// "G5FormData" (mechanical-completion shape) and "submitG5FormAction" were
+// dead code from an earlier numbering scheme and have been removed — no
+// component ever imported them.
 
-export interface G2FormData {
+export interface G4FormData {
   engineeringPackagesPlanned: string
   disciplinesInvolved:        string[]
   ifcTargetDate:              string
@@ -171,7 +178,7 @@ export interface G2FormData {
   designBasisNotes:           string
 }
 
-export interface G3FormData {
+export interface G5FormData {
   contractingStrategy:    'EPC' | 'EPCM' | 'multi-package'
   bidders:                { name: string }[]
   targetAwardDate:        string
@@ -179,7 +186,7 @@ export interface G3FormData {
   longLeadItemsNotes:     string
 }
 
-export interface G4FormData {
+export interface G6FormData {
   contractorName:       string
   mobilizationDate:     string
   siteReadiness: {
@@ -191,15 +198,7 @@ export interface G4FormData {
   plannedWorkforcePeak: string
 }
 
-export interface G5FormData {
-  systemsCount:            string
-  punchItemsOpenCount:     string
-  mcCertificateTargetDate: string
-  walkdownDate:            string
-  asBuiltStatus:           'not-started' | 'in-progress' | 'complete'
-}
-
-export interface G6FormData {
+export interface G7FormData {
   testPackagesCount:         string
   energizationDate:          string
   performanceTestPlanStatus: 'not-started' | 'draft' | 'approved'
@@ -207,7 +206,7 @@ export interface G6FormData {
   trainingPlanStatus:        'not-started' | 'draft' | 'approved'
 }
 
-export interface G7FormData {
+export interface G8FormData {
   omContractor:           string
   handoverCertificateDate: string
   warrantyPeriodMonths:   string
@@ -216,11 +215,11 @@ export interface G7FormData {
   finalAcceptanceNotes:   string
 }
 
-// ─── Shared submit helper for G2–G7 ───────────────────────────
+// ─── Shared submit helper for G4–G8 ───────────────────────────
 
 /**
  * Saves a gate submission (upsert on project_id + gate_number) and creates a
- * paired approvals row — mirrors the G0/G1 pattern for gates 2 through 7.
+ * paired approvals row — mirrors the G0/G1 pattern for gates 4 through 8.
  */
 async function submitGateForm(
   gateNumber: number,
@@ -295,14 +294,16 @@ async function submitGateForm(
   )
   if (subError) return { error: subError.message }
 
-  // Idempotent approval insert: check for existing pending approval before insert
+  // Idempotent approval insert: check for existing pending approval before insert.
+  // NOTE: approvals has no `metadata` column — gate_number is a real column,
+  // matching the canonical pattern used by g2-submissions.ts/g3-submissions.ts.
   const { data: existingApproval, error: apprCheckErr } = await supabase
     .from('approvals')
     .select('id, status')
-    .eq('object_type', 'gate_submission')
+    .eq('object_type', 'gate')
     .eq('object_id', projectId)
-    .match({ 'metadata->>gate_number': gateNumber.toString() })
-    .neq('status', 'rejected')
+    .eq('gate_number', gateNumber)
+    .in('status', ['pending', 'delegated'])
     .maybeSingle()
 
   if (apprCheckErr && apprCheckErr.code !== 'PGRST116') {
@@ -315,23 +316,17 @@ async function submitGateForm(
 
   // Create the approval request for this submission (idempotent via check above)
   const { error: apprError } = await supabase.from('approvals').insert({
-    tenant_id:   tenantId,
-    object_type: 'gate_submission',
-    object_id:   projectId,
-    title:       `G${gateNumber} Submission — ${projectName}`,
-    priority:    'normal',
-    metadata:    { gate_number: gateNumber },
+    tenant_id:    tenantId,
+    object_type:  'gate',
+    object_id:    projectId,
+    gate_number:  gateNumber,
+    title:        `G${gateNumber} Submission — ${projectName}`,
+    status:       'pending',
+    priority:     'normal',
+    requester_id: guard.actor.userId,
   })
 
   return { error: apprError?.message ?? null }
-}
-
-export async function submitG2FormAction(formData: G2FormData, projectId: string, projectName: string) {
-  return submitGateForm(2, formData, projectId, projectName)
-}
-
-export async function submitG3FormAction(formData: G3FormData, projectId: string, projectName: string) {
-  return submitGateForm(3, formData, projectId, projectName)
 }
 
 export async function submitG4FormAction(formData: G4FormData, projectId: string, projectName: string) {
@@ -348,6 +343,10 @@ export async function submitG6FormAction(formData: G6FormData, projectId: string
 
 export async function submitG7FormAction(formData: G7FormData, projectId: string, projectName: string) {
   return submitGateForm(7, formData, projectId, projectName)
+}
+
+export async function submitG8FormAction(formData: G8FormData, projectId: string, projectName: string) {
+  return submitGateForm(8, formData, projectId, projectName)
 }
 
 // ─── Reads ────────────────────────────────────────────────────

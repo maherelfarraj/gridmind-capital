@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { Loader2, KeyRound, PackageCheck } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
-import { submitG7FormAction, type G7FormData } from '@/app/actions/gate-submissions'
+import { submitG8FormAction, type G8FormData } from '@/app/actions/gate-submissions'
 import { Section, Field, GateFormHeader, SuccessCard, inputCls, selectCls, textareaCls } from './gate-form-primitives'
 
 const schema = z.object({
@@ -38,7 +38,7 @@ interface Props {
   projectId: string
   projectCode: string
   projectName: string
-  initialData?: Partial<G7FormData>
+  initialData?: Partial<G8FormData>
   readOnly?: boolean
 }
 
@@ -53,7 +53,7 @@ export function G7HandoverForm({ projectId, projectCode, projectName, initialDat
 
   async function onSubmit(values: FormValues) {
     if (readOnly) return
-    const { error } = await submitG7FormAction(values as G7FormData, projectId, projectName)
+    const { error } = await submitG8FormAction(values as G8FormData, projectId, projectName)
     if (error) {
       toast({ title: 'Submission failed', description: error, variant: 'danger' })
     } else {

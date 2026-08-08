@@ -2,6 +2,13 @@
 
 /**
  * G5 — Mechanical Completion Approval Form
+ * ARCHIVED / DEAD CODE: not imported by any route or router. Superseded by
+ * the BATCH 20 canonical renumbering — "G5" now means Procurement &
+ * Manufacturing (see g3-procurement-form.tsx), not Mechanical Completion.
+ * This component's own submitG5FormAction/G5FormData no longer exist in
+ * gate-submissions.ts (that name now belongs to the canonical Procurement
+ * form), so this form is intentionally disconnected from the submit action
+ * to avoid resurrecting a dead/colliding write path. Kept for reference only.
  * react-hook-form + zod, shadcn/ui card layout (matches G1 styling).
  */
 import * as React from 'react'
@@ -11,8 +18,16 @@ import { z } from 'zod'
 import { Loader2, Wrench, ListChecks } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
-import { submitG5FormAction, type G5FormData } from '@/app/actions/gate-submissions'
 import { Section, Field, GateFormHeader, SuccessCard, inputCls, selectCls } from '../gate-form-primitives'
+
+/** Local, standalone shape — intentionally not the canonical G5FormData (Procurement). */
+type MechanicalCompletionFormData = {
+  systemsCount:            string
+  punchItemsOpenCount:     string
+  mcCertificateTargetDate: string
+  walkdownDate:            string
+  asBuiltStatus:           'not-started' | 'in-progress' | 'complete'
+}
 
 const schema = z.object({
   systemsCount:            z.string().min(1, 'Required'),
@@ -35,7 +50,7 @@ interface Props {
   projectId: string
   projectCode: string
   projectName: string
-  initialData?: Partial<G5FormData>
+  initialData?: Partial<MechanicalCompletionFormData>
   readOnly?: boolean
 }
 
@@ -48,15 +63,12 @@ export function G5MechanicalCompletionForm({ projectId, projectCode, projectName
     defaultValues: { ...DEFAULT, ...initialData },
   })
 
-  async function onSubmit(values: FormValues) {
+  async function onSubmit(_values: FormValues) {
     if (readOnly) return
-    const { error } = await submitG5FormAction(values as G5FormData, projectId, projectName)
-    if (error) {
-      toast({ title: 'Submission failed', description: error, variant: 'danger' })
-    } else {
-      setSubmitted(true)
-      toast({ title: 'G5 Package submitted', description: 'Mechanical completion package saved and sent for approval.', variant: 'success' })
-    }
+    // Archived/dead form: no live submit action exists for this shape
+    // (see file header). Left as a no-op instead of miswiring to the
+    // canonical G5 (Procurement) action, which expects a different shape.
+    toast({ title: 'Form archived', description: 'This form is no longer wired to a submission action.', variant: 'danger' })
   }
 
   if (submitted) return <SuccessCard gate="G5" projectId={projectId} onReset={() => setSubmitted(false)} />
